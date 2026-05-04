@@ -1,0 +1,43 @@
+force-exclude = true
+line-length = 120
+output-format = "grouped"
+target-version = "py311"
+
+[lint]
+fixable = ["ALL"]
+select = ["ALL"]
+ignore = [
+    'A001', 'A004',
+    'ANN002', 'ANN003', 'ANN401',
+    'ASYNC109',
+    'COM812',
+    'D100', 'D101', 'D103', 'D102', 'D104', 'D105', 'D106', "D107", "D400",
+    'D203', 'D205',
+    "G004",
+    'ISC001',
+    'N818',
+    'PLR0913',
+    "PT",
+    'PYI034',
+    "TD001", "TID252"]
+
+[lint.per-file-ignores]
+"**/__init__.py" = ["F401", "F403"]
+"tests/**/test_*.py" = ["ARG001", "F401", "S101", "S311", "F811"]
+"tests/**/conftest.py" = ["ARG001"]
+"**/*_controller.py" = ["RUF012"]
+
+[lint.flake8-annotations]
+mypy-init-return = true
+ignore-fully-untyped = true
+allow-star-arg-any = true
+
+[lint.pydocstyle]
+convention = "pep257"
+
+[lint.isort]
+force-single-line = false
+force-wrap-aliases = true
+force-sort-within-sections = true
+combine-as-imports = true
+lines-after-imports = 2

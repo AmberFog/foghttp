@@ -37,3 +37,16 @@ python-source = "."
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["foghttp"]
+strict = true
+warn_unreachable = true
+warn_unused_configs = true
+pretty = true
+show_error_codes = true
+namespace_packages = false
+exclude = [
+    "^tests/",
+]

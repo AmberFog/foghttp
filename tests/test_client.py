@@ -6,6 +6,9 @@ import pytest
 import foghttp
 
 
+OK_STATUS_CODE = 200
+
+
 async def _read_request(reader: asyncio.StreamReader) -> tuple[str, bytes]:
     head = await reader.readuntil(b"\r\n\r\n")
     headers = head.decode("iso-8859-1")
@@ -27,14 +30,14 @@ async def http_server():
             {
                 "request_line": request_line,
                 "body": body.decode(),
-            }
+            },
         ).encode()
         writer.write(
             b"HTTP/1.1 200 OK\r\n"
-            + b"content-type: application/json\r\n"
+            b"content-type: application/json\r\n"
             + f"content-length: {len(payload)}\r\n".encode()
             + b"connection: close\r\n\r\n"
-            + payload
+            + payload,
         )
         await writer.drain()
         writer.close()
@@ -53,7 +56,7 @@ async def test_get_with_params_and_json_response(http_server: str) -> None:
     async with foghttp.AsyncClient() as client:
         response = await client.get(http_server + "/users", params={"limit": 10})
 
-    assert response.status_code == 200
+    assert response.status_code == OK_STATUS_CODE
     assert response.headers["content-type"] == "application/json"
     assert response.json()["request_line"] == "GET /users?limit=10 HTTP/1.1"
 

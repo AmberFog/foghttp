@@ -1,10 +1,13 @@
 import asyncio
+import builtins
+from collections.abc import Mapping
 import time
-import warnings
 from types import TracebackType
-from typing import Any, Mapping
+from typing import Any
+import warnings
 
-from . import _foghttp
+import foghttp._foghttp as _foghttp  # noqa: PLR0402
+
 from .body import encode_body
 from .client_closed_error import ClientClosedError
 from .limits import Limits
@@ -111,7 +114,7 @@ class AsyncClient:
             try:
                 await asyncio.wait_for(self._semaphore.acquire(), timeout=timeouts.pool)
                 acquired = True
-            except asyncio.TimeoutError as exc:
+            except builtins.TimeoutError as exc:
                 self._pool_timeouts += 1
                 raise TimeoutError(POOL_ACQUIRE_TIMEOUT) from exc
             finally:

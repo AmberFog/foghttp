@@ -1,0 +1,53 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: pretty-format-json
+        args:
+          - "--indent=2"
+          - "--autofix"
+      - id: check-json
+      - id: check-yaml
+        exclude: ^\.github/
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: https://github.com/asottile/add-trailing-comma
+    rev: v4.0.0
+    hooks:
+      - id: add-trailing-comma
+
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.46.0
+    hooks:
+      - id: typos
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.11.8
+    hooks:
+      - id: uv-lock
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.12
+    hooks:
+      - id: ruff-format
+      - id: ruff-check
+        args: [--fix, --unsafe-fixes]
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.20.2
+    hooks:
+      - id: mypy
+        additional_dependencies:
+          - no_implicit_optional
+          - orjson>=3.10
+          - typing-extensions>=4.3.0,<5
+        args: [--config-file=pyproject.toml, --install-types, --non-interactive]
+        files: ^foghttp/.*\.pyi?$

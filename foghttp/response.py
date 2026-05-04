@@ -1,10 +1,14 @@
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 import orjson
 
 from .http_status_error import HTTPStatusError
 from .messages import http_status_error
+
+
+MIN_ERROR_STATUS_CODE = 400
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +37,7 @@ class Response:
         return orjson.loads(self.content)
 
     def raise_for_status(self) -> None:
-        if 400 <= self.status_code:
+        if self.status_code >= MIN_ERROR_STATUS_CODE:
             raise HTTPStatusError(
                 http_status_error(self.status_code, self.url),
                 response=self,
