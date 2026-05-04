@@ -1,0 +1,12 @@
+use pyo3::create_exception;
+use pyo3::exceptions::PyException;
+use pyo3::prelude::*;
+
+create_exception!(_foghttp, FogHttpError, PyException);
+create_exception!(_foghttp, FogHttpTimeoutError, FogHttpError);
+
+pub fn register(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add("FogHttpError", py.get_type::<FogHttpError>())?;
+    module.add("FogHttpTimeoutError", py.get_type::<FogHttpTimeoutError>())?;
+    Ok(())
+}

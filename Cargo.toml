@@ -1,0 +1,18 @@
+[package]
+name = "foghttp"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[lib]
+name = "foghttp"
+crate-type = ["cdylib"]
+
+[dependencies]
+bytes = "1.8.0"
+http-body-util = "0.1.2"
+hyper = { version = "1.5.1", features = ["client", "http1"] }
+hyper-rustls = { version = "0.27.3", default-features = false, features = ["http1", "native-tokio", "ring", "tls12", "webpki-roots"] }
+hyper-util = { version = "0.1.10", features = ["client", "client-legacy", "http1", "tokio"] }
+pyo3 = { version = "0.28.3", features = ["extension-module"] }
+tokio = { version = "1.41.1", features = ["rt-multi-thread", "time"] }
