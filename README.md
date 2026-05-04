@@ -1,7 +1,13 @@
-# FogHTTP
+<p align="center">
+  <img src="logo.png" alt="FogHTTP logo" width="160">
+</p>
 
-Rust-powered async HTTP client for Python, optimized for high concurrency,
-explicit resource management, and observable connection pooling.
+<h1 align="center">FogHTTP</h1>
+
+<p align="center">
+  Rust-powered async HTTP client for Python, optimized for high concurrency,
+  explicit resource management, and observable connection pooling.
+</p>
 
 FogHTTP is currently an MVP. The public API is Python-first and `asyncio`
 native; the HTTP core is implemented in Rust on top of `hyper`.

@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "AMBER FOG" }]
+keywords = ["asyncio", "http", "http-client", "hyper", "rust"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Framework :: AsyncIO",
@@ -19,6 +20,11 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP",
 ]
 dependencies = ["orjson>=3.10"]
+
+[project.urls]
+Homepage = "https://github.com/AmberFog/foghttp"
+Repository = "https://github.com/AmberFog/foghttp"
+Issues = "https://github.com/AmberFog/foghttp/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.23"]
