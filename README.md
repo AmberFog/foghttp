@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="FogHTTP logo" width="160">
+  <img src="logo.png" alt="FogHTTP logo" width="260">
 </p>
 
 <h1 align="center">FogHTTP</h1>
