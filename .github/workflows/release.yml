@@ -50,6 +50,7 @@ jobs:
     name: Build Linux wheels (${{ matrix.python-version }}, ${{ matrix.target }})
     runs-on: ubuntu-latest
     needs: validate-version
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -85,16 +86,17 @@ jobs:
     name: Build macOS wheels (${{ matrix.python-version }}, ${{ matrix.platform.name }})
     runs-on: ${{ matrix.platform.runner }}
     needs: validate-version
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
         platform:
           - name: x86_64
-            runner: macos-13
+            runner: macos-15-intel
             target: x86_64
           - name: aarch64
-            runner: macos-14
+            runner: macos-15
             target: aarch64
     steps:
       - name: Checkout
@@ -124,6 +126,7 @@ jobs:
     name: Build Windows wheels (${{ matrix.python-version }}, x64)
     runs-on: windows-latest
     needs: validate-version
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -156,6 +159,7 @@ jobs:
     name: Build source distribution
     runs-on: ubuntu-latest
     needs: validate-version
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -178,6 +182,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [linux-wheels, macos-wheels, windows-wheels, sdist]
     environment: pypi
+    timeout-minutes: 15
     permissions:
       contents: read
       id-token: write
