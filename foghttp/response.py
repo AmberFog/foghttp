@@ -4,7 +4,7 @@ from typing import Any
 
 import orjson
 
-from .http_status_error import HTTPStatusError
+from .errors import HTTPStatusError
 from .messages import http_status_error
 
 
