@@ -1,5 +1,6 @@
+import asyncio
+import builtins
 from collections.abc import Mapping
-import threading
 import time
 from types import TracebackType
 from typing import Any
@@ -26,7 +27,7 @@ from .response import Response
 from .timeouts import Timeouts
 
 
-class Client:
+class AsyncClient:
     def __init__(
         self,
         *,
@@ -48,8 +49,7 @@ class Client:
         )
 
         self._closed = False
-        self._semaphore = threading.BoundedSemaphore(self._limits.max_connections)
-        self._state_lock = threading.Lock()
+        self._semaphore = asyncio.Semaphore(self._limits.max_connections)
         self._pending_acquires = 0
         self._pool_timeouts = 0
         self._client = create_raw_client(
@@ -60,26 +60,26 @@ class Client:
         )
         self._observability = observability
 
-    def __enter__(self) -> "Client":
+    async def __aenter__(self) -> "AsyncClient":
         self._ensure_open()
         return self
 
-    def __exit__(
+    async def __aexit__(
         self,
         exc_type: type[BaseException] | None,
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        self.close()
+        await self.aclose()
 
     def __del__(self) -> None:
         if getattr(self, "_closed", True) is False:
             warnings.warn(UNCLOSED_CLIENT, UnclosedClientError, stacklevel=2)
 
-    def close(self) -> None:
+    async def aclose(self) -> None:
         self._closed = True
 
-    def request(
+    async def request(
         self,
         method: str,
         url: str,
@@ -101,9 +101,23 @@ class Client:
         )
 
         started = time.perf_counter()
-        self._acquire_connection(timeouts.pool)
+        acquired = False
         try:
-            raw = send_raw_request(
+            if self._pending_acquires >= self._limits.max_pending_acquires:
+                self._pool_timeouts += 1
+                raise TimeoutError(POOL_ACQUIRE_QUEUE_FULL)
+            self._pending_acquires += 1
+            try:
+                await asyncio.wait_for(self._semaphore.acquire(), timeout=timeouts.pool)
+                acquired = True
+            except builtins.TimeoutError as exc:
+                self._pool_timeouts += 1
+                raise TimeoutError(POOL_ACQUIRE_TIMEOUT) from exc
+            finally:
+                self._pending_acquires -= 1
+
+            raw = await asyncio.to_thread(
+                send_raw_request,
                 raw_client=self._client,
                 method=method,
                 url=request_url,
@@ -112,34 +126,32 @@ class Client:
                 timeouts=timeouts,
             )
         finally:
-            self._semaphore.release()
+            if acquired:
+                self._semaphore.release()
 
         return response_from_raw(raw=raw, started=started)
 
-    def get(self, url: str, **kwargs: Any) -> Response:
-        return self.request("GET", url, **kwargs)
+    async def get(self, url: str, **kwargs: Any) -> Response:
+        return await self.request("GET", url, **kwargs)
 
-    def post(self, url: str, **kwargs: Any) -> Response:
-        return self.request("POST", url, **kwargs)
+    async def post(self, url: str, **kwargs: Any) -> Response:
+        return await self.request("POST", url, **kwargs)
 
-    def put(self, url: str, **kwargs: Any) -> Response:
-        return self.request("PUT", url, **kwargs)
+    async def put(self, url: str, **kwargs: Any) -> Response:
+        return await self.request("PUT", url, **kwargs)
 
-    def patch(self, url: str, **kwargs: Any) -> Response:
-        return self.request("PATCH", url, **kwargs)
+    async def patch(self, url: str, **kwargs: Any) -> Response:
+        return await self.request("PATCH", url, **kwargs)
 
-    def delete(self, url: str, **kwargs: Any) -> Response:
-        return self.request("DELETE", url, **kwargs)
+    async def delete(self, url: str, **kwargs: Any) -> Response:
+        return await self.request("DELETE", url, **kwargs)
 
     def stats(self) -> PoolStats:
         self._ensure_open()
-        with self._state_lock:
-            pending_acquires = self._pending_acquires
-            pool_timeouts = self._pool_timeouts
         return stats_from_raw(
             raw=self._client.stats(),
-            pending_acquires=pending_acquires,
-            pool_timeouts=pool_timeouts,
+            pending_acquires=self._pending_acquires,
+            pool_timeouts=self._pool_timeouts,
         )
 
     def dump_pool_state(self) -> dict[str, int]:
@@ -149,23 +161,6 @@ class Client:
             "idle_connections": stats.idle_connections,
             "pending_acquires": stats.pending_acquires,
         }
-
-    def _acquire_connection(self, pool_timeout: float) -> None:
-        with self._state_lock:
-            if self._pending_acquires >= self._limits.max_pending_acquires:
-                self._pool_timeouts += 1
-                raise TimeoutError(POOL_ACQUIRE_QUEUE_FULL)
-            self._pending_acquires += 1
-
-        acquired = self._semaphore.acquire(timeout=pool_timeout)
-
-        with self._state_lock:
-            self._pending_acquires -= 1
-            if not acquired:
-                self._pool_timeouts += 1
-
-        if not acquired:
-            raise TimeoutError(POOL_ACQUIRE_TIMEOUT)
 
     def _ensure_open(self) -> None:
         if self._closed:

@@ -20,6 +20,8 @@ uv run maturin develop
 
 ## Usage
 
+### Async
+
 ```python
 import foghttp
 
@@ -50,8 +52,26 @@ async with foghttp.AsyncClient(
     print(client.stats())
 ```
 
+### Sync
+
+```python
+import foghttp
+
+
+with foghttp.Client() as client:
+    response = client.get(
+        "https://api.example.com/users",
+        headers={"accept": "application/json"},
+        params={"limit": 10},
+    )
+
+    response.raise_for_status()
+    data = response.json()
+```
+
 ## MVP Scope
 
+- `Client`
 - `AsyncClient`
 - `request`, `get`, `post`, `put`, `patch`, `delete`
 - buffered `Response`
