@@ -5,14 +5,11 @@ from types import TracebackType
 from typing import Any
 import warnings
 
-from .client_shared import (
-    create_raw_client,
-    prepare_request,
-    response_from_raw,
-    send_raw_request,
-    stats_from_raw,
-    validate_client_options,
-)
+from ._client.options import validate_client_options
+from ._client.raw import create_raw_client, send_raw_request
+from ._client.request import prepare_request
+from ._client.response import response_from_raw
+from ._client.stats import stats_from_raw
 from .errors import ClientClosedError, TimeoutError, UnclosedClientError
 from .limits import Limits
 from .messages import (
@@ -24,6 +21,7 @@ from .messages import (
 from .pool_stats import PoolStats
 from .response import Response
 from .timeouts import Timeouts
+from .types import HttpVersions
 
 
 class Client:
@@ -32,7 +30,7 @@ class Client:
         *,
         limits: Limits | None = None,
         timeouts: Timeouts | None = None,
-        http_versions: list[str] | None = None,
+        http_versions: HttpVersions = None,
         follow_redirects: bool = False,
         cookies: bool = False,
         trust_env: bool = False,

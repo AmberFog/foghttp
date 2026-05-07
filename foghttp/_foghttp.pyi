@@ -57,4 +57,13 @@ class RawClient:
         connect_timeout: float,
         total_timeout: float,
     ) -> RawResponse: ...
+    async def request_async(
+        self,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        connect_timeout: float,
+        total_timeout: float,
+    ) -> RawResponse: ...
     def stats(self) -> RawStats: ...
