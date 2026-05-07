@@ -16,6 +16,8 @@ class RawResponse:
     def http_version(self) -> str: ...
     @property
     def elapsed(self) -> float: ...
+    @property
+    def history(self) -> tuple[RawResponse, ...]: ...
 
 class RawStats:
     @property
@@ -46,6 +48,7 @@ class RawClient:
         keepalive: bool,
         connect_timeout: float,
         follow_redirects: bool,
+        max_redirects: int,
         trust_env: bool,
     ) -> None: ...
     def request(

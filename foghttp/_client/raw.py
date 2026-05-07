@@ -16,6 +16,7 @@ def create_raw_client(
     limits: Limits,
     timeouts: Timeouts,
     follow_redirects: bool,
+    max_redirects: int,
     trust_env: bool,
 ) -> _foghttp.RawClient:
     return _foghttp.RawClient(
@@ -25,6 +26,7 @@ def create_raw_client(
         limits.keepalive,
         timeouts.connect,
         follow_redirects,
+        max_redirects,
         trust_env,
     )
 

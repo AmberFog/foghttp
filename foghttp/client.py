@@ -2,9 +2,10 @@ from collections.abc import Mapping
 import threading
 import time
 from types import TracebackType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 import warnings
 
+from ._client.constants import DEFAULT_MAX_REDIRECTS
 from ._client.options import validate_client_options
 from ._client.raw import create_raw_client, send_raw_request
 from ._client.request import prepare_request
@@ -24,6 +25,10 @@ from .timeouts import Timeouts
 from .types import HttpVersions
 
 
+if TYPE_CHECKING:
+    from foghttp import _foghttp
+
+
 class Client:
     def __init__(
         self,
@@ -32,6 +37,7 @@ class Client:
         timeouts: Timeouts | None = None,
         http_versions: HttpVersions = None,
         follow_redirects: bool = False,
+        max_redirects: int = DEFAULT_MAX_REDIRECTS,
         cookies: bool = False,
         trust_env: bool = False,
         observability: bool = True,
@@ -40,7 +46,7 @@ class Client:
         self._timeouts = timeouts or Timeouts()
         validate_client_options(
             cookies=cookies,
-            follow_redirects=follow_redirects,
+            max_redirects=max_redirects,
             trust_env=trust_env,
             http_versions=http_versions,
         )
@@ -50,10 +56,11 @@ class Client:
         self._state_lock = threading.Lock()
         self._pending_acquires = 0
         self._pool_timeouts = 0
-        self._client = create_raw_client(
+        self._client: _foghttp.RawClient | None = create_raw_client(
             limits=self._limits,
             timeouts=self._timeouts,
             follow_redirects=follow_redirects,
+            max_redirects=max_redirects,
             trust_env=trust_env,
         )
         self._observability = observability
@@ -75,7 +82,9 @@ class Client:
             warnings.warn(UNCLOSED_CLIENT, UnclosedClientError, stacklevel=2)
 
     def close(self) -> None:
-        self._closed = True
+        if not self._closed:
+            self._closed = True
+            self._client = None
 
     def request(
         self,
@@ -101,8 +110,11 @@ class Client:
         started = time.perf_counter()
         self._acquire_connection(timeouts.pool)
         try:
+            raw_client = self._client
+            if raw_client is None:
+                raise ClientClosedError(CLIENT_CLOSED)
             raw = send_raw_request(
-                raw_client=self._client,
+                raw_client=raw_client,
                 method=method,
                 url=request_url,
                 headers=request_headers,
@@ -116,6 +128,9 @@ class Client:
 
     def get(self, url: str, **kwargs: Any) -> Response:
         return self.request("GET", url, **kwargs)
+
+    def head(self, url: str, **kwargs: Any) -> Response:
+        return self.request("HEAD", url, **kwargs)
 
     def post(self, url: str, **kwargs: Any) -> Response:
         return self.request("POST", url, **kwargs)
@@ -135,7 +150,7 @@ class Client:
             pending_acquires = self._pending_acquires
             pool_timeouts = self._pool_timeouts
         return stats_from_raw(
-            raw=self._client.stats(),
+            raw=self._raw_client().stats(),
             pending_acquires=pending_acquires,
             pool_timeouts=pool_timeouts,
         )
@@ -168,3 +183,10 @@ class Client:
     def _ensure_open(self) -> None:
         if self._closed:
             raise ClientClosedError(CLIENT_CLOSED)
+
+    def _raw_client(self) -> Any:
+        self._ensure_open()
+        raw_client = self._client
+        if raw_client is None:
+            raise ClientClosedError(CLIENT_CLOSED)
+        return raw_client
