@@ -1,20 +1,20 @@
 ---
-layout: home
+layout: "home"
 
 hero:
   name: "FogHTTP"
   text: "Rust-powered HTTP client for Python"
-  tagline: Buffered JSON requests, sync and async clients, redirects, and observable pooling.
+  tagline: "Buffered JSON requests, sync and async clients, redirects, and observable pooling."
 
 features:
-  - title: Rust transport
-    details: The HTTP core is implemented in Rust on top of hyper, while the public API stays Python-first.
+  - title: "Rust transport"
+    details: "The HTTP core is implemented in Rust on top of hyper, while the public API stays Python-first."
 
-  - title: Sync and async
-    details: Use Client in scripts and workers, or AsyncClient for high-concurrency asyncio workloads.
+  - title: "Sync and async"
+    details: "Use Client in scripts and workers, or AsyncClient for high-concurrency asyncio workloads."
 
-  - title: Focused MVP
-    details: FogHTTP is intentionally small today: buffered responses, JSON, redirects, pool limits, and request metadata.
+  - title: "Focused MVP"
+    details: "FogHTTP is intentionally small today: buffered responses, JSON, redirects, pool limits, and request metadata."
 ---
 
 # FogHTTP Documentation
