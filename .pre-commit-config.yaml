@@ -47,7 +47,7 @@ repos:
       - id: mypy
         additional_dependencies:
           - no_implicit_optional
-          - orjson>=3.10
+          - orjson>=3.11,<4
           - typing-extensions>=4.3.0,<5
         args: [--config-file=pyproject.toml, --install-types, --non-interactive]
         files: ^foghttp/.*\.pyi?$

@@ -8,7 +8,7 @@ use crate::core::metrics::Metrics;
 use crate::py::client::future::complete_python_future;
 use crate::py::client::options::validate_unsupported_options;
 use crate::py::client::runtime::build_runtime;
-use crate::py::client::transport::send_request;
+use crate::py::client::transport::{send_request, TransportRequest};
 use crate::py::response::RawResponse;
 use crate::py::stats::RawStats;
 use pyo3::prelude::*;
@@ -22,6 +22,8 @@ pub struct RawClient {
     client: HyperClient,
     runtime: Runtime,
     metrics: Arc<Metrics>,
+    follow_redirects: bool,
+    max_redirects: usize,
 }
 
 #[pymethods]
@@ -35,9 +37,10 @@ impl RawClient {
         keepalive: bool,
         connect_timeout: f64,
         follow_redirects: bool,
+        max_redirects: usize,
         trust_env: bool,
     ) -> PyResult<Self> {
-        validate_unsupported_options(follow_redirects, trust_env)?;
+        validate_unsupported_options(trust_env)?;
 
         let client = build_client(ClientOptions {
             max_connections_per_host,
@@ -51,6 +54,8 @@ impl RawClient {
             client,
             runtime,
             metrics: Arc::new(Metrics::default()),
+            follow_redirects,
+            max_redirects,
         })
     }
 
@@ -70,11 +75,15 @@ impl RawClient {
         let result = py.detach(|| {
             self.runtime.block_on(send_request(
                 self.client.clone(),
-                method,
-                url,
-                headers,
-                body,
-                total_timeout,
+                TransportRequest {
+                    method,
+                    url,
+                    headers,
+                    body,
+                    total_timeout,
+                    follow_redirects: self.follow_redirects,
+                    max_redirects: self.max_redirects,
+                },
             ))
         });
 
@@ -100,10 +109,24 @@ impl RawClient {
         let task_future = future.clone_ref(py);
         let client = self.client.clone();
         let metrics = Arc::clone(&self.metrics);
+        let follow_redirects = self.follow_redirects;
+        let max_redirects = self.max_redirects;
 
         metrics.request_started();
         self.runtime.spawn(async move {
-            let result = send_request(client, method, url, headers, body, total_timeout).await;
+            let result = send_request(
+                client,
+                TransportRequest {
+                    method,
+                    url,
+                    headers,
+                    body,
+                    total_timeout,
+                    follow_redirects,
+                    max_redirects,
+                },
+            )
+            .await;
             metrics.request_finished(result.is_err());
             complete_python_future(&loop_, &task_future, result);
         });
