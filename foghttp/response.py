@@ -43,6 +43,10 @@ class Response:
     def raise_for_status(self) -> None:
         if self.status_code >= MIN_CLIENT_ERROR_STATUS_CODE:
             raise HTTPStatusError(
-                http_status_error(self.status_code, self.url),
+                http_status_error(
+                    self.request.method,
+                    self.request.url,
+                    self.status_code,
+                ),
                 response=self,
             )

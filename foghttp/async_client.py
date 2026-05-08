@@ -26,6 +26,9 @@ from .timeouts import Timeouts
 from .types import HttpVersions
 
 
+__all__ = ("AsyncClient",)
+
+
 if TYPE_CHECKING:
     from foghttp import _foghttp
 

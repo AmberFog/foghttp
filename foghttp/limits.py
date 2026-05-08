@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 
 
+__all__ = ("Limits",)
+
+
 @dataclass(frozen=True, slots=True)
 class Limits:
     max_connections: int = 100

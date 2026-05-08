@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 
 
+__all__ = ("PoolStats",)
+
+
 @dataclass(frozen=True, slots=True)
 class PoolStats:
     active_connections: int = 0

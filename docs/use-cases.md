@@ -144,12 +144,13 @@ response = client.post(
 ### Simple Error Handling
 
 `raise_for_status()` raises `HTTPStatusError` for `4xx` and `5xx`. Error
-messages are still intentionally minimal and will be improved.
+messages include the request method, URL, status code, and reason phrase.
 
 ```python
 try:
     response.raise_for_status()
 except foghttp.HTTPStatusError as exc:
+    print(exc)
     print(exc.response.status_code)
     print(exc.response.url)
 ```

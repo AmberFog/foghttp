@@ -14,6 +14,7 @@ async def test_get_with_params_and_json_response(http_server: str) -> None:
     assert response.request.method == "GET"
     assert response.request.url == http_server + "/users?limit=10"
     assert response.headers["content-type"] == "application/json"
+    assert response.encoding == "utf-8"
     assert response.json()["request_line"] == "GET /users?limit=10 HTTP/1.1"
 
 
@@ -27,6 +28,39 @@ async def test_post_json_body(http_server: str, faker: Faker) -> None:
     assert response.request.url == http_server + "/users"
     assert response.request.headers["content-type"] == "application/json"
     assert response.json()["body"] == orjson.dumps(payload).decode()
+
+
+async def test_post_rejects_content_and_json(http_server: str) -> None:
+    async with foghttp.AsyncClient() as client:
+        with pytest.raises(ValueError, match="pass either content or json"):
+            await client.post(http_server + "/users", content=b"raw", json={"name": "Ada"})
+
+
+async def test_post_string_content(http_server: str, faker: Faker) -> None:
+    name = faker.name()
+
+    async with foghttp.AsyncClient() as client:
+        response = await client.post(http_server + "/users", content=name)
+
+    assert response.request.method == "POST"
+    assert response.json()["body"] == name
+
+
+async def test_method_shortcuts(http_server: str) -> None:
+    async with foghttp.AsyncClient() as client:
+        head_response = await client.head(http_server + "/users")
+        put_response = await client.put(http_server + "/users", content=b"put")
+        patch_response = await client.patch(http_server + "/users", content=b"patch")
+        delete_response = await client.delete(http_server + "/users")
+
+    assert head_response.status_code == OK
+    assert head_response.request.method == "HEAD"
+    assert head_response.content == b""
+    assert put_response.json()["request_line"] == "PUT /users HTTP/1.1"
+    assert put_response.json()["body"] == "put"
+    assert patch_response.json()["request_line"] == "PATCH /users HTTP/1.1"
+    assert patch_response.json()["body"] == "patch"
+    assert delete_response.json()["request_line"] == "DELETE /users HTTP/1.1"
 
 
 async def test_closed_client_rejects_requests(http_server: str) -> None:
@@ -44,3 +78,33 @@ async def test_stats_track_requests(http_server: str) -> None:
 
     assert stats.total_requests == 1
     assert stats.failed_requests == 0
+
+
+async def test_dump_pool_state(http_server: str) -> None:
+    async with foghttp.AsyncClient() as client:
+        await client.get(http_server)
+        state = client.dump_pool_state()
+
+    assert state.keys() == {"active_connections", "idle_connections", "pending_acquires"}
+    assert state["pending_acquires"] == 0
+
+
+async def test_pending_acquire_queue_full(http_server: str) -> None:
+    limits = foghttp.Limits(max_pending_acquires=0)
+
+    async with foghttp.AsyncClient(limits=limits) as client:
+        with pytest.raises(foghttp.TimeoutError, match="connection acquire queue is full"):
+            await client.get(http_server)
+
+        assert client.stats().pool_timeouts == 1
+
+
+async def test_pool_acquire_timeout(http_server: str) -> None:
+    limits = foghttp.Limits(max_connections=0, max_pending_acquires=1)
+    timeouts = foghttp.Timeouts(pool=0.001)
+
+    async with foghttp.AsyncClient(limits=limits, timeouts=timeouts) as client:
+        with pytest.raises(foghttp.TimeoutError, match="connection acquire timeout expired"):
+            await client.get(http_server)
+
+        assert client.stats().pool_timeouts == 1
