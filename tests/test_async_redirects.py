@@ -24,10 +24,14 @@ async def test_get_follows_redirects(http_server: str) -> None:
 
             assert response.status_code == OK
             assert response.url == f"{http_server}/final"
+            assert response.request.method == "GET"
+            assert response.request.url == f"{http_server}/final"
             assert response.json()["request_line"] == "GET /final HTTP/1.1"
             assert len(response.history) == 1
             assert response.history[0].status_code == status_code
             assert response.history[0].url == f"{http_server}/redirect/{status_code}"
+            assert response.history[0].request.method == "GET"
+            assert response.history[0].request.url == f"{http_server}/redirect/{status_code}"
 
 
 async def test_head_follows_redirects(http_server: str) -> None:
@@ -65,10 +69,14 @@ async def test_post_redirects_rewrite_to_get(http_server: str) -> None:
 
             assert response.status_code == OK
             assert response.url == f"{http_server}/final"
+            assert response.request.method == "GET"
+            assert response.request.url == f"{http_server}/final"
             assert response.json()["request_line"] == "GET /final HTTP/1.1"
             assert response.json()["body"] == ""
             assert len(response.history) == 1
             assert response.history[0].status_code == status_code
+            assert response.history[0].request.method == "POST"
+            assert response.history[0].request.url == f"{http_server}/redirect/{status_code}"
 
 
 async def test_post_redirects_preserve_method_and_body(http_server: str) -> None:
@@ -81,7 +89,11 @@ async def test_post_redirects_preserve_method_and_body(http_server: str) -> None
 
             assert response.status_code == OK
             assert response.url == f"{http_server}/final"
+            assert response.request.method == "POST"
+            assert response.request.url == f"{http_server}/final"
             assert response.json()["request_line"] == "POST /final HTTP/1.1"
             assert response.json()["body"] == POST_BODY
             assert len(response.history) == 1
             assert response.history[0].status_code == status_code
+            assert response.history[0].request.method == "POST"
+            assert response.history[0].request.url == f"{http_server}/redirect/{status_code}"

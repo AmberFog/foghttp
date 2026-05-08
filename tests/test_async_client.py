@@ -11,6 +11,8 @@ async def test_get_with_params_and_json_response(http_server: str) -> None:
         response = await client.get(http_server + "/users", params={"limit": 10})
 
     assert response.status_code == OK
+    assert response.request.method == "GET"
+    assert response.request.url == http_server + "/users?limit=10"
     assert response.headers["content-type"] == "application/json"
     assert response.json()["request_line"] == "GET /users?limit=10 HTTP/1.1"
 
@@ -21,6 +23,9 @@ async def test_post_json_body(http_server: str, faker: Faker) -> None:
     async with foghttp.AsyncClient() as client:
         response = await client.post(http_server + "/users", json=payload)
 
+    assert response.request.method == "POST"
+    assert response.request.url == http_server + "/users"
+    assert response.request.headers["content-type"] == "application/json"
     assert response.json()["body"] == orjson.dumps(payload).decode()
 
 

@@ -4,6 +4,17 @@ use std::collections::HashMap;
 
 #[pyclass(skip_from_py_object)]
 #[derive(Clone)]
+pub struct RawRequestInfo {
+    #[pyo3(get)]
+    pub method: String,
+    #[pyo3(get)]
+    pub url: String,
+    #[pyo3(get)]
+    pub headers: HashMap<String, String>,
+}
+
+#[pyclass(skip_from_py_object)]
+#[derive(Clone)]
 pub struct RawResponse {
     #[pyo3(get)]
     pub status_code: u16,
@@ -12,6 +23,8 @@ pub struct RawResponse {
     pub content: Vec<u8>,
     #[pyo3(get)]
     pub url: String,
+    #[pyo3(get)]
+    pub request: RawRequestInfo,
     #[pyo3(get)]
     pub http_version: String,
     #[pyo3(get)]

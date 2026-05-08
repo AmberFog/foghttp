@@ -5,7 +5,7 @@ use crate::core::response::collect_body;
 use crate::errors::{FogHttpError, FogHttpTimeoutError};
 use crate::messages::{redirect_limit_exceeded, REQUEST_TOTAL_TIMEOUT};
 use crate::py::client::redirects::{headers_without_body_fields, redirect_action, RedirectAction};
-use crate::py::response::RawResponse;
+use crate::py::response::{RawRequestInfo, RawResponse};
 use hyper::body::Incoming;
 use hyper::Response;
 use pyo3::prelude::*;
@@ -28,6 +28,7 @@ pub async fn send_request(client: HyperClient, parts: TransportRequest) -> PyRes
     let mut history = Vec::new();
 
     loop {
+        let request_info = state.request_info();
         let request = build_request(state.request_parts())?;
 
         let response = tokio::time::timeout(
@@ -38,8 +39,8 @@ pub async fn send_request(client: HyperClient, parts: TransportRequest) -> PyRes
         .map_err(|_| FogHttpTimeoutError::new_err(REQUEST_TOTAL_TIMEOUT))?
         .map_err(|err| FogHttpError::new_err(err.to_string()))?;
 
-        let response_url = state.url.clone();
-        let mut raw = raw_response(response, response_url.clone(), started).await?;
+        let response_url = request_info.url.clone();
+        let mut raw = raw_response(response, request_info, started).await?;
         let redirect = if state.follow_redirects {
             redirect_action(&state.method, &response_url, raw.status_code, &raw.headers)
         } else {
@@ -82,6 +83,14 @@ impl RequestState {
         }
     }
 
+    fn request_info(&self) -> RawRequestInfo {
+        RawRequestInfo {
+            method: self.method.clone(),
+            url: self.url.clone(),
+            headers: self.headers.clone(),
+        }
+    }
+
     fn apply_redirect(&mut self, redirect: RedirectAction) {
         self.method = redirect.method;
         self.url = redirect.url;
@@ -109,19 +118,21 @@ impl From<TransportRequest> for RequestState {
 
 async fn raw_response(
     response: Response<Incoming>,
-    url: String,
+    request: RawRequestInfo,
     started: Instant,
 ) -> PyResult<RawResponse> {
     let status_code = response.status().as_u16();
     let http_version = format!("{:?}", response.version());
     let headers = response_headers(response.headers());
     let content = collect_body(response.into_body()).await?;
+    let url = request.url.clone();
 
     Ok(RawResponse {
         status_code,
         headers,
         content,
         url,
+        request,
         http_version,
         elapsed: started.elapsed().as_secs_f64(),
         history: Vec::new(),

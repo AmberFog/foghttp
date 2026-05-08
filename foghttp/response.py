@@ -6,7 +6,11 @@ import orjson
 
 from .errors import HTTPStatusError
 from .messages import http_status_error
+from .request_info import RequestInfo
 from .status_codes.client_error import MIN_CLIENT_ERROR_STATUS_CODE
+
+
+__all__ = ("Response",)
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,6 +19,7 @@ class Response:
     headers: Mapping[str, str]
     content: bytes
     url: str
+    request: RequestInfo
     http_version: str
     elapsed: float
     history: tuple["Response", ...] = ()
