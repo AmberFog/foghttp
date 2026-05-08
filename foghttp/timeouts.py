@@ -1,6 +1,9 @@
 from dataclasses import dataclass
 
 
+__all__ = ("Timeouts",)
+
+
 @dataclass(frozen=True, slots=True)
 class Timeouts:
     connect: float = 2.0

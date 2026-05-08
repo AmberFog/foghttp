@@ -1,3 +1,18 @@
+__all__ = (
+    "ClientClosedError",
+    "ConnectTimeout",
+    "FogHTTPError",
+    "HTTPStatusError",
+    "LifecycleError",
+    "PoolTimeout",
+    "ReadTimeout",
+    "RequestError",
+    "ResponseError",
+    "TimeoutError",
+    "UnclosedClientError",
+)
+
+
 class FogHTTPError(Exception):
     """Base exception for all FogHTTP errors."""
 

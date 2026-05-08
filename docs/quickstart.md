@@ -122,6 +122,12 @@ print(response.request.headers)
 For redirects, `response.request` describes the final request, and each item in
 `response.history` keeps request metadata for that redirect hop.
 
+`raise_for_status()` uses this metadata in `HTTPStatusError` messages:
+
+```text
+GET https://api.example.com/users/123 returned 404 Not Found
+```
+
 ## Pool Limits and Stats
 
 ```python

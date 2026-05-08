@@ -25,6 +25,9 @@ from .timeouts import Timeouts
 from .types import HttpVersions
 
 
+__all__ = ("Client",)
+
+
 if TYPE_CHECKING:
     from foghttp import _foghttp
 

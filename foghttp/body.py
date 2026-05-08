@@ -5,6 +5,9 @@ import orjson
 from .messages import BODY_CONTENT_AND_JSON_CONFLICT
 
 
+__all__ = ("encode_body",)
+
+
 def encode_body(
     *,
     content: bytes | str | None,

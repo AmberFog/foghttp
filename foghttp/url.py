@@ -3,6 +3,9 @@ from typing import Any
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
 
+__all__ = ("merge_params",)
+
+
 def merge_params(url: str, params: Mapping[str, Any] | None) -> str:
     if not params:
         return url
