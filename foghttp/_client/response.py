@@ -4,7 +4,16 @@ import time
 
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
+from ..request_info import RequestInfo
 from ..response import Response
+
+
+def request_info_from_raw(raw: _foghttp.RawRequestInfo) -> RequestInfo:
+    return RequestInfo(
+        method=raw.method,
+        url=raw.url,
+        headers=raw.headers,
+    )
 
 
 def response_from_raw(
@@ -19,6 +28,7 @@ def response_from_raw(
         headers=raw.headers,
         content=raw.content,
         url=raw.url,
+        request=request_info_from_raw(raw.request),
         http_version=raw.http_version,
         elapsed=elapsed,
         history=history,

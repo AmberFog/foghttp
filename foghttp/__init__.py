@@ -13,6 +13,7 @@ __all__ = (
     "PoolTimeout",
     "ReadTimeout",
     "RequestError",
+    "RequestInfo",
     "Response",
     "ResponseError",
     "TimeoutError",
@@ -37,5 +38,6 @@ from .errors import (
 )
 from .limits import Limits
 from .pool_stats import PoolStats
+from .request_info import RequestInfo
 from .response import Response
 from .timeouts import Timeouts

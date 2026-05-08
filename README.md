@@ -80,6 +80,14 @@ with foghttp.Client() as client:
     data = response.json()
 ```
 
+Each response includes lightweight request metadata without the request body:
+
+```python
+print(response.request.method)
+print(response.request.url)
+print(response.request.headers)
+```
+
 ### JSON body
 
 ```python
@@ -127,6 +135,9 @@ Supported redirect status codes:
 responses in redirect order. If `max_redirects` is exceeded, FogHTTP raises
 `RequestError`.
 
+`response.request` describes the final request. Each item in `response.history`
+keeps the request metadata for that redirect hop.
+
 POST redirect behavior follows the common browser-compatible rules:
 
 - `301`, `302`, `303`: switch to `GET` and drop the request body
@@ -149,6 +160,7 @@ from foghttp.status_codes.success import OK
 - `AsyncClient`
 - `request`, `get`, `head`, `post`, `put`, `patch`, `delete`
 - buffered `Response`
+- lightweight `Response.request` metadata
 - `Limits`
 - `Timeouts`
 - global acquire backpressure via `max_connections`
