@@ -13,6 +13,9 @@ FogHTTP is currently an MVP. The public API is Python-first and provides both
 sync and `asyncio` clients; the HTTP core is implemented in Rust on top of
 `hyper`.
 
+Until version `0.5.0`, backward compatibility is not guaranteed. I will still
+try to keep public interfaces stable and avoid unnecessary breaking changes.
+
 ## Install for development
 
 ```bash
@@ -95,7 +98,7 @@ with foghttp.Client() as client:
 ### Redirects
 
 Redirects are disabled by default. Enable them on the client when you want
-FogHTTP to follow GET and HEAD redirects.
+FogHTTP to follow GET, HEAD, and POST redirects.
 
 ```python
 import foghttp
@@ -124,6 +127,11 @@ Supported redirect status codes:
 responses in redirect order. If `max_redirects` is exceeded, FogHTTP raises
 `RequestError`.
 
+POST redirect behavior follows the common browser-compatible rules:
+
+- `301`, `302`, `303`: switch to `GET` and drop the request body
+- `307`, `308`: preserve `POST` and resend the request body
+
 ### Status codes
 
 HTTP status constants are grouped by response class and can be imported from
@@ -146,8 +154,8 @@ from foghttp.status_codes.success import OK
 - global acquire backpressure via `max_connections`
 - `stats()`
 - HTTP/1.1 over HTTP and HTTPS
-- GET/HEAD redirects with `follow_redirects=True`, `max_redirects`, final URL,
-  and redirect history
+- GET/HEAD/POST redirects with `follow_redirects=True`, `max_redirects`, final
+  URL, redirect history, and POST method/body rules
 - grouped HTTP status constants
 
 Streaming, cookies, auth stripping, cross-origin policy, proxy logic, multipart

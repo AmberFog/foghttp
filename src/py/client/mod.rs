@@ -1,5 +1,6 @@
 mod future;
 mod options;
+mod redirects;
 mod runtime;
 mod transport;
 
