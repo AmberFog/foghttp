@@ -31,6 +31,9 @@ Development dependencies include `pytest`, `pytest-asyncio`, and `faker`.
 
 ## Usage
 
+More detailed documentation lives in [docs](docs/index.md). Runnable examples
+are in [examples](examples/README.md).
+
 ### Async
 
 ```python
