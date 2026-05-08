@@ -114,6 +114,9 @@ def sync_http_server() -> Iterator[str]:
             return
 
         def _write_response(self) -> None:
+            length = int(self.headers.get("content-length", "0"))
+            body = self.rfile.read(length) if length else b""
+
             redirect_status = _redirect_status(urlsplit(self.path).path)
             if redirect_status is not None:
                 self.send_response(redirect_status)
@@ -130,8 +133,6 @@ def sync_http_server() -> Iterator[str]:
                 self.end_headers()
                 return
 
-            length = int(self.headers.get("content-length", "0"))
-            body = self.rfile.read(length) if length else b""
             payload = _json_payload(request_line=self.requestline, body=body)
             content = b"" if self.command == "HEAD" else payload
             self.send_response(OK)

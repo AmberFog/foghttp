@@ -4,14 +4,13 @@ use crate::core::request::{build_request, RequestParts};
 use crate::core::response::collect_body;
 use crate::errors::{FogHttpError, FogHttpTimeoutError};
 use crate::messages::{redirect_limit_exceeded, REQUEST_TOTAL_TIMEOUT};
+use crate::py::client::redirects::{headers_without_body_fields, redirect_action, RedirectAction};
 use crate::py::response::RawResponse;
 use hyper::body::Incoming;
-use hyper::{Response, StatusCode};
+use hyper::Response;
 use pyo3::prelude::*;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-
-const REDIRECT_METHODS: [&str; 2] = ["GET", "HEAD"];
 
 pub struct TransportRequest {
     pub method: String,
@@ -25,47 +24,86 @@ pub struct TransportRequest {
 
 pub async fn send_request(client: HyperClient, parts: TransportRequest) -> PyResult<RawResponse> {
     let started = Instant::now();
-    let method = parts.method.to_uppercase();
-    let mut request_url = parts.url;
+    let mut state = RequestState::from(parts);
     let mut history = Vec::new();
 
     loop {
-        let request = build_request(RequestParts {
-            method: method.clone(),
-            url: request_url.clone(),
-            headers: parts.headers.clone(),
-            body: parts.body.clone(),
-        })?;
+        let request = build_request(state.request_parts())?;
 
         let response = tokio::time::timeout(
-            remaining_duration(parts.total_timeout, started),
+            remaining_duration(state.total_timeout, started),
             client.request(request),
         )
         .await
         .map_err(|_| FogHttpTimeoutError::new_err(REQUEST_TOTAL_TIMEOUT))?
         .map_err(|err| FogHttpError::new_err(err.to_string()))?;
 
-        let response_url = request_url.clone();
+        let response_url = state.url.clone();
         let mut raw = raw_response(response, response_url.clone(), started).await?;
-        let next_url = if parts.follow_redirects {
-            redirect_target(&method, &response_url, raw.status_code, &raw.headers)
+        let redirect = if state.follow_redirects {
+            redirect_action(&state.method, &response_url, raw.status_code, &raw.headers)
         } else {
             None
         };
 
-        let Some(next_url) = next_url else {
+        let Some(redirect) = redirect else {
             raw.history = history;
             return Ok(raw);
         };
-        if history.len() >= parts.max_redirects {
+        if history.len() >= state.max_redirects {
             return Err(FogHttpError::new_err(redirect_limit_exceeded(
-                parts.max_redirects,
+                state.max_redirects,
                 &response_url,
             )));
         }
 
         history.push(raw);
-        request_url = next_url;
+        state.apply_redirect(redirect);
+    }
+}
+
+struct RequestState {
+    method: String,
+    url: String,
+    headers: HashMap<String, String>,
+    body: Option<Vec<u8>>,
+    total_timeout: f64,
+    follow_redirects: bool,
+    max_redirects: usize,
+}
+
+impl RequestState {
+    fn request_parts(&self) -> RequestParts {
+        RequestParts {
+            method: self.method.clone(),
+            url: self.url.clone(),
+            headers: self.headers.clone(),
+            body: self.body.clone(),
+        }
+    }
+
+    fn apply_redirect(&mut self, redirect: RedirectAction) {
+        self.method = redirect.method;
+        self.url = redirect.url;
+
+        if !redirect.preserve_body {
+            self.headers = headers_without_body_fields(std::mem::take(&mut self.headers));
+            self.body = None;
+        }
+    }
+}
+
+impl From<TransportRequest> for RequestState {
+    fn from(parts: TransportRequest) -> Self {
+        Self {
+            method: parts.method.to_uppercase(),
+            url: parts.url,
+            headers: parts.headers,
+            body: parts.body,
+            total_timeout: parts.total_timeout,
+            follow_redirects: parts.follow_redirects,
+            max_redirects: parts.max_redirects,
+        }
     }
 }
 
@@ -92,58 +130,4 @@ async fn raw_response(
 
 fn remaining_duration(total_timeout: f64, started: Instant) -> Duration {
     Duration::from_secs_f64(total_timeout.max(0.0)).saturating_sub(started.elapsed())
-}
-
-fn redirect_target(
-    method: &str,
-    url: &str,
-    status_code: u16,
-    headers: &HashMap<String, String>,
-) -> Option<String> {
-    if !REDIRECT_METHODS.contains(&method) || !is_redirect_status(status_code) {
-        return None;
-    }
-
-    let location = headers.get("location")?;
-    Some(join_url(url, location))
-}
-
-fn is_redirect_status(status_code: u16) -> bool {
-    let Ok(status_code) = StatusCode::from_u16(status_code) else {
-        return false;
-    };
-
-    matches!(
-        status_code,
-        StatusCode::MOVED_PERMANENTLY
-            | StatusCode::FOUND
-            | StatusCode::SEE_OTHER
-            | StatusCode::TEMPORARY_REDIRECT
-            | StatusCode::PERMANENT_REDIRECT
-    )
-}
-
-fn join_url(url: &str, location: &str) -> String {
-    if location.starts_with("http://") || location.starts_with("https://") {
-        return location.to_owned();
-    }
-
-    let Some(scheme_end) = url.find("://") else {
-        return location.to_owned();
-    };
-    let origin_start = scheme_end + 3;
-    let path_start = url[origin_start..]
-        .find('/')
-        .map_or(url.len(), |index| origin_start + index);
-    let origin = &url[..path_start];
-
-    if location.starts_with('/') {
-        return format!("{origin}{location}");
-    }
-
-    let path = &url[path_start..];
-    let directory_end = path
-        .rfind('/')
-        .map_or(path_start, |index| path_start + index + 1);
-    format!("{}{}", &url[..directory_end], location)
 }
