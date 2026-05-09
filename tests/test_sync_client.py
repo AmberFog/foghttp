@@ -47,6 +47,49 @@ def test_post_string_content(sync_http_server: str, faker: Faker) -> None:
     assert response.json()["body"] == name
 
 
+def test_send_prepared_request(sync_http_server: str, faker: Faker) -> None:
+    payload = {"name": faker.name()}
+
+    with foghttp.Client() as client:
+        request = client.build_request("POST", sync_http_server + "/users", json=payload)
+        response = client.send(request)
+
+    assert response.request.method == "POST"
+    assert response.request.url == sync_http_server + "/users"
+    assert response.request.headers["content-type"] == "application/json"
+    assert response.json()["body"] == orjson.dumps(payload).decode()
+
+
+def test_send_manual_request(sync_http_server: str, faker: Faker) -> None:
+    content = faker.sentence().encode()
+    request = foghttp.Request(
+        "POST",
+        sync_http_server + "/users",
+        headers={"content-type": "text/plain"},
+        content=content,
+    )
+
+    with foghttp.Client() as client:
+        response = client.send(request)
+
+    assert response.request.method == "POST"
+    assert response.request.headers["content-type"] == "text/plain"
+    assert response.json()["body"] == content.decode()
+
+
+def test_send_allows_prepared_request_header_changes(sync_http_server: str) -> None:
+    with foghttp.Client() as client:
+        request = client.build_request(
+            "GET",
+            sync_http_server + "/headers/echo",
+            headers=[("x-repeat", "one")],
+        )
+        request.headers.add("x-repeat", "two")
+        response = client.send(request)
+
+    assert response.json()["x-repeat"] == ["one", "two"]
+
+
 def test_method_shortcuts(sync_http_server: str) -> None:
     with foghttp.Client() as client:
         head_response = client.head(sync_http_server + "/users")

@@ -45,7 +45,7 @@ def load_user(user_id: str) -> dict:
 ### Async Fan-Out
 
 `AsyncClient` is useful when you need many concurrent buffered requests with
-connection limits and pool backpressure.
+global connection limits and pool backpressure.
 
 ```python
 import asyncio
@@ -54,7 +54,7 @@ import foghttp
 
 
 async def fetch_many(urls: list[str]) -> list[dict]:
-    limits = foghttp.Limits(max_connections=100, max_connections_per_host=20)
+    limits = foghttp.Limits(max_connections=100, max_pending_acquires=1000)
 
     async with foghttp.AsyncClient(limits=limits) as client:
         responses = await asyncio.gather(*(client.get(url) for url in urls))
@@ -111,6 +111,22 @@ print(response.request.method, response.request.url)
 print(response.elapsed)
 print(response.http_version)
 print(response.history)
+```
+
+### Inspecting Prepared Requests
+
+Use `build_request()` when application code needs to inspect or adjust headers,
+URL, or body bytes before sending a buffered request.
+
+```python
+with foghttp.Client() as client:
+    request = client.build_request(
+        "POST",
+        "https://api.example.com/users",
+        json={"name": "Ada"},
+    )
+    request.headers["x-trace"] = "manual"
+    response = client.send(request)
 ```
 
 ## Usable With Constraints
