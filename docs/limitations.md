@@ -25,6 +25,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - redirect history
 - GET/HEAD/POST redirects
 - global pool acquire limit, pending acquire limit, and basic pool stats
+- advanced `runtime_workers` tuning for the per-client Tokio runtime
 - HTTP/1.1 over HTTP and HTTPS
 
 ## Not Implemented Yet
@@ -56,6 +57,7 @@ Use FogHTTP today when:
 - redirects are simple and do not require browser-like cookie/auth policy
 - sync and async clients with explicit lifecycle are enough
 - global connection backpressure is enough for your pool needs
+- you can reuse clients instead of creating many short-lived runtime instances
 
 Wait before using FogHTTP when:
 

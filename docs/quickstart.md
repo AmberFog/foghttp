@@ -214,6 +214,23 @@ async with foghttp.AsyncClient(limits=limits, timeouts=timeouts) as client:
     print(client.stats())
 ```
 
+## Runtime Workers
+
+FogHTTP creates a Tokio runtime per client. By default, the runtime worker count
+is selected from `Limits.max_connections` and capped at `16` workers.
+
+Most applications should keep the default and reuse long-lived clients. For
+advanced tuning, pass `runtime_workers=` explicitly:
+
+```python
+with foghttp.Client(runtime_workers=4) as client:
+    response = client.get("https://httpbin.org/get")
+```
+
+`runtime_workers` must be between `1` and `32`. If the argument is not provided,
+FogHTTP also accepts the `FOGHTTP_RUNTIME_WORKERS` environment variable for
+benchmarking and operational overrides.
+
 ## Status Codes
 
 Status code constants are grouped by response class.

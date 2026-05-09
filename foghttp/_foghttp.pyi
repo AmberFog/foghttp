@@ -84,6 +84,7 @@ class RawClient:
         follow_redirects: bool,
         max_redirects: int,
         trust_env: bool,
+        runtime_workers: int | None,
     ) -> None: ...
     def request(
         self,

@@ -46,6 +46,7 @@ class AsyncClient:
         max_redirects: int = DEFAULT_MAX_REDIRECTS,
         cookies: bool = False,
         trust_env: bool = False,
+        runtime_workers: int | None = None,
         observability: bool = True,
     ) -> None:
         self._limits = limits or Limits()
@@ -53,6 +54,7 @@ class AsyncClient:
         validate_client_options(
             cookies=cookies,
             max_redirects=max_redirects,
+            runtime_workers=runtime_workers,
             trust_env=trust_env,
             http_versions=http_versions,
         )
@@ -66,6 +68,7 @@ class AsyncClient:
             timeouts=self._timeouts,
             follow_redirects=follow_redirects,
             max_redirects=max_redirects,
+            runtime_workers=runtime_workers,
             trust_env=trust_env,
         )
         self._observability = observability
