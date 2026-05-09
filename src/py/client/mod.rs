@@ -5,7 +5,9 @@ mod runtime;
 mod transport;
 
 use crate::core::client::{build_client, ClientOptions, HyperClient};
+use crate::core::headers::HeaderPairs;
 use crate::core::metrics::Metrics;
+use crate::errors::FogHttpError;
 use crate::py::client::future::complete_python_future;
 use crate::py::client::options::validate_unsupported_options;
 use crate::py::client::runtime::build_runtime;
@@ -14,14 +16,13 @@ use crate::py::response::RawResponse;
 use crate::py::stats::RawStats;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
 #[pyclass]
 pub struct RawClient {
     client: HyperClient,
-    runtime: Runtime,
+    runtime: Option<Runtime>,
     metrics: Arc<Metrics>,
     follow_redirects: bool,
     max_redirects: usize,
@@ -53,7 +54,7 @@ impl RawClient {
 
         Ok(Self {
             client,
-            runtime,
+            runtime: Some(runtime),
             metrics: Arc::new(Metrics::default()),
             follow_redirects,
             max_redirects,
@@ -66,15 +67,16 @@ impl RawClient {
         py: Python<'_>,
         method: String,
         url: String,
-        headers: HashMap<String, String>,
+        headers: HeaderPairs,
         body: Option<Vec<u8>>,
         _connect_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<RawResponse> {
         self.metrics.request_started();
+        let runtime = self.runtime()?;
 
         let result = py.detach(|| {
-            self.runtime.block_on(send_request(
+            runtime.block_on(send_request(
                 self.client.clone(),
                 TransportRequest {
                     method,
@@ -98,7 +100,7 @@ impl RawClient {
         py: Python<'_>,
         method: String,
         url: String,
-        headers: HashMap<String, String>,
+        headers: HeaderPairs,
         body: Option<Vec<u8>>,
         _connect_timeout: f64,
         total_timeout: f64,
@@ -112,9 +114,10 @@ impl RawClient {
         let metrics = Arc::clone(&self.metrics);
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
+        let runtime = self.runtime()?;
 
         metrics.request_started();
-        self.runtime.spawn(async move {
+        runtime.spawn(async move {
             let result = send_request(
                 client,
                 TransportRequest {
@@ -137,5 +140,21 @@ impl RawClient {
 
     fn stats(&self) -> RawStats {
         self.metrics.snapshot().into()
+    }
+}
+
+impl RawClient {
+    fn runtime(&self) -> PyResult<&Runtime> {
+        self.runtime
+            .as_ref()
+            .ok_or_else(|| FogHttpError::new_err("client runtime is closed"))
+    }
+}
+
+impl Drop for RawClient {
+    fn drop(&mut self) {
+        if let Some(runtime) = self.runtime.take() {
+            runtime.shutdown_background();
+        }
     }
 }

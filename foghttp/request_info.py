@@ -1,12 +1,12 @@
-from collections.abc import Mapping
+__all__ = ("RequestInfo",)
+
 from dataclasses import dataclass
 
-
-__all__ = ("RequestInfo",)
+from .headers import Headers
 
 
 @dataclass(frozen=True, slots=True)
 class RequestInfo:
     method: str
     url: str
-    headers: Mapping[str, str]
+    headers: Headers

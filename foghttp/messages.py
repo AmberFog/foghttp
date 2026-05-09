@@ -1,6 +1,3 @@
-from http import HTTPStatus
-
-
 __all__ = (
     "BODY_CONTENT_AND_JSON_CONFLICT",
     "CLIENT_CLOSED",
@@ -14,6 +11,8 @@ __all__ = (
     "http_status_error",
     "http_status_reason",
 )
+
+from http import HTTPStatus
 
 
 BODY_CONTENT_AND_JSON_CONFLICT = "pass either content or json, not both"

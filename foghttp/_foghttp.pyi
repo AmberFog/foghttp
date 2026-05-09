@@ -1,4 +1,7 @@
-from collections.abc import Mapping
+from collections.abc import Sequence
+from typing import TypeAlias
+
+HeaderPairs: TypeAlias = Sequence[tuple[str, str]]
 
 class FogHttpError(Exception): ...
 class FogHttpTimeoutError(FogHttpError): ...
@@ -9,13 +12,13 @@ class RawRequestInfo:
     @property
     def url(self) -> str: ...
     @property
-    def headers(self) -> Mapping[str, str]: ...
+    def headers(self) -> HeaderPairs: ...
 
 class RawResponse:
     @property
     def status_code(self) -> int: ...
     @property
-    def headers(self) -> Mapping[str, str]: ...
+    def headers(self) -> HeaderPairs: ...
     @property
     def content(self) -> bytes: ...
     @property
@@ -65,7 +68,7 @@ class RawClient:
         self,
         method: str,
         url: str,
-        headers: dict[str, str],
+        headers: HeaderPairs,
         body: bytes | None,
         connect_timeout: float,
         total_timeout: float,
@@ -74,7 +77,7 @@ class RawClient:
         self,
         method: str,
         url: str,
-        headers: dict[str, str],
+        headers: HeaderPairs,
         body: bytes | None,
         connect_timeout: float,
         total_timeout: float,

@@ -1,3 +1,5 @@
+import gc
+
 from faker import Faker
 import orjson
 import pytest
@@ -69,6 +71,21 @@ async def test_closed_client_rejects_requests(http_server: str) -> None:
 
     with pytest.raises(foghttp.ClientClosedError):
         await client.get(http_server)
+
+
+async def test_close_is_idempotent() -> None:
+    client = foghttp.AsyncClient()
+
+    await client.aclose()
+    await client.aclose()
+
+
+async def test_unclosed_client_warns() -> None:
+    client = foghttp.AsyncClient()
+
+    with pytest.warns(foghttp.UnclosedClientError, match="was not closed"):
+        del client
+        gc.collect()
 
 
 async def test_stats_track_requests(http_server: str) -> None:

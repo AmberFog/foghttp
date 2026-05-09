@@ -128,6 +128,25 @@ For redirects, `response.request` describes the final request, and each item in
 GET https://api.example.com/users/123 returned 404 Not Found
 ```
 
+## Headers
+
+`response.headers` and `response.request.headers` are `foghttp.Headers`
+objects. Header lookup is case-insensitive, and repeated values are preserved.
+
+```python
+cookies = response.headers.get_list("set-cookie")
+
+headers = foghttp.Headers(
+    [
+        ("x-repeat", "one"),
+        ("x-repeat", "two"),
+    ],
+)
+
+with foghttp.Client() as client:
+    response = client.get("https://httpbin.org/headers", headers=headers)
+```
+
 ## Pool Limits and Stats
 
 ```python

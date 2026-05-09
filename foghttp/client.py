@@ -1,3 +1,5 @@
+__all__ = ("Client",)
+
 from collections.abc import Mapping
 import threading
 import time
@@ -12,6 +14,7 @@ from ._client.request import prepare_request
 from ._client.response import response_from_raw
 from ._client.stats import stats_from_raw
 from .errors import ClientClosedError, TimeoutError, UnclosedClientError
+from .headers import HeaderSource
 from .limits import Limits
 from .messages import (
     CLIENT_CLOSED,
@@ -23,9 +26,6 @@ from .pool_stats import PoolStats
 from .response import Response
 from .timeouts import Timeouts
 from .types import HttpVersions
-
-
-__all__ = ("Client",)
 
 
 if TYPE_CHECKING:
@@ -94,7 +94,7 @@ class Client:
         method: str,
         url: str,
         *,
-        headers: Mapping[str, str] | None = None,
+        headers: HeaderSource = None,
         params: Mapping[str, Any] | None = None,
         content: bytes | str | None = None,
         json: Any = None,

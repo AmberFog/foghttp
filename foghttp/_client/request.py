@@ -4,18 +4,19 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..body import encode_body
+from ..headers import HeaderPairs, Headers, HeaderSource
 from ..url import merge_params
 
 
 def prepare_request(
     *,
     url: str,
-    headers: Mapping[str, str] | None,
+    headers: HeaderSource,
     params: Mapping[str, Any] | None,
     content: bytes | str | None,
     json: Any,
-) -> tuple[str, dict[str, str], bytes | None]:
+) -> tuple[str, HeaderPairs, bytes | None]:
     request_url = merge_params(url, params)
-    request_headers = dict(headers or {})
+    request_headers = Headers(headers)
     body = encode_body(content=content, json=json, headers=request_headers)
-    return request_url, request_headers, body
+    return request_url, request_headers.multi_items(), body

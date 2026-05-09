@@ -1,5 +1,5 @@
 use crate::core::client::HyperClient;
-use crate::core::headers::response_headers;
+use crate::core::headers::{response_headers, HeaderPairs};
 use crate::core::request::{build_request, RequestParts};
 use crate::core::response::collect_body;
 use crate::errors::{FogHttpError, FogHttpTimeoutError};
@@ -9,13 +9,12 @@ use crate::py::response::{RawRequestInfo, RawResponse};
 use hyper::body::Incoming;
 use hyper::Response;
 use pyo3::prelude::*;
-use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 pub struct TransportRequest {
     pub method: String,
     pub url: String,
-    pub headers: HashMap<String, String>,
+    pub headers: HeaderPairs,
     pub body: Option<Vec<u8>>,
     pub total_timeout: f64,
     pub follow_redirects: bool,
@@ -66,7 +65,7 @@ pub async fn send_request(client: HyperClient, parts: TransportRequest) -> PyRes
 struct RequestState {
     method: String,
     url: String,
-    headers: HashMap<String, String>,
+    headers: HeaderPairs,
     body: Option<Vec<u8>>,
     total_timeout: f64,
     follow_redirects: bool,

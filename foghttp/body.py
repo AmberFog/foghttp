@@ -1,3 +1,6 @@
+__all__ = ("encode_body",)
+
+from collections.abc import MutableMapping
 from typing import Any
 
 import orjson
@@ -5,14 +8,11 @@ import orjson
 from .messages import BODY_CONTENT_AND_JSON_CONFLICT
 
 
-__all__ = ("encode_body",)
-
-
 def encode_body(
     *,
     content: bytes | str | None,
     json: Any,
-    headers: dict[str, str],
+    headers: MutableMapping[str, str],
 ) -> bytes | None:
     if content is not None and json is not None:
         raise ValueError(BODY_CONTENT_AND_JSON_CONFLICT)

@@ -1,17 +1,16 @@
 use crate::core::client::RequestBody;
-use crate::core::headers::request_headers;
+use crate::core::headers::{request_headers, HeaderPairs};
 use crate::errors::FogHttpError;
 use bytes::Bytes;
 use http_body_util::Full;
 use hyper::{Method, Request, Uri};
 use pyo3::prelude::*;
-use std::collections::HashMap;
 use std::str::FromStr;
 
 pub struct RequestParts {
     pub method: String,
     pub url: String,
-    pub headers: HashMap<String, String>,
+    pub headers: HeaderPairs,
     pub body: Option<Vec<u8>>,
 }
 

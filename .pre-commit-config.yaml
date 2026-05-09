@@ -1,4 +1,12 @@
 repos:
+  - repo: local
+    hooks:
+      - id: check-all-position
+        name: check __all__ position
+        entry: python scripts/check_all_position.py
+        language: python
+        types: [python]
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:

@@ -28,7 +28,7 @@ Repository = "https://github.com/AmberFog/foghttp"
 Issues = "https://github.com/AmberFog/foghttp/issues"
 
 [project.optional-dependencies]
-dev = ["faker>=33", "pytest>=8", "pytest-asyncio>=0.23"]
+dev = ["coverage[toml]>=7,<8", "faker>=33", "pytest>=8", "pytest-asyncio>=0.23"]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
@@ -38,6 +38,14 @@ python-source = "."
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["foghttp"]
+
+[tool.coverage.report]
+fail_under = 98
+show_missing = true
 
 [tool.mypy]
 python_version = "3.11"

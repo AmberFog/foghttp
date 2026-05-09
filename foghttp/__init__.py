@@ -7,6 +7,7 @@ __all__ = (
     "ConnectTimeout",
     "FogHTTPError",
     "HTTPStatusError",
+    "Headers",
     "LifecycleError",
     "Limits",
     "PoolStats",
@@ -36,6 +37,7 @@ from .errors import (
     TimeoutError,
     UnclosedClientError,
 )
+from .headers import Headers
 from .limits import Limits
 from .pool_stats import PoolStats
 from .request_info import RequestInfo
