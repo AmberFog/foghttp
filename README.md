@@ -27,7 +27,15 @@ Runtime dependencies:
 - Python `>=3.11`
 - `orjson>=3.11,<4`
 
-Development dependencies include `pytest`, `pytest-asyncio`, and `faker`.
+Development dependencies include `pytest`, `pytest-asyncio`, `coverage`, and
+`faker`.
+
+## Tests and coverage
+
+```bash
+uv run --extra dev coverage run -m pytest
+uv run --extra dev coverage report -m
+```
 
 ## Usage
 
@@ -91,6 +99,24 @@ Each response includes lightweight request metadata without the request body:
 print(response.request.method)
 print(response.request.url)
 print(response.request.headers)
+```
+
+### Headers
+
+`response.headers` and `response.request.headers` are `foghttp.Headers`
+objects. Header lookup is case-insensitive, while repeated values remain
+available for headers such as `set-cookie`.
+
+```python
+cookies = response.headers.get_list("set-cookie")
+
+headers = foghttp.Headers(
+    [
+        ("x-repeat", "one"),
+        ("x-repeat", "two"),
+    ],
+)
+response = client.get("https://example.com/echo", headers=headers)
 ```
 
 ### JSON body
@@ -171,6 +197,7 @@ from foghttp.status_codes.success import OK
 - global acquire backpressure via `max_connections`
 - `stats()`
 - HTTP/1.1 over HTTP and HTTPS
+- case-insensitive `Headers` with repeated header values
 - GET/HEAD/POST redirects with `follow_redirects=True`, `max_redirects`, final
   URL, redirect history, and POST method/body rules
 - grouped HTTP status constants

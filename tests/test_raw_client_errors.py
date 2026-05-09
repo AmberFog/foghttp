@@ -22,7 +22,7 @@ def test_sync_raw_timeout_maps_to_public_timeout() -> None:
             raw_client=TimeoutRawClient(),
             method="GET",
             url="http://example.com",
-            headers={},
+            headers=[],
             body=None,
             timeouts=Timeouts(),
         )
@@ -34,7 +34,7 @@ async def test_async_raw_timeout_maps_to_public_timeout() -> None:
             raw_client=TimeoutRawClient(),
             method="GET",
             url="http://example.com",
-            headers={},
+            headers=[],
             body=None,
             timeouts=Timeouts(),
         )

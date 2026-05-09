@@ -1,5 +1,6 @@
 use hyper::StatusCode;
-use std::collections::HashMap;
+
+use crate::core::headers::HeaderPairs;
 
 const METHOD_GET: &str = "GET";
 const METHOD_HEAD: &str = "HEAD";
@@ -15,10 +16,10 @@ pub fn redirect_action(
     method: &str,
     url: &str,
     status_code: u16,
-    headers: &HashMap<String, String>,
+    headers: &[(String, String)],
 ) -> Option<RedirectAction> {
     let status_code = redirect_status_code(status_code)?;
-    let location = headers.get("location")?;
+    let location = header_value(headers, "location")?;
     let (next_method, preserve_body) = redirect_method(method, status_code)?;
 
     Some(RedirectAction {
@@ -28,7 +29,7 @@ pub fn redirect_action(
     })
 }
 
-pub fn headers_without_body_fields(headers: HashMap<String, String>) -> HashMap<String, String> {
+pub fn headers_without_body_fields(headers: HeaderPairs) -> HeaderPairs {
     headers
         .into_iter()
         .filter(|(name, _value)| {
@@ -39,6 +40,14 @@ pub fn headers_without_body_fields(headers: HashMap<String, String>) -> HashMap<
             )
         })
         .collect()
+}
+
+fn header_value<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .rev()
+        .find(|(header_name, _value)| header_name.eq_ignore_ascii_case(name))
+        .map(|(_name, value)| value.as_str())
 }
 
 fn redirect_status_code(status_code: u16) -> Option<StatusCode> {

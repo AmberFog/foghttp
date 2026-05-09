@@ -1,7 +1,6 @@
-from dataclasses import dataclass
-
-
 __all__ = ("Timeouts",)
+
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True, slots=True)

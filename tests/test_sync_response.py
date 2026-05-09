@@ -5,6 +5,7 @@ from foghttp.messages import http_status_error
 from foghttp.status_codes.client_error import NOT_FOUND
 from foghttp.status_codes.redirect import FOUND
 from foghttp.status_codes.server_error import INTERNAL_SERVER_ERROR
+from foghttp.status_codes.success import OK
 
 
 def test_raise_for_status_includes_request_and_reason(sync_http_server: str) -> None:
@@ -16,6 +17,13 @@ def test_raise_for_status_includes_request_and_reason(sync_http_server: str) -> 
 
     assert str(exc_info.value) == f"GET {sync_http_server}/status/{NOT_FOUND} returned 404 Not Found"
     assert exc_info.value.response is response
+
+
+def test_raise_for_status_allows_success(sync_http_server: str) -> None:
+    with foghttp.Client() as client:
+        response = client.get(f"{sync_http_server}/status/{OK}")
+
+    response.raise_for_status()
 
 
 def test_raise_for_status_handles_server_errors(sync_http_server: str) -> None:

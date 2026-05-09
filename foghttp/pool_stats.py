@@ -1,7 +1,6 @@
-from dataclasses import dataclass
-
-
 __all__ = ("PoolStats",)
+
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True, slots=True)

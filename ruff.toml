@@ -25,6 +25,7 @@ ignore = [
 "**/__init__.py" = ["F401", "F403"]
 "docs/**/*.py" = ["T201"]
 "examples/**/*.py" = ["T201"]
+"scripts/**/*.py" = ["INP001"]
 "tests/**/test_*.py" = ["ARG001", "F401", "S101", "S311", "F811"]
 "tests/**/conftest.py" = ["ARG001"]
 "**/*_controller.py" = ["RUF012"]

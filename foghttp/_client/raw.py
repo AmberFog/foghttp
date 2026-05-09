@@ -4,6 +4,8 @@ __all__ = (
     "send_raw_request_async",
 )
 
+from collections.abc import Sequence
+
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
 from ..errors import RequestError, TimeoutError
@@ -36,7 +38,7 @@ def send_raw_request(
     raw_client: _foghttp.RawClient,
     method: str,
     url: str,
-    headers: dict[str, str],
+    headers: Sequence[tuple[str, str]],
     body: bytes | None,
     timeouts: Timeouts,
 ) -> _foghttp.RawResponse:
@@ -60,7 +62,7 @@ async def send_raw_request_async(
     raw_client: _foghttp.RawClient,
     method: str,
     url: str,
-    headers: dict[str, str],
+    headers: Sequence[tuple[str, str]],
     body: bytes | None,
     timeouts: Timeouts,
 ) -> _foghttp.RawResponse:

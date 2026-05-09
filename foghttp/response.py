@@ -1,22 +1,21 @@
-from collections.abc import Mapping
+__all__ = ("Response",)
+
 from dataclasses import dataclass
 from typing import Any
 
 import orjson
 
 from .errors import HTTPStatusError
+from .headers import Headers
 from .messages import http_status_error
 from .request_info import RequestInfo
 from .status_codes.client_error import MIN_CLIENT_ERROR_STATUS_CODE
 
 
-__all__ = ("Response",)
-
-
 @dataclass(frozen=True, slots=True)
 class Response:
     status_code: int
-    headers: Mapping[str, str]
+    headers: Headers
     content: bytes
     url: str
     request: RequestInfo
