@@ -41,6 +41,7 @@ impl RawClient {
         follow_redirects: bool,
         max_redirects: usize,
         trust_env: bool,
+        runtime_workers: Option<usize>,
     ) -> PyResult<Self> {
         validate_unsupported_options(trust_env)?;
 
@@ -50,7 +51,7 @@ impl RawClient {
             keepalive,
             connect_timeout,
         });
-        let runtime = build_runtime(max_connections)?;
+        let runtime = build_runtime(max_connections, runtime_workers)?;
 
         Ok(Self {
             client,

@@ -19,18 +19,23 @@ def create_raw_client(
     timeouts: Timeouts,
     follow_redirects: bool,
     max_redirects: int,
+    runtime_workers: int | None,
     trust_env: bool,
 ) -> _foghttp.RawClient:
-    return _foghttp.RawClient(
-        limits.max_connections,
-        limits.max_connections_per_host,
-        limits.idle_timeout,
-        limits.keepalive,
-        timeouts.connect,
-        follow_redirects,
-        max_redirects,
-        trust_env,
-    )
+    try:
+        return _foghttp.RawClient(
+            limits.max_connections,
+            limits.max_connections_per_host,
+            limits.idle_timeout,
+            limits.keepalive,
+            timeouts.connect,
+            follow_redirects,
+            max_redirects,
+            trust_env,
+            runtime_workers,
+        )
+    except _foghttp.FogHttpError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def send_raw_request(
