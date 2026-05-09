@@ -119,6 +119,19 @@ headers = foghttp.Headers(
 response = client.get("https://example.com/echo", headers=headers)
 ```
 
+### URL
+
+`foghttp.URL` provides normalized URL parsing for code that needs origin-aware
+logic.
+
+```python
+url = foghttp.URL("https://Example.COM:443/users")
+
+print(str(url))
+print(url.origin)
+print(url.is_same_origin("https://example.com/profile"))
+```
+
 ### JSON body
 
 ```python
@@ -198,6 +211,7 @@ from foghttp.status_codes.success import OK
 - `stats()`
 - HTTP/1.1 over HTTP and HTTPS
 - case-insensitive `Headers` with repeated header values
+- normalized `URL` model with origin comparison and relative joins
 - GET/HEAD/POST redirects with `follow_redirects=True`, `max_redirects`, final
   URL, redirect history, and POST method/body rules
 - grouped HTTP status constants

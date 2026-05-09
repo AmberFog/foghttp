@@ -2,6 +2,7 @@ use crate::core::client::HyperClient;
 use crate::core::headers::{response_headers, HeaderPairs};
 use crate::core::request::{build_request, RequestParts};
 use crate::core::response::collect_body;
+use crate::core::url::HttpUrl;
 use crate::errors::{FogHttpError, FogHttpTimeoutError};
 use crate::messages::{redirect_limit_exceeded, REQUEST_TOTAL_TIMEOUT};
 use crate::py::client::redirects::{headers_without_body_fields, redirect_action, RedirectAction};
@@ -23,7 +24,7 @@ pub struct TransportRequest {
 
 pub async fn send_request(client: HyperClient, parts: TransportRequest) -> PyResult<RawResponse> {
     let started = Instant::now();
-    let mut state = RequestState::from(parts);
+    let mut state = RequestState::try_from(parts)?;
     let mut history = Vec::new();
 
     loop {
@@ -101,17 +102,19 @@ impl RequestState {
     }
 }
 
-impl From<TransportRequest> for RequestState {
-    fn from(parts: TransportRequest) -> Self {
-        Self {
+impl RequestState {
+    fn try_from(parts: TransportRequest) -> PyResult<Self> {
+        let url = HttpUrl::parse(&parts.url).map_err(FogHttpError::new_err)?;
+
+        Ok(Self {
             method: parts.method.to_uppercase(),
-            url: parts.url,
+            url: url.as_str().to_owned(),
             headers: parts.headers,
             body: parts.body,
             total_timeout: parts.total_timeout,
             follow_redirects: parts.follow_redirects,
             max_redirects: parts.max_redirects,
-        }
+        })
     }
 }
 

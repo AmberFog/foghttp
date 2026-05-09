@@ -16,3 +16,4 @@ hyper-rustls = { version = "0.27.3", default-features = false, features = ["http
 hyper-util = { version = "0.1.10", features = ["client", "client-legacy", "http1", "tokio"] }
 pyo3 = { version = "0.28.3", features = ["extension-module"] }
 tokio = { version = "1.41.1", features = ["rt-multi-thread", "time"] }
+url = "2.5.4"
