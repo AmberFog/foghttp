@@ -1,6 +1,7 @@
 use hyper::StatusCode;
 
 use crate::core::headers::HeaderPairs;
+use crate::core::url::HttpUrl;
 
 const METHOD_GET: &str = "GET";
 const METHOD_HEAD: &str = "HEAD";
@@ -21,11 +22,12 @@ pub fn redirect_action(
     let status_code = redirect_status_code(status_code)?;
     let location = header_value(headers, "location")?;
     let (next_method, preserve_body) = redirect_method(method, status_code)?;
+    let url = HttpUrl::parse(url).ok()?.join(location).ok()?;
 
     Some(RedirectAction {
         method: next_method.to_owned(),
         preserve_body,
-        url: join_url(url, location),
+        url: url.as_str().to_owned(),
     })
 }
 
@@ -82,29 +84,4 @@ fn redirect_method(method: &str, status_code: StatusCode) -> Option<(&'static st
         }
         _ => None,
     }
-}
-
-fn join_url(url: &str, location: &str) -> String {
-    if location.starts_with("http://") || location.starts_with("https://") {
-        return location.to_owned();
-    }
-
-    let Some(scheme_end) = url.find("://") else {
-        return location.to_owned();
-    };
-    let origin_start = scheme_end + 3;
-    let path_start = url[origin_start..]
-        .find('/')
-        .map_or(url.len(), |index| origin_start + index);
-    let origin = &url[..path_start];
-
-    if location.starts_with('/') {
-        return format!("{origin}{location}");
-    }
-
-    let path = &url[path_start..];
-    let directory_end = path
-        .rfind('/')
-        .map_or(path_start, |index| path_start + index + 1);
-    format!("{}{}", &url[..directory_end], location)
 }

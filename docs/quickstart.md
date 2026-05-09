@@ -147,6 +147,19 @@ with foghttp.Client() as client:
     response = client.get("https://httpbin.org/headers", headers=headers)
 ```
 
+## URL
+
+Use `foghttp.URL` when application code needs normalized URL parts or origin
+comparison.
+
+```python
+url = foghttp.URL("https://Example.COM:443/users")
+
+print(str(url))
+print(url.origin)
+print(url.is_same_origin("https://example.com/profile"))
+```
+
 ## Pool Limits and Stats
 
 ```python

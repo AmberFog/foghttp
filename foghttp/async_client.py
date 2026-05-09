@@ -27,6 +27,7 @@ from .pool_stats import PoolStats
 from .response import Response
 from .timeouts import Timeouts
 from .types import HttpVersions
+from .url import URL
 
 
 if TYPE_CHECKING:
@@ -92,7 +93,7 @@ class AsyncClient:
     async def request(
         self,
         method: str,
-        url: str,
+        url: str | URL,
         *,
         headers: HeaderSource = None,
         params: Mapping[str, Any] | None = None,

@@ -1,6 +1,7 @@
 """FogHTTP public API."""
 
 __all__ = (
+    "URL",
     "AsyncClient",
     "Client",
     "ClientClosedError",
@@ -43,3 +44,4 @@ from .pool_stats import PoolStats
 from .request_info import RequestInfo
 from .response import Response
 from .timeouts import Timeouts
+from .url import URL

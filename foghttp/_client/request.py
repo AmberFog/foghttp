@@ -5,12 +5,12 @@ from typing import Any
 
 from ..body import encode_body
 from ..headers import HeaderPairs, Headers, HeaderSource
-from ..url import merge_params
+from ..url import URL, merge_params
 
 
 def prepare_request(
     *,
-    url: str,
+    url: str | URL,
     headers: HeaderSource,
     params: Mapping[str, Any] | None,
     content: bytes | str | None,
