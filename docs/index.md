@@ -14,7 +14,7 @@ features:
     details: "Use Client in scripts and workers, or AsyncClient for high-concurrency asyncio workloads."
 
   - title: "Focused MVP"
-    details: "FogHTTP is intentionally small today: buffered responses, JSON, redirects, pool limits, and request metadata."
+    details: "FogHTTP is intentionally small today: buffered responses, JSON, redirects, prepared requests, global pool limits, and request metadata."
 ---
 
 # FogHTTP Documentation
@@ -39,6 +39,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - async fan-out over JSON HTTP APIs
 - sync CLI scripts and background workers
 - redirect-aware requests with final URL and history
+- prepared requests that can be inspected before sending
 - simple benchmarks against other buffered HTTP clients
 
 ## Not Yet

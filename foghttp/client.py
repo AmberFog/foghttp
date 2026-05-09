@@ -23,6 +23,7 @@ from .messages import (
     UNCLOSED_CLIENT,
 )
 from .pool_stats import PoolStats
+from .request import Request
 from .response import Response
 from .timeouts import Timeouts
 from .types import HttpVersions
@@ -102,8 +103,28 @@ class Client:
         timeout: Timeouts | None = None,
     ) -> Response:
         self._ensure_open()
-        timeouts = timeout or self._timeouts
-        request_url, request_headers, body = prepare_request(
+        request = self.build_request(
+            method,
+            url,
+            headers=headers,
+            params=params,
+            content=content,
+            json=json,
+        )
+        return self.send(request, timeout=timeout)
+
+    def build_request(
+        self,
+        method: str,
+        url: str | URL,
+        *,
+        headers: HeaderSource = None,
+        params: Mapping[str, Any] | None = None,
+        content: bytes | str | None = None,
+        json: Any = None,
+    ) -> Request:
+        return prepare_request(
+            method=method,
             url=url,
             headers=headers,
             params=params,
@@ -111,6 +132,9 @@ class Client:
             json=json,
         )
 
+    def send(self, request: Request, *, timeout: Timeouts | None = None) -> Response:
+        self._ensure_open()
+        timeouts = timeout or self._timeouts
         started = time.perf_counter()
         self._acquire_connection(timeouts.pool)
         try:
@@ -119,10 +143,10 @@ class Client:
                 raise ClientClosedError(CLIENT_CLOSED)
             raw = send_raw_request(
                 raw_client=raw_client,
-                method=method,
-                url=request_url,
-                headers=request_headers,
-                body=body,
+                method=request.method,
+                url=request.url,
+                headers=request.headers.multi_items(),
+                body=request.content,
                 timeouts=timeouts,
             )
         finally:
@@ -130,22 +154,22 @@ class Client:
 
         return response_from_raw(raw=raw, started=started)
 
-    def get(self, url: str, **kwargs: Any) -> Response:
+    def get(self, url: str | URL, **kwargs: Any) -> Response:
         return self.request("GET", url, **kwargs)
 
-    def head(self, url: str, **kwargs: Any) -> Response:
+    def head(self, url: str | URL, **kwargs: Any) -> Response:
         return self.request("HEAD", url, **kwargs)
 
-    def post(self, url: str, **kwargs: Any) -> Response:
+    def post(self, url: str | URL, **kwargs: Any) -> Response:
         return self.request("POST", url, **kwargs)
 
-    def put(self, url: str, **kwargs: Any) -> Response:
+    def put(self, url: str | URL, **kwargs: Any) -> Response:
         return self.request("PUT", url, **kwargs)
 
-    def patch(self, url: str, **kwargs: Any) -> Response:
+    def patch(self, url: str | URL, **kwargs: Any) -> Response:
         return self.request("PATCH", url, **kwargs)
 
-    def delete(self, url: str, **kwargs: Any) -> Response:
+    def delete(self, url: str | URL, **kwargs: Any) -> Response:
         return self.request("DELETE", url, **kwargs)
 
     def stats(self) -> PoolStats:

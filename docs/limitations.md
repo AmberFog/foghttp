@@ -19,9 +19,12 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - buffered responses
 - `response.text`, `response.json()`, `response.raise_for_status()`
 - lightweight `response.request`
+- prepared `Request` objects with `build_request()` and `send()`
+- case-insensitive `Headers` with repeated values
+- normalized `URL` with origin comparison and relative joins
 - redirect history
 - GET/HEAD/POST redirects
-- pool limits and basic pool stats
+- global pool acquire limit, pending acquire limit, and basic pool stats
 - HTTP/1.1 over HTTP and HTTPS
 
 ## Not Implemented Yet
@@ -40,6 +43,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | Compression decoding | Not available |
 | `base_url` | Not available |
 | default client headers | Not available |
+| active per-origin connection limits | `max_connections_per_host` is accepted but is not a full active per-origin limit yet |
+| separate read/write timeout semantics | `Timeouts.read` and `Timeouts.write` exist, but buffered requests are still governed by total timeout behavior |
 
 ## Practical Guidance
 
@@ -50,6 +55,7 @@ Use FogHTTP today when:
 - requests are JSON-heavy
 - redirects are simple and do not require browser-like cookie/auth policy
 - sync and async clients with explicit lifecycle are enough
+- global connection backpressure is enough for your pool needs
 
 Wait before using FogHTTP when:
 
@@ -59,6 +65,7 @@ Wait before using FogHTTP when:
 - you rely on cookies across requests
 - you need multipart form-data
 - you need mature timeout semantics for connect/read/write separately
+- you need strict active per-host connection limits
 
 ## Error Surface
 

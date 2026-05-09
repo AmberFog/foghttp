@@ -3,7 +3,7 @@
 ## Install for Development
 
 ```bash
-uv run maturin develop
+uv run --with "maturin>=1.7,<2" maturin develop
 ```
 
 Runtime requirements:
@@ -128,6 +128,37 @@ For redirects, `response.request` describes the final request, and each item in
 GET https://api.example.com/users/123 returned 404 Not Found
 ```
 
+## Prepared Requests
+
+Build a `foghttp.Request` separately when application code needs to inspect or
+adjust the request before sending it.
+
+::: code-group
+
+```python [Async]
+async with foghttp.AsyncClient() as client:
+    request = client.build_request(
+        "POST",
+        "https://httpbin.org/post",
+        json={"name": "Ada Lovelace"},
+    )
+    response = await client.send(request)
+    response.raise_for_status()
+```
+
+```python [Sync]
+with foghttp.Client() as client:
+    request = client.build_request(
+        "POST",
+        "https://httpbin.org/post",
+        json={"name": "Ada Lovelace"},
+    )
+    response = client.send(request)
+    response.raise_for_status()
+```
+
+:::
+
 ## Headers
 
 `response.headers` and `response.request.headers` are `foghttp.Headers`
@@ -168,12 +199,17 @@ import foghttp
 
 limits = foghttp.Limits(
     max_connections=100,
-    max_connections_per_host=20,
     max_pending_acquires=1000,
     idle_timeout=30.0,
 )
 
-async with foghttp.AsyncClient(limits=limits) as client:
+timeouts = foghttp.Timeouts(
+    connect=2.0,
+    pool=1.0,
+    total=30.0,
+)
+
+async with foghttp.AsyncClient(limits=limits, timeouts=timeouts) as client:
     response = await client.get("https://httpbin.org/get")
     print(client.stats())
 ```
