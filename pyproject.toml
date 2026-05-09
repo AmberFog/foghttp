@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "foghttp"
 version = "0.1.2"
-description = "Rust-powered async HTTP client for Python."
+description = "Rust-powered HTTP client for Python."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -22,6 +22,7 @@ classifiers = [
 dependencies = ["orjson>=3.11,<4"]
 
 [project.urls]
+Documentation = "https://github.com/AmberFog/foghttp/blob/main/docs/index.md"
 Homepage = "https://github.com/AmberFog/foghttp"
 Repository = "https://github.com/AmberFog/foghttp"
 Issues = "https://github.com/AmberFog/foghttp/issues"

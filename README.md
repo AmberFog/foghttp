@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" alt="FogHTTP logo" width="260">
+  <img src="https://raw.githubusercontent.com/AmberFog/foghttp/main/logo.png" alt="FogHTTP logo" width="260">
 </p>
 
 <h1 align="center">FogHTTP</h1>
@@ -31,8 +31,10 @@ Development dependencies include `pytest`, `pytest-asyncio`, and `faker`.
 
 ## Usage
 
-More detailed documentation lives in [docs](docs/index.md). Runnable examples
-are in [examples](examples/README.md).
+More detailed documentation lives in
+[docs](https://github.com/AmberFog/foghttp/blob/main/docs/index.md). Runnable
+examples are in
+[examples](https://github.com/AmberFog/foghttp/tree/main/examples).
 
 ### Async
 
