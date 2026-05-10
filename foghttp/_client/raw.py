@@ -1,4 +1,5 @@
 __all__ = (
+    "close_raw_client",
     "create_raw_client",
     "send_raw_request",
     "send_raw_request_async",
@@ -11,6 +12,10 @@ import foghttp._foghttp as _foghttp  # noqa: PLR0402
 from ..errors import RequestError, TimeoutError
 from ..limits import Limits
 from ..timeouts import Timeouts
+
+
+def close_raw_client(raw_client: _foghttp.RawClient) -> None:
+    raw_client.close()
 
 
 def create_raw_client(

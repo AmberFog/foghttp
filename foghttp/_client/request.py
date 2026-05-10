@@ -1,11 +1,11 @@
 __all__ = ("prepare_request",)
 
-from collections.abc import Mapping
 from typing import Any
 
 from ..body import encode_body
 from ..headers import Headers, HeaderSource
 from ..request import Request
+from ..types import QueryParams
 from ..url import URL, merge_params
 
 
@@ -14,7 +14,7 @@ def prepare_request(
     method: str,
     url: str | URL,
     headers: HeaderSource,
-    params: Mapping[str, Any] | None,
+    params: QueryParams,
     content: bytes | str | None,
     json: Any,
 ) -> Request:

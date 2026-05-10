@@ -21,7 +21,7 @@ use tokio::runtime::Runtime;
 
 #[pyclass]
 pub struct RawClient {
-    client: HyperClient,
+    client: Option<HyperClient>,
     runtime: Option<Runtime>,
     metrics: Arc<Metrics>,
     follow_redirects: bool,
@@ -54,7 +54,7 @@ impl RawClient {
         let runtime = build_runtime(max_connections, runtime_workers)?;
 
         Ok(Self {
-            client,
+            client: Some(client),
             runtime: Some(runtime),
             metrics: Arc::new(Metrics::default()),
             follow_redirects,
@@ -73,12 +73,13 @@ impl RawClient {
         _connect_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<RawResponse> {
-        self.metrics.request_started();
+        let client = self.client()?;
         let runtime = self.runtime()?;
+        self.metrics.request_started();
 
         let result = py.detach(|| {
             runtime.block_on(send_request(
-                self.client.clone(),
+                client.clone(),
                 TransportRequest {
                     method,
                     url,
@@ -111,7 +112,7 @@ impl RawClient {
         let loop_ = loop_.unbind();
         let future = future.unbind();
         let task_future = future.clone_ref(py);
-        let client = self.client.clone();
+        let client = self.client()?.clone();
         let metrics = Arc::clone(&self.metrics);
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
@@ -142,20 +143,35 @@ impl RawClient {
     fn stats(&self) -> RawStats {
         self.metrics.snapshot().into()
     }
+
+    fn close(&mut self) {
+        self.close_resources();
+    }
 }
 
 impl RawClient {
+    fn client(&self) -> PyResult<&HyperClient> {
+        self.client
+            .as_ref()
+            .ok_or_else(|| FogHttpError::new_err("client is closed"))
+    }
+
     fn runtime(&self) -> PyResult<&Runtime> {
         self.runtime
             .as_ref()
             .ok_or_else(|| FogHttpError::new_err("client runtime is closed"))
     }
+
+    fn close_resources(&mut self) {
+        self.client.take();
+        if let Some(runtime) = self.runtime.take() {
+            runtime.shutdown_background();
+        }
+    }
 }
 
 impl Drop for RawClient {
     fn drop(&mut self) {
-        if let Some(runtime) = self.runtime.take() {
-            runtime.shutdown_background();
-        }
+        self.close_resources();
     }
 }

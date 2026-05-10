@@ -2,7 +2,6 @@ __all__ = ("AsyncClient",)
 
 import asyncio
 import builtins
-from collections.abc import Mapping
 import time
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
@@ -10,7 +9,7 @@ import warnings
 
 from ._client.constants import DEFAULT_MAX_REDIRECTS
 from ._client.options import validate_client_options
-from ._client.raw import create_raw_client, send_raw_request_async
+from ._client.raw import close_raw_client, create_raw_client, send_raw_request_async
 from ._client.request import prepare_request
 from ._client.response import response_from_raw
 from ._client.stats import stats_from_raw
@@ -27,7 +26,7 @@ from .pool_stats import PoolStats
 from .request import Request
 from .response import Response
 from .timeouts import Timeouts
-from .types import HttpVersions
+from .types import HttpVersions, QueryParams
 from .url import URL
 
 
@@ -90,9 +89,13 @@ class AsyncClient:
             warnings.warn(UNCLOSED_CLIENT, UnclosedClientError, stacklevel=2)
 
     async def aclose(self) -> None:
+        raw_client = None
         if not self._closed:
             self._closed = True
+            raw_client = self._client
             self._client = None
+        if raw_client is not None:
+            close_raw_client(raw_client)
 
     async def request(
         self,
@@ -100,7 +103,7 @@ class AsyncClient:
         url: str | URL,
         *,
         headers: HeaderSource = None,
-        params: Mapping[str, Any] | None = None,
+        params: QueryParams = None,
         content: bytes | str | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
@@ -122,7 +125,7 @@ class AsyncClient:
         url: str | URL,
         *,
         headers: HeaderSource = None,
-        params: Mapping[str, Any] | None = None,
+        params: QueryParams = None,
         content: bytes | str | None = None,
         json: Any = None,
     ) -> Request:
@@ -171,23 +174,125 @@ class AsyncClient:
 
         return response_from_raw(raw=raw, started=started)
 
-    async def get(self, url: str | URL, **kwargs: Any) -> Response:
-        return await self.request("GET", url, **kwargs)
+    async def get(
+        self,
+        url: str | URL,
+        *,
+        headers: HeaderSource = None,
+        params: QueryParams = None,
+        content: bytes | str | None = None,
+        json: Any = None,
+        timeout: Timeouts | None = None,
+    ) -> Response:
+        return await self.request(
+            "GET",
+            url,
+            headers=headers,
+            params=params,
+            content=content,
+            json=json,
+            timeout=timeout,
+        )
 
-    async def head(self, url: str | URL, **kwargs: Any) -> Response:
-        return await self.request("HEAD", url, **kwargs)
+    async def head(
+        self,
+        url: str | URL,
+        *,
+        headers: HeaderSource = None,
+        params: QueryParams = None,
+        content: bytes | str | None = None,
+        json: Any = None,
+        timeout: Timeouts | None = None,
+    ) -> Response:
+        return await self.request(
+            "HEAD",
+            url,
+            headers=headers,
+            params=params,
+            content=content,
+            json=json,
+            timeout=timeout,
+        )
 
-    async def post(self, url: str | URL, **kwargs: Any) -> Response:
-        return await self.request("POST", url, **kwargs)
+    async def post(
+        self,
+        url: str | URL,
+        *,
+        headers: HeaderSource = None,
+        params: QueryParams = None,
+        content: bytes | str | None = None,
+        json: Any = None,
+        timeout: Timeouts | None = None,
+    ) -> Response:
+        return await self.request(
+            "POST",
+            url,
+            headers=headers,
+            params=params,
+            content=content,
+            json=json,
+            timeout=timeout,
+        )
 
-    async def put(self, url: str | URL, **kwargs: Any) -> Response:
-        return await self.request("PUT", url, **kwargs)
+    async def put(
+        self,
+        url: str | URL,
+        *,
+        headers: HeaderSource = None,
+        params: QueryParams = None,
+        content: bytes | str | None = None,
+        json: Any = None,
+        timeout: Timeouts | None = None,
+    ) -> Response:
+        return await self.request(
+            "PUT",
+            url,
+            headers=headers,
+            params=params,
+            content=content,
+            json=json,
+            timeout=timeout,
+        )
 
-    async def patch(self, url: str | URL, **kwargs: Any) -> Response:
-        return await self.request("PATCH", url, **kwargs)
+    async def patch(
+        self,
+        url: str | URL,
+        *,
+        headers: HeaderSource = None,
+        params: QueryParams = None,
+        content: bytes | str | None = None,
+        json: Any = None,
+        timeout: Timeouts | None = None,
+    ) -> Response:
+        return await self.request(
+            "PATCH",
+            url,
+            headers=headers,
+            params=params,
+            content=content,
+            json=json,
+            timeout=timeout,
+        )
 
-    async def delete(self, url: str | URL, **kwargs: Any) -> Response:
-        return await self.request("DELETE", url, **kwargs)
+    async def delete(
+        self,
+        url: str | URL,
+        *,
+        headers: HeaderSource = None,
+        params: QueryParams = None,
+        content: bytes | str | None = None,
+        json: Any = None,
+        timeout: Timeouts | None = None,
+    ) -> Response:
+        return await self.request(
+            "DELETE",
+            url,
+            headers=headers,
+            params=params,
+            content=content,
+            json=json,
+            timeout=timeout,
+        )
 
     def stats(self) -> PoolStats:
         self._ensure_open()
@@ -209,7 +314,7 @@ class AsyncClient:
         if self._closed:
             raise ClientClosedError(CLIENT_CLOSED)
 
-    def _raw_client(self) -> Any:
+    def _raw_client(self) -> "_foghttp.RawClient":
         self._ensure_open()
         raw_client = self._client
         if raw_client is None:

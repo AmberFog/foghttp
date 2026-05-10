@@ -25,6 +25,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - redirect history
 - GET/HEAD/POST redirects
 - global pool acquire limit, pending acquire limit, and basic pool stats
+- explicit `close()`/`aclose()` lifecycle for Rust runtime and pool resources
 - advanced `runtime_workers` tuning for the per-client Tokio runtime
 - HTTP/1.1 over HTTP and HTTPS
 
