@@ -1,10 +1,10 @@
 __all__ = ("URL", "merge_params")
 
-from collections.abc import Mapping
-from typing import Any
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
+
+from .types import QueryParams
 
 
 def _raw_url(url: "str | URL") -> _foghttp.RawUrl:
@@ -65,7 +65,7 @@ class URL:
     def is_same_origin(self, other: "str | URL") -> bool:
         return self._raw.is_same_origin(_raw_url(other))
 
-    def with_params(self, params: Mapping[str, Any] | None) -> "URL":
+    def with_params(self, params: QueryParams) -> "URL":
         if not params:
             return self
 
@@ -75,5 +75,5 @@ class URL:
         return URL(urlunsplit((parts.scheme, parts.netloc, parts.path, merged_query, parts.fragment)))
 
 
-def merge_params(url: str | URL, params: Mapping[str, Any] | None) -> str:
+def merge_params(url: str | URL, params: QueryParams) -> str:
     return str(URL(url).with_params(params))

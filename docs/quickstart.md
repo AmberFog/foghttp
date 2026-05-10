@@ -55,6 +55,31 @@ with foghttp.Client() as client:
 
 :::
 
+## Client Lifecycle
+
+Prefer context managers for both sync and async clients. Leaving the context
+calls `close()` or `aclose()` and explicitly releases the Rust client runtime,
+connection pool resources, and associated transport state.
+
+```python
+client = foghttp.Client()
+try:
+    response = client.get("https://httpbin.org/get")
+finally:
+    client.close()
+```
+
+```python
+client = foghttp.AsyncClient()
+try:
+    response = await client.get("https://httpbin.org/get")
+finally:
+    await client.aclose()
+```
+
+Calling `close()` or `aclose()` more than once is safe. After closing a client,
+new requests and stats calls raise `ClientClosedError`.
+
 ## JSON Body
 
 Pass `json=` to send a JSON request body. FogHTTP serializes it with `orjson`
