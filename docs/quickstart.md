@@ -80,6 +80,25 @@ finally:
 Calling `close()` or `aclose()` more than once is safe. After closing a client,
 new requests and stats calls raise `ClientClosedError`.
 
+For async clients, cancelling a task that is waiting on a request aborts the
+in-flight Rust request and releases the observed active request state. Calling
+`aclose()` also cancels in-flight async requests before shutting down the Rust
+runtime.
+
+```python
+import asyncio
+
+import foghttp
+
+
+async with foghttp.AsyncClient() as client:
+    try:
+        async with asyncio.timeout(1.0):
+            await client.get("https://api.example.com/slow")
+    except TimeoutError:
+        pass
+```
+
 ## JSON Body
 
 Pass `json=` to send a JSON request body. FogHTTP serializes it with `orjson`
@@ -238,6 +257,12 @@ async with foghttp.AsyncClient(limits=limits, timeouts=timeouts) as client:
     response = await client.get("https://httpbin.org/get")
     print(client.stats())
 ```
+
+`Timeouts.total` governs the whole buffered transport request. `Timeouts.pool`
+controls waiting for the Python-side global connection semaphore.
+`Timeouts.connect` is applied by the Rust transport when establishing
+connections. Separate `read` and `write` timeout semantics are reserved for
+later streaming/body work.
 
 ## Runtime Workers
 
