@@ -1,3 +1,4 @@
+mod async_requests;
 mod future;
 mod options;
 mod redirects;
@@ -8,7 +9,7 @@ use crate::core::client::{build_client, ClientOptions, HyperClient};
 use crate::core::headers::HeaderPairs;
 use crate::core::metrics::Metrics;
 use crate::errors::FogHttpError;
-use crate::py::client::future::complete_python_future;
+use crate::py::client::async_requests::{spawn_async_request, AsyncRequestRegistry};
 use crate::py::client::options::validate_unsupported_options;
 use crate::py::client::runtime::build_runtime;
 use crate::py::client::transport::{send_request, TransportRequest};
@@ -24,6 +25,7 @@ pub struct RawClient {
     client: Option<HyperClient>,
     runtime: Option<Runtime>,
     metrics: Arc<Metrics>,
+    active_async_requests: AsyncRequestRegistry,
     follow_redirects: bool,
     max_redirects: usize,
 }
@@ -57,6 +59,7 @@ impl RawClient {
             client: Some(client),
             runtime: Some(runtime),
             metrics: Arc::new(Metrics::default()),
+            active_async_requests: AsyncRequestRegistry::default(),
             follow_redirects,
             max_redirects,
         })
@@ -107,37 +110,24 @@ impl RawClient {
         _connect_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<Py<PyAny>> {
-        let loop_ = py.import("asyncio")?.call_method0("get_running_loop")?;
-        let future = loop_.call_method0("create_future")?;
-        let loop_ = loop_.unbind();
-        let future = future.unbind();
-        let task_future = future.clone_ref(py);
         let client = self.client()?.clone();
-        let metrics = Arc::clone(&self.metrics);
-        let follow_redirects = self.follow_redirects;
-        let max_redirects = self.max_redirects;
         let runtime = self.runtime()?;
-
-        metrics.request_started();
-        runtime.spawn(async move {
-            let result = send_request(
-                client,
-                TransportRequest {
-                    method,
-                    url,
-                    headers,
-                    body,
-                    total_timeout,
-                    follow_redirects,
-                    max_redirects,
-                },
-            )
-            .await;
-            metrics.request_finished(result.is_err());
-            complete_python_future(&loop_, &task_future, result);
-        });
-
-        Ok(future)
+        spawn_async_request(
+            py,
+            runtime,
+            &self.active_async_requests,
+            client,
+            Arc::clone(&self.metrics),
+            TransportRequest {
+                method,
+                url,
+                headers,
+                body,
+                total_timeout,
+                follow_redirects: self.follow_redirects,
+                max_redirects: self.max_redirects,
+            },
+        )
     }
 
     fn stats(&self) -> RawStats {
@@ -163,6 +153,7 @@ impl RawClient {
     }
 
     fn close_resources(&mut self) {
+        self.active_async_requests.abort_all();
         self.client.take();
         if let Some(runtime) = self.runtime.take() {
             runtime.shutdown_background();

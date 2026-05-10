@@ -24,6 +24,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - normalized `URL` with origin comparison and relative joins
 - redirect history
 - GET/HEAD/POST redirects
+- async request cancellation that aborts the in-flight Rust request
 - global pool acquire limit, pending acquire limit, and basic pool stats
 - explicit `close()`/`aclose()` lifecycle for Rust runtime and pool resources
 - advanced `runtime_workers` tuning for the per-client Tokio runtime
@@ -57,6 +58,8 @@ Use FogHTTP today when:
 - requests are JSON-heavy
 - redirects are simple and do not require browser-like cookie/auth policy
 - sync and async clients with explicit lifecycle are enough
+- async request cancellation behavior is useful, but you do not need streaming
+  cancellation semantics yet
 - global connection backpressure is enough for your pool needs
 - you can reuse clients instead of creating many short-lived runtime instances
 
