@@ -58,6 +58,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - [Use cases](./use-cases.md)
 - [Redirects](./redirects.md)
 - [Limitations](./limitations.md)
+- [Benchmarks](./benchmarks.md)
 
 ## Good Fit Today
 

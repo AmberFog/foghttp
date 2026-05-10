@@ -95,6 +95,7 @@ async with foghttp.AsyncClient() as client:
 - [Use cases](https://github.com/AmberFog/foghttp/blob/main/docs/use-cases.md)
 - [Redirects](https://github.com/AmberFog/foghttp/blob/main/docs/redirects.md)
 - [Limitations](https://github.com/AmberFog/foghttp/blob/main/docs/limitations.md)
+- [Benchmarks](https://github.com/AmberFog/foghttp/blob/main/docs/benchmarks.md)
 - [Runnable examples](https://github.com/AmberFog/foghttp/tree/main/examples)
 
 ## Current Limitations
