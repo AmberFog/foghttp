@@ -1,3 +1,4 @@
+from faker import Faker
 import pytest
 
 import foghttp
@@ -39,11 +40,11 @@ def test_raise_for_status_handles_server_errors(sync_http_server: str) -> None:
     assert exc_info.value.response is response
 
 
-def test_raise_for_status_uses_final_redirect_request(sync_http_server: str) -> None:
+def test_raise_for_status_uses_final_redirect_request(sync_http_server: str, faker: Faker) -> None:
     with foghttp.Client(follow_redirects=True) as client:
         response = client.post(
             f"{sync_http_server}/redirect-to-status/{FOUND}/{NOT_FOUND}",
-            json={"name": "Ada"},
+            json={"name": faker.name()},
         )
 
     with pytest.raises(foghttp.HTTPStatusError) as exc_info:
@@ -64,5 +65,7 @@ def test_response_text_uses_declared_encoding(sync_http_server: str) -> None:
     assert response.text == "Latin-1: \u00e9"
 
 
-def test_http_status_error_handles_unknown_status_reason() -> None:
-    assert http_status_error("GET", "http://example.com", 599) == "GET http://example.com returned 599"
+def test_http_status_error_handles_unknown_status_reason(faker: Faker) -> None:
+    url = faker.url()
+
+    assert http_status_error("GET", url, 599) == f"GET {url} returned 599"

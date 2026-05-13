@@ -32,9 +32,12 @@ def test_post_json_body(sync_http_server: str, faker: Faker) -> None:
     assert response.json()["body"] == orjson.dumps(payload).decode()
 
 
-def test_post_rejects_content_and_json(sync_http_server: str) -> None:
+def test_post_rejects_content_and_json(sync_http_server: str, faker: Faker) -> None:
+    content = faker.sentence().encode()
+    payload = {"name": faker.name()}
+
     with foghttp.Client() as client, pytest.raises(ValueError, match="pass either content or json"):
-        client.post(sync_http_server + "/users", content=b"raw", json={"name": "Ada"})
+        client.post(sync_http_server + "/users", content=content, json=payload)
 
 
 def test_post_string_content(sync_http_server: str, faker: Faker) -> None:
@@ -77,33 +80,38 @@ def test_send_manual_request(sync_http_server: str, faker: Faker) -> None:
     assert response.json()["body"] == content.decode()
 
 
-def test_send_allows_prepared_request_header_changes(sync_http_server: str) -> None:
+def test_send_allows_prepared_request_header_changes(sync_http_server: str, faker: Faker) -> None:
+    values = faker.words(nb=2, unique=True)
+
     with foghttp.Client() as client:
         request = client.build_request(
             "GET",
             sync_http_server + "/headers/echo",
-            headers=[("x-repeat", "one")],
+            headers=[("x-repeat", values[0])],
         )
-        request.headers.add("x-repeat", "two")
+        request.headers.add("x-repeat", values[1])
         response = client.send(request)
 
-    assert response.json()["x-repeat"] == ["one", "two"]
+    assert response.json()["x-repeat"] == values
 
 
-def test_method_shortcuts(sync_http_server: str) -> None:
+def test_method_shortcuts(sync_http_server: str, faker: Faker) -> None:
+    put_content = faker.sentence().encode()
+    patch_content = faker.sentence().encode()
+
     with foghttp.Client() as client:
         head_response = client.head(sync_http_server + "/users")
-        put_response = client.put(sync_http_server + "/users", content=b"put")
-        patch_response = client.patch(sync_http_server + "/users", content=b"patch")
+        put_response = client.put(sync_http_server + "/users", content=put_content)
+        patch_response = client.patch(sync_http_server + "/users", content=patch_content)
         delete_response = client.delete(sync_http_server + "/users")
 
     assert head_response.status_code == OK
     assert head_response.request.method == "HEAD"
     assert head_response.content == b""
     assert put_response.json()["request_line"] == "PUT /users HTTP/1.1"
-    assert put_response.json()["body"] == "put"
+    assert put_response.json()["body"] == put_content.decode()
     assert patch_response.json()["request_line"] == "PATCH /users HTTP/1.1"
-    assert patch_response.json()["body"] == "patch"
+    assert patch_response.json()["body"] == patch_content.decode()
     assert delete_response.json()["request_line"] == "DELETE /users HTTP/1.1"
 
 

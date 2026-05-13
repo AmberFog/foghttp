@@ -59,17 +59,15 @@ class Client:
 
         self._closed = False
         self._semaphore = threading.BoundedSemaphore(self._limits.max_connections)
+        self._client_lock = threading.Lock()
         self._state_lock = threading.Lock()
         self._pending_acquires = 0
         self._pool_timeouts = 0
-        self._client: _foghttp.RawClient | None = create_raw_client(
-            limits=self._limits,
-            timeouts=self._timeouts,
-            follow_redirects=follow_redirects,
-            max_redirects=max_redirects,
-            runtime_workers=runtime_workers,
-            trust_env=trust_env,
-        )
+        self._follow_redirects = follow_redirects
+        self._max_redirects = max_redirects
+        self._runtime_workers = runtime_workers
+        self._trust_env = trust_env
+        self._client: _foghttp.RawClient | None = None
         self._observability = observability
 
     def __enter__(self) -> "Client":
@@ -90,10 +88,11 @@ class Client:
 
     def close(self) -> None:
         raw_client = None
-        if not self._closed:
-            self._closed = True
-            raw_client = self._client
-            self._client = None
+        with self._client_lock:
+            if not self._closed:
+                self._closed = True
+                raw_client = self._client
+                self._client = None
         if raw_client is not None:
             close_raw_client(raw_client)
 
@@ -144,9 +143,7 @@ class Client:
         started = time.perf_counter()
         self._acquire_connection(timeouts.pool)
         try:
-            raw_client = self._client
-            if raw_client is None:
-                raise ClientClosedError(CLIENT_CLOSED)
+            raw_client = self._raw_client()
             raw = send_raw_request(
                 raw_client=raw_client,
                 method=request.method,
@@ -285,8 +282,17 @@ class Client:
         with self._state_lock:
             pending_acquires = self._pending_acquires
             pool_timeouts = self._pool_timeouts
+        with self._client_lock:
+            self._ensure_open()
+            raw_client = self._client
+            raw_stats = None if raw_client is None else raw_client.stats()
+        if raw_stats is None:
+            return PoolStats(
+                pending_acquires=pending_acquires,
+                pool_timeouts=pool_timeouts,
+            )
         return stats_from_raw(
-            raw=self._raw_client().stats(),
+            raw=raw_stats,
             pending_acquires=pending_acquires,
             pool_timeouts=pool_timeouts,
         )
@@ -323,6 +329,19 @@ class Client:
     def _raw_client(self) -> "_foghttp.RawClient":
         self._ensure_open()
         raw_client = self._client
-        if raw_client is None:
-            raise ClientClosedError(CLIENT_CLOSED)
-        return raw_client
+        if raw_client is not None:
+            return raw_client
+        with self._client_lock:
+            self._ensure_open()
+            raw_client = self._client
+            if raw_client is None:
+                raw_client = create_raw_client(
+                    limits=self._limits,
+                    timeouts=self._timeouts,
+                    follow_redirects=self._follow_redirects,
+                    max_redirects=self._max_redirects,
+                    runtime_workers=self._runtime_workers,
+                    trust_env=self._trust_env,
+                )
+                self._client = raw_client
+            return raw_client

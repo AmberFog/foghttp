@@ -1,5 +1,6 @@
 from urllib.parse import urlsplit
 
+from faker import Faker
 import pytest
 
 import foghttp
@@ -22,7 +23,6 @@ from tests.redirect_helpers import (
 
 POST_REDIRECTS_TO_GET_STATUS_CODES = (MOVED_PERMANENTLY, FOUND, SEE_OTHER)
 POST_REDIRECTS_PRESERVE_METHOD_STATUS_CODES = (TEMPORARY_REDIRECT, PERMANENT_REDIRECT)
-POST_BODY = "redirect-body"
 
 
 def test_get_follows_redirects(sync_http_server: str) -> None:
@@ -60,12 +60,14 @@ def test_get_redirects_respect_limit(sync_http_server: str) -> None:
         client.get(f"{sync_http_server}/loop")
 
 
-def test_post_redirects_rewrite_to_get(sync_http_server: str) -> None:
+def test_post_redirects_rewrite_to_get(sync_http_server: str, faker: Faker) -> None:
+    post_body = faker.sentence()
+
     with foghttp.Client(follow_redirects=True) as client:
         for status_code in POST_REDIRECTS_TO_GET_STATUS_CODES:
             response = client.post(
                 f"{sync_http_server}/redirect/{status_code}",
-                content=POST_BODY,
+                content=post_body,
             )
 
             assert response.status_code == OK
@@ -80,12 +82,14 @@ def test_post_redirects_rewrite_to_get(sync_http_server: str) -> None:
             assert response.history[0].request.url == f"{sync_http_server}/redirect/{status_code}"
 
 
-def test_post_redirects_preserve_method_and_body(sync_http_server: str) -> None:
+def test_post_redirects_preserve_method_and_body(sync_http_server: str, faker: Faker) -> None:
+    post_body = faker.sentence()
+
     with foghttp.Client(follow_redirects=True) as client:
         for status_code in POST_REDIRECTS_PRESERVE_METHOD_STATUS_CODES:
             response = client.post(
                 f"{sync_http_server}/redirect/{status_code}",
-                content=POST_BODY,
+                content=post_body,
             )
 
             assert response.status_code == OK
@@ -93,7 +97,7 @@ def test_post_redirects_preserve_method_and_body(sync_http_server: str) -> None:
             assert response.request.method == "POST"
             assert response.request.url == f"{sync_http_server}/final"
             assert response.json()["request_line"] == "POST /final HTTP/1.1"
-            assert response.json()["body"] == POST_BODY
+            assert response.json()["body"] == post_body
             assert len(response.history) == 1
             assert response.history[0].status_code == status_code
             assert response.history[0].request.method == "POST"
@@ -136,9 +140,10 @@ def test_cross_origin_redirect_strips_sensitive_headers(
     assert header_values(payload, "referer") == []
 
 
-def test_post_redirect_rewrite_strips_body_headers(sync_http_server: str) -> None:
+def test_post_redirect_rewrite_strips_body_headers(sync_http_server: str, faker: Faker) -> None:
     location = f"{sync_http_server}{SECURITY_HEADERS_PATH}"
     url = redirect_to_location_url(sync_http_server, status_code=SEE_OTHER, location=location)
+    post_body = faker.sentence()
 
     with foghttp.Client(follow_redirects=True) as client:
         response = client.post(
@@ -148,7 +153,7 @@ def test_post_redirect_rewrite_strips_body_headers(sync_http_server: str) -> Non
                 "content-encoding": "identity",
                 "content-type": "text/plain",
             },
-            content=POST_BODY,
+            content=post_body,
         )
 
     payload = response.json()
@@ -159,18 +164,19 @@ def test_post_redirect_rewrite_strips_body_headers(sync_http_server: str) -> Non
     assert header_values(payload, "content-type") == []
 
 
-def test_post_redirect_preserving_method_keeps_body_headers(sync_http_server: str) -> None:
+def test_post_redirect_preserving_method_keeps_body_headers(sync_http_server: str, faker: Faker) -> None:
     location = f"{sync_http_server}{SECURITY_HEADERS_PATH}"
     url = redirect_to_location_url(sync_http_server, status_code=TEMPORARY_REDIRECT, location=location)
+    post_body = faker.sentence()
 
     with foghttp.Client(follow_redirects=True) as client:
         response = client.post(
             url,
             headers={"content-type": "text/plain"},
-            content=POST_BODY,
+            content=post_body,
         )
 
     payload = response.json()
     assert payload["request_line"] == f"POST {SECURITY_HEADERS_PATH} HTTP/1.1"
-    assert payload["body"] == POST_BODY
+    assert payload["body"] == post_body
     assert header_values(payload, "content-type") == ["text/plain"]

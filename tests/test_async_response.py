@@ -1,3 +1,4 @@
+from faker import Faker
 import pytest
 
 import foghttp
@@ -30,11 +31,11 @@ async def test_raise_for_status_handles_server_errors(http_server: str) -> None:
     assert exc_info.value.response is response
 
 
-async def test_raise_for_status_uses_final_redirect_request(http_server: str) -> None:
+async def test_raise_for_status_uses_final_redirect_request(http_server: str, faker: Faker) -> None:
     async with foghttp.AsyncClient(follow_redirects=True) as client:
         response = await client.post(
             f"{http_server}/redirect-to-status/{FOUND}/{NOT_FOUND}",
-            json={"name": "Ada"},
+            json={"name": faker.name()},
         )
 
     with pytest.raises(foghttp.HTTPStatusError) as exc_info:
