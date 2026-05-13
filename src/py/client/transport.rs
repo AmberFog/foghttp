@@ -5,7 +5,9 @@ use crate::core::response::collect_body;
 use crate::core::url::HttpUrl;
 use crate::errors::{FogHttpError, FogHttpTimeoutError};
 use crate::messages::{redirect_limit_exceeded, REQUEST_TOTAL_TIMEOUT};
-use crate::py::client::redirects::{headers_without_body_fields, redirect_action, RedirectAction};
+use crate::py::client::redirects::{
+    redirect_action, redirect_headers, RedirectAction, RedirectHeaderPolicy,
+};
 use crate::py::response::{RawRequestInfo, RawResponse};
 use hyper::body::Incoming;
 use hyper::Response;
@@ -94,9 +96,15 @@ impl RequestState {
     fn apply_redirect(&mut self, redirect: RedirectAction) {
         self.method = redirect.method;
         self.url = redirect.url;
+        self.headers = redirect_headers(
+            std::mem::take(&mut self.headers),
+            RedirectHeaderPolicy {
+                preserve_body: redirect.preserve_body,
+                remove_sensitive_headers: redirect.remove_sensitive_headers,
+            },
+        );
 
         if !redirect.preserve_body {
-            self.headers = headers_without_body_fields(std::mem::take(&mut self.headers));
             self.body = None;
         }
     }

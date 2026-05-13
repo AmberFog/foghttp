@@ -101,6 +101,38 @@ print(response.request.method)
 
 :::
 
+## Security Policy
+
+FogHTTP applies a conservative redirect security policy on every redirect hop.
+
+For same-origin redirects, request headers are preserved unless the redirect
+changes the request method and drops the body.
+
+For cross-origin redirects, FogHTTP strips sensitive headers before sending the
+next request:
+
+- `Authorization`
+- `Proxy-Authorization`
+- `Cookie`
+- `Origin`
+- `Referer`
+
+This is intentionally strict. It prevents credentials, manually supplied
+cookies, origin metadata, and referrer metadata from being forwarded to a
+different origin by a redirect response.
+
+When a redirect rewrites `POST` to `GET`, FogHTTP drops the request body and
+strips body-specific headers:
+
+- `Content-Encoding`
+- `Content-Length`
+- `Content-Type`
+- `Transfer-Encoding`
+
+For `307` and `308`, FogHTTP preserves the method and resends the current
+buffered body. Future streaming bodies will use a stricter replay policy because
+non-replayable streams must not be resent automatically.
+
 ## Redirect Limit
 
 `max_redirects` defaults to `20`. If the limit is exceeded, FogHTTP raises
@@ -113,6 +145,6 @@ with foghttp.Client(follow_redirects=True, max_redirects=5) as client:
 
 ## Current Limitations
 
-FogHTTP does not yet implement auth stripping, cookie jar behavior, or
-cross-origin redirect policy. Those rules are planned and the redirect code is
-structured so they can be added without rewriting the transport loop.
+FogHTTP does not yet implement cookie jar behavior. User-supplied `Cookie`
+headers are treated as sensitive and are not forwarded across origins during
+redirects.
