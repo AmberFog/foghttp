@@ -1,3 +1,4 @@
+from faker import Faker
 import pytest
 
 from foghttp import _foghttp
@@ -38,24 +39,24 @@ def test_raw_client_constructor_error_maps_to_value_error(
         )
 
 
-def test_sync_raw_timeout_maps_to_public_timeout() -> None:
+def test_sync_raw_timeout_maps_to_public_timeout(faker: Faker) -> None:
     with pytest.raises(TimeoutError, match="request timed out"):
         send_raw_request(
             raw_client=TimeoutRawClient(),
             method="GET",
-            url="http://example.com",
+            url=faker.url(),
             headers=[],
             body=None,
             timeouts=Timeouts(),
         )
 
 
-async def test_async_raw_timeout_maps_to_public_timeout() -> None:
+async def test_async_raw_timeout_maps_to_public_timeout(faker: Faker) -> None:
     with pytest.raises(TimeoutError, match="request timed out"):
         await send_raw_request_async(
             raw_client=TimeoutRawClient(),
             method="GET",
-            url="http://example.com",
+            url=faker.url(),
             headers=[],
             body=None,
             timeouts=Timeouts(),

@@ -5,21 +5,23 @@ import pytest
 import foghttp
 
 
-def test_request_normalizes_method_url_and_copies_headers() -> None:
-    headers = foghttp.Headers([("x-repeat", "one")])
+def test_request_normalizes_method_url_and_copies_headers(faker: Faker) -> None:
+    initial_value, changed_value = faker.words(nb=2, unique=True)
+    content = faker.sentence().encode()
+    headers = foghttp.Headers([("x-repeat", initial_value)])
 
     request = foghttp.Request(
         "get",
         "HTTPS://Example.COM:443/users",
         headers=headers,
-        content=b"payload",
+        content=content,
     )
-    headers.add("x-repeat", "two")
+    headers.add("x-repeat", changed_value)
 
     assert request.method == "GET"
     assert request.url == "https://example.com/users"
-    assert request.headers.get_list("x-repeat") == ["one"]
-    assert request.content == b"payload"
+    assert request.headers.get_list("x-repeat") == [initial_value]
+    assert request.content == content
     assert repr(request) == "Request('GET', 'https://example.com/users')"
 
 
@@ -48,10 +50,12 @@ def test_client_build_request_prepares_url_headers_and_json(
 
 
 def test_client_build_request_rejects_content_and_json(sync_http_server: str, faker: Faker) -> None:
+    content = faker.sentence().encode()
+
     with foghttp.Client() as client, pytest.raises(ValueError, match="pass either content or json"):
         client.build_request(
             "POST",
             sync_http_server + "/users",
-            content=b"raw",
+            content=content,
             json={"name": faker.name()},
         )
