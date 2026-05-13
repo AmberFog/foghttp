@@ -1,3 +1,5 @@
+from urllib.parse import urlsplit
+
 import pytest
 
 import foghttp
@@ -10,6 +12,12 @@ from foghttp.status_codes.redirect import (
     TEMPORARY_REDIRECT,
 )
 from foghttp.status_codes.success import OK
+from tests.redirect_helpers import (
+    REDIRECT_SECURITY_HEADERS,
+    SECURITY_HEADERS_PATH,
+    header_values,
+    redirect_to_location_url,
+)
 
 
 POST_REDIRECTS_TO_GET_STATUS_CODES = (MOVED_PERMANENTLY, FOUND, SEE_OTHER)
@@ -97,3 +105,79 @@ async def test_post_redirects_preserve_method_and_body(http_server: str) -> None
             assert response.history[0].status_code == status_code
             assert response.history[0].request.method == "POST"
             assert response.history[0].request.url == f"{http_server}/redirect/{status_code}"
+
+
+async def test_same_origin_redirect_preserves_sensitive_headers(http_server: str) -> None:
+    location = f"{http_server}{SECURITY_HEADERS_PATH}"
+    url = redirect_to_location_url(http_server, status_code=FOUND, location=location)
+
+    async with foghttp.AsyncClient(follow_redirects=True) as client:
+        response = await client.get(url, headers=REDIRECT_SECURITY_HEADERS)
+
+    payload = response.json()
+    assert header_values(payload, "authorization") == ["Bearer secret"]
+    assert header_values(payload, "proxy-authorization") == ["Basic proxy-secret"]
+    assert header_values(payload, "cookie") == ["session=secret"]
+    assert header_values(payload, "host") == ["example.com"]
+    assert header_values(payload, "origin") == ["https://example.com"]
+    assert header_values(payload, "referer") == ["https://example.com/source"]
+
+
+async def test_cross_origin_redirect_strips_sensitive_headers(
+    http_server: str,
+    secondary_http_server: str,
+) -> None:
+    location = f"{secondary_http_server}{SECURITY_HEADERS_PATH}"
+    url = redirect_to_location_url(http_server, status_code=FOUND, location=location)
+
+    async with foghttp.AsyncClient(follow_redirects=True) as client:
+        response = await client.get(url, headers=REDIRECT_SECURITY_HEADERS)
+
+    payload = response.json()
+    assert header_values(payload, "accept") == ["application/json"]
+    assert header_values(payload, "authorization") == []
+    assert header_values(payload, "proxy-authorization") == []
+    assert header_values(payload, "cookie") == []
+    assert header_values(payload, "host") == [urlsplit(secondary_http_server).netloc]
+    assert header_values(payload, "origin") == []
+    assert header_values(payload, "referer") == []
+
+
+async def test_post_redirect_rewrite_strips_body_headers(http_server: str) -> None:
+    location = f"{http_server}{SECURITY_HEADERS_PATH}"
+    url = redirect_to_location_url(http_server, status_code=SEE_OTHER, location=location)
+
+    async with foghttp.AsyncClient(follow_redirects=True) as client:
+        response = await client.post(
+            url,
+            headers={
+                "authorization": "Bearer secret",
+                "content-encoding": "identity",
+                "content-type": "text/plain",
+            },
+            content=POST_BODY,
+        )
+
+    payload = response.json()
+    assert payload["request_line"] == f"GET {SECURITY_HEADERS_PATH} HTTP/1.1"
+    assert payload["body"] == ""
+    assert header_values(payload, "authorization") == ["Bearer secret"]
+    assert header_values(payload, "content-encoding") == []
+    assert header_values(payload, "content-type") == []
+
+
+async def test_post_redirect_preserving_method_keeps_body_headers(http_server: str) -> None:
+    location = f"{http_server}{SECURITY_HEADERS_PATH}"
+    url = redirect_to_location_url(http_server, status_code=TEMPORARY_REDIRECT, location=location)
+
+    async with foghttp.AsyncClient(follow_redirects=True) as client:
+        response = await client.post(
+            url,
+            headers={"content-type": "text/plain"},
+            content=POST_BODY,
+        )
+
+    payload = response.json()
+    assert payload["request_line"] == f"POST {SECURITY_HEADERS_PATH} HTTP/1.1"
+    assert payload["body"] == POST_BODY
+    assert header_values(payload, "content-type") == ["text/plain"]
