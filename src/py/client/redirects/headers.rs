@@ -16,6 +16,7 @@ const CROSS_ORIGIN_HEADERS: &[&str] = &[
     "referer",
 ];
 
+#[derive(Clone, Copy)]
 pub struct RedirectHeaderPolicy {
     pub preserve_body: bool,
     pub remove_sensitive_headers: bool,
