@@ -1,5 +1,8 @@
 # Benchmarks
 
+Benchmark harness and future benchmark reports live in a separate repository:
+[github.com/AmberFog/FogHttpBenchmark](https://github.com/AmberFog/FogHttpBenchmark).
+
 Benchmarks run against the local asyncio HTTP/1.1 loopback server from
 `bench/`. Results compare client overhead, buffering, redirects, pool pressure,
 and scheduling behavior.
