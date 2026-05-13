@@ -23,6 +23,7 @@ fn same_origin_redirect_keeps_sensitive_headers() {
         vec![
             ("Authorization".to_owned(), "Bearer token".to_owned()),
             ("Cookie".to_owned(), "session=1".to_owned()),
+            ("Host".to_owned(), "example.com".to_owned()),
             ("Origin".to_owned(), "https://example.com".to_owned()),
             ("Referer".to_owned(), "https://example.com/users".to_owned()),
         ],
@@ -34,7 +35,7 @@ fn same_origin_redirect_keeps_sensitive_headers() {
 
     assert_eq!(
         header_names(&headers),
-        vec!["Authorization", "Cookie", "Origin", "Referer"]
+        vec!["Authorization", "Cookie", "Host", "Origin", "Referer"]
     );
 }
 
@@ -56,6 +57,7 @@ fn cross_origin_redirect_strips_sensitive_headers() {
             ("Authorization".to_owned(), "Bearer token".to_owned()),
             ("Proxy-Authorization".to_owned(), "Basic token".to_owned()),
             ("Cookie".to_owned(), "session=1".to_owned()),
+            ("Host".to_owned(), "example.com".to_owned()),
             ("Origin".to_owned(), "https://example.com".to_owned()),
             ("Referer".to_owned(), "https://example.com/users".to_owned()),
             ("Accept".to_owned(), "application/json".to_owned()),

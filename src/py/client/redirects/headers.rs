@@ -10,6 +10,7 @@ const BODY_HEADERS: &[&str] = &[
 const CROSS_ORIGIN_HEADERS: &[&str] = &[
     "authorization",
     "cookie",
+    "host",
     "origin",
     "proxy-authorization",
     "referer",

@@ -114,12 +114,13 @@ next request:
 - `Authorization`
 - `Proxy-Authorization`
 - `Cookie`
+- `Host`
 - `Origin`
 - `Referer`
 
 This is intentionally strict. It prevents credentials, manually supplied
-cookies, origin metadata, and referrer metadata from being forwarded to a
-different origin by a redirect response.
+cookies, host authority metadata, origin metadata, and referrer metadata from
+being forwarded to a different origin by a redirect response.
 
 When a redirect rewrites `POST` to `GET`, FogHTTP drops the request body and
 strips body-specific headers:
