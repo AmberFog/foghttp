@@ -57,6 +57,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
       - name: Set up QEMU
         if: matrix.target == 'aarch64'
         uses: docker/setup-qemu-action@v3
@@ -71,6 +76,12 @@ jobs:
           args: --release --out dist --interpreter python${{ matrix.python-version }}
           manylinux: "2014"
           sccache: true
+
+      # Linux aarch64 wheels are cross-built on x86_64 runners, so only native
+      # Linux x86_64 wheels can be installed directly in this job.
+      - name: Smoke test wheel install
+        if: matrix.target == 'x86_64'
+        run: python scripts/install_wheel_smoke.py --dist-dir dist
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
@@ -112,6 +123,9 @@ jobs:
           args: --release --out dist --interpreter python
           sccache: true
 
+      - name: Smoke test wheel install
+        run: python scripts/install_wheel_smoke.py --dist-dir dist
+
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
         with:
@@ -144,6 +158,9 @@ jobs:
           command: build
           args: --release --out dist --interpreter python
           sccache: true
+
+      - name: Smoke test wheel install
+        run: python scripts/install_wheel_smoke.py --dist-dir dist
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v4
