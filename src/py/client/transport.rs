@@ -39,7 +39,12 @@ pub async fn send_request(
     loop {
         let mut raw = {
             let origin = state.origin()?;
-            let _permit = acquire_gate.acquire(&origin, pool_timeout).await?;
+            let _permit = tokio::time::timeout(
+                remaining_duration(state.total_timeout, started),
+                acquire_gate.acquire(&origin, pool_timeout),
+            )
+            .await
+            .map_err(|_| FogHttpTimeoutError::new_err(REQUEST_TOTAL_TIMEOUT))??;
             let request_info = state.request_info();
             let request = build_request(state.request_parts())?;
 

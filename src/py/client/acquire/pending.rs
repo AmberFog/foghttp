@@ -1,5 +1,5 @@
 use crate::core::metrics::Metrics;
-use crate::errors::FogHttpTimeoutError;
+use crate::errors::FogHttpPoolTimeoutError;
 use crate::messages::POOL_ACQUIRE_QUEUE_FULL;
 use pyo3::prelude::*;
 use std::sync::Arc;
@@ -14,7 +14,7 @@ impl PendingAcquire {
             Ok(Self { metrics })
         } else {
             metrics.pool_acquire_timeout();
-            Err(FogHttpTimeoutError::new_err(POOL_ACQUIRE_QUEUE_FULL))
+            Err(FogHttpPoolTimeoutError::new_err(POOL_ACQUIRE_QUEUE_FULL))
         }
     }
 }

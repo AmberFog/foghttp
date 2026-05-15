@@ -32,7 +32,7 @@ def test_same_origin_requests_wait_for_per_origin_slot(sync_resource_http_server
         )
         wait_for_sync_stats(client, lambda stats: stats.active_requests == 1)
 
-        with pytest.raises(foghttp.TimeoutError, match="request acquire timeout expired"):
+        with pytest.raises(foghttp.PoolTimeout, match="request acquire timeout expired"):
             client.get(sync_resource_http_server)
 
         stats = client.stats()
@@ -111,7 +111,7 @@ def test_redirect_hop_waits_for_target_origin_slot(
         )
         wait_for_sync_stats(client, lambda stats: stats.active_requests == 1)
 
-        with pytest.raises(foghttp.TimeoutError, match="request acquire timeout expired"):
+        with pytest.raises(foghttp.PoolTimeout, match="request acquire timeout expired"):
             client.get(redirect_url)
 
         stats = client.stats()

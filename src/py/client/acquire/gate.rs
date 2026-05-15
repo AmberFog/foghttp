@@ -2,7 +2,7 @@ use super::origin::OriginGates;
 use super::pending::PendingAcquire;
 use super::permit::AcquirePermit;
 use crate::core::metrics::Metrics;
-use crate::errors::{FogHttpError, FogHttpTimeoutError};
+use crate::errors::{FogHttpError, FogHttpPoolTimeoutError};
 use crate::messages::POOL_ACQUIRE_TIMEOUT;
 use pyo3::prelude::*;
 use std::sync::Arc;
@@ -92,7 +92,7 @@ impl AcquireGate {
             Ok(Err(err)) => Err(FogHttpError::new_err(err.to_string())),
             Err(_elapsed) => {
                 self.metrics.pool_acquire_timeout();
-                Err(FogHttpTimeoutError::new_err(POOL_ACQUIRE_TIMEOUT))
+                Err(FogHttpPoolTimeoutError::new_err(POOL_ACQUIRE_TIMEOUT))
             }
         }
     }

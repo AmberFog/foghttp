@@ -5,6 +5,7 @@ HeaderPairs: TypeAlias = Sequence[tuple[str, str]]
 
 class FogHttpError(Exception): ...
 class FogHttpTimeoutError(FogHttpError): ...
+class FogHttpPoolTimeoutError(FogHttpTimeoutError): ...
 class FogHttpResponseBodyTooLargeError(FogHttpError): ...
 
 class RawRequestInfo:
@@ -88,7 +89,6 @@ class RawClient:
         url: str,
         headers: HeaderPairs,
         body: bytes | None,
-        connect_timeout: float,
         pool_timeout: float,
         total_timeout: float,
     ) -> RawResponse: ...
@@ -98,7 +98,6 @@ class RawClient:
         url: str,
         headers: HeaderPairs,
         body: bytes | None,
-        connect_timeout: float,
         pool_timeout: float,
         total_timeout: float,
     ) -> RawResponse: ...
