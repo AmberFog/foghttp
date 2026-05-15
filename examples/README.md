@@ -16,7 +16,7 @@ uv run examples/prepared_requests.py
 
 - [sync_json_api.py](./sync_json_api.py): sync JSON request/response flow.
 - [async_json_fanout.py](./async_json_fanout.py): concurrent async GET requests
-  with global active request limits and stats.
+  with global/per-origin active request limits and stats.
 - [redirects.py](./redirects.py): GET and POST redirects, final URL, and
   history.
 - [prepared_requests.py](./prepared_requests.py): build, inspect, adjust, and

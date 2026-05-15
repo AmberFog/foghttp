@@ -29,6 +29,7 @@ async def fetch(client: foghttp.AsyncClient, url: str) -> None:
 async def main() -> None:
     limits = foghttp.Limits(
         max_active_requests=20,
+        max_active_requests_per_origin=10,
         max_pending_requests=100,
     )
 

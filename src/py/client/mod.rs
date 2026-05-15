@@ -41,6 +41,7 @@ impl RawClient {
     #[allow(clippy::too_many_arguments)]
     fn new(
         max_active_requests: usize,
+        max_active_requests_per_origin: Option<usize>,
         max_idle_connections_per_host: usize,
         max_pending_requests: usize,
         idle_timeout: f64,
@@ -63,6 +64,7 @@ impl RawClient {
         let metrics = Arc::new(Metrics::default());
         let acquire_gate = AcquireGate::new(
             max_active_requests,
+            max_active_requests_per_origin,
             max_pending_requests,
             Arc::clone(&metrics),
         );
@@ -99,9 +101,10 @@ impl RawClient {
 
         let result = py.detach(|| {
             runtime.block_on(async move {
-                let _permit = acquire_gate.acquire(pool_timeout).await?;
                 send_request(
                     client,
+                    acquire_gate,
+                    pool_timeout,
                     TransportRequest {
                         method,
                         url,

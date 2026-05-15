@@ -5,6 +5,7 @@ use crate::core::response::collect_body;
 use crate::core::url::HttpUrl;
 use crate::errors::{FogHttpError, FogHttpTimeoutError};
 use crate::messages::{redirect_limit_exceeded, REQUEST_TOTAL_TIMEOUT};
+use crate::py::client::acquire::AcquireGate;
 use crate::py::client::redirects::{
     redirect_action, redirect_headers, RedirectAction, RedirectHeaderPolicy,
 };
@@ -24,25 +25,35 @@ pub struct TransportRequest {
     pub max_redirects: usize,
 }
 
-pub async fn send_request(client: HyperClient, parts: TransportRequest) -> PyResult<RawResponse> {
+pub async fn send_request(
+    client: HyperClient,
+    acquire_gate: AcquireGate,
+    pool_timeout: f64,
+    parts: TransportRequest,
+) -> PyResult<RawResponse> {
     let started = Instant::now();
     let mut state = RequestState::try_from(parts)?;
     let mut history = Vec::new();
 
     loop {
-        let request_info = state.request_info();
-        let request = build_request(state.request_parts())?;
+        let mut raw = {
+            let origin = state.origin()?;
+            let _permit = acquire_gate.acquire(&origin, pool_timeout).await?;
+            let request_info = state.request_info();
+            let request = build_request(state.request_parts())?;
 
-        let response = tokio::time::timeout(
-            remaining_duration(state.total_timeout, started),
-            client.request(request),
-        )
-        .await
-        .map_err(|_| FogHttpTimeoutError::new_err(REQUEST_TOTAL_TIMEOUT))?
-        .map_err(|err| FogHttpError::new_err(err.to_string()))?;
+            let response = tokio::time::timeout(
+                remaining_duration(state.total_timeout, started),
+                client.request(request),
+            )
+            .await
+            .map_err(|_| FogHttpTimeoutError::new_err(REQUEST_TOTAL_TIMEOUT))?
+            .map_err(|err| FogHttpError::new_err(err.to_string()))?;
 
-        let response_url = request_info.url.clone();
-        let mut raw = raw_response(response, request_info, started).await?;
+            raw_response(response, request_info, started).await?
+        };
+
+        let response_url = raw.request.url.clone();
         let redirect = if state.follow_redirects {
             redirect_action(&state.method, &response_url, raw.status_code, &raw.headers)
         } else {
@@ -91,6 +102,12 @@ impl RequestState {
             url: self.url.clone(),
             headers: self.headers.clone(),
         }
+    }
+
+    fn origin(&self) -> PyResult<String> {
+        HttpUrl::parse(&self.url)
+            .map(|url| url.origin())
+            .map_err(FogHttpError::new_err)
     }
 
     fn apply_redirect(&mut self, redirect: RedirectAction) {
