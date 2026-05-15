@@ -3,9 +3,13 @@
 Benchmark harness and future benchmark reports live in a separate repository:
 [github.com/AmberFog/FogHttpBenchmark](https://github.com/AmberFog/FogHttpBenchmark).
 
-Benchmarks run against the local asyncio HTTP/1.1 loopback server from
-`bench/`. Results compare client overhead, buffering, redirects, request
-backpressure, and scheduling behavior.
+Benchmarks run against the local asyncio HTTP/1.1 loopback server from the
+benchmark repository. Results compare client overhead, buffering, redirects,
+request backpressure, and scheduling behavior.
+
+The tables below are a copied benchmark snapshot. The version table records the
+package versions used for that run; rerun the benchmark repository before using
+the numbers as release-to-release evidence.
 
 ## Environment
 

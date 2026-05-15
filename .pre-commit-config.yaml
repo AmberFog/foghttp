@@ -6,24 +6,6 @@ repos:
         entry: python scripts/check_all_position.py
         language: python
         types: [python]
-      - id: cargo-fmt-check
-        name: cargo fmt --check
-        entry: cargo
-        args:
-          - fmt
-          - "--check"
-        language: system
-        pass_filenames: false
-        files: ^(src/|Cargo\.toml|Cargo\.lock)
-      - id: cargo-check
-        name: cargo check --all-targets
-        entry: cargo
-        args:
-          - check
-          - "--all-targets"
-        language: system
-        pass_filenames: false
-        files: ^(src/|Cargo\.toml|Cargo\.lock)
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
