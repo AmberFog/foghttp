@@ -245,6 +245,7 @@ limits = foghttp.Limits(
     max_active_requests=100,
     max_active_requests_per_origin=20,
     max_pending_requests=1000,
+    max_response_body_size=10 * 1024 * 1024,
     idle_timeout=30.0,
 )
 
@@ -264,11 +265,13 @@ controls waiting for the Rust-side acquire gates. `Limits.max_active_requests`
 caps active buffered requests for the whole client.
 `Limits.max_active_requests_per_origin` defaults to `None`; set it to cap active
 buffered requests for one normalized origin. `Limits.max_pending_requests` caps
-requests waiting for a free acquire permit. `Limits.max_idle_connections_per_host`
-controls idle keep-alive pool capacity; it is not an active request limit and is
-separate from per-origin request backpressure. `Timeouts.connect` is applied by
-the Rust transport when establishing connections. Separate `read` and `write`
-timeout semantics are reserved for later streaming/body work.
+requests waiting for a free acquire permit. `Limits.max_response_body_size`
+defaults to `None`; set it to fail safely when a buffered response body grows
+beyond the configured byte limit. `Limits.max_idle_connections_per_host` controls
+idle keep-alive pool capacity; it is not an active request limit and is separate
+from per-origin request backpressure. `Timeouts.connect` is applied by the Rust
+transport when establishing connections. Separate `read` and `write` timeout
+semantics are reserved for later streaming/body work.
 
 ## Runtime Workers
 

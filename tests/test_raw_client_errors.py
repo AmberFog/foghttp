@@ -4,7 +4,7 @@ import pytest
 from foghttp import _foghttp
 from foghttp._client.constants import DEFAULT_MAX_REDIRECTS
 from foghttp._client.raw import create_raw_client, send_raw_request, send_raw_request_async
-from foghttp.errors import TimeoutError
+from foghttp.errors import ResponseBodyTooLargeError, TimeoutError
 from foghttp.limits import Limits
 from foghttp.timeouts import Timeouts
 
@@ -17,6 +17,16 @@ class TimeoutRawClient:
     async def request_async(self, *_args: object) -> object:
         msg = "request timed out"
         raise _foghttp.FogHttpTimeoutError(msg)
+
+
+class BodyTooLargeRawClient:
+    def request(self, *_args: object) -> object:
+        msg = "response body exceeded max_response_body_size"
+        raise _foghttp.FogHttpResponseBodyTooLargeError(msg)
+
+    async def request_async(self, *_args: object) -> object:
+        msg = "response body exceeded max_response_body_size"
+        raise _foghttp.FogHttpResponseBodyTooLargeError(msg)
 
 
 def test_raw_client_constructor_error_maps_to_value_error(
@@ -55,6 +65,30 @@ async def test_async_raw_timeout_maps_to_public_timeout(faker: Faker) -> None:
     with pytest.raises(TimeoutError, match="request timed out"):
         await send_raw_request_async(
             raw_client=TimeoutRawClient(),
+            method="GET",
+            url=faker.url(),
+            headers=[],
+            body=None,
+            timeouts=Timeouts(),
+        )
+
+
+def test_sync_raw_body_limit_error_maps_to_public_response_error(faker: Faker) -> None:
+    with pytest.raises(ResponseBodyTooLargeError, match="max_response_body_size"):
+        send_raw_request(
+            raw_client=BodyTooLargeRawClient(),
+            method="GET",
+            url=faker.url(),
+            headers=[],
+            body=None,
+            timeouts=Timeouts(),
+        )
+
+
+async def test_async_raw_body_limit_error_maps_to_public_response_error(faker: Faker) -> None:
+    with pytest.raises(ResponseBodyTooLargeError, match="max_response_body_size"):
+        await send_raw_request_async(
+            raw_client=BodyTooLargeRawClient(),
             method="GET",
             url=faker.url(),
             headers=[],

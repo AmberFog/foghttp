@@ -13,6 +13,11 @@ def test_async_client_rejects_negative_max_redirects() -> None:
         foghttp.AsyncClient(max_redirects=-1)
 
 
+def test_limits_reject_negative_max_response_body_size() -> None:
+    with pytest.raises(ValueError, match="max_response_body_size must be greater than or equal to 0"):
+        foghttp.Limits(max_response_body_size=-1)
+
+
 def test_client_rejects_cookies_until_supported() -> None:
     with pytest.raises(NotImplementedError, match="cookies are planned after the MVP"):
         foghttp.Client(cookies=True)

@@ -9,7 +9,7 @@ from collections.abc import Sequence
 
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
-from ..errors import RequestError, TimeoutError
+from ..errors import RequestError, ResponseBodyTooLargeError, TimeoutError
 from ..limits import Limits
 from ..timeouts import Timeouts
 
@@ -33,6 +33,7 @@ def create_raw_client(
             limits.max_active_requests_per_origin,
             limits.max_idle_connections_per_host,
             limits.max_pending_requests,
+            limits.max_response_body_size,
             limits.idle_timeout,
             limits.keepalive,
             timeouts.connect,
@@ -64,6 +65,8 @@ def send_raw_request(
             timeouts.pool,
             timeouts.total,
         )
+    except _foghttp.FogHttpResponseBodyTooLargeError as exc:
+        raise ResponseBodyTooLargeError(str(exc)) from exc
     except _foghttp.FogHttpTimeoutError as exc:
         raise TimeoutError(str(exc)) from exc
     except _foghttp.FogHttpError as exc:
@@ -89,6 +92,8 @@ async def send_raw_request_async(
             timeouts.pool,
             timeouts.total,
         )
+    except _foghttp.FogHttpResponseBodyTooLargeError as exc:
+        raise ResponseBodyTooLargeError(str(exc)) from exc
     except _foghttp.FogHttpTimeoutError as exc:
         raise TimeoutError(str(exc)) from exc
     except _foghttp.FogHttpError as exc:
