@@ -235,15 +235,15 @@ print(url.origin)
 print(url.is_same_origin("https://example.com/profile"))
 ```
 
-## Pool Limits and Stats
+## Transport Limits and Stats
 
 ```python
 import foghttp
 
 
 limits = foghttp.Limits(
-    max_connections=100,
-    max_pending_acquires=1000,
+    max_active_requests=100,
+    max_pending_requests=1000,
     idle_timeout=30.0,
 )
 
@@ -259,15 +259,16 @@ async with foghttp.AsyncClient(limits=limits, timeouts=timeouts) as client:
 ```
 
 `Timeouts.total` governs the whole buffered transport request. `Timeouts.pool`
-controls waiting for the Python-side global connection semaphore.
-`Timeouts.connect` is applied by the Rust transport when establishing
-connections. Separate `read` and `write` timeout semantics are reserved for
-later streaming/body work.
+controls waiting for the Rust-side global acquire gate. `Limits.max_active_requests`
+caps active buffered requests, and `Limits.max_pending_requests` caps requests
+waiting for a free acquire permit. `Timeouts.connect` is applied by the Rust
+transport when establishing connections. Separate `read` and `write` timeout
+semantics are reserved for later streaming/body work.
 
 ## Runtime Workers
 
 FogHTTP creates a Tokio runtime per client. By default, the runtime worker count
-is selected from `Limits.max_connections` and capped at `16` workers.
+is selected from `Limits.max_active_requests` and capped at `16` workers.
 
 Most applications should keep the default and reuse long-lived clients. For
 advanced tuning, pass `runtime_workers=` explicitly:

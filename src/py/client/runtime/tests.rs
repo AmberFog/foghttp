@@ -2,7 +2,7 @@ use super::constants::{DEFAULT_RUNTIME_WORKER_CAP, MAX_RUNTIME_WORKERS};
 use super::workers::resolve_runtime_workers;
 
 #[test]
-fn auto_workers_follow_small_connection_limits() {
+fn auto_workers_follow_small_active_request_limits() {
     assert_eq!(resolve_runtime_workers(1, None, None).unwrap(), 1);
     assert_eq!(resolve_runtime_workers(4, None, None).unwrap(), 4);
 }
@@ -16,7 +16,7 @@ fn auto_workers_are_capped_at_default_cap() {
 }
 
 #[test]
-fn auto_workers_keep_zero_connection_limits_runnable() {
+fn auto_workers_keep_zero_active_request_limits_runnable() {
     assert_eq!(resolve_runtime_workers(0, None, None).unwrap(), 1);
 }
 

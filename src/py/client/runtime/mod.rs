@@ -9,8 +9,11 @@ use pyo3::prelude::*;
 use tokio::runtime::{Builder, Runtime};
 use workers::runtime_workers;
 
-pub fn build_runtime(max_connections: usize, explicit_workers: Option<usize>) -> PyResult<Runtime> {
-    let worker_threads = runtime_workers(max_connections, explicit_workers)?;
+pub fn build_runtime(
+    max_active_requests: usize,
+    explicit_workers: Option<usize>,
+) -> PyResult<Runtime> {
+    let worker_threads = runtime_workers(max_active_requests, explicit_workers)?;
     Builder::new_multi_thread()
         .worker_threads(worker_threads)
         .enable_all()

@@ -1,7 +1,5 @@
 __all__ = ("AsyncClient",)
 
-import asyncio
-import builtins
 import threading
 import time
 from types import TracebackType
@@ -14,19 +12,14 @@ from ._client.raw import close_raw_client, create_raw_client, send_raw_request_a
 from ._client.request import prepare_request
 from ._client.response import response_from_raw
 from ._client.stats import stats_from_raw
-from .errors import ClientClosedError, TimeoutError, UnclosedClientError
+from .errors import ClientClosedError, UnclosedClientError
 from .headers import HeaderSource
 from .limits import Limits
-from .messages import (
-    CLIENT_CLOSED,
-    POOL_ACQUIRE_QUEUE_FULL,
-    POOL_ACQUIRE_TIMEOUT,
-    UNCLOSED_CLIENT,
-)
-from .pool_stats import PoolStats
+from .messages import CLIENT_CLOSED, UNCLOSED_CLIENT
 from .request import Request
 from .response import Response
 from .timeouts import Timeouts
+from .transport_stats import TransportStats
 from .types import HttpVersions, QueryParams
 from .url import URL
 
@@ -60,10 +53,7 @@ class AsyncClient:
         )
 
         self._closed = False
-        self._semaphore = asyncio.Semaphore(self._limits.max_connections)
         self._client_lock = threading.Lock()
-        self._pending_acquires = 0
-        self._pool_timeouts = 0
         self._follow_redirects = follow_redirects
         self._max_redirects = max_redirects
         self._runtime_workers = runtime_workers
@@ -142,33 +132,15 @@ class AsyncClient:
         self._ensure_open()
         timeouts = timeout or self._timeouts
         started = time.perf_counter()
-        acquired = False
-        try:
-            if self._pending_acquires >= self._limits.max_pending_acquires:
-                self._pool_timeouts += 1
-                raise TimeoutError(POOL_ACQUIRE_QUEUE_FULL)
-            self._pending_acquires += 1
-            try:
-                await asyncio.wait_for(self._semaphore.acquire(), timeout=timeouts.pool)
-                acquired = True
-            except builtins.TimeoutError as exc:
-                self._pool_timeouts += 1
-                raise TimeoutError(POOL_ACQUIRE_TIMEOUT) from exc
-            finally:
-                self._pending_acquires -= 1
-
-            raw_client = self._raw_client()
-            raw = await send_raw_request_async(
-                raw_client=raw_client,
-                method=request.method,
-                url=request.url,
-                headers=request.headers.multi_items(),
-                body=request.content,
-                timeouts=timeouts,
-            )
-        finally:
-            if acquired:
-                self._semaphore.release()
+        raw_client = self._raw_client()
+        raw = await send_raw_request_async(
+            raw_client=raw_client,
+            method=request.method,
+            url=request.url,
+            headers=request.headers.multi_items(),
+            body=request.content,
+            timeouts=timeouts,
+        )
 
         return response_from_raw(raw=raw, started=started)
 
@@ -292,29 +264,21 @@ class AsyncClient:
             timeout=timeout,
         )
 
-    def stats(self) -> PoolStats:
+    def stats(self) -> TransportStats:
         self._ensure_open()
         with self._client_lock:
             self._ensure_open()
             raw_client = self._client
             raw_stats = None if raw_client is None else raw_client.stats()
         if raw_stats is None:
-            return PoolStats(
-                pending_acquires=self._pending_acquires,
-                pool_timeouts=self._pool_timeouts,
-            )
-        return stats_from_raw(
-            raw=raw_stats,
-            pending_acquires=self._pending_acquires,
-            pool_timeouts=self._pool_timeouts,
-        )
+            return TransportStats()
+        return stats_from_raw(raw=raw_stats)
 
-    def dump_pool_state(self) -> dict[str, int]:
+    def dump_transport_state(self) -> dict[str, int]:
         stats = self.stats()
         return {
-            "active_connections": stats.active_connections,
-            "idle_connections": stats.idle_connections,
-            "pending_acquires": stats.pending_acquires,
+            "active_requests": stats.active_requests,
+            "pending_requests": stats.pending_requests,
         }
 
     def _ensure_open(self) -> None:

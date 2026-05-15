@@ -29,8 +29,9 @@ def create_raw_client(
 ) -> _foghttp.RawClient:
     try:
         return _foghttp.RawClient(
-            limits.max_connections,
-            limits.max_connections_per_host,
+            limits.max_active_requests,
+            limits.max_idle_connections_per_host,
+            limits.max_pending_requests,
             limits.idle_timeout,
             limits.keepalive,
             timeouts.connect,
@@ -59,6 +60,7 @@ def send_raw_request(
             headers,
             body,
             timeouts.connect,
+            timeouts.pool,
             timeouts.total,
         )
     except _foghttp.FogHttpTimeoutError as exc:
@@ -83,6 +85,7 @@ async def send_raw_request_async(
             headers,
             body,
             timeouts.connect,
+            timeouts.pool,
             timeouts.total,
         )
     except _foghttp.FogHttpTimeoutError as exc:

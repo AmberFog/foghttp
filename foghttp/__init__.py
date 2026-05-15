@@ -11,7 +11,6 @@ __all__ = (
     "Headers",
     "LifecycleError",
     "Limits",
-    "PoolStats",
     "PoolTimeout",
     "ReadTimeout",
     "Request",
@@ -21,6 +20,7 @@ __all__ = (
     "ResponseError",
     "TimeoutError",
     "Timeouts",
+    "TransportStats",
     "UnclosedClientError",
 )
 
@@ -41,9 +41,9 @@ from .errors import (
 )
 from .headers import Headers
 from .limits import Limits
-from .pool_stats import PoolStats
 from .request import Request
 from .request_info import RequestInfo
 from .response import Response
 from .timeouts import Timeouts
+from .transport_stats import TransportStats
 from .url import URL

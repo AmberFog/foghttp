@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 use std::env;
 
 pub(super) fn runtime_workers(
-    max_connections: usize,
+    max_active_requests: usize,
     explicit_workers: Option<usize>,
 ) -> PyResult<usize> {
     if let Some(workers) = explicit_workers {
@@ -15,17 +15,17 @@ pub(super) fn runtime_workers(
     }
 
     match env::var(RUNTIME_WORKERS_ENV) {
-        Ok(value) => resolve_runtime_workers(max_connections, None, Some(value.as_str()))
+        Ok(value) => resolve_runtime_workers(max_active_requests, None, Some(value.as_str()))
             .map_err(FogHttpError::new_err),
         Err(env::VarError::NotPresent) => {
-            resolve_runtime_workers(max_connections, None, None).map_err(FogHttpError::new_err)
+            resolve_runtime_workers(max_active_requests, None, None).map_err(FogHttpError::new_err)
         }
         Err(err) => Err(FogHttpError::new_err(err.to_string())),
     }
 }
 
 pub(super) fn resolve_runtime_workers(
-    max_connections: usize,
+    max_active_requests: usize,
     explicit_workers: Option<usize>,
     env_workers: Option<&str>,
 ) -> Result<usize, String> {
@@ -39,7 +39,7 @@ pub(super) fn resolve_runtime_workers(
         return validate_runtime_workers(RUNTIME_WORKERS_ENV, workers);
     }
 
-    Ok(max_connections.clamp(1, DEFAULT_RUNTIME_WORKER_CAP))
+    Ok(max_active_requests.clamp(1, DEFAULT_RUNTIME_WORKER_CAP))
 }
 
 fn validate_runtime_workers(source: &str, workers: usize) -> Result<usize, String> {

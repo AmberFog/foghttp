@@ -19,4 +19,4 @@ def test_compatibility_modules_reexport_models() -> None:
     assert foghttp.models.Response is foghttp.Response
     assert foghttp.models.Timeouts is foghttp.Timeouts
     assert foghttp.models.URL is foghttp.URL
-    assert foghttp.stats.PoolStats is foghttp.PoolStats
+    assert foghttp.stats.TransportStats is foghttp.TransportStats

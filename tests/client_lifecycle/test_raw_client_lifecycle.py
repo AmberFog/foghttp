@@ -29,4 +29,4 @@ def test_raw_client_rejects_requests_after_close_without_leaking_metrics(faker: 
             timeouts=Timeouts(),
         )
 
-    assert raw_client.stats().active_connections == 0
+    assert raw_client.stats().active_requests == 0

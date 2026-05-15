@@ -1,3 +1,3 @@
-__all__ = ("PoolStats",)
+__all__ = ("TransportStats",)
 
-from .pool_stats import PoolStats
+from .transport_stats import TransportStats

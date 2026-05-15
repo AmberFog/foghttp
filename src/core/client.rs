@@ -11,7 +11,7 @@ pub type HyperClient = Client<HttpsConnector<HttpConnector>, RequestBody>;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ClientOptions {
-    pub max_connections_per_host: usize,
+    pub max_idle_connections_per_host: usize,
     pub idle_timeout: f64,
     pub keepalive: bool,
     pub connect_timeout: f64,
@@ -30,7 +30,7 @@ pub fn build_client(options: ClientOptions) -> HyperClient {
 
     let mut builder = Client::builder(TokioExecutor::new());
     builder.pool_max_idle_per_host(if options.keepalive {
-        options.max_connections_per_host
+        options.max_idle_connections_per_host
     } else {
         0
     });

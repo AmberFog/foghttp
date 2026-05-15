@@ -3,6 +3,7 @@ use super::callback::PythonFutureCancellation;
 use super::registry::AsyncRequestRegistry;
 use crate::core::client::HyperClient;
 use crate::core::metrics::Metrics;
+use crate::py::client::acquire::AcquireGate;
 use crate::py::client::future::complete_python_future;
 use crate::py::client::transport::{send_request, TransportRequest};
 use pyo3::prelude::*;
@@ -10,14 +11,27 @@ use pyo3::types::PyAny;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
+pub struct AsyncRequestSpawn {
+    pub acquire_gate: AcquireGate,
+    pub client: HyperClient,
+    pub metrics: Arc<Metrics>,
+    pub pool_timeout: f64,
+    pub request: TransportRequest,
+}
+
 pub fn spawn_async_request(
     py: Python<'_>,
     runtime: &Runtime,
     registry: &AsyncRequestRegistry,
-    client: HyperClient,
-    metrics: Arc<Metrics>,
-    request: TransportRequest,
+    spawn: AsyncRequestSpawn,
 ) -> PyResult<Py<PyAny>> {
+    let AsyncRequestSpawn {
+        acquire_gate,
+        client,
+        metrics,
+        pool_timeout,
+        request,
+    } = spawn;
     let loop_ = py
         .import("asyncio")?
         .call_method0("get_running_loop")?
@@ -34,7 +48,11 @@ pub fn spawn_async_request(
 
     metrics.request_started();
     let handle = runtime.spawn(async move {
-        let result = send_request(client, request).await;
+        let result = async {
+            let _permit = acquire_gate.acquire(pool_timeout).await?;
+            send_request(client, request).await
+        }
+        .await;
         if task_completion.finish() {
             task_registry.remove(request_id);
             task_metrics.request_finished(result.is_err());
