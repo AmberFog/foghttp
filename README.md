@@ -25,7 +25,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - Rust `hyper` transport with a Python-first API
 - sync and asyncio clients with the same request model
 - explicit `close()`/`aclose()` lifecycle for Rust runtime resources
-- cancellable async requests that abort in-flight Rust work
+- graceful sync `close()` for in-flight requests and cancellable async requests
 - global/per-origin request backpressure and observable request stats
 - focused buffered HTTP surface for JSON APIs, internal services, workers, and
   benchmarks
@@ -84,6 +84,7 @@ async with foghttp.AsyncClient() as client:
 - case-insensitive `Headers` with repeated values
 - normalized `URL` model with origin comparison and relative joins
 - GET/HEAD/POST redirects with final URL and history
+- graceful sync `close()` that waits for in-flight sync requests
 - async request cancellation that aborts the in-flight Rust request
 - global and per-origin request backpressure, basic stats, and HTTP/1.1 over
   HTTP/HTTPS
@@ -109,6 +110,8 @@ timeout reconfiguration, and separate read/write timeout semantics are planned
 for later versions.
 
 ## Development
+
+Development requires a Rust toolchain with `cargo` available in `PATH`.
 
 ```bash
 uv run --with "maturin>=1.7,<2" maturin develop

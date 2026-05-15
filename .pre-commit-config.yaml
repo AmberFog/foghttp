@@ -8,13 +8,19 @@ repos:
         types: [python]
       - id: cargo-fmt-check
         name: cargo fmt --check
-        entry: bash scripts/cargo_precommit.sh fmt --check
+        entry: cargo
+        args:
+          - fmt
+          - "--check"
         language: system
         pass_filenames: false
         files: ^(src/|Cargo\.toml|Cargo\.lock)
       - id: cargo-check
         name: cargo check --all-targets
-        entry: bash scripts/cargo_precommit.sh check --all-targets
+        entry: cargo
+        args:
+          - check
+          - "--all-targets"
         language: system
         pass_filenames: false
         files: ^(src/|Cargo\.toml|Cargo\.lock)

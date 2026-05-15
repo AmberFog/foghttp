@@ -2,6 +2,8 @@
 
 ## Install for Development
 
+Development requires a Rust toolchain with `cargo` available in `PATH`.
+
 ```bash
 uv run --with "maturin>=1.7,<2" maturin develop
 ```
@@ -79,6 +81,10 @@ finally:
 
 Calling `close()` or `aclose()` more than once is safe. After closing a client,
 new requests and stats calls raise `ClientClosedError`.
+
+For sync clients, `close()` is graceful for requests that already entered
+`send()`: it rejects new work immediately, waits for in-flight sync requests to
+finish, and only then shuts down the Rust client runtime.
 
 For async clients, cancelling a task that is waiting on a request aborts the
 in-flight Rust request and releases the observed active request state. Calling

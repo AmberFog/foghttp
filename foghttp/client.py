@@ -54,6 +54,9 @@ class Client:
 
         self._closed = False
         self._client_lock = threading.Lock()
+        self._lifecycle_condition = threading.Condition(self._client_lock)
+        self._active_sync_sends = 0
+        self._close_complete = False
         self._follow_redirects = follow_redirects
         self._max_redirects = max_redirects
         self._runtime_workers = runtime_workers
@@ -79,13 +82,29 @@ class Client:
 
     def close(self) -> None:
         raw_client = None
-        with self._client_lock:
-            if not self._closed:
-                self._closed = True
-                raw_client = self._client
-                self._client = None
+        with self._lifecycle_condition:
+            if self._closed:
+                while not self._close_complete:
+                    self._lifecycle_condition.wait()
+                return
+
+            self._closed = True
+            while self._active_sync_sends:
+                self._lifecycle_condition.wait()
+            raw_client = self._client
+            self._client = None
+            if raw_client is None:
+                self._close_complete = True
+                self._lifecycle_condition.notify_all()
+                return
+
         if raw_client is not None:
-            close_raw_client(raw_client)
+            try:
+                close_raw_client(raw_client)
+            finally:
+                with self._lifecycle_condition:
+                    self._close_complete = True
+                    self._lifecycle_condition.notify_all()
 
     def request(
         self,
@@ -129,20 +148,22 @@ class Client:
         )
 
     def send(self, request: Request, *, timeout: Timeouts | None = None) -> Response:
-        self._ensure_open()
         timeouts = timeout or self._timeouts
         started = time.perf_counter()
-        raw_client = self._raw_client()
-        raw = send_raw_request(
-            raw_client=raw_client,
-            method=request.method,
-            url=request.url,
-            headers=request.headers.multi_items(),
-            body=request.content,
-            timeouts=timeouts,
-        )
+        raw_client = self._begin_sync_send()
+        try:
+            raw = send_raw_request(
+                raw_client=raw_client,
+                method=request.method,
+                url=request.url,
+                headers=request.headers.multi_items(),
+                body=request.content,
+                timeouts=timeouts,
+            )
 
-        return response_from_raw(raw=raw, started=started)
+            return response_from_raw(raw=raw, started=started)
+        finally:
+            self._finish_sync_send()
 
     def get(
         self,
@@ -285,22 +306,35 @@ class Client:
         if self._closed:
             raise ClientClosedError(CLIENT_CLOSED)
 
-    def _raw_client(self) -> "_foghttp.RawClient":
-        self._ensure_open()
-        raw_client = self._client
-        if raw_client is not None:
-            return raw_client
-        with self._client_lock:
+    def _begin_sync_send(self) -> "_foghttp.RawClient":
+        with self._lifecycle_condition:
             self._ensure_open()
-            raw_client = self._client
-            if raw_client is None:
-                raw_client = create_raw_client(
-                    limits=self._limits,
-                    timeouts=self._timeouts,
-                    follow_redirects=self._follow_redirects,
-                    max_redirects=self._max_redirects,
-                    runtime_workers=self._runtime_workers,
-                    trust_env=self._trust_env,
-                )
-                self._client = raw_client
-            return raw_client
+            self._active_sync_sends += 1
+            try:
+                return self._raw_client_locked()
+            except BaseException:
+                self._finish_sync_send_locked()
+                raise
+
+    def _finish_sync_send(self) -> None:
+        with self._lifecycle_condition:
+            self._finish_sync_send_locked()
+
+    def _finish_sync_send_locked(self) -> None:
+        self._active_sync_sends -= 1
+        if self._active_sync_sends == 0:
+            self._lifecycle_condition.notify_all()
+
+    def _raw_client_locked(self) -> "_foghttp.RawClient":
+        raw_client = self._client
+        if raw_client is None:
+            raw_client = create_raw_client(
+                limits=self._limits,
+                timeouts=self._timeouts,
+                follow_redirects=self._follow_redirects,
+                max_redirects=self._max_redirects,
+                runtime_workers=self._runtime_workers,
+                trust_env=self._trust_env,
+            )
+            self._client = raw_client
+        return raw_client
