@@ -1,3 +1,4 @@
+import asyncio
 import gc
 
 from faker import Faker
@@ -148,31 +149,86 @@ async def test_stats_track_requests(http_server: str) -> None:
     assert stats.failed_requests == 0
 
 
-async def test_dump_pool_state(http_server: str) -> None:
+async def test_dump_transport_state(http_server: str) -> None:
     async with foghttp.AsyncClient() as client:
         await client.get(http_server)
-        state = client.dump_pool_state()
+        state = client.dump_transport_state()
 
-    assert state.keys() == {"active_connections", "idle_connections", "pending_acquires"}
-    assert state["pending_acquires"] == 0
+    assert state.keys() == {"active_requests", "pending_requests"}
+    assert state["pending_requests"] == 0
 
 
-async def test_pending_acquire_queue_full(http_server: str) -> None:
-    limits = foghttp.Limits(max_pending_acquires=0)
+async def test_pending_request_queue_full(http_server: str) -> None:
+    limits = foghttp.Limits(max_active_requests=0, max_pending_requests=0)
 
     async with foghttp.AsyncClient(limits=limits) as client:
-        with pytest.raises(foghttp.TimeoutError, match="connection acquire queue is full"):
+        with pytest.raises(foghttp.TimeoutError, match="request acquire queue is full"):
             await client.get(http_server)
 
-        assert client.stats().pool_timeouts == 1
+        stats = client.stats()
+        assert stats.total_requests == 1
+        assert stats.failed_requests == 1
+        assert stats.active_requests == 0
+        assert stats.pending_requests == 0
+        assert stats.pool_acquire_timeouts == 1
+
+
+async def test_zero_pending_queue_allows_available_connection(http_server: str) -> None:
+    limits = foghttp.Limits(max_active_requests=1, max_pending_requests=0)
+
+    async with foghttp.AsyncClient(limits=limits) as client:
+        response = await client.get(http_server)
+
+        assert response.status_code == OK
+        stats = client.stats()
+        assert stats.total_requests == 1
+        assert stats.failed_requests == 0
+        assert stats.active_requests == 0
+        assert stats.pending_requests == 0
+        assert stats.pool_acquire_timeouts == 0
 
 
 async def test_pool_acquire_timeout(http_server: str) -> None:
-    limits = foghttp.Limits(max_connections=0, max_pending_acquires=1)
+    limits = foghttp.Limits(max_active_requests=0, max_pending_requests=1)
     timeouts = foghttp.Timeouts(pool=0.001)
 
     async with foghttp.AsyncClient(limits=limits, timeouts=timeouts) as client:
-        with pytest.raises(foghttp.TimeoutError, match="connection acquire timeout expired"):
+        with pytest.raises(foghttp.TimeoutError, match="request acquire timeout expired"):
             await client.get(http_server)
 
-        assert client.stats().pool_timeouts == 1
+        stats = client.stats()
+        assert stats.total_requests == 1
+        assert stats.failed_requests == 1
+        assert stats.active_requests == 0
+        assert stats.pending_requests == 0
+        assert stats.pool_acquire_timeouts == 1
+
+
+async def test_pending_requests_are_tracked_while_waiting(http_server: str) -> None:
+    limits = foghttp.Limits(max_active_requests=0, max_pending_requests=1)
+    timeouts = foghttp.Timeouts(pool=0.2)
+
+    async with foghttp.AsyncClient(limits=limits, timeouts=timeouts) as client:
+        task = asyncio.create_task(client.get(http_server))
+        try:
+            for _attempt in range(200):
+                if client.stats().pending_requests == 1:
+                    break
+                await asyncio.sleep(0.005)
+
+            assert client.stats().pending_requests == 1
+            assert client.stats().active_requests == 0
+            with pytest.raises(foghttp.TimeoutError, match="request acquire timeout expired"):
+                await task
+        finally:
+            if not task.done():
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+
+        stats = client.stats()
+        assert stats.total_requests == 1
+        assert stats.failed_requests == 1
+        assert stats.active_requests == 0
+        assert stats.pending_requests == 0
+        assert stats.pool_acquire_timeouts == 1

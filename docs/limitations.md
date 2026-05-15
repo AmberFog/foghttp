@@ -46,7 +46,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | Compression decoding | Not available |
 | `base_url` | Not available |
 | default client headers | Not available |
-| active per-origin connection limits | `max_connections_per_host` is accepted but is not a full active per-origin limit yet |
+| active per-origin connection limits | Not available; `max_idle_connections_per_host` only controls idle keep-alive pool capacity |
 | separate read/write timeout semantics | `Timeouts.read` and `Timeouts.write` exist, but buffered requests are still governed by total timeout behavior |
 
 ## Practical Guidance

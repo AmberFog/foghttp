@@ -1,3 +1,4 @@
+mod acquire;
 mod async_requests;
 mod future;
 mod options;
@@ -9,7 +10,10 @@ use crate::core::client::{build_client, ClientOptions, HyperClient};
 use crate::core::headers::HeaderPairs;
 use crate::core::metrics::Metrics;
 use crate::errors::FogHttpError;
-use crate::py::client::async_requests::{spawn_async_request, AsyncRequestRegistry};
+use crate::py::client::acquire::AcquireGate;
+use crate::py::client::async_requests::{
+    spawn_async_request, AsyncRequestRegistry, AsyncRequestSpawn,
+};
 use crate::py::client::options::validate_unsupported_options;
 use crate::py::client::runtime::build_runtime;
 use crate::py::client::transport::{send_request, TransportRequest};
@@ -24,6 +28,7 @@ use tokio::runtime::Runtime;
 pub struct RawClient {
     client: Option<HyperClient>,
     runtime: Option<Runtime>,
+    acquire_gate: AcquireGate,
     metrics: Arc<Metrics>,
     active_async_requests: AsyncRequestRegistry,
     follow_redirects: bool,
@@ -35,8 +40,9 @@ impl RawClient {
     #[new]
     #[allow(clippy::too_many_arguments)]
     fn new(
-        max_connections: usize,
-        max_connections_per_host: usize,
+        max_active_requests: usize,
+        max_idle_connections_per_host: usize,
+        max_pending_requests: usize,
         idle_timeout: f64,
         keepalive: bool,
         connect_timeout: f64,
@@ -48,17 +54,24 @@ impl RawClient {
         validate_unsupported_options(trust_env)?;
 
         let client = build_client(ClientOptions {
-            max_connections_per_host,
+            max_idle_connections_per_host,
             idle_timeout,
             keepalive,
             connect_timeout,
         });
-        let runtime = build_runtime(max_connections, runtime_workers)?;
+        let runtime = build_runtime(max_active_requests, runtime_workers)?;
+        let metrics = Arc::new(Metrics::default());
+        let acquire_gate = AcquireGate::new(
+            max_active_requests,
+            max_pending_requests,
+            Arc::clone(&metrics),
+        );
 
         Ok(Self {
             client: Some(client),
             runtime: Some(runtime),
-            metrics: Arc::new(Metrics::default()),
+            acquire_gate,
+            metrics,
             active_async_requests: AsyncRequestRegistry::default(),
             follow_redirects,
             max_redirects,
@@ -74,25 +87,33 @@ impl RawClient {
         headers: HeaderPairs,
         body: Option<Vec<u8>>,
         _connect_timeout: f64,
+        pool_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<RawResponse> {
-        let client = self.client()?;
+        let client = self.client()?.clone();
         let runtime = self.runtime()?;
+        let acquire_gate = self.acquire_gate.clone();
+        let follow_redirects = self.follow_redirects;
+        let max_redirects = self.max_redirects;
         self.metrics.request_started();
 
         let result = py.detach(|| {
-            runtime.block_on(send_request(
-                client.clone(),
-                TransportRequest {
-                    method,
-                    url,
-                    headers,
-                    body,
-                    total_timeout,
-                    follow_redirects: self.follow_redirects,
-                    max_redirects: self.max_redirects,
-                },
-            ))
+            runtime.block_on(async move {
+                let _permit = acquire_gate.acquire(pool_timeout).await?;
+                send_request(
+                    client,
+                    TransportRequest {
+                        method,
+                        url,
+                        headers,
+                        body,
+                        total_timeout,
+                        follow_redirects,
+                        max_redirects,
+                    },
+                )
+                .await
+            })
         });
 
         self.metrics.request_finished(result.is_err());
@@ -108,24 +129,31 @@ impl RawClient {
         headers: HeaderPairs,
         body: Option<Vec<u8>>,
         _connect_timeout: f64,
+        pool_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<Py<PyAny>> {
         let client = self.client()?.clone();
         let runtime = self.runtime()?;
+        let follow_redirects = self.follow_redirects;
+        let max_redirects = self.max_redirects;
         spawn_async_request(
             py,
             runtime,
             &self.active_async_requests,
-            client,
-            Arc::clone(&self.metrics),
-            TransportRequest {
-                method,
-                url,
-                headers,
-                body,
-                total_timeout,
-                follow_redirects: self.follow_redirects,
-                max_redirects: self.max_redirects,
+            AsyncRequestSpawn {
+                acquire_gate: self.acquire_gate.clone(),
+                client,
+                metrics: Arc::clone(&self.metrics),
+                pool_timeout,
+                request: TransportRequest {
+                    method,
+                    url,
+                    headers,
+                    body,
+                    total_timeout,
+                    follow_redirects,
+                    max_redirects,
+                },
             },
         )
     }

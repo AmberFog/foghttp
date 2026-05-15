@@ -6,7 +6,7 @@ import foghttp
 from foghttp.status_codes.success import OK
 
 from .constants import SLOW_BODY_PATH, SLOW_HEADERS_PATH
-from .helpers import wait_for_no_active_requests
+from .helpers import wait_for_no_active_requests, wait_for_transport_state
 
 
 async def test_cancelled_async_request_aborts_rust_request(cancellation_server: str) -> None:
@@ -63,3 +63,46 @@ async def test_aclose_cancels_in_flight_async_request(cancellation_server: str) 
 
     with pytest.raises(asyncio.CancelledError):
         await asyncio.wait_for(task, timeout=1.0)
+
+
+async def test_cancelled_async_request_waiting_for_transport_slot_releases_pending_request(
+    cancellation_server: str,
+) -> None:
+    limits = foghttp.Limits(max_active_requests=1, max_pending_requests=1)
+
+    async with foghttp.AsyncClient(limits=limits) as client:
+        blocker = asyncio.create_task(client.get(cancellation_server + SLOW_HEADERS_PATH))
+        waiter = None
+        try:
+            await asyncio.sleep(0.05)
+            waiter = asyncio.create_task(client.get(cancellation_server))
+            await wait_for_transport_state(
+                client,
+                active_requests=1,
+                pending_requests=1,
+            )
+
+            waiter.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await waiter
+
+            await wait_for_transport_state(
+                client,
+                active_requests=1,
+                pending_requests=0,
+            )
+        finally:
+            if waiter is not None and not waiter.done():
+                waiter.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await waiter
+            if not blocker.done():
+                blocker.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await blocker
+
+        await wait_for_no_active_requests(client)
+        response = await client.get(cancellation_server)
+
+    assert response.status_code == OK
+    assert response.content == b"OK"

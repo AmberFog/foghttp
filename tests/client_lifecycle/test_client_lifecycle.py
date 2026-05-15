@@ -32,7 +32,7 @@ def test_sync_stats_before_first_request_do_not_create_raw_client(
     stats = client.stats()
     client.close()
 
-    assert stats == foghttp.PoolStats()
+    assert stats == foghttp.TransportStats()
     assert raw_client_factory.calls == 0
 
 
@@ -46,19 +46,18 @@ def test_sync_closed_client_rejects_stats(
         client.stats()
 
 
-def test_sync_dump_pool_state_before_first_request_do_not_create_raw_client(
+def test_sync_dump_transport_state_before_first_request_do_not_create_raw_client(
     sync_client_factory: type[foghttp.Client],
     raw_client_factory: RawClientFactory,
 ) -> None:
     client = sync_client_factory()
 
-    state = client.dump_pool_state()
+    state = client.dump_transport_state()
     client.close()
 
     assert state == {
-        "active_connections": 0,
-        "idle_connections": 0,
-        "pending_acquires": 0,
+        "active_requests": 0,
+        "pending_requests": 0,
     }
     assert raw_client_factory.calls == 0
 
@@ -168,7 +167,7 @@ async def test_async_stats_before_first_request_do_not_create_raw_client(
     stats = client.stats()
     await client.aclose()
 
-    assert stats == foghttp.PoolStats()
+    assert stats == foghttp.TransportStats()
     assert raw_client_factory.calls == 0
 
 
@@ -182,19 +181,18 @@ async def test_async_closed_client_rejects_stats(
         client.stats()
 
 
-async def test_async_dump_pool_state_before_first_request_do_not_create_raw_client(
+async def test_async_dump_transport_state_before_first_request_do_not_create_raw_client(
     async_client_factory: type[foghttp.AsyncClient],
     raw_client_factory: RawClientFactory,
 ) -> None:
     client = async_client_factory()
 
-    state = client.dump_pool_state()
+    state = client.dump_transport_state()
     await client.aclose()
 
     assert state == {
-        "active_connections": 0,
-        "idle_connections": 0,
-        "pending_acquires": 0,
+        "active_requests": 0,
+        "pending_requests": 0,
     }
     assert raw_client_factory.calls == 0
 

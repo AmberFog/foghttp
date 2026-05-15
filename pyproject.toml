@@ -35,7 +35,9 @@ dev = [
     "pytest-asyncio>=0.23",
 ]
 [tool.maturin]
-features = ["pyo3/extension-module"]
+features = [
+    "extension-module",
+]
 module-name = "foghttp._foghttp"
 python-source = "."
 

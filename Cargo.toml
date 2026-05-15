@@ -8,6 +8,10 @@ license = "MIT"
 name = "foghttp"
 crate-type = ["cdylib"]
 
+[features]
+default = []
+extension-module = ["pyo3/extension-module"]
+
 [dependencies]
 bytes = "1.8.0"
 http-body-util = "0.1.2"
@@ -42,13 +46,11 @@ features = [
 
 [dependencies.pyo3]
 version = "0.28.3"
-features = [
-    "extension-module",
-]
 
 [dependencies.tokio]
 version = "1.41.1"
 features = [
     "rt-multi-thread",
+    "sync",
     "time",
 ]

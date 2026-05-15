@@ -34,23 +34,15 @@ class RawResponse:
 
 class RawStats:
     @property
-    def active_connections(self) -> int: ...
+    def active_requests(self) -> int: ...
     @property
-    def idle_connections(self) -> int: ...
-    @property
-    def pending_acquires(self) -> int: ...
+    def pending_requests(self) -> int: ...
     @property
     def total_requests(self) -> int: ...
     @property
     def failed_requests(self) -> int: ...
     @property
-    def reused_connections(self) -> int: ...
-    @property
-    def opened_connections(self) -> int: ...
-    @property
-    def closed_connections(self) -> int: ...
-    @property
-    def pool_timeouts(self) -> int: ...
+    def pool_acquire_timeouts(self) -> int: ...
 
 class RawUrl:
     def __init__(self, url: str) -> None: ...
@@ -76,8 +68,9 @@ class RawUrl:
 class RawClient:
     def __init__(
         self,
-        max_connections: int,
-        max_connections_per_host: int,
+        max_active_requests: int,
+        max_idle_connections_per_host: int,
+        max_pending_requests: int,
         idle_timeout: float,
         keepalive: bool,
         connect_timeout: float,
@@ -93,6 +86,7 @@ class RawClient:
         headers: HeaderPairs,
         body: bytes | None,
         connect_timeout: float,
+        pool_timeout: float,
         total_timeout: float,
     ) -> RawResponse: ...
     async def request_async(
@@ -102,6 +96,7 @@ class RawClient:
         headers: HeaderPairs,
         body: bytes | None,
         connect_timeout: float,
+        pool_timeout: float,
         total_timeout: float,
     ) -> RawResponse: ...
     def stats(self) -> RawStats: ...
