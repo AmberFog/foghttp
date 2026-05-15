@@ -8,6 +8,7 @@ Run them from the repository root after building the local extension:
 uv run --with "maturin>=1.7,<2" maturin develop
 uv run examples/sync_json_api.py
 uv run examples/async_json_fanout.py
+uv run examples/async_resource_limits.py
 uv run examples/redirects.py
 uv run examples/prepared_requests.py
 ```
@@ -16,7 +17,9 @@ uv run examples/prepared_requests.py
 
 - [sync_json_api.py](./sync_json_api.py): sync JSON request/response flow.
 - [async_json_fanout.py](./async_json_fanout.py): concurrent async GET requests
-  with global active request limits and stats.
+  with global/per-origin active request limits and stats.
+- [async_resource_limits.py](./async_resource_limits.py): explicit global and
+  per-origin request backpressure with pool timeout settings.
 - [redirects.py](./redirects.py): GET and POST redirects, final URL, and
   history.
 - [prepared_requests.py](./prepared_requests.py): build, inspect, adjust, and

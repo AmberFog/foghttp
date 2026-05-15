@@ -4,7 +4,8 @@ FogHTTP is useful today when the workload is simple, explicit, and buffered.
 Think controlled service-to-service calls rather than browser-like sessions.
 Its strongest current fit is Python service code that wants a small API,
 Rust-backed transport execution, predictable cancellation, redirect/debug
-metadata, and observable pool pressure without adopting a large client surface.
+metadata, and observable request backpressure without adopting a large client
+surface.
 
 ## Works Well Today
 
@@ -48,8 +49,8 @@ def load_user(user_id: str) -> dict:
 ### Async Fan-Out
 
 `AsyncClient` is useful when you need many concurrent buffered requests with
-global active request limits, pool backpressure, and cancellation that aborts the
-in-flight Rust request.
+global and per-origin active request limits, acquire backpressure, and
+cancellation that aborts the in-flight Rust request.
 
 ```python
 import asyncio
@@ -58,13 +59,20 @@ import foghttp
 
 
 async def fetch_many(urls: list[str]) -> list[dict]:
-    limits = foghttp.Limits(max_active_requests=100, max_pending_requests=1000)
+    limits = foghttp.Limits(
+        max_active_requests=100,
+        max_active_requests_per_origin=20,
+        max_pending_requests=1000,
+    )
 
     async with foghttp.AsyncClient(limits=limits) as client:
         responses = await asyncio.gather(*(client.get(url) for url in urls))
 
     return [response.json() for response in responses]
 ```
+
+See [async_resource_limits.py](../examples/async_resource_limits.py) for a
+runnable example with explicit global and per-origin request limits.
 
 ### Cancellable Async Requests
 

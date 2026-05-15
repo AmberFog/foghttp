@@ -69,6 +69,7 @@ class RawClient:
     def __init__(
         self,
         max_active_requests: int,
+        max_active_requests_per_origin: int | None,
         max_idle_connections_per_host: int,
         max_pending_requests: int,
         idle_timeout: float,

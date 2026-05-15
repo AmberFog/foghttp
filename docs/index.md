@@ -4,7 +4,7 @@ layout: "home"
 hero:
   name: "FogHTTP"
   text: "Rust-powered HTTP client for Python"
-  tagline: "Buffered JSON requests, sync and async clients, redirects, cancellation, and observable pooling."
+  tagline: "Buffered JSON requests, sync and async clients, redirects, cancellation, and observable request limits."
 
 features:
   - title: "Rust transport"
@@ -14,7 +14,7 @@ features:
     details: "Use Client in scripts and workers, or AsyncClient for high-concurrency asyncio workloads."
 
   - title: "Focused MVP"
-    details: "FogHTTP is intentionally small today: buffered responses, JSON, redirects, prepared requests, async cancellation, global pool limits, and request metadata."
+    details: "FogHTTP is intentionally small today: buffered responses, JSON, redirects, prepared requests, async cancellation, global and per-origin request limits, and request metadata."
 ---
 
 # FogHTTP Documentation
@@ -35,8 +35,8 @@ FogHTTP is designed around a few engineering priorities:
 
 - keep the public API Python-first and easy to type, inspect, and test
 - use Rust and `hyper` where transport performance and runtime control matter
-- make lifecycle, cancellation, redirects, pool pressure, and request metadata
-  visible instead of implicit
+- make lifecycle, cancellation, redirects, request backpressure, and request
+  metadata visible instead of implicit
 - stay focused on production service workloads before expanding into broader
   feature parity
 
@@ -47,7 +47,8 @@ FogHTTP is designed around a few engineering priorities:
 - buffered JSON and bytes workflows that are simple to reason about
 - async cancellation that aborts in-flight Rust requests
 - redirect history and final request metadata for debugging
-- pool backpressure and stats for operational visibility
+- global and per-origin request backpressure with stats for operational
+  visibility
 
 Until version `0.5.0`, backward compatibility is not guaranteed. I will still
 try to keep public interfaces stable and avoid unnecessary breaking changes.
@@ -80,7 +81,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - normalized `URL` model with origin comparison and relative joins
 - GET/HEAD/POST redirects with final URL and history
 - async request cancellation and explicit client lifecycle
-- global pool limits, pending acquire limits, and basic stats
+- global active request limits, per-origin active request limits, pending
+  acquire limits, and basic stats
 - grouped HTTP status constants
 
 ## Not Yet

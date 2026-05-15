@@ -48,11 +48,7 @@ pub fn spawn_async_request(
 
     metrics.request_started();
     let handle = runtime.spawn(async move {
-        let result = async {
-            let _permit = acquire_gate.acquire(pool_timeout).await?;
-            send_request(client, request).await
-        }
-        .await;
+        let result = send_request(client, acquire_gate, pool_timeout, request).await;
         if task_completion.finish() {
             task_registry.remove(request_id);
             task_metrics.request_finished(result.is_err());

@@ -6,6 +6,9 @@ use std::sync::Once;
 use std::time::Duration;
 use tokio::runtime::Builder;
 
+const ORIGIN: &str = "http://example.com";
+const SECONDARY_ORIGIN: &str = "http://api.example.com";
+
 fn initialize_python() {
     static PYTHON: Once = Once::new();
     PYTHON.call_once(Python::initialize);
@@ -18,10 +21,10 @@ fn test_runtime() -> tokio::runtime::Runtime {
 #[test]
 fn available_permit_does_not_use_pending_queue() {
     let metrics = Arc::new(Metrics::default());
-    let gate = AcquireGate::new(1, 0, Arc::clone(&metrics));
+    let gate = AcquireGate::new(1, None, 0, Arc::clone(&metrics));
     let runtime = test_runtime();
 
-    let permit = runtime.block_on(gate.acquire(0.1)).unwrap();
+    let permit = runtime.block_on(gate.acquire(ORIGIN, 0.1)).unwrap();
     let snapshot = metrics.snapshot();
     assert_eq!(snapshot.active_requests, 1);
     assert_eq!(snapshot.pending_requests, 0);
@@ -34,15 +37,15 @@ fn available_permit_does_not_use_pending_queue() {
 #[test]
 fn acquire_permit_releases_capacity_on_drop() {
     let metrics = Arc::new(Metrics::default());
-    let gate = AcquireGate::new(1, 0, Arc::clone(&metrics));
+    let gate = AcquireGate::new(1, None, 0, Arc::clone(&metrics));
     let runtime = test_runtime();
 
-    let permit = runtime.block_on(gate.acquire(0.1)).unwrap();
+    let permit = runtime.block_on(gate.acquire(ORIGIN, 0.1)).unwrap();
     assert_eq!(metrics.snapshot().active_requests, 1);
     drop(permit);
     assert_eq!(metrics.snapshot().active_requests, 0);
 
-    let permit = runtime.block_on(gate.acquire(0.1)).unwrap();
+    let permit = runtime.block_on(gate.acquire(ORIGIN, 0.1)).unwrap();
     assert_eq!(metrics.snapshot().active_requests, 1);
     drop(permit);
 
@@ -57,10 +60,10 @@ fn queue_full_updates_pool_timeout_without_pending_leak() {
     initialize_python();
 
     let metrics = Arc::new(Metrics::default());
-    let gate = AcquireGate::new(0, 0, Arc::clone(&metrics));
+    let gate = AcquireGate::new(0, None, 0, Arc::clone(&metrics));
     let runtime = test_runtime();
 
-    let error = match runtime.block_on(gate.acquire(0.1)) {
+    let error = match runtime.block_on(gate.acquire(ORIGIN, 0.1)) {
         Ok(_permit) => panic!("acquire unexpectedly succeeded"),
         Err(err) => err,
     };
@@ -76,10 +79,10 @@ fn acquire_timeout_updates_pool_timeout_without_pending_leak() {
     initialize_python();
 
     let metrics = Arc::new(Metrics::default());
-    let gate = AcquireGate::new(0, 1, Arc::clone(&metrics));
+    let gate = AcquireGate::new(0, None, 1, Arc::clone(&metrics));
     let runtime = test_runtime();
 
-    let error = match runtime.block_on(gate.acquire(0.001)) {
+    let error = match runtime.block_on(gate.acquire(ORIGIN, 0.001)) {
         Ok(_permit) => panic!("acquire unexpectedly succeeded"),
         Err(err) => err,
     };
@@ -95,12 +98,12 @@ fn acquire_timeout_updates_pool_timeout_without_pending_leak() {
 #[test]
 fn dropped_waiting_acquire_releases_pending_slot() {
     let metrics = Arc::new(Metrics::default());
-    let gate = AcquireGate::new(0, 1, Arc::clone(&metrics));
+    let gate = AcquireGate::new(0, None, 1, Arc::clone(&metrics));
     let runtime = test_runtime();
 
     runtime.block_on(async {
         {
-            let acquire = gate.acquire(60.0);
+            let acquire = gate.acquire(ORIGIN, 60.0);
             tokio::pin!(acquire);
 
             let result = tokio::time::timeout(Duration::from_millis(1), &mut acquire).await;
@@ -114,5 +117,106 @@ fn dropped_waiting_acquire_releases_pending_slot() {
         assert_eq!(snapshot.active_requests, 0);
         assert_eq!(snapshot.pending_requests, 0);
         assert_eq!(snapshot.pool_acquire_timeouts, 0);
+    });
+}
+
+#[test]
+fn same_origin_limit_tracks_pending_without_active_leak() {
+    let metrics = Arc::new(Metrics::default());
+    let gate = AcquireGate::new(2, Some(1), 1, Arc::clone(&metrics));
+    let runtime = test_runtime();
+
+    runtime.block_on(async {
+        let permit = gate.acquire(ORIGIN, 0.1).await.unwrap();
+        assert_eq!(metrics.snapshot().active_requests, 1);
+
+        {
+            let acquire = gate.acquire(ORIGIN, 60.0);
+            tokio::pin!(acquire);
+
+            let result = tokio::time::timeout(Duration::from_millis(1), &mut acquire).await;
+            assert!(result.is_err());
+            let snapshot = metrics.snapshot();
+            assert_eq!(snapshot.active_requests, 1);
+            assert_eq!(snapshot.pending_requests, 1);
+        }
+
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.active_requests, 1);
+        assert_eq!(snapshot.pending_requests, 0);
+        drop(permit);
+        assert_eq!(metrics.snapshot().active_requests, 0);
+    });
+}
+
+#[test]
+fn different_origins_do_not_share_origin_limit() {
+    let metrics = Arc::new(Metrics::default());
+    let gate = AcquireGate::new(2, Some(1), 0, Arc::clone(&metrics));
+    let runtime = test_runtime();
+
+    runtime.block_on(async {
+        let first = gate.acquire(ORIGIN, 0.1).await.unwrap();
+        let second = gate.acquire(SECONDARY_ORIGIN, 0.1).await.unwrap();
+
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.active_requests, 2);
+        assert_eq!(snapshot.pending_requests, 0);
+
+        drop(first);
+        drop(second);
+        assert_eq!(metrics.snapshot().active_requests, 0);
+    });
+}
+
+#[test]
+fn origin_queue_full_updates_pool_timeout_without_active_leak() {
+    initialize_python();
+
+    let metrics = Arc::new(Metrics::default());
+    let gate = AcquireGate::new(10, Some(0), 0, Arc::clone(&metrics));
+    let runtime = test_runtime();
+
+    let error = match runtime.block_on(gate.acquire(ORIGIN, 0.1)) {
+        Ok(_permit) => panic!("acquire unexpectedly succeeded"),
+        Err(err) => err,
+    };
+
+    assert!(error.to_string().contains("request acquire queue is full"));
+    let snapshot = metrics.snapshot();
+    assert_eq!(snapshot.active_requests, 0);
+    assert_eq!(snapshot.pending_requests, 0);
+    assert_eq!(snapshot.pool_acquire_timeouts, 1);
+}
+
+#[test]
+fn dropped_waiting_global_acquire_releases_origin_slot() {
+    let metrics = Arc::new(Metrics::default());
+    let gate = AcquireGate::new(1, Some(1), 1, Arc::clone(&metrics));
+    let runtime = test_runtime();
+
+    runtime.block_on(async {
+        let global_blocker = gate.acquire(SECONDARY_ORIGIN, 0.1).await.unwrap();
+
+        {
+            let acquire = gate.acquire(ORIGIN, 60.0);
+            tokio::pin!(acquire);
+
+            let result = tokio::time::timeout(Duration::from_millis(1), &mut acquire).await;
+            assert!(result.is_err());
+            let snapshot = metrics.snapshot();
+            assert_eq!(snapshot.active_requests, 1);
+            assert_eq!(snapshot.pending_requests, 1);
+        }
+
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.active_requests, 1);
+        assert_eq!(snapshot.pending_requests, 0);
+        drop(global_blocker);
+
+        let permit = gate.acquire(ORIGIN, 0.1).await.unwrap();
+        assert_eq!(metrics.snapshot().active_requests, 1);
+        drop(permit);
+        assert_eq!(metrics.snapshot().active_requests, 0);
     });
 }
