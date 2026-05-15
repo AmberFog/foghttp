@@ -27,6 +27,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - explicit `close()`/`aclose()` lifecycle for Rust runtime resources
 - graceful sync `close()` for in-flight requests and cancellable async requests
 - global/per-origin request backpressure and observable request stats
+- advanced per-client Tokio runtime worker tuning
 - focused buffered HTTP surface for JSON APIs, internal services, workers, and
   benchmarks
 
@@ -89,6 +90,7 @@ async with foghttp.AsyncClient() as client:
 - global and per-origin request backpressure, basic stats, and HTTP/1.1 over
   HTTP/HTTPS
 - optional buffered response body size limit for memory safety
+- advanced per-client Tokio runtime worker tuning
 - grouped HTTP status constants
 
 ## Documentation

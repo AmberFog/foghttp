@@ -59,9 +59,10 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 Use FogHTTP today when:
 
 - you control the API or know its behavior well
-- responses are small enough to buffer in memory
+- responses are small enough to buffer in memory or bounded by
+  `max_response_body_size`
 - requests are JSON-heavy
-- redirects are simple and do not require browser-like cookie/auth policy
+- redirects are simple and do not require cookie jar or auth helper integration
 - sync and async clients with explicit lifecycle are enough
 - async request cancellation behavior is useful, but you do not need streaming
   cancellation semantics yet
@@ -71,7 +72,8 @@ Use FogHTTP today when:
 
 Wait before using FogHTTP when:
 
-- you download large files
+- you download large files and need streaming instead of buffered fail-fast
+  limits
 - you upload large files
 - you need proxy behavior from environment variables
 - you rely on cookies across requests
