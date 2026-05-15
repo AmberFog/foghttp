@@ -27,6 +27,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - async request cancellation that aborts the in-flight Rust request
 - global active request limit, per-origin active request limit, pending acquire
   limit, and basic request stats
+- optional `max_response_body_size` limit for buffered response memory safety
 - explicit `close()`/`aclose()` lifecycle for Rust runtime and pool resources
 - advanced `runtime_workers` tuning for the per-client Tokio runtime
 - HTTP/1.1 over HTTP and HTTPS

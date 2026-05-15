@@ -87,6 +87,7 @@ async with foghttp.AsyncClient() as client:
 - async request cancellation that aborts the in-flight Rust request
 - global and per-origin request backpressure, basic stats, and HTTP/1.1 over
   HTTP/HTTPS
+- optional buffered response body size limit for memory safety
 - grouped HTTP status constants
 
 ## Documentation

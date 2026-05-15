@@ -21,6 +21,8 @@ REPEATED_HEADERS_PATH = "/headers/repeated"
 REDIRECT_TO_LOCATION_PATH = "/redirect-to-location"
 SECURITY_HEADERS_PATH = "/headers/security"
 TEXT_PATH = "/text"
+BYTES_PATH_PARTS = 2
+UNKNOWN_SIZE_BYTES_ROUTE = "unknown-size-bytes"
 
 
 async def _read_request(reader: asyncio.StreamReader) -> tuple[str, bytes]:
@@ -100,6 +102,20 @@ def _status_code(path: str) -> int | None:
     return None
 
 
+def _bytes_response_size(path: str) -> int | None:
+    parts = path.strip("/").split("/")
+    if len(parts) == BYTES_PATH_PARTS and parts[0] == "bytes":
+        return int(parts[1])
+    return None
+
+
+def _unknown_size_bytes_response_size(path: str) -> int | None:
+    parts = path.strip("/").split("/")
+    if len(parts) == BYTES_PATH_PARTS and parts[0] == UNKNOWN_SIZE_BYTES_ROUTE:
+        return int(parts[1])
+    return None
+
+
 def _reason_phrase(status_code: int) -> str:
     try:
         return HTTPStatus(status_code).phrase
@@ -158,6 +174,41 @@ def _raw_status_response(path: str) -> bytes | None:
         return None
 
     return _raw_empty_response(status_code, _reason_phrase(status_code), [])
+
+
+def _raw_bytes_response(path: str) -> bytes | None:
+    response_size = _bytes_response_size(path)
+    if response_size is None:
+        return None
+
+    content = b"x" * response_size
+    return _raw_response(
+        OK,
+        "OK",
+        [
+            ("content-type", "application/octet-stream"),
+            ("content-length", str(len(content))),
+            ("connection", "close"),
+        ],
+        content,
+    )
+
+
+def _raw_unknown_size_bytes_response(path: str) -> bytes | None:
+    response_size = _unknown_size_bytes_response_size(path)
+    if response_size is None:
+        return None
+
+    content = b"x" * response_size
+    return _raw_response(
+        OK,
+        "OK",
+        [
+            ("content-type", "application/octet-stream"),
+            ("connection", "close"),
+        ],
+        content,
+    )
 
 
 def _raw_text_response(path: str) -> bytes | None:
@@ -275,6 +326,8 @@ def _raw_http_server_response(headers: str, body: bytes) -> bytes:
         or _raw_redirect_to_status_response(path)
         or _raw_redirect_response(path)
         or _raw_status_response(path)
+        or _raw_bytes_response(path)
+        or _raw_unknown_size_bytes_response(path)
         or _raw_text_response(path)
         or _raw_repeated_headers_response(path)
         or _raw_echo_headers_response(path, headers)
@@ -352,6 +405,8 @@ class SyncHTTPHandler(BaseHTTPRequestHandler):
                 lambda: self._write_redirect_to_status(path),
                 lambda: self._write_redirect(path),
                 lambda: self._write_status(path),
+                lambda: self._write_bytes(path),
+                lambda: self._write_unknown_size_bytes(path),
                 lambda: self._write_text(path),
                 lambda: self._write_repeated_headers(path),
                 lambda: self._write_echo_headers(path),
@@ -408,6 +463,34 @@ class SyncHTTPHandler(BaseHTTPRequestHandler):
         self.send_header("content-length", "0")
         self.send_header("connection", "close")
         self.end_headers()
+        return True
+
+    def _write_bytes(self, path: str) -> bool:
+        response_size = _bytes_response_size(path)
+        if response_size is None:
+            return False
+
+        content = b"x" * response_size
+        self.send_response(OK)
+        self.send_header("content-type", "application/octet-stream")
+        self.send_header("content-length", str(len(content)))
+        self.send_header("connection", "close")
+        self.end_headers()
+        self.wfile.write(content)
+        return True
+
+    def _write_unknown_size_bytes(self, path: str) -> bool:
+        response_size = _unknown_size_bytes_response_size(path)
+        if response_size is None:
+            return False
+
+        content = b"x" * response_size
+        self.close_connection = True
+        self.send_response(OK)
+        self.send_header("content-type", "application/octet-stream")
+        self.send_header("connection", "close")
+        self.end_headers()
+        self.wfile.write(content)
         return True
 
     def _write_text(self, path: str) -> bool:

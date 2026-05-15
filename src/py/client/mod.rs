@@ -31,6 +31,7 @@ pub struct RawClient {
     acquire_gate: AcquireGate,
     metrics: Arc<Metrics>,
     active_async_requests: AsyncRequestRegistry,
+    max_response_body_size: Option<usize>,
     follow_redirects: bool,
     max_redirects: usize,
 }
@@ -44,6 +45,7 @@ impl RawClient {
         max_active_requests_per_origin: Option<usize>,
         max_idle_connections_per_host: usize,
         max_pending_requests: usize,
+        max_response_body_size: Option<usize>,
         idle_timeout: f64,
         keepalive: bool,
         connect_timeout: f64,
@@ -75,6 +77,7 @@ impl RawClient {
             acquire_gate,
             metrics,
             active_async_requests: AsyncRequestRegistry::default(),
+            max_response_body_size,
             follow_redirects,
             max_redirects,
         })
@@ -95,6 +98,7 @@ impl RawClient {
         let client = self.client()?.clone();
         let runtime = self.runtime()?;
         let acquire_gate = self.acquire_gate.clone();
+        let max_response_body_size = self.max_response_body_size;
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         self.metrics.request_started();
@@ -111,6 +115,7 @@ impl RawClient {
                         headers,
                         body,
                         total_timeout,
+                        max_response_body_size,
                         follow_redirects,
                         max_redirects,
                     },
@@ -137,6 +142,7 @@ impl RawClient {
     ) -> PyResult<Py<PyAny>> {
         let client = self.client()?.clone();
         let runtime = self.runtime()?;
+        let max_response_body_size = self.max_response_body_size;
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         spawn_async_request(
@@ -154,6 +160,7 @@ impl RawClient {
                     headers,
                     body,
                     total_timeout,
+                    max_response_body_size,
                     follow_redirects,
                     max_redirects,
                 },

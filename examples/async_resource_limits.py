@@ -33,6 +33,7 @@ async def main() -> None:
         max_active_requests=4,
         max_active_requests_per_origin=2,
         max_pending_requests=20,
+        max_response_body_size=1024 * 1024,
     )
     timeouts = foghttp.Timeouts(
         connect=2.0,

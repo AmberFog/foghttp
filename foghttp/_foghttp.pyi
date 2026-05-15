@@ -5,6 +5,7 @@ HeaderPairs: TypeAlias = Sequence[tuple[str, str]]
 
 class FogHttpError(Exception): ...
 class FogHttpTimeoutError(FogHttpError): ...
+class FogHttpResponseBodyTooLargeError(FogHttpError): ...
 
 class RawRequestInfo:
     @property
@@ -72,6 +73,7 @@ class RawClient:
         max_active_requests_per_origin: int | None,
         max_idle_connections_per_host: int,
         max_pending_requests: int,
+        max_response_body_size: int | None,
         idle_timeout: float,
         keepalive: bool,
         connect_timeout: float,

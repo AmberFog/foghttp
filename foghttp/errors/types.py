@@ -7,6 +7,7 @@ __all__ = (
     "PoolTimeout",
     "ReadTimeout",
     "RequestError",
+    "ResponseBodyTooLargeError",
     "ResponseError",
     "TimeoutError",
     "UnclosedClientError",
@@ -39,6 +40,10 @@ class PoolTimeout(TimeoutError):
 
 class ResponseError(FogHTTPError):
     """Raised for response handling errors."""
+
+
+class ResponseBodyTooLargeError(ResponseError):
+    """Raised when a buffered response body exceeds the configured limit."""
 
 
 class HTTPStatusError(ResponseError):

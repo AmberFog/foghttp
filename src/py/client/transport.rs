@@ -21,6 +21,7 @@ pub struct TransportRequest {
     pub headers: HeaderPairs,
     pub body: Option<Vec<u8>>,
     pub total_timeout: f64,
+    pub max_response_body_size: Option<usize>,
     pub follow_redirects: bool,
     pub max_redirects: usize,
 }
@@ -50,7 +51,13 @@ pub async fn send_request(
             .map_err(|_| FogHttpTimeoutError::new_err(REQUEST_TOTAL_TIMEOUT))?
             .map_err(|err| FogHttpError::new_err(err.to_string()))?;
 
-            raw_response(response, request_info, started).await?
+            raw_response(
+                response,
+                request_info,
+                started,
+                state.max_response_body_size,
+            )
+            .await?
         };
 
         let response_url = raw.request.url.clone();
@@ -82,6 +89,7 @@ struct RequestState {
     headers: HeaderPairs,
     body: Option<Vec<u8>>,
     total_timeout: f64,
+    max_response_body_size: Option<usize>,
     follow_redirects: bool,
     max_redirects: usize,
 }
@@ -137,6 +145,7 @@ impl RequestState {
             headers: parts.headers,
             body: parts.body,
             total_timeout: parts.total_timeout,
+            max_response_body_size: parts.max_response_body_size,
             follow_redirects: parts.follow_redirects,
             max_redirects: parts.max_redirects,
         })
@@ -147,11 +156,12 @@ async fn raw_response(
     response: Response<Incoming>,
     request: RawRequestInfo,
     started: Instant,
+    max_response_body_size: Option<usize>,
 ) -> PyResult<RawResponse> {
     let status_code = response.status().as_u16();
     let http_version = format!("{:?}", response.version());
     let headers = response_headers(response.headers());
-    let content = collect_body(response.into_body()).await?;
+    let content = collect_body(response.into_body(), max_response_body_size).await?;
     let url = request.url.clone();
 
     Ok(RawResponse {

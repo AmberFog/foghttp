@@ -83,6 +83,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - async request cancellation and explicit client lifecycle
 - global active request limits, per-origin active request limits, pending
   acquire limits, and basic stats
+- optional buffered response body size limit
 - grouped HTTP status constants
 
 ## Not Yet
