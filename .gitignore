@@ -33,3 +33,7 @@ dist/
 .idea/
 .vscode/
 .DS_Store
+
+# Local context files
+CONTEXT.md
+TASKS.md
