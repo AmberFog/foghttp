@@ -14,8 +14,8 @@ transport core is implemented in Rust on top of `hyper`.
 FogHTTP is positioned as an observable, high-concurrency Rust-powered transport
 for Python services. It is built for controlled service-to-service HTTP
 workloads where explicit lifecycle, predictable resource usage, cancellation,
-redirect history, and pool visibility matter more than browser-like feature
-parity.
+redirect history, and request backpressure visibility matter more than
+browser-like feature parity.
 
 Until version `0.5.0`, backward compatibility is not guaranteed. I will still
 try to keep public interfaces stable and avoid unnecessary breaking changes.
@@ -26,7 +26,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - sync and asyncio clients with the same request model
 - explicit `close()`/`aclose()` lifecycle for Rust runtime resources
 - cancellable async requests that abort in-flight Rust work
-- global pool backpressure and observable request stats
+- global/per-origin request backpressure and observable request stats
 - focused buffered HTTP surface for JSON APIs, internal services, workers, and
   benchmarks
 
