@@ -1,7 +1,8 @@
+from faker import Faker
 import pytest
 
 from foghttp import _foghttp
-from foghttp._client.raw import create_raw_client
+from foghttp._client.raw import create_raw_client, send_raw_request, send_raw_request_async
 from foghttp.limits import Limits
 from foghttp.timeouts import Timeouts
 
@@ -19,6 +20,15 @@ RAW_CLIENT_INIT_ARGUMENTS = (
     "max_redirects",
     "trust_env",
     "runtime_workers",
+)
+
+RAW_REQUEST_ARGUMENTS = (
+    "method",
+    "url",
+    "headers",
+    "body",
+    "pool_timeout",
+    "total_timeout",
 )
 
 
@@ -70,4 +80,68 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
         "max_redirects": max_redirects,
         "trust_env": trust_env,
         "runtime_workers": runtime_workers,
+    }
+
+
+def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker: Faker) -> None:
+    captured_options: dict[str, object] = {}
+    raw_response = object()
+
+    class RawClientProbe:
+        def request(self, *args: object) -> object:
+            captured_options.update(dict(zip(RAW_REQUEST_ARGUMENTS, args, strict=True)))
+            return raw_response
+
+    timeouts = Timeouts(connect=2.5, pool=3.5, total=4.5)
+    url = faker.url()
+
+    response = send_raw_request(
+        raw_client=RawClientProbe(),
+        method="GET",
+        url=url,
+        headers=[],
+        body=None,
+        timeouts=timeouts,
+    )
+
+    assert response is raw_response
+    assert captured_options == {
+        "method": "GET",
+        "url": url,
+        "headers": [],
+        "body": None,
+        "pool_timeout": timeouts.pool,
+        "total_timeout": timeouts.total,
+    }
+
+
+async def test_send_raw_request_async_passes_request_timeouts_without_connect_timeout(faker: Faker) -> None:
+    captured_options: dict[str, object] = {}
+    raw_response = object()
+
+    class RawClientProbe:
+        async def request_async(self, *args: object) -> object:
+            captured_options.update(dict(zip(RAW_REQUEST_ARGUMENTS, args, strict=True)))
+            return raw_response
+
+    timeouts = Timeouts(connect=2.5, pool=3.5, total=4.5)
+    url = faker.url()
+
+    response = await send_raw_request_async(
+        raw_client=RawClientProbe(),
+        method="GET",
+        url=url,
+        headers=[],
+        body=None,
+        timeouts=timeouts,
+    )
+
+    assert response is raw_response
+    assert captured_options == {
+        "method": "GET",
+        "url": url,
+        "headers": [],
+        "body": None,
+        "pool_timeout": timeouts.pool,
+        "total_timeout": timeouts.total,
     }

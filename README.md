@@ -104,8 +104,9 @@ async with foghttp.AsyncClient() as client:
 
 FogHTTP is currently focused on controlled buffered HTTP workloads. Streaming
 bodies, cookies, auth helpers, proxy support, multipart uploads, HTTP/2,
-compression decoding, true connection-level pool metrics, and separate read/
-write timeout semantics are planned for later versions.
+compression decoding, true connection-level pool metrics, per-request connect
+timeout reconfiguration, and separate read/write timeout semantics are planned
+for later versions.
 
 ## Development
 

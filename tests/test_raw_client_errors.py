@@ -4,7 +4,7 @@ import pytest
 from foghttp import _foghttp
 from foghttp._client.constants import DEFAULT_MAX_REDIRECTS
 from foghttp._client.raw import create_raw_client, send_raw_request, send_raw_request_async
-from foghttp.errors import ResponseBodyTooLargeError, TimeoutError
+from foghttp.errors import PoolTimeout, ResponseBodyTooLargeError, TimeoutError
 from foghttp.limits import Limits
 from foghttp.timeouts import Timeouts
 
@@ -17,6 +17,16 @@ class TimeoutRawClient:
     async def request_async(self, *_args: object) -> object:
         msg = "request timed out"
         raise _foghttp.FogHttpTimeoutError(msg)
+
+
+class PoolTimeoutRawClient:
+    def request(self, *_args: object) -> object:
+        msg = "request acquire timeout expired"
+        raise _foghttp.FogHttpPoolTimeoutError(msg)
+
+    async def request_async(self, *_args: object) -> object:
+        msg = "request acquire timeout expired"
+        raise _foghttp.FogHttpPoolTimeoutError(msg)
 
 
 class BodyTooLargeRawClient:
@@ -65,6 +75,30 @@ async def test_async_raw_timeout_maps_to_public_timeout(faker: Faker) -> None:
     with pytest.raises(TimeoutError, match="request timed out"):
         await send_raw_request_async(
             raw_client=TimeoutRawClient(),
+            method="GET",
+            url=faker.url(),
+            headers=[],
+            body=None,
+            timeouts=Timeouts(),
+        )
+
+
+def test_sync_raw_pool_timeout_maps_to_public_pool_timeout(faker: Faker) -> None:
+    with pytest.raises(PoolTimeout, match="request acquire timeout expired"):
+        send_raw_request(
+            raw_client=PoolTimeoutRawClient(),
+            method="GET",
+            url=faker.url(),
+            headers=[],
+            body=None,
+            timeouts=Timeouts(),
+        )
+
+
+async def test_async_raw_pool_timeout_maps_to_public_pool_timeout(faker: Faker) -> None:
+    with pytest.raises(PoolTimeout, match="request acquire timeout expired"):
+        await send_raw_request_async(
+            raw_client=PoolTimeoutRawClient(),
             method="GET",
             url=faker.url(),
             headers=[],

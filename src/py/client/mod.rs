@@ -91,7 +91,6 @@ impl RawClient {
         url: String,
         headers: HeaderPairs,
         body: Option<Vec<u8>>,
-        _connect_timeout: f64,
         pool_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<RawResponse> {
@@ -136,7 +135,6 @@ impl RawClient {
         url: String,
         headers: HeaderPairs,
         body: Option<Vec<u8>>,
-        _connect_timeout: f64,
         pool_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<Py<PyAny>> {

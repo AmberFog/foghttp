@@ -49,6 +49,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | `base_url` | Not available |
 | default client headers | Not available |
 | true active connection-level limits | `max_active_requests_per_origin` limits buffered request slots; physical TCP connection-level accounting is not exposed yet |
+| per-request connect timeout changes | `Timeouts.connect` configures the Rust connector when transport state is created; per-request connect timeout changes do not reconfigure an existing client |
 | separate read/write timeout semantics | `Timeouts.read` and `Timeouts.write` exist, but buffered requests are still governed by total timeout behavior |
 
 ## Practical Guidance
@@ -73,11 +74,13 @@ Wait before using FogHTTP when:
 - you need proxy behavior from environment variables
 - you rely on cookies across requests
 - you need multipart form-data
-- you need mature timeout semantics for connect/read/write separately
+- you need per-request connect timeout reconfiguration or mature read/write
+  timeout semantics
 - you need strict active per-host connection limits
 
 ## Error Surface
 
-The public exception hierarchy exists, but some transport errors and timeout
-causes are still coarse. The timeout model and network error mapping are planned
-to become more precise.
+Network and protocol failures map to `RequestError`. Pool acquire timeout and
+queue-full conditions map to `PoolTimeout`. Whole buffered request deadline
+expiration maps to the base `TimeoutError`. Dedicated read/write timeout
+exceptions are reserved for later body/streaming work.
