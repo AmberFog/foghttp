@@ -13,7 +13,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - sync `Client`
 - async `AsyncClient`
 - `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`
-- query parameters from mappings
+- query parameters from mappings, repeated pairs, and raw query strings
 - JSON bodies through `json=`
 - raw bytes/text bodies through `content=`
 - buffered responses

@@ -66,14 +66,22 @@ class URL:
         return self._raw.is_same_origin(_raw_url(other))
 
     def with_params(self, params: QueryParams) -> "URL":
-        if not params:
+        query = _query_string(params)
+        if not query:
             return self
 
         parts = urlsplit(str(self))
-        query = urlencode(params, doseq=True)
         merged_query = f"{parts.query}&{query}" if parts.query else query
         return URL(urlunsplit((parts.scheme, parts.netloc, parts.path, merged_query, parts.fragment)))
 
 
 def merge_params(url: str | URL, params: QueryParams) -> str:
     return str(URL(url).with_params(params))
+
+
+def _query_string(params: QueryParams) -> str:
+    if params is None:
+        return ""
+    if isinstance(params, str):
+        return params.removeprefix("?")
+    return urlencode(params, doseq=True)
