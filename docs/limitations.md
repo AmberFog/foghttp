@@ -32,6 +32,9 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - explicit `close()`/`aclose()` lifecycle for Rust runtime and pool resources;
   sync `close()` waits for in-flight sync requests, while async `aclose()`
   cancels in-flight async requests; see [Client lifecycle](./lifecycle.md)
+- documented current timeout model for client-level `connect`, per-request
+  `pool`/`total`, and reserved `read`/`write`; see
+  [Timeout model](./timeouts.md)
 - advanced `runtime_workers` tuning for the per-client Tokio runtime
 - HTTP/1.1 over HTTP and HTTPS
 
@@ -53,8 +56,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | `base_url` | Not available |
 | default client headers | Not available |
 | true active connection-level limits | `max_active_requests_per_origin` limits buffered request slots; physical TCP connection-level accounting is not exposed yet |
-| per-request connect timeout changes | `Timeouts.connect` configures the Rust connector when transport state is created; per-request connect timeout changes do not reconfigure an existing client |
-| separate read/write timeout semantics | `Timeouts.read` and `Timeouts.write` exist, but buffered requests are still governed by total timeout behavior |
+| per-request connect timeout changes | `Timeouts.connect` configures the Rust connector from client-level settings when transport state is created; per-request `timeout.connect` does not reconfigure the connector |
+| separate read/write timeout semantics | `Timeouts.read` and `Timeouts.write` exist, but separate body read/write deadlines are reserved for later streaming/body work |
 
 ## Practical Guidance
 
@@ -89,6 +92,7 @@ Wait before using FogHTTP when:
 ## Error Surface
 
 Network and protocol failures map to `RequestError`. Pool acquire timeout and
-queue-full conditions map to `PoolTimeout`. Whole buffered request deadline
-expiration maps to the base `TimeoutError`. Dedicated read/write timeout
-exceptions are reserved for later body/streaming work.
+queue-full conditions map to `PoolTimeout`. The broader buffered transport
+deadline maps to the base `TimeoutError`. Dedicated connect/read/write timeout
+exception mappings are reserved for later timeout work. See
+[Timeout model](./timeouts.md) for the current behavior.

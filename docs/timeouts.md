@@ -1,0 +1,210 @@
+# Timeout Model
+
+FogHTTP timeout settings are seconds as `float` values. The current timeout
+model is intentionally documented for the buffered client that exists today.
+Streaming bodies, mature read/write deadlines, and more specific timeout
+exception classes are planned later.
+
+```python
+import foghttp
+
+
+timeouts = foghttp.Timeouts(
+    connect=2.0,
+    pool=0.5,
+    total=10.0,
+)
+
+with foghttp.Client(timeouts=timeouts) as client:
+    response = client.get("https://api.example.com/users")
+    response.raise_for_status()
+```
+
+## Current Semantics
+
+| Field | Default | Applies Today | Public Error |
+|---|---:|---|---|
+| `connect` | `2.0` | Client-level Rust connector TCP connect timeout. It is read when the lazy Rust transport is created from the client constructor settings. | No stable dedicated `ConnectTimeout` mapping yet; low-level connect failures can surface as `RequestError`, while the outer `total` deadline can raise `TimeoutError`. |
+| `pool` | `1.0` | Waiting for a global or per-origin active request slot. | `PoolTimeout` for acquire timeout or full pending queue. |
+| `total` | `30.0` | Outer deadline for acquiring a request slot and waiting for response headers for each transport hop. The same budget is shared across redirect hops. | Base `TimeoutError`. |
+| `read` | `10.0` | Reserved for future response body read deadlines. | Not emitted separately today. |
+| `write` | `10.0` | Reserved for future request body write deadlines. | Not emitted separately today. |
+
+`PoolTimeout` is a subclass of `TimeoutError`. Catch `PoolTimeout` first when
+application code wants to handle pool saturation differently from the broader
+request deadline.
+
+```python
+try:
+    response = client.get("https://api.example.com/users")
+except foghttp.PoolTimeout:
+    # The request could not acquire a transport slot in time.
+    raise
+except foghttp.TimeoutError:
+    # The broader buffered transport deadline expired.
+    raise
+except foghttp.RequestError:
+    # Network, protocol, DNS, TLS, or other transport failure.
+    raise
+```
+
+## Client Defaults And Request Overrides
+
+`Client(timeouts=...)` and `AsyncClient(timeouts=...)` define the default
+timeouts for requests sent by that client.
+
+Per-request `timeout=Timeouts(...)` currently affects only `pool` and `total`
+for that request. It does not change the Rust connector's `connect` timeout,
+and it does not activate separate `read` or `write` behavior.
+
+```python
+default_timeouts = foghttp.Timeouts(
+    connect=2.0,
+    pool=1.0,
+    total=30.0,
+)
+
+with foghttp.Client(timeouts=default_timeouts) as client:
+    response = client.get(
+        "https://api.example.com/fast",
+        timeout=foghttp.Timeouts(
+            pool=0.1,
+            total=2.0,
+        ),
+    )
+```
+
+If a workload needs a different connector `connect` timeout, create a separate
+client with that value in the constructor before the first request is sent.
+FogHTTP creates the Rust transport lazily, but it still uses the client-level
+constructor timeouts when that transport is created.
+
+## Pool Timeout
+
+`Timeouts.pool` controls how long a request may wait for FogHTTP's Rust-side
+acquire gates:
+
+- `Limits.max_active_requests` limits active buffered requests for the whole
+  client.
+- `Limits.max_active_requests_per_origin` optionally limits active buffered
+  requests for one normalized origin.
+- `Limits.max_pending_requests` limits how many requests may wait for an active
+  slot.
+
+If the pending queue is full, FogHTTP fails fast with `PoolTimeout` and the
+message `request acquire queue is full`.
+
+If a request waits longer than `Timeouts.pool` for a slot, FogHTTP raises
+`PoolTimeout` with the message `request acquire timeout expired`.
+
+Both cases increment `TransportStats.pool_acquire_timeouts`. Waiting requests
+are not counted as `active_requests`.
+
+```python
+limits = foghttp.Limits(
+    max_active_requests=10,
+    max_active_requests_per_origin=5,
+    max_pending_requests=100,
+)
+timeouts = foghttp.Timeouts(pool=0.2, total=5.0)
+
+with foghttp.Client(limits=limits, timeouts=timeouts) as client:
+    response = client.get("https://api.example.com/users")
+```
+
+## Total Timeout
+
+`Timeouts.total` is the broader deadline for the current buffered transport
+request path. Today it wraps:
+
+- waiting for the acquire gate, together with `pool`
+- waiting for response headers for the current hop
+- redirect hops as one shared budget
+
+If `total` expires while the request is waiting for a pool slot, `total` wins
+and FogHTTP raises the base `TimeoutError`, not `PoolTimeout`.
+
+```python
+with foghttp.Client(timeouts=foghttp.Timeouts(pool=1.0, total=0.05)) as client:
+    try:
+        client.get("https://api.example.com/slow")
+    except foghttp.TimeoutError:
+        pass
+```
+
+`total` is not a mature response body read timeout yet. The current buffered
+client still lacks separate read and write timeout semantics, so do not use
+`total` as a strict wall-clock guarantee for slow response bodies. For async
+callers that need a hard application-level budget today, wrap the call in
+`asyncio.timeout()`; cancellation aborts the in-flight Rust request.
+
+```python
+import asyncio
+
+import foghttp
+
+
+async with foghttp.AsyncClient() as client:
+    try:
+        async with asyncio.timeout(1.0):
+            await client.get("https://api.example.com/slow")
+    except TimeoutError:
+        pass
+```
+
+## Connect Timeout
+
+`Timeouts.connect` configures the Rust HTTP connector for the client transport.
+It is a client-level setting:
+
+```python
+with foghttp.Client(
+    timeouts=foghttp.Timeouts(
+        connect=0.5,
+        pool=1.0,
+        total=5.0,
+    ),
+) as client:
+    response = client.get("https://api.example.com/users")
+```
+
+Passing a different `connect` value in per-request `timeout=` does not rebuild
+or reconfigure the connector. The current public error mapping also does not
+guarantee a dedicated `ConnectTimeout` exception. Treat `Timeouts.total` as the
+public request budget and `Timeouts.connect` as lower-level connector
+configuration until the timeout exception split is expanded.
+
+## Reserved Read And Write Timeouts
+
+`Timeouts.read` and `Timeouts.write` exist to preserve the public shape of the
+timeout model, but they are reserved today.
+
+They do not yet provide:
+
+- a per-chunk response body read deadline
+- a request body upload write deadline
+- dedicated `ReadTimeout` or write-specific exceptions
+
+These fields will become meaningful with the streaming response/upload work.
+Until then, use `Limits.max_response_body_size` to bound buffered response
+memory and application-level cancellation for async deadlines.
+
+## Practical Defaults
+
+For service-to-service JSON APIs, start with:
+
+```python
+timeouts = foghttp.Timeouts(
+    connect=2.0,
+    pool=0.5,
+    total=10.0,
+)
+```
+
+Tune from there:
+
+- lower `pool` when saturation should fail fast
+- raise `pool` when short bursts should wait for capacity
+- keep `total` larger than the expected upstream response time
+- use a separate client when an upstream needs a different `connect` timeout
+- avoid large or unknown response bodies until streaming/read timeouts land
