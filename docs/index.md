@@ -58,6 +58,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 ## Start Here
 
 - [Quickstart](./quickstart.md)
+- [Client lifecycle](./lifecycle.md)
 - [Use cases](./use-cases.md)
 - [Redirects](./redirects.md)
 - [Limitations](./limitations.md)
@@ -83,8 +84,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - normalized `URL` model with origin comparison and relative joins
 - GET/HEAD/POST redirects with final URL and history
 - HTTPS with default WebPKI roots and explicit custom CA certificates
-- graceful sync close, async request cancellation, and explicit client
-  lifecycle
+- documented lazy transport creation, graceful sync close, async request
+  cancellation, and explicit client lifecycle
 - global active request limits, per-origin active request limits, pending
   acquire limits, and basic stats
 - optional buffered response body size limit
