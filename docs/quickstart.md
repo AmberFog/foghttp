@@ -57,6 +57,38 @@ with foghttp.Client() as client:
 
 :::
 
+## Query Parameters
+
+Use `params=` with mappings, repeated pairs, or an already encoded query string.
+Existing query parameters in the URL are preserved and new values are appended.
+
+```python
+with foghttp.Client() as client:
+    response = client.get(
+        "https://api.example.com/search?debug=1",
+        params=[
+            ("tag", "rust"),
+            ("tag", "python"),
+            ("q", "fog http"),
+        ],
+    )
+```
+
+Mapping values can also be sequences:
+
+```python
+params = {
+    "tag": ["rust", "python"],
+    "page": 2,
+}
+```
+
+Raw query strings are appended as already encoded data:
+
+```python
+params = "tag=rust&tag=python"
+```
+
 ## Client Lifecycle
 
 Prefer context managers for both sync and async clients. Leaving the context
