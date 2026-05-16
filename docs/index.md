@@ -80,6 +80,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - sync `Client` and async `AsyncClient`
 - `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`
 - query params with repeated keys, JSON bodies, and buffered bytes/text bodies
+- response status flags for success, redirects, and client/server errors
 - prepared `Request` objects with `build_request()` and `send()`
 - case-insensitive `Headers` with repeated value support
 - normalized `URL` model with origin comparison and relative joins

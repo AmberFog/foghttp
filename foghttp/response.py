@@ -9,7 +9,10 @@ from .errors import HTTPStatusError
 from .headers import Headers
 from .messages import http_status_error
 from .request_info import RequestInfo
-from .status_codes.client_error import MIN_CLIENT_ERROR_STATUS_CODE
+from .status_codes.client_error import MAX_CLIENT_ERROR_STATUS_CODE, MIN_CLIENT_ERROR_STATUS_CODE
+from .status_codes.redirect import MAX_REDIRECT_STATUS_CODE, MIN_REDIRECT_STATUS_CODE
+from .status_codes.server_error import MAX_SERVER_ERROR_STATUS_CODE, MIN_SERVER_ERROR_STATUS_CODE
+from .status_codes.success import MAX_SUCCESS_STATUS_CODE, MIN_SUCCESS_STATUS_CODE
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +25,26 @@ class Response:
     http_version: str
     elapsed: float
     history: tuple["Response", ...] = ()
+
+    @property
+    def is_success(self) -> bool:
+        return MIN_SUCCESS_STATUS_CODE <= self.status_code <= MAX_SUCCESS_STATUS_CODE
+
+    @property
+    def is_redirect(self) -> bool:
+        return MIN_REDIRECT_STATUS_CODE <= self.status_code <= MAX_REDIRECT_STATUS_CODE
+
+    @property
+    def is_client_error(self) -> bool:
+        return MIN_CLIENT_ERROR_STATUS_CODE <= self.status_code <= MAX_CLIENT_ERROR_STATUS_CODE
+
+    @property
+    def is_server_error(self) -> bool:
+        return MIN_SERVER_ERROR_STATUS_CODE <= self.status_code <= MAX_SERVER_ERROR_STATUS_CODE
+
+    @property
+    def is_error(self) -> bool:
+        return self.is_client_error or self.is_server_error
 
     @property
     def text(self) -> str:

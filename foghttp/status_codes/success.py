@@ -1,4 +1,11 @@
-__all__ = ("OK",)
+__all__ = (
+    "MAX_SUCCESS_STATUS_CODE",
+    "MIN_SUCCESS_STATUS_CODE",
+    "OK",
+)
 
+
+MIN_SUCCESS_STATUS_CODE = 200
+MAX_SUCCESS_STATUS_CODE = 299
 
 OK = 200

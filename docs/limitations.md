@@ -17,7 +17,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - JSON bodies through `json=`
 - raw bytes/text bodies through `content=`
 - buffered responses
-- `response.text`, `response.json()`, `response.raise_for_status()`
+- `response.text`, `response.json()`, response status flags, and
+  `response.raise_for_status()`
 - lightweight `response.request`
 - prepared `Request` objects with `build_request()` and `send()`
 - case-insensitive `Headers` with repeated values
