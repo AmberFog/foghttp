@@ -59,6 +59,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 
 - [Quickstart](./quickstart.md)
 - [Client lifecycle](./lifecycle.md)
+- [Timeout model](./timeouts.md)
 - [Use cases](./use-cases.md)
 - [Redirects](./redirects.md)
 - [Limitations](./limitations.md)
@@ -86,6 +87,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - HTTPS with default WebPKI roots and explicit custom CA certificates
 - documented lazy transport creation, graceful sync close, async request
   cancellation, and explicit client lifecycle
+- documented buffered timeout model with pool and total deadline behavior
 - global active request limits, per-origin active request limits, pending
   acquire limits, and basic stats
 - optional buffered response body size limit
