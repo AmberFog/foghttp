@@ -12,6 +12,8 @@ import foghttp._foghttp as _foghttp  # noqa: PLR0402
 from ..errors import PoolTimeout, RequestError, ResponseBodyTooLargeError, TimeoutError
 from ..limits import Limits
 from ..timeouts import Timeouts
+from ..tls import TLSConfig
+from .tls import ca_certificate_bytes
 
 
 def close_raw_client(raw_client: _foghttp.RawClient) -> None:
@@ -26,6 +28,7 @@ def create_raw_client(
     max_redirects: int,
     runtime_workers: int | None,
     trust_env: bool,
+    tls: TLSConfig | None,
 ) -> _foghttp.RawClient:
     try:
         return _foghttp.RawClient(
@@ -39,6 +42,7 @@ def create_raw_client(
             timeouts.connect,
             follow_redirects,
             max_redirects,
+            ca_certificate_bytes(tls),
             trust_env,
             runtime_workers,
         )

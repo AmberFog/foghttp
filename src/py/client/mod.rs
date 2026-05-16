@@ -51,17 +51,20 @@ impl RawClient {
         connect_timeout: f64,
         follow_redirects: bool,
         max_redirects: usize,
+        ca_certificates: Vec<Vec<u8>>,
         trust_env: bool,
         runtime_workers: Option<usize>,
     ) -> PyResult<Self> {
         validate_unsupported_options(trust_env)?;
 
-        let client = build_client(ClientOptions {
+        let client_options = ClientOptions {
             max_idle_connections_per_host,
             idle_timeout,
             keepalive,
             connect_timeout,
-        });
+            ca_certificates,
+        };
+        let client = build_client(&client_options).map_err(FogHttpError::new_err)?;
         let runtime = build_runtime(max_active_requests, runtime_workers)?;
         let metrics = Arc::new(Metrics::default());
         let acquire_gate = AcquireGate::new(

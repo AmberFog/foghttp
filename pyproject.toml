@@ -33,6 +33,7 @@ dev = [
     "faker>=33",
     "pytest>=8",
     "pytest-asyncio>=0.23",
+    "trustme>=1.2",
 ]
 [tool.maturin]
 features = [

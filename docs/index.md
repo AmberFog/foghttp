@@ -4,7 +4,7 @@ layout: "home"
 hero:
   name: "FogHTTP"
   text: "Rust-powered HTTP client for Python"
-  tagline: "Buffered JSON requests, sync and async clients, redirects, cancellation, and observable request limits."
+  tagline: "Buffered JSON requests, sync and async clients, redirects, custom CA certificates, cancellation, and observable request limits."
 
 features:
   - title: "Rust transport"
@@ -48,6 +48,7 @@ FogHTTP is designed around a few engineering priorities:
 - graceful sync `close()` that waits for already-started sync requests
 - async cancellation that aborts in-flight Rust requests
 - redirect history and final request metadata for debugging
+- HTTPS with default WebPKI roots and explicit custom CA certificates
 - global and per-origin request backpressure with stats for operational
   visibility
 
@@ -81,6 +82,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - case-insensitive `Headers` with repeated value support
 - normalized `URL` model with origin comparison and relative joins
 - GET/HEAD/POST redirects with final URL and history
+- HTTPS with default WebPKI roots and explicit custom CA certificates
 - graceful sync close, async request cancellation, and explicit client
   lifecycle
 - global active request limits, per-origin active request limits, pending
@@ -91,5 +93,5 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 ## Not Yet
 
 FogHTTP does not yet implement streaming bodies, cookies, multipart uploads,
-proxy support, `trust_env`, HTTP/2, or advanced authentication helpers. See
-[Limitations](./limitations.md) for details.
+proxy support, `trust_env`, `verify=False`, HTTP/2, or advanced authentication
+helpers. See [Limitations](./limitations.md) for details.

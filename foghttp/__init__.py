@@ -19,6 +19,7 @@ __all__ = (
     "Response",
     "ResponseBodyTooLargeError",
     "ResponseError",
+    "TLSConfig",
     "TimeoutError",
     "Timeouts",
     "TransportStats",
@@ -47,5 +48,6 @@ from .request import Request
 from .request_info import RequestInfo
 from .response import Response
 from .timeouts import Timeouts
+from .tls import TLSConfig
 from .transport_stats import TransportStats
 from .url import URL

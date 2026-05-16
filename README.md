@@ -85,6 +85,7 @@ async with foghttp.AsyncClient() as client:
 - case-insensitive `Headers` with repeated values
 - normalized `URL` model with origin comparison and relative joins
 - GET/HEAD/POST redirects with final URL and history
+- HTTPS with default WebPKI roots and explicit custom CA certificates
 - graceful sync `close()` that waits for in-flight sync requests
 - async request cancellation that aborts the in-flight Rust request
 - global and per-origin request backpressure, basic stats, and HTTP/1.1 over
@@ -106,10 +107,10 @@ async with foghttp.AsyncClient() as client:
 ## Current Limitations
 
 FogHTTP is currently focused on controlled buffered HTTP workloads. Streaming
-bodies, cookies, auth helpers, proxy support, multipart uploads, HTTP/2,
-compression decoding, true connection-level pool metrics, per-request connect
-timeout reconfiguration, and separate read/write timeout semantics are planned
-for later versions.
+bodies, cookies, auth helpers, proxy support, `verify=False`, multipart
+uploads, HTTP/2, compression decoding, true connection-level pool metrics,
+per-request connect timeout reconfiguration, and separate read/write timeout
+semantics are planned for later versions.
 
 ## Development
 

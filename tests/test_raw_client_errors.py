@@ -56,6 +56,7 @@ def test_raw_client_constructor_error_maps_to_value_error(
             max_redirects=DEFAULT_MAX_REDIRECTS,
             runtime_workers=1,
             trust_env=False,
+            tls=None,
         )
 
 

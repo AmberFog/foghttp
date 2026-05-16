@@ -80,6 +80,7 @@ class RawClient:
         connect_timeout: float,
         follow_redirects: bool,
         max_redirects: int,
+        ca_certificates: Sequence[bytes],
         trust_env: bool,
         runtime_workers: int | None,
     ) -> None: ...

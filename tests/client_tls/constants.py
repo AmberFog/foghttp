@@ -1,0 +1,18 @@
+__all__ = (
+    "CA_CERTIFICATE_FILENAME",
+    "SERVER_CERTIFICATE_FILENAME",
+    "SERVER_KEY_FILENAME",
+    "TLS_HOST",
+    "TLS_INVALID_CA_BODY",
+    "TLS_OK_BODY",
+    "TLS_PATH",
+)
+
+
+CA_CERTIFICATE_FILENAME = "ca.pem"
+SERVER_CERTIFICATE_FILENAME = "server.pem"
+SERVER_KEY_FILENAME = "server.key"
+TLS_HOST = "127.0.0.1"
+TLS_INVALID_CA_BODY = b"not a certificate"
+TLS_OK_BODY = b"TLS OK"
+TLS_PATH = "/tls"
