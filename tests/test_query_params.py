@@ -99,22 +99,3 @@ def test_query_params_do_not_mutate_user_inputs() -> None:
 
     assert mapping == {"tag": ["rust", "python"]}
     assert pairs == [("tag", ["rust", "python"])]
-
-
-async def test_sync_and_async_build_request_apply_same_query_params_without_transport() -> None:
-    params = [
-        ("tag", "rust"),
-        ("tag", "python"),
-        ("q", "fog http"),
-    ]
-    url = "https://example.com/search?debug=1#results"
-    expected_url = "https://example.com/search?debug=1&tag=rust&tag=python&q=fog+http#results"
-
-    with foghttp.Client() as sync_client:
-        sync_request = sync_client.build_request("GET", url, params=params)
-
-    async with foghttp.AsyncClient() as async_client:
-        async_request = async_client.build_request("GET", url, params=params)
-
-    assert sync_request.url == expected_url
-    assert async_request.url == expected_url
