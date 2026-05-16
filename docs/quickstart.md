@@ -60,8 +60,7 @@ with foghttp.Client() as client:
 ## Client Lifecycle
 
 Prefer context managers for both sync and async clients. Leaving the context
-calls `close()` or `aclose()` and explicitly releases the Rust client runtime,
-connection pool resources, and associated transport state.
+calls `close()` or `aclose()` and explicitly releases Rust transport resources.
 
 ```python
 client = foghttp.Client()
@@ -79,17 +78,10 @@ finally:
     await client.aclose()
 ```
 
-Calling `close()` or `aclose()` more than once is safe. After closing a client,
-new requests and stats calls raise `ClientClosedError`.
-
-For sync clients, `close()` is graceful for requests that already entered
-`send()`: it rejects new work immediately, waits for in-flight sync requests to
-finish, and only then shuts down the Rust client runtime.
-
-For async clients, cancelling a task that is waiting on a request aborts the
-in-flight Rust request and releases the observed active request state. Calling
-`aclose()` also cancels in-flight async requests before shutting down the Rust
-runtime.
+The Rust transport is created lazily on the first request, not when the Python
+client object is constructed. Calling `close()` or `aclose()` more than once is
+safe. After closing a client, new requests and stats calls raise
+`ClientClosedError`.
 
 ```python
 import asyncio
@@ -104,6 +96,9 @@ async with foghttp.AsyncClient() as client:
     except TimeoutError:
         pass
 ```
+
+See [Client lifecycle](./lifecycle.md) for the full shutdown, cancellation,
+lazy initialization, and thread/task sharing contract.
 
 ## JSON Body
 

@@ -31,7 +31,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - optional `max_response_body_size` limit for buffered response memory safety
 - explicit `close()`/`aclose()` lifecycle for Rust runtime and pool resources;
   sync `close()` waits for in-flight sync requests, while async `aclose()`
-  cancels in-flight async requests
+  cancels in-flight async requests; see [Client lifecycle](./lifecycle.md)
 - advanced `runtime_workers` tuning for the per-client Tokio runtime
 - HTTP/1.1 over HTTP and HTTPS
 
@@ -71,6 +71,7 @@ Use FogHTTP today when:
 - global and per-origin buffered request backpressure is enough for your
   resource control needs
 - you can reuse clients instead of creating many short-lived runtime instances
+  once requests start flowing
 
 Wait before using FogHTTP when:
 
@@ -83,6 +84,7 @@ Wait before using FogHTTP when:
 - you need per-request connect timeout reconfiguration or mature read/write
   timeout semantics
 - you need strict active per-host connection limits
+- you need to share one async client across multiple event loops
 
 ## Error Surface
 
