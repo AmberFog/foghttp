@@ -47,6 +47,15 @@ features = [
 [dependencies.pyo3]
 version = "0.28.3"
 
+[dependencies.rustls]
+version = "0.23.40"
+default-features = false
+features = [
+    "ring",
+    "std",
+    "tls12",
+]
+
 [dependencies.tokio]
 version = "1.41.1"
 features = [
@@ -54,3 +63,6 @@ features = [
     "sync",
     "time",
 ]
+
+[dependencies.webpki-roots]
+version = "1.0.7"

@@ -64,6 +64,7 @@ def create_test_raw_client() -> "_foghttp.RawClient":
         max_redirects=DEFAULT_MAX_REDIRECTS,
         runtime_workers=1,
         trust_env=False,
+        tls=None,
     )
 
 

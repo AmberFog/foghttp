@@ -19,6 +19,7 @@ from .messages import CLIENT_CLOSED, UNCLOSED_CLIENT
 from .request import Request
 from .response import Response
 from .timeouts import Timeouts
+from .tls import TLSConfig
 from .transport_stats import TransportStats
 from .types import HttpVersions, QueryParams
 from .url import URL
@@ -39,6 +40,7 @@ class AsyncClient:
         max_redirects: int = DEFAULT_MAX_REDIRECTS,
         cookies: bool = False,
         trust_env: bool = False,
+        tls: TLSConfig | None = None,
         runtime_workers: int | None = None,
         observability: bool = True,
     ) -> None:
@@ -58,6 +60,7 @@ class AsyncClient:
         self._max_redirects = max_redirects
         self._runtime_workers = runtime_workers
         self._trust_env = trust_env
+        self._tls = tls
         self._client: _foghttp.RawClient | None = None
         self._observability = observability
 
@@ -301,6 +304,7 @@ class AsyncClient:
                     max_redirects=self._max_redirects,
                     runtime_workers=self._runtime_workers,
                     trust_env=self._trust_env,
+                    tls=self._tls,
                 )
                 self._client = raw_client
             return raw_client

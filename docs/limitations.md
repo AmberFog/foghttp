@@ -24,6 +24,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - normalized `URL` with origin comparison and relative joins
 - redirect history
 - GET/HEAD/POST redirects
+- HTTPS with default WebPKI roots and explicit custom CA certificate files
 - async request cancellation that aborts the in-flight Rust request
 - global active request limit, per-origin active request limit, pending acquire
   limit, and basic request stats
@@ -46,6 +47,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | Cookie jar | `cookies=True` is rejected |
 | Proxy support | `trust_env=True` is rejected |
 | Auth helpers | Use manual headers for simple cases |
+| Disabling TLS verification | Not available; use `TLSConfig` with explicit CA certificates |
 | HTTP/2 | Not available |
 | Compression decoding | Not available |
 | `base_url` | Not available |

@@ -18,6 +18,7 @@ RAW_CLIENT_INIT_ARGUMENTS = (
     "connect_timeout",
     "follow_redirects",
     "max_redirects",
+    "ca_certificates",
     "trust_env",
     "runtime_workers",
 )
@@ -64,6 +65,7 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
         max_redirects=max_redirects,
         runtime_workers=runtime_workers,
         trust_env=trust_env,
+        tls=None,
     )
 
     assert isinstance(raw_client, RawClientProbe)
@@ -78,6 +80,7 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
         "connect_timeout": timeouts.connect,
         "follow_redirects": follow_redirects,
         "max_redirects": max_redirects,
+        "ca_certificates": (),
         "trust_env": trust_env,
         "runtime_workers": runtime_workers,
     }

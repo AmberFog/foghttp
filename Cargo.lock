@@ -79,8 +79,10 @@ dependencies = [
  "hyper-rustls",
  "hyper-util",
  "pyo3",
+ "rustls",
  "tokio",
  "url",
+ "webpki-roots",
 ]
 
 [[package]]

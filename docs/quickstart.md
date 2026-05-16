@@ -228,6 +228,30 @@ with foghttp.Client() as client:
     response = client.get("https://httpbin.org/headers", headers=headers)
 ```
 
+## Custom CA Certificates
+
+FogHTTP uses WebPKI roots by default for HTTPS. For private services with an
+internal certificate authority, pass explicit CA certificate files through
+`TLSConfig`.
+
+```python
+from pathlib import Path
+
+import foghttp
+
+
+tls = foghttp.TLSConfig(
+    ca_certificates=(Path("/etc/company/ca.pem"),),
+)
+
+with foghttp.Client(tls=tls) as client:
+    response = client.get("https://internal-api.example.com/health")
+    response.raise_for_status()
+```
+
+The same `TLSConfig` works with `AsyncClient`. Disabling certificate
+verification is intentionally not exposed; use a trusted CA bundle instead.
+
 ## URL
 
 Use `foghttp.URL` when application code needs normalized URL parts or origin
