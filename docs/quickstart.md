@@ -205,6 +205,18 @@ For redirects, `response.request` describes the final request, and each item in
 GET https://api.example.com/users/123 returned 404 Not Found
 ```
 
+Use response status flags when application code needs branch-friendly status
+checks without raising:
+
+```python
+if response.is_success:
+    print(response.json())
+elif response.is_redirect:
+    print(response.headers.get("location"))
+elif response.is_error:
+    response.raise_for_status()
+```
+
 ## Prepared Requests
 
 Build a `foghttp.Request` separately when application code needs to inspect or

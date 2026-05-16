@@ -79,8 +79,8 @@ async with foghttp.AsyncClient() as client:
 - sync `Client` and async `AsyncClient`
 - `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`
 - query params with repeated keys, JSON bodies, and buffered bytes/text bodies
-- buffered `Response` with `text`, `json()`, `raise_for_status()`, and request
-  metadata
+- buffered `Response` with status flags, `text`, `json()`,
+  `raise_for_status()`, and request metadata
 - prepared `Request` objects with `build_request()` and `send()`
 - case-insensitive `Headers` with repeated values
 - normalized `URL` model with origin comparison and relative joins
