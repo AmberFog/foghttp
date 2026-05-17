@@ -31,6 +31,7 @@ class Client(ClientCore):
         self,
         *,
         base_url: str | URL | None = None,
+        headers: HeaderSource = None,
         limits: Limits | None = None,
         timeouts: Timeouts | None = None,
         http_versions: HttpVersions = None,
@@ -45,6 +46,7 @@ class Client(ClientCore):
         super().__init__(
             config=ClientConfig.from_options(
                 base_url=base_url,
+                headers=headers,
                 limits=limits,
                 timeouts=timeouts,
                 http_versions=http_versions,

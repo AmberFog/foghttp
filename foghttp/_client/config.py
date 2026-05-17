@@ -2,6 +2,7 @@ __all__ = ("ClientConfig",)
 
 from dataclasses import dataclass
 
+from ..headers import HeaderSource
 from ..limits import Limits
 from ..timeouts import Timeouts
 from ..tls import TLSConfig
@@ -28,6 +29,7 @@ class ClientConfig:
         cls,
         *,
         base_url: str | URL | None,
+        headers: HeaderSource,
         limits: Limits | None,
         timeouts: Timeouts | None,
         http_versions: HttpVersions,
@@ -57,7 +59,7 @@ class ClientConfig:
             observability=observability,
             request_defaults=(
                 DEFAULT_REQUEST_BUILD_DEFAULTS
-                if base_url is None
-                else RequestBuildDefaults.from_options(base_url=base_url)
+                if base_url is None and headers is None
+                else RequestBuildDefaults.from_options(base_url=base_url, headers=headers)
             ),
         )

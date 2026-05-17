@@ -8,6 +8,7 @@ from ...headers import Headers, HeaderSource
 from ...messages import BASE_URL_QUERY_OR_FRAGMENT_UNSUPPORTED
 from ...types import QueryParams
 from ...url import URL, _query_string
+from .header_policy import validate_safe_request_headers
 
 
 FrozenHeaderPairs: TypeAlias = tuple[tuple[str, str], ...]
@@ -30,9 +31,11 @@ class RequestBuildDefaults:
         params: QueryParams = None,
     ) -> "RequestBuildDefaults":
         query = _query_string(params)
+        default_headers = Headers(headers)
+        validate_safe_request_headers(default_headers)
         return cls(
             base_url=_normalized_base_url(base_url),
-            headers=tuple(Headers(headers).multi_items()),
+            headers=tuple(default_headers.multi_items()),
             params=query or None,
         )
 

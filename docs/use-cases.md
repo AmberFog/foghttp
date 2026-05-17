@@ -173,7 +173,10 @@ upstream. Relative paths keep call sites focused on API resources instead of
 repeating the origin every time.
 
 ```python
-with foghttp.Client(base_url="https://api.example.com/v1") as client:
+with foghttp.Client(
+    base_url="https://api.example.com/v1",
+    headers={"accept": "application/json"},
+) as client:
     response = client.get("users", params={"limit": 10})
     response.raise_for_status()
 ```
@@ -189,6 +192,9 @@ headers.
 headers = {"authorization": f"Bearer {token}"}
 response = client.get("https://api.example.com/me", headers=headers)
 ```
+
+For one-upstream clients with a static token, client-level `headers=` can avoid
+repeating the same header at every call site.
 
 For token refresh, retries after `401`, request signing, or OAuth flows, wait
 for the planned auth/hooks layer or keep that logic outside FogHTTP.

@@ -103,15 +103,8 @@ def test_merge_contract_snapshots_user_supplied_defaults() -> None:
 
 
 def test_merge_contract_rejects_transport_managed_default_headers() -> None:
-    builder = _builder(headers={"Host": "api.example.com"})
-
     with pytest.raises(ValueError, match=transport_managed_header_error("Host")):
-        builder.build(
-            RequestBuildOptions(
-                method=GET,
-                url="https://api.example.com/users",
-            ),
-        )
+        _builder(headers={"Host": "api.example.com"})
 
 
 def _builder(
