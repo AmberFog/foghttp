@@ -115,7 +115,7 @@ def send_event(payload: dict) -> None:
 ### Redirect-Aware APIs
 
 FogHTTP can follow GET, HEAD, and POST redirects, preserve redirect history, and
-apply conservative header stripping for cross-origin redirects.
+apply conservative cross-origin header stripping and body replay protection.
 
 ```python
 import foghttp
@@ -218,7 +218,7 @@ except foghttp.HTTPStatusError as exc:
 | Cookies/session jar | Not implemented |
 | Proxy and `trust_env` | Not implemented |
 | HTTP/2 | Not implemented |
-| Cookie jar and auth helper integration | Not implemented; cross-origin redirects still strip sensitive headers |
+| Cookie jar and auth helper integration | Not implemented; cross-origin redirects still strip sensitive headers and drop body replay |
 | Unbounded large downloads | Use `max_response_body_size` for buffered fail-fast protection; streaming downloads are not implemented |
 
 FogHTTP is best today in controlled environments where request and response

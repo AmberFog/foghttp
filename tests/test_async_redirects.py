@@ -188,3 +188,43 @@ async def test_post_redirect_preserving_method_keeps_body_headers(http_server: s
     assert payload["request_line"] == f"POST {SECURITY_HEADERS_PATH} HTTP/1.1"
     assert payload["body"] == post_body
     assert header_values(payload, "content-type") == ["text/plain"]
+
+
+@pytest.mark.parametrize("status_code", POST_REDIRECTS_PRESERVE_METHOD_STATUS_CODES)
+async def test_cross_origin_post_redirect_drops_body_replay(
+    http_server: str,
+    secondary_http_server: str,
+    faker: Faker,
+    status_code: int,
+) -> None:
+    location = f"{secondary_http_server}{SECURITY_HEADERS_PATH}"
+    url = redirect_to_location_url(
+        http_server,
+        status_code=status_code,
+        location=location,
+    )
+    post_body = faker.sentence()
+
+    async with foghttp.AsyncClient(follow_redirects=True) as client:
+        response = await client.post(
+            url,
+            headers={
+                **REDIRECT_SECURITY_HEADERS,
+                "content-encoding": "identity",
+                "content-type": "text/plain",
+            },
+            content=post_body,
+        )
+
+    payload = response.json()
+    assert payload["request_line"] == f"POST {SECURITY_HEADERS_PATH} HTTP/1.1"
+    assert payload["body"] == ""
+    assert header_values(payload, "accept") == ["application/json"]
+    assert header_values(payload, "authorization") == []
+    assert header_values(payload, "content-encoding") == []
+    assert header_values(payload, "content-type") == []
+    assert header_values(payload, "cookie") == []
+    assert header_values(payload, "host") == [urlsplit(secondary_http_server).netloc]
+    assert header_values(payload, "origin") == []
+    assert header_values(payload, "proxy-authorization") == []
+    assert header_values(payload, "referer") == []
