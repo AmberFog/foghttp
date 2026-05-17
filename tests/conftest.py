@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import AsyncIterator, Iterator
+from contextlib import suppress
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -12,6 +13,11 @@ import pytest
 from foghttp.methods import HEAD
 from foghttp.status_codes.redirect import FOUND
 from foghttp.status_codes.success import OK
+from tests.http_body_scenarios import (
+    raw_too_large_size_hint_response,
+    write_async_body_safety_response,
+    write_sync_body_safety_response,
+)
 
 
 REDIRECT_PATH_PARTS = 2
@@ -327,6 +333,7 @@ def _raw_http_server_response(headers: str, body: bytes) -> bytes:
         or _raw_redirect_to_status_response(path)
         or _raw_redirect_response(path)
         or _raw_status_response(path)
+        or raw_too_large_size_hint_response(path)
         or _raw_bytes_response(path)
         or _raw_unknown_size_bytes_response(path)
         or _raw_text_response(path)
@@ -339,11 +346,19 @@ def _raw_http_server_response(headers: str, body: bytes) -> bytes:
 
 async def _start_async_http_server() -> tuple[Any, str]:
     async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        headers, body = await _read_request(reader)
-        writer.write(_raw_http_server_response(headers, body))
-        await writer.drain()
-        writer.close()
-        await writer.wait_closed()
+        try:
+            headers, body = await _read_request(reader)
+            _method, target, _version = headers.splitlines()[0].split()
+            path = urlsplit(target).path
+            if not await write_async_body_safety_response(path, writer):
+                writer.write(_raw_http_server_response(headers, body))
+                await writer.drain()
+        except OSError:
+            return
+        finally:
+            writer.close()
+            with suppress(asyncio.CancelledError, OSError):
+                await writer.wait_closed()
 
     server = await asyncio.start_server(handle, "127.0.0.1", 0)
     host, port = server.sockets[0].getsockname()
@@ -406,6 +421,7 @@ class SyncHTTPHandler(BaseHTTPRequestHandler):
                 lambda: self._write_redirect_to_status(path),
                 lambda: self._write_redirect(path),
                 lambda: self._write_status(path),
+                lambda: write_sync_body_safety_response(self, path),
                 lambda: self._write_bytes(path),
                 lambda: self._write_unknown_size_bytes(path),
                 lambda: self._write_text(path),

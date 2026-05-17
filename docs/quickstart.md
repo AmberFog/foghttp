@@ -352,10 +352,11 @@ base `TimeoutError` when it expires.
 `Limits.max_active_requests_per_origin` defaults to `None`; set it to cap active
 buffered requests for one normalized origin. `Limits.max_pending_requests` caps
 requests waiting for a free acquire permit. `Limits.max_response_body_size`
-defaults to `None`; set it to fail safely when a buffered response body grows
-beyond the configured byte limit. `Limits.max_idle_connections_per_host` controls
-idle keep-alive pool capacity; it is not an active request limit and is separate
-from per-origin request backpressure.
+defaults to `10 * 1024 * 1024` bytes. Set a smaller or larger explicit limit for
+your workload, or pass `None` only when unbounded buffered response bodies are an
+intentional opt-in. `Limits.max_idle_connections_per_host` controls idle
+keep-alive pool capacity; it is not an active request limit and is separate from
+per-origin request backpressure.
 
 `Timeouts.connect` is client-level connector configuration. Per-request
 `timeout=` currently affects `pool` and `total`, not `connect`, `read`, or

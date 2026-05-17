@@ -1,4 +1,4 @@
-__all__ = ("Limits",)
+__all__ = ("DEFAULT_MAX_RESPONSE_BODY_SIZE", "Limits")
 
 from dataclasses import dataclass
 
@@ -9,12 +9,15 @@ from ._validation.numeric import (
 )
 
 
+DEFAULT_MAX_RESPONSE_BODY_SIZE = 10 * 1024 * 1024
+
+
 @dataclass(frozen=True, slots=True)
 class Limits:
     max_active_requests: int = 100
     max_active_requests_per_origin: int | None = None
     max_pending_requests: int = 1000
-    max_response_body_size: int | None = None
+    max_response_body_size: int | None = DEFAULT_MAX_RESPONSE_BODY_SIZE
     max_idle_connections_per_host: int = 20
     idle_timeout: float = 30.0
     keepalive: bool = True

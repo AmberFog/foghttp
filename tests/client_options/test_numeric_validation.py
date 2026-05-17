@@ -3,6 +3,7 @@ import math
 import pytest
 
 import foghttp
+from foghttp.limits import DEFAULT_MAX_RESPONSE_BODY_SIZE
 
 
 MAX_INVALID_NUMERIC_OPTION = 2**31
@@ -15,6 +16,10 @@ INTEGER_LIMIT_FIELDS = (
     "max_response_body_size",
     "max_idle_connections_per_host",
 )
+
+
+def test_limits_use_safe_default_response_body_size() -> None:
+    assert foghttp.Limits().max_response_body_size == DEFAULT_MAX_RESPONSE_BODY_SIZE
 
 
 @pytest.mark.parametrize("field_name", TIMEOUT_FIELDS)

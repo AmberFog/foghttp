@@ -62,6 +62,7 @@ pub async fn send_request(
                 response,
                 request_info,
                 started,
+                state.total_timeout,
                 state.max_response_body_size,
             )
             .await?
@@ -167,12 +168,18 @@ async fn raw_response(
     response: Response<Incoming>,
     request: RawRequestInfo,
     started: Instant,
+    total_timeout: f64,
     max_response_body_size: Option<usize>,
 ) -> PyResult<RawResponse> {
     let status_code = response.status().as_u16();
     let http_version = format!("{:?}", response.version());
     let headers = response_headers(response.headers());
-    let content = collect_body(response.into_body(), max_response_body_size).await?;
+    let content = tokio::time::timeout(
+        remaining_duration(total_timeout, started)?,
+        collect_body(response.into_body(), max_response_body_size),
+    )
+    .await
+    .map_err(|_| FogHttpTimeoutError::new_err(REQUEST_TOTAL_TIMEOUT))??;
     let url = request.url.clone();
 
     Ok(RawResponse {

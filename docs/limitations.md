@@ -29,7 +29,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - async request cancellation that aborts the in-flight Rust request
 - global active request limit, per-origin active request limit, pending acquire
   limit, and basic request stats
-- optional `max_response_body_size` limit for buffered response memory safety
+- default `max_response_body_size` limit for buffered response memory safety
 - explicit `close()`/`aclose()` lifecycle for Rust runtime and pool resources;
   sync `close()` waits for in-flight sync requests, while async `aclose()`
   cancels in-flight async requests; see [Client lifecycle](./lifecycle.md)
