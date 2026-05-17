@@ -15,6 +15,7 @@ from ..url import URL
 from .config import ClientConfig
 from .raw import create_raw_client
 from .request_builder.builder import RequestBuilder
+from .request_builder.merge import RequestMergeContract
 from .request_builder.models import RequestBuildOptions
 from .stats import stats_from_raw
 
@@ -29,7 +30,9 @@ class ClientCore:
         self._closed = False
         self._client_lock = threading.Lock()
         self._client: _foghttp.RawClient | None = None
-        self._request_builder = RequestBuilder()
+        self._request_builder = RequestBuilder(
+            merge_contract=RequestMergeContract(defaults=config.request_defaults),
+        )
 
     def __del__(self) -> None:
         if getattr(self, "_closed", True) is False:

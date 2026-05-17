@@ -4,15 +4,19 @@ from ...body import encode_body
 from ...headers import Headers, HeaderSource
 from ...request import Request
 from ...types import QueryParams
-from ...url import URL, merge_params
+from ...url import URL
 from .header_policy import validate_safe_request_headers
+from .merge import RequestMergeContract
 from .models import RequestBuildOptions
 
 
 class RequestBuilder:
     """Build prepared requests without touching transport state."""
 
-    __slots__ = ()
+    __slots__ = ("_merge_contract",)
+
+    def __init__(self, *, merge_contract: RequestMergeContract | None = None) -> None:
+        self._merge_contract = merge_contract or RequestMergeContract()
 
     def build(self, options: RequestBuildOptions) -> Request:
         request_url = self._build_url(options.url, options.params)
@@ -27,10 +31,10 @@ class RequestBuilder:
         )
 
     def _build_url(self, url: str | URL, params: QueryParams) -> str:
-        return merge_params(url, params)
+        return self._merge_contract.url(url, params)
 
     def _build_headers(self, headers: HeaderSource) -> Headers:
-        return Headers(headers)
+        return self._merge_contract.headers(headers)
 
     def _build_body(self, options: RequestBuildOptions, headers: Headers) -> bytes | None:
         return encode_body(
