@@ -2,6 +2,7 @@ pub mod client;
 pub mod headers;
 pub mod method;
 pub mod metrics;
+pub mod numeric;
 pub mod request;
 pub mod response;
 pub mod tls;

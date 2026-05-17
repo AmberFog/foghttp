@@ -2,8 +2,10 @@ use super::origin::OriginGates;
 use super::pending::PendingAcquire;
 use super::permit::AcquirePermit;
 use crate::core::metrics::Metrics;
+use crate::core::numeric;
 use crate::errors::{FogHttpError, FogHttpPoolTimeoutError};
 use crate::messages::POOL_ACQUIRE_TIMEOUT;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -40,7 +42,7 @@ impl AcquireGate {
         let global_permit = self
             .acquire_semaphore(
                 Arc::clone(&self.global_semaphore),
-                remaining_duration(pool_timeout, started),
+                remaining_duration(pool_timeout, started)?,
             )
             .await?;
 
@@ -62,7 +64,7 @@ impl AcquireGate {
         };
 
         let semaphore = origin_gates.semaphore(origin);
-        self.acquire_semaphore(semaphore, remaining_duration(pool_timeout, started))
+        self.acquire_semaphore(semaphore, remaining_duration(pool_timeout, started)?)
             .await
             .map(Some)
     }
@@ -98,6 +100,7 @@ impl AcquireGate {
     }
 }
 
-fn remaining_duration(pool_timeout: f64, started: Instant) -> Duration {
-    Duration::from_secs_f64(pool_timeout.max(0.0)).saturating_sub(started.elapsed())
+fn remaining_duration(pool_timeout: f64, started: Instant) -> PyResult<Duration> {
+    numeric::remaining_duration("Timeouts.pool", pool_timeout, started)
+        .map_err(PyValueError::new_err)
 }

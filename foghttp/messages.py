@@ -4,7 +4,6 @@ __all__ = (
     "COOKIES_UNSUPPORTED",
     "HTTP_VERSION_UNSUPPORTED",
     "MAX_REDIRECTS_INVALID",
-    "MAX_RESPONSE_BODY_SIZE_INVALID",
     "POOL_ACQUIRE_QUEUE_FULL",
     "POOL_ACQUIRE_TIMEOUT",
     "RUNTIME_WORKERS_ENV_INVALID",
@@ -23,7 +22,6 @@ CLIENT_CLOSED = "AsyncClient is closed"
 COOKIES_UNSUPPORTED = "cookies are planned after the MVP"
 HTTP_VERSION_UNSUPPORTED = "only HTTP/1.1 is supported in the MVP"
 MAX_REDIRECTS_INVALID = "max_redirects must be greater than or equal to 0"
-MAX_RESPONSE_BODY_SIZE_INVALID = "max_response_body_size must be greater than or equal to 0"
 POOL_ACQUIRE_QUEUE_FULL = "request acquire queue is full"
 POOL_ACQUIRE_TIMEOUT = "request acquire timeout expired"
 RUNTIME_WORKERS_ENV_INVALID = "FOGHTTP_RUNTIME_WORKERS must be an integer between 1 and 32"

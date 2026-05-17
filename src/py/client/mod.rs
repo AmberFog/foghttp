@@ -14,7 +14,10 @@ use crate::py::client::acquire::AcquireGate;
 use crate::py::client::async_requests::{
     spawn_async_request, AsyncRequestRegistry, AsyncRequestSpawn,
 };
-use crate::py::client::options::validate_unsupported_options;
+use crate::py::client::options::{
+    validate_numeric_client_options, validate_request_timeouts, validate_unsupported_options,
+    NumericClientOptions,
+};
 use crate::py::client::runtime::build_runtime;
 use crate::py::client::transport::{send_request, TransportRequest};
 use crate::py::response::RawResponse;
@@ -56,6 +59,15 @@ impl RawClient {
         runtime_workers: Option<usize>,
     ) -> PyResult<Self> {
         validate_unsupported_options(trust_env)?;
+        validate_numeric_client_options(NumericClientOptions {
+            max_active_requests,
+            max_active_requests_per_origin,
+            max_idle_connections_per_host,
+            max_pending_requests,
+            max_response_body_size,
+            idle_timeout,
+            connect_timeout,
+        })?;
 
         let client_options = ClientOptions {
             max_idle_connections_per_host,
@@ -97,6 +109,8 @@ impl RawClient {
         pool_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<RawResponse> {
+        validate_request_timeouts(pool_timeout, total_timeout)?;
+
         let client = self.client()?.clone();
         let runtime = self.runtime()?;
         let acquire_gate = self.acquire_gate.clone();
@@ -141,6 +155,8 @@ impl RawClient {
         pool_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<Py<PyAny>> {
+        validate_request_timeouts(pool_timeout, total_timeout)?;
+
         let client = self.client()?.clone();
         let runtime = self.runtime()?;
         let max_response_body_size = self.max_response_body_size;
