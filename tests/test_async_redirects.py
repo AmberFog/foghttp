@@ -123,7 +123,7 @@ async def test_same_origin_redirect_preserves_sensitive_headers(http_server: str
     assert header_values(payload, "authorization") == ["Bearer secret"]
     assert header_values(payload, "proxy-authorization") == ["Basic proxy-secret"]
     assert header_values(payload, "cookie") == ["session=secret"]
-    assert header_values(payload, "host") == ["example.com"]
+    assert header_values(payload, "host") == [urlsplit(http_server).netloc]
     assert header_values(payload, "origin") == ["https://example.com"]
     assert header_values(payload, "referer") == ["https://example.com/source"]
 

@@ -12,6 +12,7 @@ __all__ = (
     "UNCLOSED_CLIENT",
     "http_status_error",
     "http_status_reason",
+    "transport_managed_header_error",
 )
 
 from http import HTTPStatus
@@ -41,3 +42,7 @@ def http_status_reason(status_code: int) -> str:
         return HTTPStatus(status_code).phrase
     except ValueError:
         return ""
+
+
+def transport_managed_header_error(name: str) -> str:
+    return f"request header {name!r} is managed by FogHTTP transport and cannot be set manually"

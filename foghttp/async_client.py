@@ -8,6 +8,7 @@ from ._client.config import ClientConfig
 from ._client.constants import DEFAULT_MAX_REDIRECTS
 from ._client.core import ClientCore
 from ._client.raw import close_raw_client, send_raw_request_async
+from ._client.request_builder.header_policy import validate_safe_request_headers
 from ._client.response import response_from_raw
 from .headers import HeaderSource
 from .limits import Limits
@@ -96,6 +97,7 @@ class AsyncClient(ClientCore):
 
     async def send(self, request: Request, *, timeout: Timeouts | None = None) -> Response:
         self._ensure_open()
+        validate_safe_request_headers(request.headers)
         timeouts = self._request_timeouts(timeout)
         started = time.perf_counter()
         raw_client = self._raw_client()

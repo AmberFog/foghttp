@@ -114,13 +114,13 @@ next request:
 - `Authorization`
 - `Proxy-Authorization`
 - `Cookie`
-- `Host`
 - `Origin`
 - `Referer`
 
 This is intentionally strict. It prevents credentials, manually supplied
-cookies, host authority metadata, origin metadata, and referrer metadata from
-being forwarded to a different origin by a redirect response.
+cookies, origin metadata, and referrer metadata from being forwarded to a
+different origin by a redirect response. `Host` is transport-managed and cannot
+be set manually through the safe API.
 
 When a redirect rewrites `POST` to `GET`, FogHTTP drops the request body and
 strips body-specific headers:
@@ -129,6 +129,9 @@ strips body-specific headers:
 - `Content-Length`
 - `Content-Type`
 - `Transfer-Encoding`
+
+`Content-Length` and `Transfer-Encoding` are transport-managed and cannot be set
+manually through the safe API.
 
 For same-origin `307` and `308`, FogHTTP preserves the method and resends the
 current buffered body. For cross-origin `307` and `308`, FogHTTP preserves the

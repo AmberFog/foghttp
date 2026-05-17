@@ -57,6 +57,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | Compression decoding | Not available |
 | `base_url` | Not available |
 | default client headers | Not available |
+| transport-managed request headers | Safe API rejects manual `Host`, `Content-Length`, `Transfer-Encoding`, `TE`, `Trailer`, `Connection`, `Upgrade`, `Keep-Alive`, and `Proxy-Connection` |
 | true active connection-level limits | `max_active_requests_per_origin` limits buffered request slots; physical TCP connection-level accounting is not exposed yet |
 | per-request connect timeout changes | `Timeouts.connect` configures the Rust connector from client-level settings when transport state is created; per-request `timeout.connect` does not reconfigure the connector |
 | separate read/write timeout semantics | `Timeouts.read` and `Timeouts.write` exist, but separate body read/write deadlines are reserved for later streaming/body work |
