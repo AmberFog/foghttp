@@ -1,3 +1,4 @@
+use crate::core::numeric::duration_from_secs;
 use crate::core::tls::build_tls_config;
 use bytes::Bytes;
 use http_body_util::Full;
@@ -5,7 +6,6 @@ use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
-use std::time::Duration;
 
 pub type RequestBody = Full<Bytes>;
 pub type HyperClient = Client<HttpsConnector<HttpConnector>, RequestBody>;
@@ -22,7 +22,10 @@ pub struct ClientOptions {
 pub fn build_client(options: &ClientOptions) -> Result<HyperClient, String> {
     let mut http = HttpConnector::new();
     http.enforce_http(false);
-    http.set_connect_timeout(Some(duration_from_secs(options.connect_timeout)));
+    http.set_connect_timeout(Some(duration_from_secs(
+        "Timeouts.connect",
+        options.connect_timeout,
+    )?));
 
     let tls_config = build_tls_config(&options.ca_certificates)?;
     let connector = HttpsConnectorBuilder::new()
@@ -37,10 +40,9 @@ pub fn build_client(options: &ClientOptions) -> Result<HyperClient, String> {
     } else {
         0
     });
-    builder.pool_idle_timeout(duration_from_secs(options.idle_timeout));
+    builder.pool_idle_timeout(duration_from_secs(
+        "Limits.idle_timeout",
+        options.idle_timeout,
+    )?);
     Ok(builder.build(connector))
-}
-
-fn duration_from_secs(seconds: f64) -> Duration {
-    Duration::from_secs_f64(seconds.max(0.0))
 }

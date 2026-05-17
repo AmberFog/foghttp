@@ -1,0 +1,1 @@
+"""Client option validation tests."""

@@ -14,7 +14,10 @@ def test_async_client_rejects_negative_max_redirects() -> None:
 
 
 def test_limits_reject_negative_max_response_body_size() -> None:
-    with pytest.raises(ValueError, match="max_response_body_size must be greater than or equal to 0"):
+    with pytest.raises(
+        ValueError,
+        match=r"Limits\.max_response_body_size must be an integer between 0 and",
+    ):
         foghttp.Limits(max_response_body_size=-1)
 
 

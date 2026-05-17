@@ -1,5 +1,6 @@
 use crate::core::client::HyperClient;
 use crate::core::headers::{response_headers, HeaderPairs};
+use crate::core::numeric;
 use crate::core::request::{build_request, RequestParts};
 use crate::core::response::collect_body;
 use crate::core::url::HttpUrl;
@@ -12,6 +13,7 @@ use crate::py::client::redirects::{
 use crate::py::response::{RawRequestInfo, RawResponse};
 use hyper::body::Incoming;
 use hyper::Response;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::time::{Duration, Instant};
 
@@ -40,7 +42,7 @@ pub async fn send_request(
         let mut raw = {
             let origin = state.origin()?;
             let _permit = tokio::time::timeout(
-                remaining_duration(state.total_timeout, started),
+                remaining_duration(state.total_timeout, started)?,
                 acquire_gate.acquire(&origin, pool_timeout),
             )
             .await
@@ -49,7 +51,7 @@ pub async fn send_request(
             let request = build_request(state.request_parts())?;
 
             let response = tokio::time::timeout(
-                remaining_duration(state.total_timeout, started),
+                remaining_duration(state.total_timeout, started)?,
                 client.request(request),
             )
             .await
@@ -181,6 +183,7 @@ async fn raw_response(
     })
 }
 
-fn remaining_duration(total_timeout: f64, started: Instant) -> Duration {
-    Duration::from_secs_f64(total_timeout.max(0.0)).saturating_sub(started.elapsed())
+fn remaining_duration(total_timeout: f64, started: Instant) -> PyResult<Duration> {
+    numeric::remaining_duration("Timeouts.total", total_timeout, started)
+        .map_err(PyValueError::new_err)
 }
