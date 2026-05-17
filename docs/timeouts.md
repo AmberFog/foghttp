@@ -119,10 +119,13 @@ request path. Today it wraps:
 
 - waiting for the acquire gate, together with `pool`
 - waiting for response headers for the current hop
+- collecting the buffered response body for the current hop
 - redirect hops as one shared budget
 
 If `total` expires while the request is waiting for a pool slot, `total` wins
-and FogHTTP raises the base `TimeoutError`, not `PoolTimeout`.
+and FogHTTP raises the base `TimeoutError`, not `PoolTimeout`. The same base
+`TimeoutError` is raised when the shared total budget expires while reading the
+buffered response body.
 
 ```python
 with foghttp.Client(timeouts=foghttp.Timeouts(pool=1.0, total=0.05)) as client:
@@ -132,11 +135,10 @@ with foghttp.Client(timeouts=foghttp.Timeouts(pool=1.0, total=0.05)) as client:
         pass
 ```
 
-`total` is not a mature response body read timeout yet. The current buffered
-client still lacks separate read and write timeout semantics, so do not use
-`total` as a strict wall-clock guarantee for slow response bodies. For async
-callers that need a hard application-level budget today, wrap the call in
-`asyncio.timeout()`; cancellation aborts the in-flight Rust request.
+`total` is a shared wall-clock budget, not a separate per-chunk read timeout.
+For async callers that need an additional application-level budget, wrapping the
+call in `asyncio.timeout()` is still fine; cancellation aborts the in-flight Rust
+request.
 
 ```python
 import asyncio
@@ -186,8 +188,27 @@ They do not yet provide:
 - dedicated `ReadTimeout` or write-specific exceptions
 
 These fields will become meaningful with the streaming response/upload work.
-Until then, use `Limits.max_response_body_size` to bound buffered response
-memory and application-level cancellation for async deadlines.
+Until then, use `Timeouts.total` as the shared buffered request deadline and
+`Limits.max_response_body_size` to bound buffered response memory.
+
+## Buffered Body Limit
+
+FogHTTP is buffered today, so responses are collected into memory before the
+`Response` object is returned. To keep that safe by default,
+`Limits.max_response_body_size` defaults to `10 * 1024 * 1024` bytes.
+
+```python
+limits = foghttp.Limits(max_response_body_size=2 * 1024 * 1024)
+```
+
+Passing `None` is an explicit opt-in to unbounded buffering:
+
+```python
+limits = foghttp.Limits(max_response_body_size=None)
+```
+
+Use that only for controlled endpoints where another layer already enforces a
+safe body size. Large downloads should wait for streaming responses.
 
 ## Practical Defaults
 
@@ -207,4 +228,4 @@ Tune from there:
 - raise `pool` when short bursts should wait for capacity
 - keep `total` larger than the expected upstream response time
 - use a separate client when an upstream needs a different `connect` timeout
-- avoid large or unknown response bodies until streaming/read timeouts land
+- keep `max_response_body_size` finite unless unbounded buffering is deliberate
