@@ -275,6 +275,12 @@ with foghttp.Client() as client:
     response = client.get("https://httpbin.org/headers", headers=headers)
 ```
 
+FogHTTP treats authority, framing, and hop-by-hop request headers as
+transport-managed. The safe API rejects manual `Host`, `Content-Length`,
+`Transfer-Encoding`, `TE`, `Trailer`, `Connection`, `Upgrade`, `Keep-Alive`,
+and `Proxy-Connection` headers. Use semantic headers such as `Accept`,
+`Authorization`, `Content-Type`, and application-specific `X-*` headers.
+
 ## Custom CA Certificates
 
 FogHTTP uses WebPKI roots by default for HTTPS. For private services with an

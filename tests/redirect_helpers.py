@@ -14,7 +14,6 @@ REDIRECT_SECURITY_HEADERS = {
     "accept": "application/json",
     "authorization": "Bearer secret",
     "cookie": "session=secret",
-    "host": "example.com",
     "origin": "https://example.com",
     "proxy-authorization": "Basic proxy-secret",
     "referer": "https://example.com/source",

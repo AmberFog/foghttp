@@ -5,6 +5,7 @@ from ...headers import Headers, HeaderSource
 from ...request import Request
 from ...types import QueryParams
 from ...url import URL, merge_params
+from .header_policy import validate_safe_request_headers
 from .models import RequestBuildOptions
 
 
@@ -16,6 +17,7 @@ class RequestBuilder:
     def build(self, options: RequestBuildOptions) -> Request:
         request_url = self._build_url(options.url, options.params)
         request_headers = self._build_headers(options.headers)
+        validate_safe_request_headers(request_headers)
         body = self._build_body(options, request_headers)
         return Request(
             options.method,
