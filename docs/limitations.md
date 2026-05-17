@@ -13,6 +13,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - sync `Client`
 - async `AsyncClient`
 - `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`
+- `base_url` for reusable API clients and relative request paths
 - query parameters from mappings, repeated pairs, and raw query strings
 - JSON bodies through `json=`
 - raw bytes/text bodies through `content=`
@@ -55,7 +56,6 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | Disabling TLS verification | Not available; use `TLSConfig` with explicit CA certificates |
 | HTTP/2 | Not available |
 | Compression decoding | Not available |
-| `base_url` | Not available |
 | default client headers | Not available |
 | transport-managed request headers | Safe API rejects manual `Host`, `Content-Length`, `Transfer-Encoding`, `TE`, `Trailer`, `Connection`, `Upgrade`, `Keep-Alive`, and `Proxy-Connection` |
 | true active connection-level limits | `max_active_requests_per_origin` limits buffered request slots; physical TCP connection-level accounting is not exposed yet |

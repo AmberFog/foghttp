@@ -1,6 +1,7 @@
 # FogHTTP Examples
 
-These examples focus on workloads where FogHTTP already works well.
+These examples focus on workloads where FogHTTP already works well, including
+reusable `base_url` clients for one-upstream APIs.
 
 Run them from the repository root after building the local extension:
 

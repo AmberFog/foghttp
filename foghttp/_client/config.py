@@ -6,6 +6,7 @@ from ..limits import Limits
 from ..timeouts import Timeouts
 from ..tls import TLSConfig
 from ..types import HttpVersions
+from ..url import URL
 from .options import validate_client_options
 from .request_builder.defaults import DEFAULT_REQUEST_BUILD_DEFAULTS, RequestBuildDefaults
 
@@ -26,6 +27,7 @@ class ClientConfig:
     def from_options(
         cls,
         *,
+        base_url: str | URL | None,
         limits: Limits | None,
         timeouts: Timeouts | None,
         http_versions: HttpVersions,
@@ -53,5 +55,9 @@ class ClientConfig:
             tls=tls,
             runtime_workers=runtime_workers,
             observability=observability,
-            request_defaults=DEFAULT_REQUEST_BUILD_DEFAULTS,
+            request_defaults=(
+                DEFAULT_REQUEST_BUILD_DEFAULTS
+                if base_url is None
+                else RequestBuildDefaults.from_options(base_url=base_url)
+            ),
         )
