@@ -89,6 +89,47 @@ Absolute request URLs ignore `base_url`.
 `base_url` must not include query parameters or a fragment. Use per-request
 `params=` for query parameters.
 
+## Default Headers
+
+Use client-level `headers=` for values that should be sent with every request
+from that client.
+
+::: code-group
+
+```python [Async]
+async with foghttp.AsyncClient(
+    base_url="https://api.example.com/v1",
+    headers={"accept": "application/json", "x-client": "foghttp"},
+) as client:
+    response = await client.get("users")
+    response.raise_for_status()
+```
+
+```python [Sync]
+with foghttp.Client(
+    base_url="https://api.example.com/v1",
+    headers={"accept": "application/json", "x-client": "foghttp"},
+) as client:
+    response = client.get("users")
+    response.raise_for_status()
+```
+
+:::
+
+Per-request headers override client defaults case-insensitively. Repeated
+headers are preserved when they are not overridden.
+
+```python
+with foghttp.Client(
+    base_url="https://api.example.com/v1",
+    headers={"accept": "application/json"},
+) as client:
+    response = client.get("users", headers={"accept": "text/plain"})
+```
+
+FogHTTP applies the same transport-managed header policy to client defaults and
+per-request headers.
+
 ## Query Parameters
 
 Use `params=` with mappings, repeated pairs, or an already encoded query string.
