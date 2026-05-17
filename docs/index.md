@@ -84,7 +84,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - prepared `Request` objects with `build_request()` and `send()`
 - case-insensitive `Headers` with repeated value support
 - normalized `URL` model with origin comparison and relative joins
-- GET/HEAD/POST redirects with final URL and history
+- GET/HEAD/POST redirects with final URL, history, and conservative replay policy
 - HTTPS with default WebPKI roots and explicit custom CA certificates
 - documented lazy transport creation, graceful sync close, async request
   cancellation, and explicit client lifecycle

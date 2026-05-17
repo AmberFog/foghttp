@@ -8,7 +8,7 @@ use crate::errors::{FogHttpError, FogHttpTimeoutError};
 use crate::messages::{redirect_limit_exceeded, REQUEST_TOTAL_TIMEOUT};
 use crate::py::client::acquire::AcquireGate;
 use crate::py::client::redirects::{
-    redirect_action, redirect_headers, RedirectAction, RedirectHeaderPolicy,
+    redirect_decision, redirect_headers, RedirectAction, RedirectDecision, RedirectHeaderPolicy,
 };
 use crate::py::response::{RawRequestInfo, RawResponse};
 use hyper::body::Incoming;
@@ -69,7 +69,7 @@ pub async fn send_request(
 
         let response_url = raw.request.url.clone();
         let redirect = if state.follow_redirects {
-            redirect_action(&state.method, &response_url, raw.status_code, &raw.headers)
+            redirect_decision(&state.method, &response_url, raw.status_code, &raw.headers)
         } else {
             None
         };
@@ -84,9 +84,13 @@ pub async fn send_request(
                 &response_url,
             )));
         }
-
-        history.push(raw);
-        state.apply_redirect(redirect);
+        match redirect {
+            RedirectDecision::Block(reason) => return Err(FogHttpError::new_err(reason)),
+            RedirectDecision::Follow(action) => {
+                history.push(raw);
+                state.apply_redirect(action);
+            }
+        }
     }
 }
 

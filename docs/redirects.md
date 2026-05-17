@@ -74,8 +74,8 @@ FogHTTP follows common browser-compatible POST redirect behavior:
 | `301` | `POST` becomes `GET`; body is dropped |
 | `302` | `POST` becomes `GET`; body is dropped |
 | `303` | `POST` becomes `GET`; body is dropped |
-| `307` | `POST` is preserved; body is resent |
-| `308` | `POST` is preserved; body is resent |
+| `307` | `POST` is preserved only for same-origin redirects; cross-origin body replay is dropped |
+| `308` | `POST` is preserved only for same-origin redirects; cross-origin body replay is dropped |
 
 ::: code-group
 
@@ -130,8 +130,18 @@ strips body-specific headers:
 - `Content-Type`
 - `Transfer-Encoding`
 
-For `307` and `308`, FogHTTP preserves the method and resends the current
-buffered body. Future streaming bodies will use a stricter replay policy because
+For same-origin `307` and `308`, FogHTTP preserves the method and resends the
+current buffered body. For cross-origin `307` and `308`, FogHTTP preserves the
+method but drops the body and body-specific headers before the next request.
+This prevents JSON payloads, tokens, form data, and other request bodies from
+being forwarded to a different origin by a redirect response.
+
+FogHTTP also blocks `https -> http` redirects. Scheme downgrade redirects are
+too easy to misuse once credentials, cookies, body replay, or future auth helpers
+are involved, so the safe default is to fail the request instead of silently
+following the downgrade.
+
+Future streaming bodies will use an explicit replayability model because
 non-replayable streams must not be resent automatically.
 
 ## Redirect Limit
