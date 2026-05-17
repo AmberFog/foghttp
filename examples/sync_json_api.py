@@ -14,9 +14,9 @@ import foghttp
 
 
 def main() -> None:
-    with foghttp.Client() as client:
+    with foghttp.Client(base_url="https://httpbin.org") as client:
         response = client.post(
-            "https://httpbin.org/post",
+            "post",
             json={"name": "Ada Lovelace", "role": "engineer"},
         )
 

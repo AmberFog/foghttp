@@ -2,8 +2,10 @@ __all__ = ("DEFAULT_REQUEST_BUILD_DEFAULTS", "FrozenHeaderPairs", "RequestBuildD
 
 from dataclasses import dataclass
 from typing import TypeAlias
+from urllib.parse import urlsplit, urlunsplit
 
 from ...headers import Headers, HeaderSource
+from ...messages import BASE_URL_QUERY_OR_FRAGMENT_UNSUPPORTED
 from ...types import QueryParams
 from ...url import URL, _query_string
 
@@ -29,10 +31,25 @@ class RequestBuildDefaults:
     ) -> "RequestBuildDefaults":
         query = _query_string(params)
         return cls(
-            base_url=None if base_url is None else URL(base_url),
+            base_url=_normalized_base_url(base_url),
             headers=tuple(Headers(headers).multi_items()),
             params=query or None,
         )
+
+
+def _normalized_base_url(url: str | URL | None) -> URL | None:
+    if url is None:
+        return None
+
+    parsed_url = URL(url)
+    if parsed_url.query or parsed_url.fragment:
+        raise ValueError(BASE_URL_QUERY_OR_FRAGMENT_UNSUPPORTED)
+
+    parts = urlsplit(str(parsed_url))
+    path = parts.path or "/"
+    if not path.endswith("/"):
+        path = f"{path}/"
+    return URL(urlunsplit((parts.scheme, parts.netloc, path, "", "")))
 
 
 DEFAULT_REQUEST_BUILD_DEFAULTS = RequestBuildDefaults()

@@ -166,6 +166,18 @@ with foghttp.Client() as client:
     response = client.send(request)
 ```
 
+### One-Upstream API Clients
+
+Use `base_url` for service clients that send many requests to the same
+upstream. Relative paths keep call sites focused on API resources instead of
+repeating the origin every time.
+
+```python
+with foghttp.Client(base_url="https://api.example.com/v1") as client:
+    response = client.get("users", params={"limit": 10})
+    response.raise_for_status()
+```
+
 ## Usable With Constraints
 
 ### Manual Bearer Tokens

@@ -1,4 +1,5 @@
 __all__ = (
+    "BASE_URL_QUERY_OR_FRAGMENT_UNSUPPORTED",
     "BODY_CONTENT_AND_JSON_CONFLICT",
     "CLIENT_CLOSED",
     "COOKIES_UNSUPPORTED",
@@ -18,6 +19,7 @@ __all__ = (
 from http import HTTPStatus
 
 
+BASE_URL_QUERY_OR_FRAGMENT_UNSUPPORTED = "base_url must not include query or fragment"
 BODY_CONTENT_AND_JSON_CONFLICT = "pass either content or json, not both"
 CLIENT_CLOSED = "AsyncClient is closed"
 COOKIES_UNSUPPORTED = "cookies are planned after the MVP"

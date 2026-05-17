@@ -57,6 +57,38 @@ with foghttp.Client() as client:
 
 :::
 
+## Base URL
+
+Use `base_url=` when one client talks to one upstream service. Request URLs can
+then be relative paths.
+
+::: code-group
+
+```python [Async]
+async with foghttp.AsyncClient(base_url="https://api.example.com/v1") as client:
+    response = await client.get("users", params={"limit": 10})
+    response.raise_for_status()
+```
+
+```python [Sync]
+with foghttp.Client(base_url="https://api.example.com/v1") as client:
+    response = client.get("users", params={"limit": 10})
+    response.raise_for_status()
+```
+
+:::
+
+FogHTTP stores `base_url` as a path prefix, so both
+`https://api.example.com/v1` and `https://api.example.com/v1/` resolve
+`"users"` to `https://api.example.com/v1/users`. A request path that starts
+with `/` is root-relative and resolves against the origin root:
+`"/users"` becomes `https://api.example.com/users`.
+
+Absolute request URLs ignore `base_url`.
+
+`base_url` must not include query parameters or a fragment. Use per-request
+`params=` for query parameters.
+
 ## Query Parameters
 
 Use `params=` with mappings, repeated pairs, or an already encoded query string.

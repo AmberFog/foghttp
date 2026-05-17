@@ -25,6 +25,7 @@ class AsyncClient(ClientCore):
     def __init__(
         self,
         *,
+        base_url: str | URL | None = None,
         limits: Limits | None = None,
         timeouts: Timeouts | None = None,
         http_versions: HttpVersions = None,
@@ -38,6 +39,7 @@ class AsyncClient(ClientCore):
     ) -> None:
         super().__init__(
             config=ClientConfig.from_options(
+                base_url=base_url,
                 limits=limits,
                 timeouts=timeouts,
                 http_versions=http_versions,
