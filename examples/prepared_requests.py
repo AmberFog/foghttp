@@ -12,6 +12,7 @@ import asyncio
 import json
 
 import foghttp
+from foghttp.methods import POST
 
 
 POST_URL = "https://httpbin.org/post"
@@ -28,7 +29,7 @@ def print_response(label: str, response: foghttp.Response) -> None:
 def run_sync_example() -> None:
     with foghttp.Client() as client:
         request = client.build_request(
-            "POST",
+            POST,
             POST_URL,
             json={"name": "Ada Lovelace", "mode": "prepared"},
         )
@@ -39,7 +40,7 @@ def run_sync_example() -> None:
         print_response("sync prepared", response)
 
         manual_request = foghttp.Request(
-            "POST",
+            POST,
             POST_URL,
             headers={"content-type": "application/json", "x-trace": "sync-manual"},
             content=b'{"name":"Grace Hopper","mode":"manual"}',
@@ -52,7 +53,7 @@ def run_sync_example() -> None:
 async def run_async_example() -> None:
     async with foghttp.AsyncClient() as client:
         request = client.build_request(
-            "POST",
+            POST,
             POST_URL,
             json={"name": "Katherine Johnson", "mode": "async-prepared"},
         )

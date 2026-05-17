@@ -152,9 +152,13 @@ Use `build_request()` when application code needs to inspect or adjust headers,
 URL, or body bytes before sending a buffered request.
 
 ```python
+import foghttp
+from foghttp.methods import POST
+
+
 with foghttp.Client() as client:
     request = client.build_request(
-        "POST",
+        POST,
         "https://api.example.com/users",
         json={"name": "Ada"},
     )

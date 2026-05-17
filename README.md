@@ -92,7 +92,7 @@ async with foghttp.AsyncClient() as client:
   HTTP/HTTPS
 - optional buffered response body size limit for memory safety
 - advanced per-client Tokio runtime worker tuning
-- grouped HTTP status constants
+- grouped HTTP status constants and reusable HTTP method constants
 
 ## Documentation
 

@@ -225,9 +225,13 @@ adjust the request before sending it.
 ::: code-group
 
 ```python [Async]
+import foghttp
+from foghttp.methods import POST
+
+
 async with foghttp.AsyncClient() as client:
     request = client.build_request(
-        "POST",
+        POST,
         "https://httpbin.org/post",
         json={"name": "Ada Lovelace"},
     )
@@ -236,9 +240,13 @@ async with foghttp.AsyncClient() as client:
 ```
 
 ```python [Sync]
+import foghttp
+from foghttp.methods import POST
+
+
 with foghttp.Client() as client:
     request = client.build_request(
-        "POST",
+        POST,
         "https://httpbin.org/post",
         json={"name": "Ada Lovelace"},
     )
@@ -373,4 +381,11 @@ Status code constants are grouped by response class.
 from foghttp.status_codes.client_error import NOT_FOUND
 from foghttp.status_codes.redirect import REDIRECT_STATUS_CODES
 from foghttp.status_codes.success import OK
+```
+
+HTTP method constants are available through `foghttp.methods` for code that
+shares method names across prepared requests or helper layers.
+
+```python
+from foghttp.methods import GET, POST
 ```
