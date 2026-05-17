@@ -7,6 +7,7 @@ from ..timeouts import Timeouts
 from ..tls import TLSConfig
 from ..types import HttpVersions
 from .options import validate_client_options
+from .request_builder.defaults import DEFAULT_REQUEST_BUILD_DEFAULTS, RequestBuildDefaults
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +20,7 @@ class ClientConfig:
     tls: TLSConfig | None
     runtime_workers: int | None
     observability: bool
+    request_defaults: RequestBuildDefaults
 
     @classmethod
     def from_options(
@@ -51,4 +53,5 @@ class ClientConfig:
             tls=tls,
             runtime_workers=runtime_workers,
             observability=observability,
+            request_defaults=DEFAULT_REQUEST_BUILD_DEFAULTS,
         )
