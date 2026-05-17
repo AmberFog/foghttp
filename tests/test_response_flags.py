@@ -2,6 +2,7 @@ from faker import Faker
 import pytest
 
 import foghttp
+from foghttp.methods import GET
 from foghttp.status_codes.client_error import MAX_CLIENT_ERROR_STATUS_CODE, MIN_CLIENT_ERROR_STATUS_CODE
 from foghttp.status_codes.redirect import MAX_REDIRECT_STATUS_CODE, MIN_REDIRECT_STATUS_CODE
 from foghttp.status_codes.server_error import MAX_SERVER_ERROR_STATUS_CODE, MIN_SERVER_ERROR_STATUS_CODE
@@ -53,7 +54,7 @@ def _response(status_code: int, *, url: str) -> foghttp.Response:
         content=b"",
         url=url,
         request=foghttp.RequestInfo(
-            method="GET",
+            method=GET,
             url=url,
             headers=foghttp.Headers(),
         ),

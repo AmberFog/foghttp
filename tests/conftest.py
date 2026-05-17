@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
+from foghttp.methods import HEAD
 from foghttp.status_codes.redirect import FOUND
 from foghttp.status_codes.success import OK
 
@@ -303,7 +304,7 @@ def _raw_security_headers_response(path: str, headers: str, body: bytes) -> byte
 
 def _raw_json_response(*, method: str, request_line: str, body: bytes) -> bytes:
     payload = _json_payload(request_line=request_line, body=body)
-    content = b"" if method == "HEAD" else payload
+    content = b"" if method == HEAD else payload
     return _raw_response(
         OK,
         "OK",
@@ -568,7 +569,7 @@ class SyncHTTPHandler(BaseHTTPRequestHandler):
 
     def _write_json(self, body: bytes) -> None:
         payload = _json_payload(request_line=self.requestline, body=body)
-        content = b"" if self.command == "HEAD" else payload
+        content = b"" if self.command == HEAD else payload
         self.send_response(OK)
         self.send_header("content-type", "application/json")
         self.send_header("content-length", str(len(content)))

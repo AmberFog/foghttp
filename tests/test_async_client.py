@@ -5,6 +5,7 @@ import orjson
 import pytest
 
 import foghttp
+from foghttp.methods import GET, HEAD, POST
 from foghttp.status_codes.success import OK
 
 
@@ -13,7 +14,7 @@ async def test_get_with_params_and_json_response(http_server: str) -> None:
         response = await client.get(http_server + "/users", params={"limit": 10})
 
     assert response.status_code == OK
-    assert response.request.method == "GET"
+    assert response.request.method == GET
     assert response.request.url == http_server + "/users?limit=10"
     assert response.headers["content-type"] == "application/json"
     assert response.encoding == "utf-8"
@@ -26,7 +27,7 @@ async def test_post_json_body(http_server: str, faker: Faker) -> None:
     async with foghttp.AsyncClient() as client:
         response = await client.post(http_server + "/users", json=payload)
 
-    assert response.request.method == "POST"
+    assert response.request.method == POST
     assert response.request.url == http_server + "/users"
     assert response.request.headers["content-type"] == "application/json"
     assert response.json()["body"] == orjson.dumps(payload).decode()
@@ -47,7 +48,7 @@ async def test_post_string_content(http_server: str, faker: Faker) -> None:
     async with foghttp.AsyncClient() as client:
         response = await client.post(http_server + "/users", content=name)
 
-    assert response.request.method == "POST"
+    assert response.request.method == POST
     assert response.json()["body"] == name
 
 
@@ -55,10 +56,10 @@ async def test_send_prepared_request(http_server: str, faker: Faker) -> None:
     payload = {"name": faker.name()}
 
     async with foghttp.AsyncClient() as client:
-        request = client.build_request("POST", http_server + "/users", json=payload)
+        request = client.build_request(POST, http_server + "/users", json=payload)
         response = await client.send(request)
 
-    assert response.request.method == "POST"
+    assert response.request.method == POST
     assert response.request.url == http_server + "/users"
     assert response.request.headers["content-type"] == "application/json"
     assert response.json()["body"] == orjson.dumps(payload).decode()
@@ -67,7 +68,7 @@ async def test_send_prepared_request(http_server: str, faker: Faker) -> None:
 async def test_send_manual_request(http_server: str, faker: Faker) -> None:
     content = faker.sentence().encode()
     request = foghttp.Request(
-        "POST",
+        POST,
         http_server + "/users",
         headers={"content-type": "text/plain"},
         content=content,
@@ -76,7 +77,7 @@ async def test_send_manual_request(http_server: str, faker: Faker) -> None:
     async with foghttp.AsyncClient() as client:
         response = await client.send(request)
 
-    assert response.request.method == "POST"
+    assert response.request.method == POST
     assert response.request.headers["content-type"] == "text/plain"
     assert response.json()["body"] == content.decode()
 
@@ -86,7 +87,7 @@ async def test_send_allows_prepared_request_header_changes(http_server: str, fak
 
     async with foghttp.AsyncClient() as client:
         request = client.build_request(
-            "GET",
+            GET,
             http_server + "/headers/echo",
             headers=[("x-repeat", values[0])],
         )
@@ -107,7 +108,7 @@ async def test_method_shortcuts(http_server: str, faker: Faker) -> None:
         delete_response = await client.delete(http_server + "/users")
 
     assert head_response.status_code == OK
-    assert head_response.request.method == "HEAD"
+    assert head_response.request.method == HEAD
     assert head_response.content == b""
     assert put_response.json()["request_line"] == "PUT /users HTTP/1.1"
     assert put_response.json()["body"] == put_content.decode()

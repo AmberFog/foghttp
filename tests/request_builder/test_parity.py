@@ -1,34 +1,33 @@
-import importlib
-
 from faker import Faker
 import orjson
 import pytest
 
 import foghttp
+from foghttp.methods import GET, POST
 
 
 def test_sync_build_request_prepares_request_without_transport(
     faker: Faker,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _fail_on_transport_creation("foghttp.client", monkeypatch)
+    _fail_on_transport_creation(monkeypatch)
 
     with foghttp.Client() as client:
-        request = client.build_request("GET", faker.url())
+        request = client.build_request(GET, faker.url())
 
-    assert request.method == "GET"
+    assert request.method == GET
 
 
 async def test_async_build_request_prepares_request_without_transport(
     faker: Faker,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _fail_on_transport_creation("foghttp.async_client", monkeypatch)
+    _fail_on_transport_creation(monkeypatch)
 
     async with foghttp.AsyncClient() as client:
-        request = client.build_request("GET", faker.url())
+        request = client.build_request(GET, faker.url())
 
-    assert request.method == "GET"
+    assert request.method == GET
 
 
 async def test_sync_and_async_build_request_have_same_prepared_request(faker: Faker) -> None:
@@ -39,7 +38,7 @@ async def test_sync_and_async_build_request_have_same_prepared_request(faker: Fa
 
     with foghttp.Client() as sync_client:
         sync_request = sync_client.build_request(
-            "post",
+            POST.lower(),
             url,
             headers=headers,
             params=params,
@@ -48,7 +47,7 @@ async def test_sync_and_async_build_request_have_same_prepared_request(faker: Fa
 
     async with foghttp.AsyncClient() as async_client:
         async_request = async_client.build_request(
-            "post",
+            POST.lower(),
             url,
             headers=headers,
             params=params,
@@ -58,8 +57,8 @@ async def test_sync_and_async_build_request_have_same_prepared_request(faker: Fa
     expected_url = "https://example.com/users?debug=1&tag=rust&tag=python&q=fog+http#profile"
     expected_body = orjson.dumps(payload)
 
-    assert sync_request.method == "POST"
-    assert async_request.method == "POST"
+    assert sync_request.method == POST
+    assert async_request.method == POST
     assert sync_request.url == expected_url
     assert async_request.url == expected_url
     assert sync_request.headers.multi_items() == async_request.headers.multi_items()
@@ -67,11 +66,22 @@ async def test_sync_and_async_build_request_have_same_prepared_request(faker: Fa
     assert async_request.content == expected_body
 
 
-def _fail_on_transport_creation(module_name: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    client_module = importlib.import_module(module_name)
+async def test_sync_and_async_build_request_normalize_mixed_case_method(faker: Faker) -> None:
+    mixed_case_method = "gEt"
 
+    with foghttp.Client() as sync_client:
+        sync_request = sync_client.build_request(mixed_case_method, faker.url())
+
+    async with foghttp.AsyncClient() as async_client:
+        async_request = async_client.build_request(mixed_case_method, faker.url())
+
+    assert sync_request.method == GET
+    assert async_request.method == GET
+
+
+def _fail_on_transport_creation(monkeypatch: pytest.MonkeyPatch) -> None:
     def create_raw_client_probe(*_args: object, **_kwargs: object) -> object:
         msg = "build_request() must not create a RawClient"
         raise AssertionError(msg)
 
-    monkeypatch.setattr(client_module, "create_raw_client", create_raw_client_probe)
+    monkeypatch.setattr("foghttp._client.core.create_raw_client", create_raw_client_probe)

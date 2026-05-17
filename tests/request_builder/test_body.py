@@ -6,13 +6,14 @@ import pytest
 
 import foghttp
 from foghttp.messages import BODY_CONTENT_AND_JSON_CONFLICT
+from foghttp.methods import POST
 
 
 def test_json_body_adds_content_type_when_missing(faker: Faker) -> None:
     payload = {"name": faker.name()}
 
     with foghttp.Client() as client:
-        request = client.build_request("POST", faker.url(), json=payload)
+        request = client.build_request(POST, faker.url(), json=payload)
 
     assert request.content == orjson.dumps(payload)
     assert request.headers["content-type"] == "application/json"
@@ -24,7 +25,7 @@ def test_json_body_preserves_explicit_content_type(faker: Faker) -> None:
 
     with foghttp.Client() as client:
         request = client.build_request(
-            "POST",
+            POST,
             faker.url(),
             headers={"Content-Type": content_type},
             json=payload,
@@ -44,7 +45,7 @@ def test_json_body_preserves_explicit_content_type(faker: Faker) -> None:
 )
 def test_content_body_matrix(content: bytes | str | None, expected_body: bytes | None, faker: Faker) -> None:
     with foghttp.Client() as client:
-        request = client.build_request("POST", faker.url(), content=content)
+        request = client.build_request(POST, faker.url(), content=content)
 
     assert request.content == expected_body
     assert "content-type" not in request.headers
@@ -55,7 +56,7 @@ def test_build_request_rejects_content_and_json(faker: Faker) -> None:
 
     with foghttp.Client() as client, pytest.raises(ValueError, match=BODY_CONTENT_AND_JSON_CONFLICT):
         client.build_request(
-            "POST",
+            POST,
             faker.url(),
             content=content,
             json={"name": faker.name()},
@@ -68,7 +69,7 @@ async def test_async_build_request_rejects_content_and_json(faker: Faker) -> Non
     async with foghttp.AsyncClient() as client:
         with pytest.raises(ValueError, match=BODY_CONTENT_AND_JSON_CONFLICT):
             client.build_request(
-                "POST",
+                POST,
                 faker.url(),
                 content=content,
                 json={"name": faker.name()},
@@ -85,7 +86,7 @@ async def test_async_build_request_rejects_content_and_json(faker: Faker) -> Non
 )
 def test_json_body_none_is_not_a_body(json_body: Any, expected_body: bytes | None, faker: Faker) -> None:
     with foghttp.Client() as client:
-        request = client.build_request("POST", faker.url(), json=json_body)
+        request = client.build_request(POST, faker.url(), json=json_body)
 
     assert request.content == expected_body
     if json_body is None:

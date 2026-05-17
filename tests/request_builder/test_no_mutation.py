@@ -3,6 +3,7 @@ from copy import deepcopy
 from faker import Faker
 
 import foghttp
+from foghttp.methods import GET, POST
 
 
 def test_build_request_does_not_mutate_user_inputs(faker: Faker) -> None:
@@ -15,7 +16,7 @@ def test_build_request_does_not_mutate_user_inputs(faker: Faker) -> None:
 
     with foghttp.Client() as client:
         client.build_request(
-            "POST",
+            POST,
             faker.url(),
             headers=headers,
             params=params,
@@ -32,6 +33,6 @@ def test_build_request_does_not_mutate_pair_params(faker: Faker) -> None:
     expected_params = deepcopy(params)
 
     with foghttp.Client() as client:
-        client.build_request("GET", faker.url(), params=params)
+        client.build_request(GET, faker.url(), params=params)
 
     assert params == expected_params

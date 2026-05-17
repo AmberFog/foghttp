@@ -92,7 +92,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - global active request limits, per-origin active request limits, pending
   acquire limits, and basic stats
 - optional buffered response body size limit
-- grouped HTTP status constants
+- grouped HTTP status constants and reusable HTTP method constants
 
 ## Not Yet
 

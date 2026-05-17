@@ -3,6 +3,7 @@ import pytest
 
 import foghttp
 from foghttp.messages import http_status_error
+from foghttp.methods import GET, POST
 from foghttp.status_codes.client_error import NOT_FOUND
 from foghttp.status_codes.redirect import FOUND
 from foghttp.status_codes.server_error import INTERNAL_SERVER_ERROR
@@ -51,9 +52,9 @@ def test_raise_for_status_uses_final_redirect_request(sync_http_server: str, fak
         response.raise_for_status()
 
     assert str(exc_info.value) == f"GET {sync_http_server}/status/{NOT_FOUND} returned 404 Not Found"
-    assert response.request.method == "GET"
+    assert response.request.method == GET
     assert response.request.url == f"{sync_http_server}/status/{NOT_FOUND}"
-    assert response.history[0].request.method == "POST"
+    assert response.history[0].request.method == POST
     assert exc_info.value.response is response
 
 
@@ -68,4 +69,4 @@ def test_response_text_uses_declared_encoding(sync_http_server: str) -> None:
 def test_http_status_error_handles_unknown_status_reason(faker: Faker) -> None:
     url = faker.url()
 
-    assert http_status_error("GET", url, 599) == f"GET {url} returned 599"
+    assert http_status_error(GET, url, 599) == f"GET {url} returned 599"

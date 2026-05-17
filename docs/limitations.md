@@ -37,6 +37,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
   `pool`/`total`, and reserved `read`/`write`; see
   [Timeout model](./timeouts.md)
 - advanced `runtime_workers` tuning for the per-client Tokio runtime
+- reusable HTTP method constants through `foghttp.methods`
 - HTTP/1.1 over HTTP and HTTPS
 
 ## Not Implemented Yet
