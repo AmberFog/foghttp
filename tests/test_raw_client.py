@@ -4,6 +4,7 @@ import pytest
 from foghttp import _foghttp
 from foghttp._client.raw import create_raw_client, send_raw_request, send_raw_request_async
 from foghttp.limits import Limits
+from foghttp.methods import GET
 from foghttp.timeouts import Timeouts
 
 
@@ -100,7 +101,7 @@ def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker:
 
     response = send_raw_request(
         raw_client=RawClientProbe(),
-        method="GET",
+        method=GET,
         url=url,
         headers=[],
         body=None,
@@ -109,7 +110,7 @@ def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker:
 
     assert response is raw_response
     assert captured_options == {
-        "method": "GET",
+        "method": GET,
         "url": url,
         "headers": [],
         "body": None,
@@ -132,7 +133,7 @@ async def test_send_raw_request_async_passes_request_timeouts_without_connect_ti
 
     response = await send_raw_request_async(
         raw_client=RawClientProbe(),
-        method="GET",
+        method=GET,
         url=url,
         headers=[],
         body=None,
@@ -141,7 +142,7 @@ async def test_send_raw_request_async_passes_request_timeouts_without_connect_ti
 
     assert response is raw_response
     assert captured_options == {
-        "method": "GET",
+        "method": GET,
         "url": url,
         "headers": [],
         "body": None,

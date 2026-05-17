@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
 
 import pytest
 
+from foghttp.methods import HEAD
 from foghttp.status_codes.success import OK
 
 from .constants import OK_BODY, SLOW_BODY_PATH, SLOW_HEADERS_PATH, SLOW_RESPONSE_DELAY
@@ -33,7 +34,7 @@ async def cancellation_server() -> AsyncIterator[str]:
                 await writer.drain()
                 return
 
-            body = b"" if method == "HEAD" else OK_BODY
+            body = b"" if method == HEAD else OK_BODY
             await _write_response(writer, body)
         except (asyncio.IncompleteReadError, OSError):
             return

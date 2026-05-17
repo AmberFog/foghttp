@@ -6,6 +6,7 @@ from foghttp._client.constants import DEFAULT_MAX_REDIRECTS
 from foghttp._client.raw import create_raw_client, send_raw_request, send_raw_request_async
 from foghttp.errors import PoolTimeout, ResponseBodyTooLargeError, TimeoutError
 from foghttp.limits import Limits
+from foghttp.methods import GET
 from foghttp.timeouts import Timeouts
 
 
@@ -64,7 +65,7 @@ def test_sync_raw_timeout_maps_to_public_timeout(faker: Faker) -> None:
     with pytest.raises(TimeoutError, match="request timed out"):
         send_raw_request(
             raw_client=TimeoutRawClient(),
-            method="GET",
+            method=GET,
             url=faker.url(),
             headers=[],
             body=None,
@@ -76,7 +77,7 @@ async def test_async_raw_timeout_maps_to_public_timeout(faker: Faker) -> None:
     with pytest.raises(TimeoutError, match="request timed out"):
         await send_raw_request_async(
             raw_client=TimeoutRawClient(),
-            method="GET",
+            method=GET,
             url=faker.url(),
             headers=[],
             body=None,
@@ -88,7 +89,7 @@ def test_sync_raw_pool_timeout_maps_to_public_pool_timeout(faker: Faker) -> None
     with pytest.raises(PoolTimeout, match="request acquire timeout expired"):
         send_raw_request(
             raw_client=PoolTimeoutRawClient(),
-            method="GET",
+            method=GET,
             url=faker.url(),
             headers=[],
             body=None,
@@ -100,7 +101,7 @@ async def test_async_raw_pool_timeout_maps_to_public_pool_timeout(faker: Faker) 
     with pytest.raises(PoolTimeout, match="request acquire timeout expired"):
         await send_raw_request_async(
             raw_client=PoolTimeoutRawClient(),
-            method="GET",
+            method=GET,
             url=faker.url(),
             headers=[],
             body=None,
@@ -112,7 +113,7 @@ def test_sync_raw_body_limit_error_maps_to_public_response_error(faker: Faker) -
     with pytest.raises(ResponseBodyTooLargeError, match="max_response_body_size"):
         send_raw_request(
             raw_client=BodyTooLargeRawClient(),
-            method="GET",
+            method=GET,
             url=faker.url(),
             headers=[],
             body=None,
@@ -124,7 +125,7 @@ async def test_async_raw_body_limit_error_maps_to_public_response_error(faker: F
     with pytest.raises(ResponseBodyTooLargeError, match="max_response_body_size"):
         await send_raw_request_async(
             raw_client=BodyTooLargeRawClient(),
-            method="GET",
+            method=GET,
             url=faker.url(),
             headers=[],
             body=None,

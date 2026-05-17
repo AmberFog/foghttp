@@ -1,5 +1,6 @@
 use super::{redirect_action, redirect_headers, RedirectHeaderPolicy};
 use crate::core::headers::HeaderPairs;
+use crate::core::method::{GET, POST};
 use hyper::StatusCode;
 
 fn header_names(headers: &HeaderPairs) -> Vec<String> {
@@ -12,7 +13,7 @@ fn header_names(headers: &HeaderPairs) -> Vec<String> {
 #[test]
 fn same_origin_redirect_keeps_sensitive_headers() {
     let action = redirect_action(
-        "GET",
+        GET,
         "https://example.com/users",
         StatusCode::FOUND.as_u16(),
         &[("location".to_owned(), "/accounts".to_owned())],
@@ -42,7 +43,7 @@ fn same_origin_redirect_keeps_sensitive_headers() {
 #[test]
 fn cross_origin_redirect_strips_sensitive_headers() {
     let action = redirect_action(
-        "GET",
+        GET,
         "https://example.com/users",
         StatusCode::FOUND.as_u16(),
         &[(
@@ -74,7 +75,7 @@ fn cross_origin_redirect_strips_sensitive_headers() {
 #[test]
 fn method_rewrite_strips_body_headers() {
     let action = redirect_action(
-        "POST",
+        POST,
         "https://example.com/users",
         StatusCode::SEE_OTHER.as_u16(),
         &[("location".to_owned(), "/final".to_owned())],
@@ -95,14 +96,14 @@ fn method_rewrite_strips_body_headers() {
         },
     );
 
-    assert_eq!(action.method, "GET");
+    assert_eq!(action.method, GET);
     assert_eq!(header_names(&headers), vec!["Authorization"]);
 }
 
 #[test]
 fn method_preserving_redirect_keeps_body_headers() {
     let action = redirect_action(
-        "POST",
+        POST,
         "https://example.com/users",
         StatusCode::TEMPORARY_REDIRECT.as_u16(),
         &[("location".to_owned(), "/final".to_owned())],
@@ -120,7 +121,7 @@ fn method_preserving_redirect_keeps_body_headers() {
         },
     );
 
-    assert_eq!(action.method, "POST");
+    assert_eq!(action.method, POST);
     assert_eq!(
         header_names(&headers),
         vec!["Content-Type", "Content-Length"]

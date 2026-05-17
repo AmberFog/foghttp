@@ -2,6 +2,7 @@ from faker import Faker
 import pytest
 
 import foghttp
+from foghttp.methods import GET, POST
 from foghttp.status_codes.client_error import NOT_FOUND
 from foghttp.status_codes.redirect import FOUND
 from foghttp.status_codes.server_error import INTERNAL_SERVER_ERROR
@@ -42,9 +43,9 @@ async def test_raise_for_status_uses_final_redirect_request(http_server: str, fa
         response.raise_for_status()
 
     assert str(exc_info.value) == f"GET {http_server}/status/{NOT_FOUND} returned 404 Not Found"
-    assert response.request.method == "GET"
+    assert response.request.method == GET
     assert response.request.url == f"{http_server}/status/{NOT_FOUND}"
-    assert response.history[0].request.method == "POST"
+    assert response.history[0].request.method == POST
     assert exc_info.value.response is response
 
 
