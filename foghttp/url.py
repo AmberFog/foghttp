@@ -4,6 +4,7 @@ from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
+from ._redaction import redact_url
 from .types import QueryParams
 
 
@@ -25,7 +26,7 @@ class URL:
         return self._raw.value
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({str(self)!r})"
+        return f"{self.__class__.__name__}({redact_url(str(self))!r})"
 
     @property
     def scheme(self) -> str:

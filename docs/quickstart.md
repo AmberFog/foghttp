@@ -354,6 +354,11 @@ transport-managed. The safe API rejects manual `Host`, `Content-Length`,
 and `Proxy-Connection` headers. Use semantic headers such as `Accept`,
 `Authorization`, `Content-Type`, and application-specific `X-*` headers.
 
+Debug-facing representations and `HTTPStatusError` messages redact sensitive
+header values, URL credentials, common token query or fragment parameters, and
+buffered body bytes. Explicit APIs such as `headers["authorization"]`,
+`str(url)`, and `response.content` still return the real values.
+
 ## Custom CA Certificates
 
 FogHTTP uses WebPKI roots by default for HTTPS. For private services with an

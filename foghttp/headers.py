@@ -3,6 +3,8 @@ __all__ = ("HeaderPairs", "HeaderSource", "Headers")
 from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from typing import TypeAlias
 
+from ._redaction import redact_header_value
+
 
 HeaderPairs: TypeAlias = list[tuple[str, str]]
 HeaderSource: TypeAlias = Mapping[str, str] | Iterable[tuple[str, str]] | None
@@ -49,7 +51,7 @@ class Headers(MutableMapping[str, str]):
         return len({lower_name for _original_name, lower_name, _value in self._items})
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.multi_items()!r})"
+        return f"{self.__class__.__name__}({self._redacted_items()!r})"
 
     def add(self, name: str, value: str) -> None:
         self._items.append((name, normalize_header_name(name), value))
@@ -68,6 +70,9 @@ class Headers(MutableMapping[str, str]):
 
     def copy(self) -> "Headers":
         return Headers(self.multi_items())
+
+    def _redacted_items(self) -> HeaderPairs:
+        return [(name, redact_header_value(name, value)) for name, _lower_name, value in self._items]
 
 
 def normalize_header_name(name: str) -> str:

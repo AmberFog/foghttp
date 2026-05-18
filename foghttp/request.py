@@ -1,5 +1,6 @@
 __all__ = ("Request",)
 
+from ._redaction import redact_url
 from .headers import Headers, HeaderSource
 from .url import URL
 
@@ -26,4 +27,4 @@ class Request:
         self.content = content
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.method!r}, {self.url!r})"
+        return f"{self.__class__.__name__}({self.method!r}, {redact_url(self.url)!r})"
