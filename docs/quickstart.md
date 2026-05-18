@@ -86,8 +86,8 @@ with `/` is root-relative and resolves against the origin root:
 
 Absolute request URLs ignore `base_url`.
 
-`base_url` must not include query parameters or a fragment. Use per-request
-`params=` for query parameters.
+`base_url` must not include query parameters or a fragment. Use client-level or
+per-request `params=` for query parameters.
 
 ## Default Headers
 
@@ -129,6 +129,41 @@ with foghttp.Client(
 
 FogHTTP applies the same transport-managed header policy to client defaults and
 per-request headers.
+
+## Default Query Parameters
+
+Use client-level `params=` for values that should be appended to every request
+from that client, such as API version, locale, tenant, or feature flags.
+
+::: code-group
+
+```python [Async]
+async with foghttp.AsyncClient(
+    base_url="https://api.example.com/v1",
+    params={"api-version": "1", "locale": "en-US"},
+) as client:
+    response = await client.get("users", params={"limit": 10})
+    response.raise_for_status()
+```
+
+```python [Sync]
+with foghttp.Client(
+    base_url="https://api.example.com/v1",
+    params={"api-version": "1", "locale": "en-US"},
+) as client:
+    response = client.get("users", params={"limit": 10})
+    response.raise_for_status()
+```
+
+:::
+
+Client defaults are appended after query parameters already present in the
+request URL and before per-request `params=`. Per-request params do not replace
+client defaults; repeated keys are preserved in order.
+
+Client-level params apply to every request built by that client, including
+absolute request URLs. If defaults contain credentials or tenant identifiers,
+prefer a dedicated client scoped to one upstream.
 
 ## Query Parameters
 

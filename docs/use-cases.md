@@ -176,6 +176,7 @@ repeating the origin every time.
 with foghttp.Client(
     base_url="https://api.example.com/v1",
     headers={"accept": "application/json"},
+    params={"api-version": "1"},
 ) as client:
     response = client.get("users", params={"limit": 10})
     response.raise_for_status()

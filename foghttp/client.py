@@ -32,6 +32,7 @@ class Client(ClientCore):
         *,
         base_url: str | URL | None = None,
         headers: HeaderSource = None,
+        params: QueryParams = None,
         limits: Limits | None = None,
         timeouts: Timeouts | None = None,
         http_versions: HttpVersions = None,
@@ -47,6 +48,7 @@ class Client(ClientCore):
             config=ClientConfig.from_options(
                 base_url=base_url,
                 headers=headers,
+                params=params,
                 limits=limits,
                 timeouts=timeouts,
                 http_versions=http_versions,

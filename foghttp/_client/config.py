@@ -6,7 +6,7 @@ from ..headers import HeaderSource
 from ..limits import Limits
 from ..timeouts import Timeouts
 from ..tls import TLSConfig
-from ..types import HttpVersions
+from ..types import HttpVersions, QueryParams
 from ..url import URL
 from .options import validate_client_options
 from .request_builder.defaults import DEFAULT_REQUEST_BUILD_DEFAULTS, RequestBuildDefaults
@@ -30,6 +30,7 @@ class ClientConfig:
         *,
         base_url: str | URL | None,
         headers: HeaderSource,
+        params: QueryParams,
         limits: Limits | None,
         timeouts: Timeouts | None,
         http_versions: HttpVersions,
@@ -59,7 +60,7 @@ class ClientConfig:
             observability=observability,
             request_defaults=(
                 DEFAULT_REQUEST_BUILD_DEFAULTS
-                if base_url is None and headers is None
-                else RequestBuildDefaults.from_options(base_url=base_url, headers=headers)
+                if base_url is None and headers is None and params is None
+                else RequestBuildDefaults.from_options(base_url=base_url, headers=headers, params=params)
             ),
         )

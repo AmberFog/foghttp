@@ -17,6 +17,7 @@ def main() -> None:
     with foghttp.Client(
         base_url="https://httpbin.org",
         headers={"accept": "application/json"},
+        params={"client": "foghttp"},
     ) as client:
         response = client.post(
             "post",

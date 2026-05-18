@@ -51,6 +51,7 @@ import foghttp
 with foghttp.Client(
     base_url="https://api.example.com",
     headers={"accept": "application/json"},
+    params={"api-version": "1"},
 ) as client:
     response = client.get(
         "users",
@@ -81,7 +82,7 @@ async with foghttp.AsyncClient() as client:
 - sync `Client` and async `AsyncClient`
 - `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`
 - `base_url` for reusable API clients and relative request paths
-- default client headers with per-request overrides
+- default client headers and query params for reusable API clients
 - query params with repeated keys, JSON bodies, and buffered bytes/text bodies
 - buffered `Response` with status flags, `text`, `json()`,
   `raise_for_status()`, and request metadata
