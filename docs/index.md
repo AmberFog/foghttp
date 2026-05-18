@@ -20,8 +20,8 @@ features:
 # FogHTTP Documentation
 
 FogHTTP is currently an MVP. It is already useful for controlled HTTP workloads
-that use buffered request/response bodies, JSON APIs, explicit client lifecycle,
-and predictable redirect behavior.
+that use buffered request/response bodies, JSON and form APIs, explicit client
+lifecycle, and predictable redirect behavior.
 
 ## Positioning
 
