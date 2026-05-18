@@ -5,6 +5,7 @@ from typing import Any
 
 import orjson
 
+from ._redaction import redact_url
 from .errors import HTTPStatusError
 from .headers import Headers
 from .messages import http_status_error
@@ -25,6 +26,19 @@ class Response:
     http_version: str
     elapsed: float
     history: tuple["Response", ...] = ()
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"status_code={self.status_code!r}, "
+            f"headers={self.headers!r}, "
+            f"content=<{len(self.content)} bytes>, "
+            f"url={redact_url(self.url)!r}, "
+            f"request={self.request!r}, "
+            f"http_version={self.http_version!r}, "
+            f"elapsed={self.elapsed!r}, "
+            f"history=<{len(self.history)} responses>)"
+        )
 
     @property
     def is_success(self) -> bool:

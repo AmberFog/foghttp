@@ -18,6 +18,8 @@ __all__ = (
 
 from http import HTTPStatus
 
+from ._redaction import redact_url
+
 
 BASE_URL_QUERY_OR_FRAGMENT_UNSUPPORTED = "base_url must not include query or fragment"
 BODY_CONTENT_AND_JSON_CONFLICT = "pass either content or json, not both"
@@ -36,7 +38,7 @@ UNCLOSED_CLIENT = "AsyncClient was not closed"
 def http_status_error(method: str, url: str, status_code: int) -> str:
     reason = http_status_reason(status_code)
     status = f"{status_code} {reason}" if reason else str(status_code)
-    return f"{method} {url} returned {status}"
+    return f"{method} {redact_url(url)} returned {status}"
 
 
 def http_status_reason(status_code: int) -> str:
