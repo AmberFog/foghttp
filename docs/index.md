@@ -58,6 +58,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 ## Start Here
 
 - [Quickstart](./quickstart.md)
+- [Request builder compatibility](./request-builder.md)
 - [Client lifecycle](./lifecycle.md)
 - [Timeout model](./timeouts.md)
 - [Use cases](./use-cases.md)

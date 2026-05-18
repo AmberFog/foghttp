@@ -2,7 +2,8 @@
 
 These examples focus on workloads where FogHTTP already works well, including
 reusable `base_url` clients, default headers, and default query params for
-one-upstream APIs.
+one-upstream APIs. They also show the current request builder contract and
+prepared request flow.
 
 Run them from the repository root after building the local extension:
 
@@ -13,6 +14,7 @@ uv run examples/async_json_fanout.py
 uv run examples/async_resource_limits.py
 uv run examples/redirects.py
 uv run examples/prepared_requests.py
+uv run examples/request_builder_compatibility.py
 ```
 
 ## Good Examples
@@ -26,6 +28,9 @@ uv run examples/prepared_requests.py
   history.
 - [prepared_requests.py](./prepared_requests.py): build, inspect, adjust, and
   send prepared requests.
+- [request_builder_compatibility.py](./request_builder_compatibility.py):
+  client defaults, repeated query params, prepared requests, and body conflict
+  validation.
 
 ## Limitations To Keep In Mind
 
