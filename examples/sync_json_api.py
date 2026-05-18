@@ -21,6 +21,7 @@ def main() -> None:
     ) as client:
         response = client.post(
             "post",
+            params={"request": "sync-json"},
             json={"name": "Ada Lovelace", "role": "engineer"},
         )
 

@@ -412,6 +412,9 @@ header values, URL credentials, common token query or fragment parameters, and
 buffered body bytes. Explicit APIs such as `headers["authorization"]`,
 `str(url)`, and `response.content` still return the real values.
 
+For a parameter-by-parameter compatibility map with common Python HTTP clients,
+see [Request builder compatibility](./request-builder.md).
+
 ## Custom CA Certificates
 
 FogHTTP uses WebPKI roots by default for HTTPS. For private services with an

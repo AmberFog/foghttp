@@ -3,6 +3,9 @@
 FogHTTP is an MVP. It can already be useful, but it is not trying to be a full
 `httpx` replacement yet.
 
+For request-parameter compatibility with common Python HTTP clients, see
+[Request builder compatibility](./request-builder.md).
+
 ## Compatibility Policy
 
 Until version `0.5.0`, backward compatibility is not guaranteed. I will still
