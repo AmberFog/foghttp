@@ -1,43 +1,57 @@
 __all__ = ("BodyParameter", "encode_body")
 
-from collections.abc import MutableMapping
+from collections.abc import Mapping, MutableMapping, Sequence
 from enum import StrEnum
-from typing import Any
+from typing import Any, TypeAlias, cast
+from urllib.parse import urlencode
 
 import orjson
 
-from .messages import BODY_CONTENT_AND_JSON_CONFLICT, BODY_CONTENT_UNSUPPORTED
+from .messages import BODY_CONTENT_UNSUPPORTED, BODY_DATA_UNSUPPORTED, BODY_PARAMETER_CONFLICT
+from .types import RequestData
+
+
+CONTENT_TYPE = "content-type"
+FORM_URLENCODED_CONTENT_TYPE = "application/x-www-form-urlencoded"
+JSON_CONTENT_TYPE = "application/json"
+_UrlEncodeData: TypeAlias = Mapping[str, object] | Sequence[tuple[str, object]]
 
 
 class BodyParameter(StrEnum):
     CONTENT = "content"
+    DATA = "data"
     JSON = "json"
 
 
 def encode_body(
     *,
     content: bytes | str | None,
+    data: RequestData,
     json: Any,
     headers: MutableMapping[str, str],
 ) -> bytes | None:
-    source = _body_parameter(content=content, json=json)
+    source = _body_parameter(content=content, data=data, json=json)
     match source:
         case None:
             return None
         case BodyParameter.CONTENT:
             return _encode_content_body(content)
+        case BodyParameter.DATA:
+            return _encode_data_body(data, headers)
         case BodyParameter.JSON:
             return _encode_json_body(json, headers)
 
 
-def _body_parameter(*, content: object, json: object) -> BodyParameter | None:
+def _body_parameter(*, content: object, data: object, json: object) -> BodyParameter | None:
     sources = []
     if content is not None:
         sources.append(BodyParameter.CONTENT)
+    if data is not None:
+        sources.append(BodyParameter.DATA)
     if json is not None:
         sources.append(BodyParameter.JSON)
     if len(sources) > 1:
-        raise ValueError(BODY_CONTENT_AND_JSON_CONFLICT)
+        raise ValueError(BODY_PARAMETER_CONFLICT)
     if sources:
         return sources[0]
     return None
@@ -51,6 +65,19 @@ def _encode_content_body(content: bytes | str | None) -> bytes:
     raise TypeError(BODY_CONTENT_UNSUPPORTED)
 
 
+def _encode_data_body(data: RequestData, headers: MutableMapping[str, str]) -> bytes:
+    if isinstance(data, bytes):
+        return data
+    if isinstance(data, str):
+        return data.encode("utf-8")
+
+    headers.setdefault(CONTENT_TYPE, FORM_URLENCODED_CONTENT_TYPE)
+    try:
+        return urlencode(cast("_UrlEncodeData", data), doseq=True).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise TypeError(BODY_DATA_UNSUPPORTED) from exc
+
+
 def _encode_json_body(json: Any, headers: MutableMapping[str, str]) -> bytes:
-    headers.setdefault("content-type", "application/json")
+    headers.setdefault(CONTENT_TYPE, JSON_CONTENT_TYPE)
     return orjson.dumps(json)

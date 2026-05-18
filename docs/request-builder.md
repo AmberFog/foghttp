@@ -21,7 +21,7 @@ the current FogHTTP API. The same flow is available as a runnable example in
 | client default `headers` | Supported | Passed as `Client(headers=...)` or `AsyncClient(headers=...)`. Per-request headers override defaults case-insensitively. |
 | `json` | Supported | Encoded with `orjson`. Adds `content-type: application/json` unless explicitly set. |
 | `content` | Supported | Accepts buffered `bytes` or `str`. Strings are encoded as UTF-8. No semantic content type is added. |
-| `data` | Reserved | Planned for form-urlencoded bodies. Not accepted yet. |
+| `data` | Supported | Mappings and repeated pairs are encoded as `application/x-www-form-urlencoded`. Raw `bytes` or `str` are sent as buffered body content without adding a semantic content type. |
 | `files` | Reserved | Planned for multipart uploads. Not accepted yet. |
 | `auth` | Planned | Use explicit `Authorization` headers for simple static tokens. |
 | cookies/session jar | Planned | `cookies=True` is rejected today. |
@@ -38,7 +38,7 @@ FogHTTP applies request values in this order:
 |---|---|
 | URL | `base_url` resolution, request URL query, client params, per-request params |
 | Headers | client headers, future auth-managed headers, per-request headers |
-| Body | exactly one body source: `json=` or `content=` |
+| Body | exactly one body source: `json=`, `data=`, or `content=` |
 
 Repeated query keys are preserved. Per-request params are appended after client
 defaults instead of replacing them, which keeps API-version, tenant, locale, and
@@ -100,6 +100,33 @@ async with foghttp.AsyncClient(
 
 Sync and async request builders share the same merge and body conflict rules.
 
+## Form Data
+
+Use `data=` for buffered form-urlencoded requests.
+
+```python
+import foghttp
+
+
+with foghttp.Client(base_url="https://api.example.com") as client:
+    response = client.post(
+        "oauth/token",
+        data={
+            "grant_type": "client_credentials",
+            "scope": ["read", "write"],
+        },
+    )
+    response.raise_for_status()
+```
+
+Mappings and repeated pairs are encoded with repeated keys preserved. FogHTTP
+adds `content-type: application/x-www-form-urlencoded` for encoded form data
+unless the caller already set `content-type`.
+
+Raw `bytes` or `str` passed through `data=` are treated as already encoded
+buffered body content, so FogHTTP does not add a semantic content type for
+those values.
+
 ## Prepared Requests
 
 Use `build_request()` when application code needs to inspect or adjust a request
@@ -136,18 +163,23 @@ Rust client, or consume pool/request slots.
 | `json=False`, `json=0`, `{}`, `[]` | JSON body |
 | `content=None` | no request body |
 | `content=b""`, `content=""` | empty buffered body |
-| `json=` and `content=` together | `ValueError` |
+| `data=None` | no request body |
+| `data={}`, `data=[]` | empty form-urlencoded body |
+| `data=` mapping or repeated pairs | form-urlencoded body |
+| `data=` bytes or string | raw buffered body |
+| more than one of `json=`, `data=`, `content=` | `ValueError` |
 | iterator or async iterator `content=` | `TypeError` |
-| `data=` or `files=` | not accepted yet |
+| iterator `data=` | `TypeError` |
+| `files=` | not accepted yet |
 
 `Content-Length` and `Transfer-Encoding` are transport-managed framing headers
 and cannot be set manually. `Content-Type` is semantic and can be set by the
 caller; FogHTTP only adds `application/json` for `json=` when the caller did not
 already provide a content type.
 
-Buffered `json=` and `content=` request bodies are replayable for the current
-redirect policy. Future streaming uploads will need an explicit non-replayable
-body contract.
+Buffered `json=`, `data=`, and `content=` request bodies are replayable for the
+current redirect policy. Future streaming uploads will need an explicit
+non-replayable body contract.
 
 ## Intentional Differences
 
@@ -157,7 +189,6 @@ and observable request limits.
 
 Current intentional gaps:
 
-- no `data=` form encoding yet
 - no `files=` multipart uploads yet
 - no cookie jar
 - no `auth=` helper

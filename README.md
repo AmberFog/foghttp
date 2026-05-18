@@ -83,7 +83,8 @@ async with foghttp.AsyncClient() as client:
 - `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`
 - `base_url` for reusable API clients and relative request paths
 - default client headers and query params for reusable API clients
-- query params with repeated keys, JSON bodies, and buffered bytes/text bodies
+- query params with repeated keys, JSON, form-urlencoded data, and buffered
+  bytes/text bodies
 - buffered `Response` with status flags, `text`, `json()`,
   `raise_for_status()`, and request metadata
 - prepared `Request` objects with `build_request()` and `send()`

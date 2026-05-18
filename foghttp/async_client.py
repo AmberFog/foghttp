@@ -17,7 +17,7 @@ from .request import Request
 from .response import Response
 from .timeouts import Timeouts
 from .tls import TLSConfig
-from .types import HttpVersions, QueryParams
+from .types import HttpVersions, QueryParams, RequestData
 from .url import URL
 
 
@@ -87,6 +87,7 @@ class AsyncClient(ClientCore):
         headers: HeaderSource = None,
         params: QueryParams = None,
         content: bytes | str | None = None,
+        data: RequestData = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -97,6 +98,7 @@ class AsyncClient(ClientCore):
             headers=headers,
             params=params,
             content=content,
+            data=data,
             json=json,
         )
         return await self.send(request, timeout=timeout)
@@ -125,6 +127,7 @@ class AsyncClient(ClientCore):
         headers: HeaderSource = None,
         params: QueryParams = None,
         content: bytes | str | None = None,
+        data: RequestData = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -134,6 +137,7 @@ class AsyncClient(ClientCore):
             headers=headers,
             params=params,
             content=content,
+            data=data,
             json=json,
             timeout=timeout,
         )
@@ -145,6 +149,7 @@ class AsyncClient(ClientCore):
         headers: HeaderSource = None,
         params: QueryParams = None,
         content: bytes | str | None = None,
+        data: RequestData = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -154,6 +159,7 @@ class AsyncClient(ClientCore):
             headers=headers,
             params=params,
             content=content,
+            data=data,
             json=json,
             timeout=timeout,
         )
@@ -165,6 +171,7 @@ class AsyncClient(ClientCore):
         headers: HeaderSource = None,
         params: QueryParams = None,
         content: bytes | str | None = None,
+        data: RequestData = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -174,6 +181,7 @@ class AsyncClient(ClientCore):
             headers=headers,
             params=params,
             content=content,
+            data=data,
             json=json,
             timeout=timeout,
         )
@@ -185,6 +193,7 @@ class AsyncClient(ClientCore):
         headers: HeaderSource = None,
         params: QueryParams = None,
         content: bytes | str | None = None,
+        data: RequestData = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -194,6 +203,7 @@ class AsyncClient(ClientCore):
             headers=headers,
             params=params,
             content=content,
+            data=data,
             json=json,
             timeout=timeout,
         )
@@ -205,6 +215,7 @@ class AsyncClient(ClientCore):
         headers: HeaderSource = None,
         params: QueryParams = None,
         content: bytes | str | None = None,
+        data: RequestData = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -214,6 +225,7 @@ class AsyncClient(ClientCore):
             headers=headers,
             params=params,
             content=content,
+            data=data,
             json=json,
             timeout=timeout,
         )
@@ -225,6 +237,7 @@ class AsyncClient(ClientCore):
         headers: HeaderSource = None,
         params: QueryParams = None,
         content: bytes | str | None = None,
+        data: RequestData = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -234,6 +247,7 @@ class AsyncClient(ClientCore):
             headers=headers,
             params=params,
             content=content,
+            data=data,
             json=json,
             timeout=timeout,
         )

@@ -267,6 +267,42 @@ with foghttp.Client() as client:
 
 :::
 
+## Form Data
+
+Pass `data=` with a mapping or repeated pairs to send a buffered
+`application/x-www-form-urlencoded` request body.
+
+::: code-group
+
+```python [Async]
+async with foghttp.AsyncClient() as client:
+    response = await client.post(
+        "https://httpbin.org/post",
+        data={
+            "grant_type": "client_credentials",
+            "scope": ["read", "write"],
+        },
+    )
+    response.raise_for_status()
+```
+
+```python [Sync]
+with foghttp.Client() as client:
+    response = client.post(
+        "https://httpbin.org/post",
+        data={
+            "grant_type": "client_credentials",
+            "scope": ["read", "write"],
+        },
+    )
+    response.raise_for_status()
+```
+
+:::
+
+If `data=` is `bytes` or `str`, FogHTTP treats it as already encoded buffered
+body content and does not add `content-type` automatically.
+
 ## Raw Content
 
 Use `content=` for already encoded bytes or text.
@@ -300,14 +336,14 @@ FogHTTP currently accepts one body source per request:
 | Parameter | Current behavior |
 |---|---|
 | `json=` | Encodes with `orjson` and adds `content-type: application/json` when no explicit content type is set |
+| `data=` | Encodes mappings and repeated pairs as `application/x-www-form-urlencoded`; raw `bytes` and `str` are sent as buffered body content |
 | `content=` | Accepts buffered `bytes` or `str`; strings are encoded as UTF-8 and no semantic content type is added |
-| `data=` | Reserved for future form-urlencoded support |
 | `files=` | Reserved for future multipart uploads |
 
 Passing more than one body source raises `ValueError`. `Content-Length` and
 `Transfer-Encoding` are transport-managed framing headers and are not accepted
-in request headers; the Rust transport owns them. Buffered `json=` and
-`content=` bodies are replayable for the current redirect policy. Iterator,
+in request headers; the Rust transport owns them. Buffered `json=`, `data=`,
+and `content=` bodies are replayable for the current redirect policy. Iterator,
 async iterator, and streaming request bodies are not accepted yet and will need
 an explicit non-replayable body contract later.
 

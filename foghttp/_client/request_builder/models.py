@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ...headers import HeaderSource
-from ...types import QueryParams
+from ...types import QueryParams, RequestData
 from ...url import URL
 
 
@@ -15,4 +15,5 @@ class RequestBuildOptions:
     headers: HeaderSource = None
     params: QueryParams = None
     content: bytes | str | None = None
+    data: RequestData = None
     json: Any = None

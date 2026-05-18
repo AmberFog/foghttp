@@ -1,11 +1,12 @@
 import gc
+from urllib.parse import urlencode
 
 from faker import Faker
 import orjson
 import pytest
 
 import foghttp
-from foghttp.messages import BODY_CONTENT_AND_JSON_CONFLICT
+from foghttp.messages import BODY_PARAMETER_CONFLICT
 from foghttp.methods import GET, HEAD, POST
 from foghttp.status_codes.success import OK
 
@@ -39,8 +40,22 @@ async def test_post_rejects_content_and_json(http_server: str, faker: Faker) -> 
     payload = {"name": faker.name()}
 
     async with foghttp.AsyncClient() as client:
-        with pytest.raises(ValueError, match=BODY_CONTENT_AND_JSON_CONFLICT):
+        with pytest.raises(ValueError, match=BODY_PARAMETER_CONFLICT):
             await client.post(http_server + "/users", content=content, json=payload)
+
+
+async def test_post_form_data_body(http_server: str, faker: Faker) -> None:
+    name = faker.name()
+
+    async with foghttp.AsyncClient() as client:
+        response = await client.post(
+            http_server + "/users",
+            data={"name": name, "scope": ["read", "write"]},
+        )
+
+    assert response.request.method == POST
+    assert response.request.headers["content-type"] == "application/x-www-form-urlencoded"
+    assert response.json()["body"] == urlencode({"name": name, "scope": ["read", "write"]}, doseq=True)
 
 
 async def test_post_string_content(http_server: str, faker: Faker) -> None:

@@ -202,15 +202,23 @@ for the planned auth/hooks layer or keep that logic outside FogHTTP.
 
 ### Small Buffered Uploads
 
-`content=` works for buffered bytes and strings, and `json=` works for JSON.
-Pass only one body source per request. Large file uploads, streaming bodies,
-`data=`, and `files=` should wait for the planned body support.
+`json=` works for JSON, `data=` works for small form-urlencoded bodies, and
+`content=` works for buffered bytes and strings. Pass only one body source per
+request. Large file uploads, streaming bodies, and `files=` should wait for the
+planned body support.
 
 ```python
 response = client.post(
     "https://api.example.com/import",
     content=b"small payload",
     headers={"content-type": "application/octet-stream"},
+)
+```
+
+```python
+response = client.post(
+    "https://api.example.com/oauth/token",
+    data={"grant_type": "client_credentials", "scope": ["read", "write"]},
 )
 ```
 

@@ -10,7 +10,7 @@ from ..messages import CLIENT_CLOSED, UNCLOSED_CLIENT
 from ..request import Request
 from ..timeouts import Timeouts
 from ..transport_stats import TransportStats
-from ..types import QueryParams
+from ..types import QueryParams, RequestData
 from ..url import URL
 from .config import ClientConfig
 from .raw import create_raw_client
@@ -46,6 +46,7 @@ class ClientCore:
         headers: HeaderSource = None,
         params: QueryParams = None,
         content: bytes | str | None = None,
+        data: RequestData = None,
         json: Any = None,
     ) -> Request:
         return self._request_builder.build(
@@ -55,6 +56,7 @@ class ClientCore:
                 headers=headers,
                 params=params,
                 content=content,
+                data=data,
                 json=json,
             ),
         )
