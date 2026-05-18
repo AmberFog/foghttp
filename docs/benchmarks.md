@@ -3,7 +3,9 @@
 Benchmark harness and full benchmark reports live in a separate repository:
 [github.com/AmberFog/FogHttpBenchmark](https://github.com/AmberFog/FogHttpBenchmark).
 
-The tables below are copied summary snapshots from that repository. They are
+The tables below are copied summary snapshots from that repository. The latest
+published snapshot currently covers FogHTTP `0.2.0`; new release measurements
+are added after they are produced in the benchmark repository. These numbers are
 useful for release-to-release comparison, but they are still local loopback
 benchmarks, not a universal prediction for real network latency.
 
@@ -19,7 +21,7 @@ benchmarks, not a universal prediction for real network latency.
 
 ## Snapshots
 
-| Suite | Current | Previous baseline |
+| Suite | Latest snapshot | Previous baseline |
 |---|---:|---:|
 | request workloads | `20260516-102512` | `20260513-231641` |
 | client creation | `20260516-013723` | `20260513-231702` |
@@ -27,7 +29,7 @@ benchmarks, not a universal prediction for real network latency.
 
 ## Versions
 
-| Client | Current | Previous baseline |
+| Client | Latest snapshot | Previous baseline |
 |---|---:|---:|
 | FogHTTP | `0.2.0` | `0.1.3` |
 | aiohttp | `3.13.5` | `3.13.5` |
@@ -45,7 +47,7 @@ Buffered scenarios: `json-small`, `json-decode-small`, `bytes-64k`,
 
 Delay/resource scenarios: `delay-20ms`, `pool-contention-20ms`.
 
-### FogHTTP 0.2.0 Current Summary
+### Latest Snapshot: FogHTTP 0.2.0
 
 | Group | Client | Wins | Median ok/s | Median p95 ms | Max threads | Max fds | Errors |
 |---|---|---:|---:|---:|---:|---:|---:|
@@ -84,7 +86,7 @@ Iterations/run: `100`, client counts: `1,10,50`, repeats: `3`.
 Scenarios: `create-close`, `create-first-request`,
 `many-clients-open-close`, `reused-request`.
 
-### FogHTTP 0.2.0 Current Summary
+### Latest Snapshot: FogHTTP 0.2.0
 
 | Group | Client | Wins | Median ops/s | Median p95 ms | Peak threads | Peak fds | Errors |
 |---|---|---:|---:|---:|---:|---:|---:|

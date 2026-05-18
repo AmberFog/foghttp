@@ -28,8 +28,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - graceful sync `close()` for in-flight requests and cancellable async requests
 - global/per-origin request backpressure and observable request stats
 - advanced per-client Tokio runtime worker tuning
-- focused buffered HTTP surface for JSON APIs, internal services, workers, and
-  benchmarks
+- focused buffered HTTP surface for JSON and form APIs, internal services,
+  workers, and benchmarks
 
 ## Install
 
