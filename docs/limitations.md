@@ -15,6 +15,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`
 - `base_url` for reusable API clients and relative request paths
 - default client headers with per-request overrides
+- default client query params with per-request params appended after defaults
 - query parameters from mappings, repeated pairs, and raw query strings
 - JSON bodies through `json=`
 - raw bytes/text bodies through `content=`

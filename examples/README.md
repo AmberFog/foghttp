@@ -1,7 +1,8 @@
 # FogHTTP Examples
 
 These examples focus on workloads where FogHTTP already works well, including
-reusable `base_url` clients and default headers for one-upstream APIs.
+reusable `base_url` clients, default headers, and default query params for
+one-upstream APIs.
 
 Run them from the repository root after building the local extension:
 

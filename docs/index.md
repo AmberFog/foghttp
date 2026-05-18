@@ -4,7 +4,7 @@ layout: "home"
 hero:
   name: "FogHTTP"
   text: "Rust-powered HTTP client for Python"
-  tagline: "Buffered JSON requests, base URL clients, default headers, sync and async APIs, redirects, custom CA certificates, cancellation, and observable request limits."
+  tagline: "Buffered JSON requests, base URL clients, default headers and params, sync and async APIs, redirects, custom CA certificates, cancellation, and observable request limits."
 
 features:
   - title: "Rust transport"
@@ -14,7 +14,7 @@ features:
     details: "Use Client in scripts and workers, or AsyncClient for high-concurrency asyncio workloads."
 
   - title: "Focused MVP"
-    details: "FogHTTP is intentionally small today: buffered responses, JSON, base URL clients, default headers, redirects, prepared requests, async cancellation, global and per-origin request limits, and request metadata."
+    details: "FogHTTP is intentionally small today: buffered responses, JSON, base URL clients, default headers and params, redirects, prepared requests, async cancellation, global and per-origin request limits, and request metadata."
 ---
 
 # FogHTTP Documentation
@@ -80,7 +80,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - sync `Client` and async `AsyncClient`
 - `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`
 - `base_url` for reusable API clients and relative request paths
-- default client headers with per-request overrides
+- default client headers and query params for reusable API clients
 - query params with repeated keys, JSON bodies, and buffered bytes/text bodies
 - response status flags for success, redirects, and client/server errors
 - prepared `Request` objects with `build_request()` and `send()`
