@@ -5,6 +5,7 @@ import orjson
 import pytest
 
 import foghttp
+from foghttp.messages import BODY_CONTENT_AND_JSON_CONFLICT
 from foghttp.methods import GET, HEAD, POST
 from foghttp.status_codes.success import OK
 
@@ -37,7 +38,7 @@ def test_post_rejects_content_and_json(sync_http_server: str, faker: Faker) -> N
     content = faker.sentence().encode()
     payload = {"name": faker.name()}
 
-    with foghttp.Client() as client, pytest.raises(ValueError, match="pass either content or json"):
+    with foghttp.Client() as client, pytest.raises(ValueError, match=BODY_CONTENT_AND_JSON_CONFLICT):
         client.post(sync_http_server + "/users", content=content, json=payload)
 
 

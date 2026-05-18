@@ -5,7 +5,7 @@ import orjson
 import pytest
 
 import foghttp
-from foghttp.messages import BODY_CONTENT_AND_JSON_CONFLICT
+from foghttp.messages import BODY_CONTENT_AND_JSON_CONFLICT, BODY_CONTENT_UNSUPPORTED
 from foghttp.methods import POST
 
 
@@ -39,7 +39,9 @@ def test_json_body_preserves_explicit_content_type(faker: Faker) -> None:
     ("content", "expected_body"),
     [
         ("utf8-\u20ac", "utf8-\u20ac".encode("utf-8")),
+        ("", b""),
         (b"raw-body", b"raw-body"),
+        (b"", b""),
         (None, None),
     ],
 )
@@ -49,6 +51,8 @@ def test_content_body_matrix(content: bytes | str | None, expected_body: bytes |
 
     assert request.content == expected_body
     assert "content-type" not in request.headers
+    assert "content-length" not in request.headers
+    assert "transfer-encoding" not in request.headers
 
 
 def test_build_request_rejects_content_and_json(faker: Faker) -> None:
@@ -61,6 +65,13 @@ def test_build_request_rejects_content_and_json(faker: Faker) -> None:
             content=content,
             json={"name": faker.name()},
         )
+
+
+def test_build_request_rejects_non_buffered_content(faker: Faker) -> None:
+    content: Any = iter([faker.sentence().encode()])
+
+    with foghttp.Client() as client, pytest.raises(TypeError, match=BODY_CONTENT_UNSUPPORTED):
+        client.build_request(POST, faker.url(), content=content)
 
 
 async def test_async_build_request_rejects_content_and_json(faker: Faker) -> None:
@@ -80,6 +91,8 @@ async def test_async_build_request_rejects_content_and_json(faker: Faker) -> Non
     ("json_body", "expected_body"),
     [
         (None, None),
+        (False, b"false"),
+        (0, b"0"),
         ({}, b"{}"),
         ([], b"[]"),
     ],
@@ -93,3 +106,5 @@ def test_json_body_none_is_not_a_body(json_body: Any, expected_body: bytes | Non
         assert "content-type" not in request.headers
     else:
         assert request.headers["content-type"] == "application/json"
+        assert "content-length" not in request.headers
+        assert "transfer-encoding" not in request.headers

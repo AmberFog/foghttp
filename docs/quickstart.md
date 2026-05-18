@@ -293,6 +293,24 @@ with foghttp.Client() as client:
 
 :::
 
+## Request Body Matrix
+
+FogHTTP currently accepts one body source per request:
+
+| Parameter | Current behavior |
+|---|---|
+| `json=` | Encodes with `orjson` and adds `content-type: application/json` when no explicit content type is set |
+| `content=` | Accepts buffered `bytes` or `str`; strings are encoded as UTF-8 and no semantic content type is added |
+| `data=` | Reserved for future form-urlencoded support |
+| `files=` | Reserved for future multipart uploads |
+
+Passing more than one body source raises `ValueError`. `Content-Length` and
+`Transfer-Encoding` are transport-managed framing headers and are not accepted
+in request headers; the Rust transport owns them. Buffered `json=` and
+`content=` bodies are replayable for the current redirect policy. Iterator,
+async iterator, and streaming request bodies are not accepted yet and will need
+an explicit non-replayable body contract later.
+
 ## Request Metadata
 
 Every response includes lightweight request metadata. The request body is not
