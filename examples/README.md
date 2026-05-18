@@ -29,8 +29,8 @@ uv run examples/request_builder_compatibility.py
 - [prepared_requests.py](./prepared_requests.py): build, inspect, adjust, and
   send prepared requests.
 - [request_builder_compatibility.py](./request_builder_compatibility.py):
-  client defaults, repeated query params, prepared requests, and body conflict
-  validation.
+  client defaults, repeated query params, form data, prepared requests, and body
+  conflict validation.
 
 ## Limitations To Keep In Mind
 

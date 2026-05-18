@@ -4,7 +4,7 @@ layout: "home"
 hero:
   name: "FogHTTP"
   text: "Rust-powered HTTP client for Python"
-  tagline: "Buffered JSON requests, base URL clients, default headers and params, sync and async APIs, redirects, custom CA certificates, cancellation, and observable request limits."
+  tagline: "Buffered JSON and form requests, base URL clients, default headers and params, sync and async APIs, redirects, custom CA certificates, cancellation, and observable request limits."
 
 features:
   - title: "Rust transport"
@@ -14,7 +14,7 @@ features:
     details: "Use Client in scripts and workers, or AsyncClient for high-concurrency asyncio workloads."
 
   - title: "Focused MVP"
-    details: "FogHTTP is intentionally small today: buffered responses, JSON, base URL clients, default headers and params, redirects, prepared requests, async cancellation, global and per-origin request limits, and request metadata."
+    details: "FogHTTP is intentionally small today: buffered responses, JSON, form-urlencoded data, base URL clients, default headers and params, redirects, prepared requests, async cancellation, global and per-origin request limits, and request metadata."
 ---
 
 # FogHTTP Documentation
@@ -44,7 +44,7 @@ FogHTTP is designed around a few engineering priorities:
 
 - one API shape for sync scripts, workers, and asyncio services
 - Rust-backed HTTP/1.1 transport with explicit runtime ownership
-- buffered JSON and bytes workflows that are simple to reason about
+- buffered JSON, form, and bytes workflows that are simple to reason about
 - graceful sync `close()` that waits for already-started sync requests
 - async cancellation that aborts in-flight Rust requests
 - redirect history and final request metadata for debugging
@@ -82,7 +82,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`
 - `base_url` for reusable API clients and relative request paths
 - default client headers and query params for reusable API clients
-- query params with repeated keys, JSON bodies, and buffered bytes/text bodies
+- query params with repeated keys, JSON, form-urlencoded data, and buffered
+  bytes/text bodies
 - response status flags for success, redirects, and client/server errors
 - prepared `Request` objects with `build_request()` and `send()`
 - case-insensitive `Headers` with repeated value support

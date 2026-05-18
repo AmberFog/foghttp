@@ -43,6 +43,18 @@ def main() -> None:
         response.raise_for_status()
         print_httpbin_response("shortcut", response)
 
+        form_response = client.post(
+            "anything/oauth/token",
+            data={
+                "grant_type": "client_credentials",
+                "scope": ["read", "write"],
+            },
+            headers={"x-trace": "form-request"},
+        )
+        form_response.raise_for_status()
+        print_httpbin_response("form", form_response)
+        print("form data:", json.dumps(form_response.json().get("form"), sort_keys=True))
+
         request = client.build_request(
             POST,
             "anything/users",
@@ -60,7 +72,7 @@ def main() -> None:
             client.build_request(
                 POST,
                 "anything/body-conflict",
-                content=b"raw body",
+                data={"name": "Grace Hopper"},
                 json={"name": "Grace Hopper"},
             )
         except ValueError as exc:

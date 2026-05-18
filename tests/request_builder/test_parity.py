@@ -66,6 +66,22 @@ async def test_sync_and_async_build_request_have_same_prepared_request(faker: Fa
     assert async_request.content == expected_body
 
 
+async def test_sync_and_async_build_request_have_same_form_data_body(faker: Faker) -> None:
+    data = {"name": faker.name(), "scope": ["read", "write"]}
+    url = faker.url()
+
+    with foghttp.Client() as sync_client:
+        sync_request = sync_client.build_request(POST, url, data=data)
+
+    async with foghttp.AsyncClient() as async_client:
+        async_request = async_client.build_request(POST, url, data=data)
+
+    assert sync_request.url == async_request.url
+    assert sync_request.headers["content-type"] == "application/x-www-form-urlencoded"
+    assert async_request.headers["content-type"] == "application/x-www-form-urlencoded"
+    assert sync_request.content == async_request.content
+
+
 async def test_sync_and_async_build_request_normalize_mixed_case_method(faker: Faker) -> None:
     mixed_case_method = "gEt"
 

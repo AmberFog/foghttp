@@ -39,6 +39,7 @@ class RequestBuilder:
     def _build_body(self, options: RequestBuildOptions, headers: Headers) -> bytes | None:
         return encode_body(
             content=options.content,
+            data=options.data,
             json=options.json,
             headers=headers,
         )

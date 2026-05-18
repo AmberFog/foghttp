@@ -21,6 +21,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - default client query params with per-request params appended after defaults
 - query parameters from mappings, repeated pairs, and raw query strings
 - JSON bodies through `json=`
+- form-urlencoded bodies through mapping or repeated-pair `data=`
 - raw bytes/text bodies through `content=`
 - buffered responses
 - `response.text`, `response.json()`, response status flags, and
@@ -53,7 +54,6 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | Streaming responses | Not available; responses are fully buffered |
 | Streaming uploads | Not available; request bodies are buffered |
 | Multipart uploads | Not available |
-| `data=` form encoding | Reserved in the body matrix; not available yet |
 | `files=` | Reserved in the body matrix; not available yet |
 | Cookie jar | `cookies=True` is rejected |
 | Proxy support | `trust_env=True` is rejected |
@@ -62,7 +62,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | HTTP/2 | Not available |
 | Compression decoding | Not available |
 | transport-managed request headers | Safe API rejects manual `Host`, `Content-Length`, `Transfer-Encoding`, `TE`, `Trailer`, `Connection`, `Upgrade`, `Keep-Alive`, and `Proxy-Connection` |
-| request body source conflicts | Only one body source can be passed today: `json=` or `content=` |
+| request body source conflicts | Only one body source can be passed today: `json=`, `data=`, or `content=` |
 | true active connection-level limits | `max_active_requests_per_origin` limits buffered request slots; physical TCP connection-level accounting is not exposed yet |
 | per-request connect timeout changes | `Timeouts.connect` configures the Rust connector from client-level settings when transport state is created; per-request `timeout.connect` does not reconfigure the connector |
 | separate read/write timeout semantics | `Timeouts.read` and `Timeouts.write` exist, but separate body read/write deadlines are reserved for later streaming/body work |
@@ -74,7 +74,7 @@ Use FogHTTP today when:
 - you control the API or know its behavior well
 - responses are small enough to buffer in memory or bounded by
   `max_response_body_size`
-- requests are JSON-heavy
+- requests are JSON-heavy or use small form-urlencoded bodies
 - redirects are simple and do not require cookie jar or auth helper integration
 - sync and async clients with explicit lifecycle are enough
 - async request cancellation behavior is useful, but you do not need streaming
@@ -91,7 +91,7 @@ Wait before using FogHTTP when:
 - you upload large files
 - you need proxy behavior from environment variables
 - you rely on cookies across requests
-- you need multipart form-data
+- you need multipart form-data or large uploads
 - you need per-request connect timeout reconfiguration or mature read/write
   timeout semantics
 - you need strict active per-host connection limits
