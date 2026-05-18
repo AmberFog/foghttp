@@ -31,6 +31,7 @@ Issues = "https://github.com/AmberFog/foghttp/issues"
 dev = [
     "coverage[toml]>=7,<8",
     "faker>=33",
+    "hypothesis>=6,<7",
     "pytest>=8",
     "pytest-asyncio>=0.23",
     "trustme>=1.2",
