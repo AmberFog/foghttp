@@ -1,6 +1,7 @@
 __all__ = (
     "BASE_URL_QUERY_OR_FRAGMENT_UNSUPPORTED",
     "BODY_CONTENT_AND_JSON_CONFLICT",
+    "BODY_CONTENT_UNSUPPORTED",
     "CLIENT_CLOSED",
     "COOKIES_UNSUPPORTED",
     "HTTP_VERSION_UNSUPPORTED",
@@ -22,7 +23,8 @@ from ._redaction import redact_url
 
 
 BASE_URL_QUERY_OR_FRAGMENT_UNSUPPORTED = "base_url must not include query or fragment"
-BODY_CONTENT_AND_JSON_CONFLICT = "pass either content or json, not both"
+BODY_CONTENT_AND_JSON_CONFLICT = "pass only one body parameter: content or json"
+BODY_CONTENT_UNSUPPORTED = "content must be bytes, str, or None"
 CLIENT_CLOSED = "AsyncClient is closed"
 COOKIES_UNSUPPORTED = "cookies are planned after the MVP"
 HTTP_VERSION_UNSUPPORTED = "only HTTP/1.1 is supported in the MVP"
