@@ -174,6 +174,14 @@ async def test_dump_transport_state(http_server: str) -> None:
         "active_requests",
         "buffered_response_budget_rejections",
         "buffered_response_bytes",
+        "peak_pending_requests",
         "pending_requests",
+        "pool_acquire_attempts",
+        "pool_acquire_immediate",
+        "pool_acquire_timeouts",
+        "pool_acquire_wait_time_last_ns",
+        "pool_acquire_wait_time_max_ns",
+        "pool_acquire_wait_time_total_ns",
+        "pool_acquire_waited",
     }
     assert state["pending_requests"] == 0

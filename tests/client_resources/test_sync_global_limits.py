@@ -20,7 +20,12 @@ def test_pending_request_queue_full(sync_resource_http_server: str) -> None:
         assert stats.failed_requests == 1
         assert stats.active_requests == 0
         assert stats.pending_requests == 0
+        assert stats.peak_pending_requests == 0
+        assert stats.pool_acquire_attempts == 1
+        assert stats.pool_acquire_immediate == 0
+        assert stats.pool_acquire_waited == 0
         assert stats.pool_acquire_timeouts == 1
+        assert stats.pool_acquire_wait_time_total_ns == 0
 
 
 def test_zero_pending_queue_allows_available_request_slot(sync_resource_http_server: str) -> None:
@@ -35,7 +40,12 @@ def test_zero_pending_queue_allows_available_request_slot(sync_resource_http_ser
         assert stats.failed_requests == 0
         assert stats.active_requests == 0
         assert stats.pending_requests == 0
+        assert stats.peak_pending_requests == 0
+        assert stats.pool_acquire_attempts == 1
+        assert stats.pool_acquire_immediate == 1
+        assert stats.pool_acquire_waited == 0
         assert stats.pool_acquire_timeouts == 0
+        assert stats.pool_acquire_wait_time_total_ns == 0
 
 
 def test_pool_acquire_timeout(sync_resource_http_server: str) -> None:
@@ -51,7 +61,14 @@ def test_pool_acquire_timeout(sync_resource_http_server: str) -> None:
         assert stats.failed_requests == 1
         assert stats.active_requests == 0
         assert stats.pending_requests == 0
+        assert stats.peak_pending_requests == 1
+        assert stats.pool_acquire_attempts == 1
+        assert stats.pool_acquire_immediate == 0
+        assert stats.pool_acquire_waited == 1
         assert stats.pool_acquire_timeouts == 1
+        assert stats.pool_acquire_wait_time_last_ns > 0
+        assert stats.pool_acquire_wait_time_max_ns >= stats.pool_acquire_wait_time_last_ns
+        assert stats.pool_acquire_wait_time_total_ns >= stats.pool_acquire_wait_time_last_ns
 
 
 def test_pending_requests_are_tracked_while_waiting(sync_resource_http_server: str) -> None:
@@ -69,6 +86,11 @@ def test_pending_requests_are_tracked_while_waiting(sync_resource_http_server: s
             stats = client.stats()
             assert stats.pending_requests == 1
             assert stats.active_requests == 0
+            assert stats.peak_pending_requests == 1
+            assert stats.pool_acquire_attempts == 1
+            assert stats.pool_acquire_immediate == 0
+            assert stats.pool_acquire_waited == 1
+            assert stats.pool_acquire_wait_time_last_ns == 0
             with pytest.raises(foghttp.PoolTimeout, match="request acquire timeout expired"):
                 future.result(timeout=1.0)
 
@@ -77,4 +99,11 @@ def test_pending_requests_are_tracked_while_waiting(sync_resource_http_server: s
         assert stats.failed_requests == 1
         assert stats.active_requests == 0
         assert stats.pending_requests == 0
+        assert stats.peak_pending_requests == 1
+        assert stats.pool_acquire_attempts == 1
+        assert stats.pool_acquire_immediate == 0
+        assert stats.pool_acquire_waited == 1
         assert stats.pool_acquire_timeouts == 1
+        assert stats.pool_acquire_wait_time_last_ns > 0
+        assert stats.pool_acquire_wait_time_max_ns >= stats.pool_acquire_wait_time_last_ns
+        assert stats.pool_acquire_wait_time_total_ns >= stats.pool_acquire_wait_time_last_ns

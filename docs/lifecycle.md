@@ -45,7 +45,7 @@ These operations do not create the Rust transport:
 - closing a never-used client
 
 Before the first request, `stats()` returns an empty `TransportStats` value and
-`dump_transport_state()` returns zero active and pending requests.
+`dump_transport_state()` returns zero resource and acquire-pressure counters.
 
 ```python
 import foghttp
@@ -57,6 +57,14 @@ assert client.stats() == foghttp.TransportStats()
 assert client.dump_transport_state() == {
     "active_requests": 0,
     "pending_requests": 0,
+    "peak_pending_requests": 0,
+    "pool_acquire_attempts": 0,
+    "pool_acquire_immediate": 0,
+    "pool_acquire_waited": 0,
+    "pool_acquire_timeouts": 0,
+    "pool_acquire_wait_time_total_ns": 0,
+    "pool_acquire_wait_time_max_ns": 0,
+    "pool_acquire_wait_time_last_ns": 0,
     "buffered_response_bytes": 0,
     "buffered_response_budget_rejections": 0,
 }
@@ -220,14 +228,23 @@ connection counters.
 
 - `active_requests` means requests that acquired an active transport slot
 - `pending_requests` means requests waiting for an active transport slot
+- `peak_pending_requests` means the highest observed pending queue depth
+- `pool_acquire_attempts` means requests that attempted to acquire a transport
+  slot
+- `pool_acquire_immediate` means successful acquires that did not wait
+- `pool_acquire_waited` means requests that entered the pending queue at least
+  once
 - `pool_acquire_timeouts` means requests that timed out while waiting for a slot
+- `pool_acquire_wait_time_total_ns`, `pool_acquire_wait_time_max_ns`, and
+  `pool_acquire_wait_time_last_ns` describe completed acquire wait intervals in
+  nanoseconds
 - `buffered_response_bytes` means bytes currently reserved for in-flight
   buffered response bodies before they are returned to Python
 - `buffered_response_budget_rejections` means requests rejected by
   `Limits.max_buffered_response_bytes`
 
 Use `dump_transport_state()` for a small debug snapshot when active, pending,
-and buffered response budget state are needed.
+acquire pressure, and buffered response budget state are needed.
 
 ## Current Boundaries
 

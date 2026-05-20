@@ -70,7 +70,15 @@ def test_sync_dump_transport_state_before_first_request_do_not_create_raw_client
         "active_requests": 0,
         "buffered_response_bytes": 0,
         "buffered_response_budget_rejections": 0,
+        "peak_pending_requests": 0,
         "pending_requests": 0,
+        "pool_acquire_attempts": 0,
+        "pool_acquire_immediate": 0,
+        "pool_acquire_timeouts": 0,
+        "pool_acquire_wait_time_last_ns": 0,
+        "pool_acquire_wait_time_max_ns": 0,
+        "pool_acquire_wait_time_total_ns": 0,
+        "pool_acquire_waited": 0,
     }
     assert raw_client_factory.calls == 0
 
@@ -312,7 +320,15 @@ async def test_async_dump_transport_state_before_first_request_do_not_create_raw
         "active_requests": 0,
         "buffered_response_bytes": 0,
         "buffered_response_budget_rejections": 0,
+        "peak_pending_requests": 0,
         "pending_requests": 0,
+        "pool_acquire_attempts": 0,
+        "pool_acquire_immediate": 0,
+        "pool_acquire_timeouts": 0,
+        "pool_acquire_wait_time_last_ns": 0,
+        "pool_acquire_wait_time_max_ns": 0,
+        "pool_acquire_wait_time_total_ns": 0,
+        "pool_acquire_waited": 0,
     }
     assert raw_client_factory.calls == 0
 

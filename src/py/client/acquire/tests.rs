@@ -28,7 +28,12 @@ fn available_permit_does_not_use_pending_queue() {
     let snapshot = metrics.snapshot();
     assert_eq!(snapshot.active_requests, 1);
     assert_eq!(snapshot.pending_requests, 0);
+    assert_eq!(snapshot.peak_pending_requests, 0);
+    assert_eq!(snapshot.pool_acquire_attempts, 1);
+    assert_eq!(snapshot.pool_acquire_immediate, 1);
+    assert_eq!(snapshot.pool_acquire_waited, 0);
     assert_eq!(snapshot.pool_acquire_timeouts, 0);
+    assert_eq!(snapshot.pool_acquire_wait_time_total_ns, 0);
 
     drop(permit);
     assert_eq!(metrics.snapshot().active_requests, 0);
@@ -71,7 +76,12 @@ fn queue_full_updates_pool_timeout_without_pending_leak() {
     assert!(error.to_string().contains("request acquire queue is full"));
     let snapshot = metrics.snapshot();
     assert_eq!(snapshot.pending_requests, 0);
+    assert_eq!(snapshot.peak_pending_requests, 0);
+    assert_eq!(snapshot.pool_acquire_attempts, 1);
+    assert_eq!(snapshot.pool_acquire_immediate, 0);
+    assert_eq!(snapshot.pool_acquire_waited, 0);
     assert_eq!(snapshot.pool_acquire_timeouts, 1);
+    assert_eq!(snapshot.pool_acquire_wait_time_total_ns, 0);
 }
 
 #[test]
@@ -92,7 +102,14 @@ fn acquire_timeout_updates_pool_timeout_without_pending_leak() {
         .contains("request acquire timeout expired"));
     let snapshot = metrics.snapshot();
     assert_eq!(snapshot.pending_requests, 0);
+    assert_eq!(snapshot.peak_pending_requests, 1);
+    assert_eq!(snapshot.pool_acquire_attempts, 1);
+    assert_eq!(snapshot.pool_acquire_immediate, 0);
+    assert_eq!(snapshot.pool_acquire_waited, 1);
     assert_eq!(snapshot.pool_acquire_timeouts, 1);
+    assert!(snapshot.pool_acquire_wait_time_last_ns > 0);
+    assert!(snapshot.pool_acquire_wait_time_max_ns >= snapshot.pool_acquire_wait_time_last_ns);
+    assert!(snapshot.pool_acquire_wait_time_total_ns >= snapshot.pool_acquire_wait_time_last_ns);
 }
 
 #[test]
@@ -111,12 +128,21 @@ fn dropped_waiting_acquire_releases_pending_slot() {
             let snapshot = metrics.snapshot();
             assert_eq!(snapshot.active_requests, 0);
             assert_eq!(snapshot.pending_requests, 1);
+            assert_eq!(snapshot.peak_pending_requests, 1);
+            assert_eq!(snapshot.pool_acquire_attempts, 1);
+            assert_eq!(snapshot.pool_acquire_immediate, 0);
+            assert_eq!(snapshot.pool_acquire_waited, 1);
+            assert_eq!(snapshot.pool_acquire_wait_time_last_ns, 0);
         }
 
         let snapshot = metrics.snapshot();
         assert_eq!(snapshot.active_requests, 0);
         assert_eq!(snapshot.pending_requests, 0);
         assert_eq!(snapshot.pool_acquire_timeouts, 0);
+        assert!(snapshot.pool_acquire_wait_time_last_ns > 0);
+        assert!(
+            snapshot.pool_acquire_wait_time_total_ns >= snapshot.pool_acquire_wait_time_last_ns
+        );
     });
 }
 
@@ -139,11 +165,16 @@ fn same_origin_limit_tracks_pending_without_active_leak() {
             let snapshot = metrics.snapshot();
             assert_eq!(snapshot.active_requests, 1);
             assert_eq!(snapshot.pending_requests, 1);
+            assert_eq!(snapshot.peak_pending_requests, 1);
+            assert_eq!(snapshot.pool_acquire_attempts, 2);
+            assert_eq!(snapshot.pool_acquire_immediate, 1);
+            assert_eq!(snapshot.pool_acquire_waited, 1);
         }
 
         let snapshot = metrics.snapshot();
         assert_eq!(snapshot.active_requests, 1);
         assert_eq!(snapshot.pending_requests, 0);
+        assert!(snapshot.pool_acquire_wait_time_last_ns > 0);
         drop(permit);
         assert_eq!(metrics.snapshot().active_requests, 0);
     });

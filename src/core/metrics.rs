@@ -1,12 +1,20 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::time::Duration;
 
 #[derive(Default)]
 pub struct Metrics {
     active_requests: AtomicUsize,
     pending_requests: AtomicUsize,
+    peak_pending_requests: AtomicUsize,
     total_requests: AtomicUsize,
     failed_requests: AtomicUsize,
+    pool_acquire_attempts: AtomicUsize,
+    pool_acquire_immediate: AtomicUsize,
+    pool_acquire_waited: AtomicUsize,
     pool_acquire_timeouts: AtomicUsize,
+    pool_acquire_wait_time_total_ns: AtomicU64,
+    pool_acquire_wait_time_max_ns: AtomicU64,
+    pool_acquire_wait_time_last_ns: AtomicU64,
     buffered_response_bytes: AtomicUsize,
     buffered_response_budget_rejections: AtomicUsize,
 }
@@ -20,9 +28,16 @@ pub enum BufferedByteReservationError {
 pub struct MetricsSnapshot {
     pub active_requests: usize,
     pub pending_requests: usize,
+    pub peak_pending_requests: usize,
     pub total_requests: usize,
     pub failed_requests: usize,
+    pub pool_acquire_attempts: usize,
+    pub pool_acquire_immediate: usize,
+    pub pool_acquire_waited: usize,
     pub pool_acquire_timeouts: usize,
+    pub pool_acquire_wait_time_total_ns: u64,
+    pub pool_acquire_wait_time_max_ns: u64,
+    pub pool_acquire_wait_time_last_ns: u64,
     pub buffered_response_bytes: usize,
     pub buffered_response_budget_rejections: usize,
 }
@@ -59,7 +74,10 @@ impl Metrics {
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
-                Ok(_previous) => return true,
+                Ok(_previous) => {
+                    update_atomic_usize_max(&self.peak_pending_requests, current + 1);
+                    return true;
+                }
                 Err(actual) => current = actual,
             }
         }
@@ -71,6 +89,27 @@ impl Metrics {
 
     pub fn pool_acquire_timeout(&self) {
         self.pool_acquire_timeouts.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn pool_acquire_started(&self) {
+        self.pool_acquire_attempts.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn pool_acquire_finished_immediately(&self) {
+        self.pool_acquire_immediate.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn pool_acquire_waited(&self) {
+        self.pool_acquire_waited.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn pool_acquire_wait_finished(&self, elapsed: Duration) {
+        let elapsed_ns = duration_as_nanos(elapsed);
+
+        saturating_atomic_u64_add(&self.pool_acquire_wait_time_total_ns, elapsed_ns);
+        update_atomic_u64_max(&self.pool_acquire_wait_time_max_ns, elapsed_ns);
+        self.pool_acquire_wait_time_last_ns
+            .store(elapsed_ns, Ordering::Relaxed);
     }
 
     pub fn reserve_buffered_response_bytes(
@@ -137,9 +176,22 @@ impl Metrics {
         MetricsSnapshot {
             active_requests: self.active_requests.load(Ordering::Relaxed),
             pending_requests: self.pending_requests.load(Ordering::Acquire),
+            peak_pending_requests: self.peak_pending_requests.load(Ordering::Relaxed),
             total_requests: self.total_requests.load(Ordering::Relaxed),
             failed_requests: self.failed_requests.load(Ordering::Relaxed),
+            pool_acquire_attempts: self.pool_acquire_attempts.load(Ordering::Relaxed),
+            pool_acquire_immediate: self.pool_acquire_immediate.load(Ordering::Relaxed),
+            pool_acquire_waited: self.pool_acquire_waited.load(Ordering::Relaxed),
             pool_acquire_timeouts: self.pool_acquire_timeouts.load(Ordering::Relaxed),
+            pool_acquire_wait_time_total_ns: self
+                .pool_acquire_wait_time_total_ns
+                .load(Ordering::Relaxed),
+            pool_acquire_wait_time_max_ns: self
+                .pool_acquire_wait_time_max_ns
+                .load(Ordering::Relaxed),
+            pool_acquire_wait_time_last_ns: self
+                .pool_acquire_wait_time_last_ns
+                .load(Ordering::Relaxed),
             buffered_response_bytes: self.buffered_response_bytes.load(Ordering::Acquire),
             buffered_response_budget_rejections: self
                 .buffered_response_budget_rejections
@@ -148,9 +200,45 @@ impl Metrics {
     }
 }
 
+fn duration_as_nanos(duration: Duration) -> u64 {
+    duration.as_nanos().try_into().unwrap_or(u64::MAX)
+}
+
+fn saturating_atomic_u64_add(target: &AtomicU64, value: u64) {
+    let mut current = target.load(Ordering::Relaxed);
+    loop {
+        let next = current.saturating_add(value);
+        match target.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_previous) => return,
+            Err(actual) => current = actual,
+        }
+    }
+}
+
+fn update_atomic_usize_max(target: &AtomicUsize, value: usize) {
+    let mut current = target.load(Ordering::Relaxed);
+    while value > current {
+        match target.compare_exchange_weak(current, value, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_previous) => return,
+            Err(actual) => current = actual,
+        }
+    }
+}
+
+fn update_atomic_u64_max(target: &AtomicU64, value: u64) {
+    let mut current = target.load(Ordering::Relaxed);
+    while value > current {
+        match target.compare_exchange_weak(current, value, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_previous) => return,
+            Err(actual) => current = actual,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{BufferedByteReservationError, Metrics};
+    use std::time::Duration;
 
     #[test]
     fn buffered_response_reservation_rejects_without_changing_reserved_bytes() {
@@ -172,5 +260,26 @@ mod tests {
         metrics.release_buffered_response_bytes(8);
 
         assert_eq!(metrics.snapshot().buffered_response_bytes, 0);
+    }
+
+    #[test]
+    fn acquire_wait_metrics_track_duration_without_underflowing_pending() {
+        let metrics = Metrics::default();
+
+        assert!(metrics.pending_request_started(1));
+        metrics.pool_acquire_started();
+        metrics.pool_acquire_waited();
+        metrics.pool_acquire_wait_finished(Duration::from_nanos(10));
+        metrics.pending_request_finished();
+        metrics.pool_acquire_wait_finished(Duration::from_nanos(15));
+
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.pending_requests, 0);
+        assert_eq!(snapshot.peak_pending_requests, 1);
+        assert_eq!(snapshot.pool_acquire_attempts, 1);
+        assert_eq!(snapshot.pool_acquire_waited, 1);
+        assert_eq!(snapshot.pool_acquire_wait_time_total_ns, 25);
+        assert_eq!(snapshot.pool_acquire_wait_time_max_ns, 15);
+        assert_eq!(snapshot.pool_acquire_wait_time_last_ns, 15);
     }
 }

@@ -9,6 +9,11 @@ from .constants import SLOW_BODY_PATH, SLOW_HEADERS_PATH
 from .helpers import wait_for_no_active_requests, wait_for_transport_state
 
 
+BLOCKER_AND_WAITER_ATTEMPTS = 2
+BLOCKER_AND_RECOVERY_IMMEDIATE_ACQUIRES = 2
+BLOCKER_WAITER_AND_RECOVERY_ATTEMPTS = 3
+
+
 async def test_cancelled_async_request_aborts_rust_request(cancellation_server: str) -> None:
     async with foghttp.AsyncClient() as client:
         task = asyncio.create_task(client.get(cancellation_server + SLOW_HEADERS_PATH))
@@ -91,6 +96,7 @@ async def test_cancelled_async_request_waiting_for_transport_slot_releases_pendi
                 active_requests=1,
                 pending_requests=0,
             )
+            stats_after_cancellation = client.stats()
         finally:
             if waiter is not None and not waiter.done():
                 waiter.cancel()
@@ -103,6 +109,16 @@ async def test_cancelled_async_request_waiting_for_transport_slot_releases_pendi
 
         await wait_for_no_active_requests(client)
         response = await client.get(cancellation_server)
+        final_stats = client.stats()
 
     assert response.status_code == OK
     assert response.content == b"OK"
+    assert stats_after_cancellation.peak_pending_requests == 1
+    assert stats_after_cancellation.pool_acquire_attempts == BLOCKER_AND_WAITER_ATTEMPTS
+    assert stats_after_cancellation.pool_acquire_immediate == 1
+    assert stats_after_cancellation.pool_acquire_waited == 1
+    assert stats_after_cancellation.pool_acquire_timeouts == 0
+    assert stats_after_cancellation.pool_acquire_wait_time_last_ns > 0
+    assert final_stats.pool_acquire_attempts == BLOCKER_WAITER_AND_RECOVERY_ATTEMPTS
+    assert final_stats.pool_acquire_immediate == BLOCKER_AND_RECOVERY_IMMEDIATE_ACQUIRES
+    assert final_stats.pool_acquire_waited == 1
