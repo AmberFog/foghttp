@@ -102,6 +102,7 @@ Wait before using FogHTTP when:
 
 Network and protocol failures map to `RequestError`. Pool acquire timeout and
 queue-full conditions map to `PoolTimeout`. The broader buffered transport
-deadline maps to the base `TimeoutError`. Dedicated connect/read/write timeout
-exception mappings are reserved for later timeout work. See
+deadline maps to the base `TimeoutError` with phase-aware diagnostics for the
+current buffered path. Dedicated connect/read/write timeout exception mappings
+are reserved for later timeout work. See
 [Timeout model](./timeouts.md) for the current behavior.

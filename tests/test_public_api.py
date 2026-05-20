@@ -12,6 +12,8 @@ def test_top_level_exports() -> None:
     assert foghttp.ResponseBodyBudgetExceededError is not None
     assert foghttp.ResponseBodyTooLargeError is not None
     assert foghttp.TLSConfig is not None
+    assert foghttp.TimeoutDiagnostic is not None
+    assert foghttp.TimeoutPhase is not None
     assert foghttp.TransportState is not None
     assert foghttp.OriginPressureState is not None
     assert foghttp.URL is not None
@@ -23,6 +25,8 @@ def test_compatibility_modules_reexport_models() -> None:
     assert foghttp.models.Request is foghttp.Request
     assert foghttp.models.Response is foghttp.Response
     assert foghttp.models.TLSConfig is foghttp.TLSConfig
+    assert foghttp.models.TimeoutDiagnostic is foghttp.TimeoutDiagnostic
+    assert foghttp.models.TimeoutPhase is foghttp.TimeoutPhase
     assert foghttp.models.Timeouts is foghttp.Timeouts
     assert foghttp.models.URL is foghttp.URL
     assert foghttp.stats.TransportStats is foghttp.TransportStats

@@ -22,7 +22,9 @@ __all__ = (
     "ResponseBodyTooLargeError",
     "ResponseError",
     "TLSConfig",
+    "TimeoutDiagnostic",
     "TimeoutError",
+    "TimeoutPhase",
     "Timeouts",
     "TransportState",
     "TransportStats",
@@ -51,6 +53,7 @@ from .limits import Limits
 from .request import Request
 from .request_info import RequestInfo
 from .response import Response
+from .timeout_diagnostics import TimeoutDiagnostic, TimeoutPhase
 from .timeouts import Timeouts
 from .tls import TLSConfig
 from .transport_state import OriginPressureState, TransportState

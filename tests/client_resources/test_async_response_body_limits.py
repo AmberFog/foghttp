@@ -4,6 +4,7 @@ import pytest
 
 import foghttp
 from foghttp.status_codes.success import OK
+from tests.client_timeouts.helpers import assert_timeout_diagnostic
 from tests.http_body_scenarios import (
     INCOMPLETE_CHUNKED_BODY_PATH,
     SLOW_BODY_PATH,
@@ -102,11 +103,17 @@ async def test_async_total_timeout_applies_to_slow_response_body(
     timeouts = foghttp.Timeouts(total=0.05)
 
     async with foghttp.AsyncClient(timeouts=timeouts) as client:
-        with pytest.raises(foghttp.TimeoutError, match="request total timeout expired"):
+        with pytest.raises(foghttp.TimeoutError, match="request total timeout expired") as exc_info:
             await client.get(f"{http_server}{SLOW_BODY_PATH}")
 
         stats_after_error = client.stats()
 
+    assert_timeout_diagnostic(
+        exc_info.value,
+        phase="response_body",
+        origin=http_server,
+        timeout=timeouts.total,
+    )
     assert stats_after_error.total_requests == 1
     assert stats_after_error.failed_requests == 1
     assert stats_after_error.active_requests == 0
@@ -119,11 +126,17 @@ async def test_async_total_timeout_applies_to_incomplete_chunked_response_body(
     timeouts = foghttp.Timeouts(total=0.05)
 
     async with foghttp.AsyncClient(timeouts=timeouts) as client:
-        with pytest.raises(foghttp.TimeoutError, match="request total timeout expired"):
+        with pytest.raises(foghttp.TimeoutError, match="request total timeout expired") as exc_info:
             await client.get(f"{http_server}{INCOMPLETE_CHUNKED_BODY_PATH}")
 
         stats_after_error = client.stats()
 
+    assert_timeout_diagnostic(
+        exc_info.value,
+        phase="response_body",
+        origin=http_server,
+        timeout=timeouts.total,
+    )
     assert stats_after_error.total_requests == 1
     assert stats_after_error.failed_requests == 1
     assert stats_after_error.active_requests == 0

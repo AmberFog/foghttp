@@ -6,6 +6,7 @@ __all__ = (
 )
 
 from collections.abc import Sequence
+from typing import cast
 
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
@@ -17,9 +18,13 @@ from ..errors import (
     TimeoutError,
 )
 from ..limits import Limits
+from ..timeout_diagnostics import TimeoutDiagnostic, TimeoutPhase
 from ..timeouts import Timeouts
 from ..tls import TLSConfig
 from .tls import ca_certificate_bytes
+
+
+_TIMEOUT_DIAGNOSTIC_ARG_COUNT = 6
 
 
 def close_raw_client(raw_client: _foghttp.RawClient) -> None:
@@ -80,9 +85,9 @@ def send_raw_request(
     except _foghttp.FogHttpResponseBodyBudgetExceededError as exc:
         raise ResponseBodyBudgetExceededError(str(exc)) from exc
     except _foghttp.FogHttpPoolTimeoutError as exc:
-        raise PoolTimeout(str(exc)) from exc
+        raise _timeout_error_from_raw(exc, PoolTimeout) from exc
     except _foghttp.FogHttpTimeoutError as exc:
-        raise TimeoutError(str(exc)) from exc
+        raise _timeout_error_from_raw(exc, TimeoutError) from exc
     except _foghttp.FogHttpError as exc:
         raise RequestError(str(exc)) from exc
 
@@ -110,8 +115,72 @@ async def send_raw_request_async(
     except _foghttp.FogHttpResponseBodyBudgetExceededError as exc:
         raise ResponseBodyBudgetExceededError(str(exc)) from exc
     except _foghttp.FogHttpPoolTimeoutError as exc:
-        raise PoolTimeout(str(exc)) from exc
+        raise _timeout_error_from_raw(exc, PoolTimeout) from exc
     except _foghttp.FogHttpTimeoutError as exc:
-        raise TimeoutError(str(exc)) from exc
+        raise _timeout_error_from_raw(exc, TimeoutError) from exc
     except _foghttp.FogHttpError as exc:
         raise RequestError(str(exc)) from exc
+
+
+def _timeout_error_from_raw(
+    exc: BaseException,
+    error_type: type[TimeoutError],
+) -> TimeoutError:
+    message, diagnostic = _timeout_error_parts(exc)
+    return error_type(message, diagnostic=diagnostic)
+
+
+def _timeout_error_parts(exc: BaseException) -> tuple[str, TimeoutDiagnostic | None]:
+    args = _raw_exception_args(exc)
+    if len(args) != _TIMEOUT_DIAGNOSTIC_ARG_COUNT:
+        return _raw_exception_message(exc), None
+
+    message, phase, elapsed, timeout, origin, redirect_hop = args
+    diagnostic_elapsed = _coerce_timeout_float(elapsed)
+    diagnostic_timeout = _coerce_timeout_float(timeout)
+    diagnostic_redirect_hop = _coerce_timeout_int(redirect_hop)
+    if diagnostic_elapsed is None or diagnostic_timeout is None or diagnostic_redirect_hop is None:
+        return str(message), None
+
+    return (
+        str(message),
+        TimeoutDiagnostic(
+            phase=cast("TimeoutPhase", str(phase)),
+            elapsed=diagnostic_elapsed,
+            timeout=diagnostic_timeout,
+            origin=str(origin),
+            redirect_hop=diagnostic_redirect_hop,
+        ),
+    )
+
+
+def _raw_exception_args(exc: BaseException) -> tuple[object, ...]:
+    if len(exc.args) == 1 and isinstance(exc.args[0], tuple):
+        return exc.args[0]
+    return exc.args
+
+
+def _raw_exception_message(exc: BaseException) -> str:
+    if not exc.args:
+        return str(exc)
+    return str(exc.args[0])
+
+
+def _coerce_timeout_float(value: object) -> float | None:
+    if not isinstance(value, str | bytes | bytearray | int | float):
+        return None
+
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _coerce_timeout_int(value: object) -> int | None:
+    if not isinstance(value, str | bytes | bytearray | int):
+        return None
+
+    try:
+        return int(value)
+    except ValueError:
+        return None

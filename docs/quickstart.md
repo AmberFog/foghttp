@@ -518,6 +518,8 @@ async with foghttp.AsyncClient(limits=limits, timeouts=timeouts) as client:
 `PoolTimeout` when the acquire queue is full or a request waits too long for a
 slot. `Timeouts.total` is the broader buffered transport deadline and raises the
 base `TimeoutError` when it expires.
+Timeout exceptions include a safe `diagnostic` object when FogHTTP can identify
+the phase, elapsed time, configured budget, normalized origin, and redirect hop.
 
 `Limits.max_active_requests` caps active buffered requests for the whole client.
 `Limits.max_active_requests_per_origin` defaults to `None`; set it to cap active
