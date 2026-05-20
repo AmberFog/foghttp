@@ -4,6 +4,7 @@ mod future;
 mod options;
 mod redirects;
 mod runtime;
+mod timeout_diagnostics;
 mod transport;
 
 use crate::core::client::{build_client, ClientOptions, HyperClient};

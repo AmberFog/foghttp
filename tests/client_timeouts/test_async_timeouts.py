@@ -8,10 +8,12 @@ from foghttp.status_codes.success import OK
 from .constants import (
     EXPECTED_REQUESTS_AFTER_POOL_WAIT_RECOVERY,
     RECOVERY_TOTAL_TIMEOUT,
+    SENSITIVE_QUERY,
     SLOW_RESPONSE_PATH,
     TOTAL_TIMEOUT,
 )
 from .helpers import (
+    assert_timeout_diagnostic,
     assert_timeout_error_stats,
     assert_timeout_recovery_stats,
     wait_for_async_stats,
@@ -25,7 +27,7 @@ async def test_async_total_timeout_maps_to_generic_timeout_and_client_recovers(
 
     async with foghttp.AsyncClient(timeouts=timeouts) as client:
         with pytest.raises(foghttp.TimeoutError, match="request total timeout expired") as exc_info:
-            await client.get(timeout_http_server + SLOW_RESPONSE_PATH)
+            await client.get(timeout_http_server + SLOW_RESPONSE_PATH + SENSITIVE_QUERY)
 
         stats_after_error = client.stats()
         response = await client.get(
@@ -35,6 +37,13 @@ async def test_async_total_timeout_maps_to_generic_timeout_and_client_recovers(
         final_stats = client.stats()
 
     assert not isinstance(exc_info.value, foghttp.PoolTimeout)
+    assert SENSITIVE_QUERY not in str(exc_info.value)
+    assert_timeout_diagnostic(
+        exc_info.value,
+        phase="response_headers",
+        origin=timeout_http_server,
+        timeout=TOTAL_TIMEOUT,
+    )
     assert_timeout_error_stats(stats_after_error)
     assert response.status_code == OK
     assert_timeout_recovery_stats(final_stats)
@@ -66,6 +75,12 @@ async def test_async_total_timeout_wins_over_longer_pool_timeout(
                     await blocker
 
     assert not isinstance(exc_info.value, foghttp.PoolTimeout)
+    assert_timeout_diagnostic(
+        exc_info.value,
+        phase="pool_acquire",
+        origin=timeout_http_server,
+        timeout=TOTAL_TIMEOUT,
+    )
     assert stats_after_error.active_requests == 1
     assert stats_after_error.pending_requests == 0
     assert stats_after_error.failed_requests == 1

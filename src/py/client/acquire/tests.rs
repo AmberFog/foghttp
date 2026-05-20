@@ -36,7 +36,7 @@ fn available_permit_does_not_use_pending_queue() {
     let gate = AcquireGate::new(1, None, 0, Arc::clone(&metrics));
     let runtime = test_runtime();
 
-    let permit = runtime.block_on(gate.acquire(ORIGIN, 0.1)).unwrap();
+    let permit = runtime.block_on(gate.acquire(ORIGIN, 0.1, 0)).unwrap();
     let snapshot = metrics.snapshot();
     assert_eq!(snapshot.active_requests, 1);
     assert_eq!(snapshot.pending_requests, 0);
@@ -69,12 +69,12 @@ fn acquire_permit_releases_capacity_on_drop() {
     let gate = AcquireGate::new(1, None, 0, Arc::clone(&metrics));
     let runtime = test_runtime();
 
-    let permit = runtime.block_on(gate.acquire(ORIGIN, 0.1)).unwrap();
+    let permit = runtime.block_on(gate.acquire(ORIGIN, 0.1, 0)).unwrap();
     assert_eq!(metrics.snapshot().active_requests, 1);
     drop(permit);
     assert_eq!(metrics.snapshot().active_requests, 0);
 
-    let permit = runtime.block_on(gate.acquire(ORIGIN, 0.1)).unwrap();
+    let permit = runtime.block_on(gate.acquire(ORIGIN, 0.1, 0)).unwrap();
     assert_eq!(metrics.snapshot().active_requests, 1);
     drop(permit);
 
@@ -92,7 +92,7 @@ fn queue_full_updates_pool_timeout_without_pending_leak() {
     let gate = AcquireGate::new(0, None, 0, Arc::clone(&metrics));
     let runtime = test_runtime();
 
-    let error = match runtime.block_on(gate.acquire(ORIGIN, 0.1)) {
+    let error = match runtime.block_on(gate.acquire(ORIGIN, 0.1, 0)) {
         Ok(_permit) => panic!("acquire unexpectedly succeeded"),
         Err(err) => err,
     };
@@ -121,7 +121,7 @@ fn acquire_timeout_updates_pool_timeout_without_pending_leak() {
     let gate = AcquireGate::new(0, None, 1, Arc::clone(&metrics));
     let runtime = test_runtime();
 
-    let error = match runtime.block_on(gate.acquire(ORIGIN, 0.001)) {
+    let error = match runtime.block_on(gate.acquire(ORIGIN, 0.001, 0)) {
         Ok(_permit) => panic!("acquire unexpectedly succeeded"),
         Err(err) => err,
     };
@@ -156,7 +156,7 @@ fn dropped_waiting_acquire_releases_pending_slot() {
 
     runtime.block_on(async {
         {
-            let acquire = gate.acquire(ORIGIN, 60.0);
+            let acquire = gate.acquire(ORIGIN, 60.0, 0);
             tokio::pin!(acquire);
 
             let result = tokio::time::timeout(Duration::from_millis(1), &mut acquire).await;
@@ -197,11 +197,11 @@ fn same_origin_limit_tracks_pending_without_active_leak() {
     let runtime = test_runtime();
 
     runtime.block_on(async {
-        let permit = gate.acquire(ORIGIN, 0.1).await.unwrap();
+        let permit = gate.acquire(ORIGIN, 0.1, 0).await.unwrap();
         assert_eq!(metrics.snapshot().active_requests, 1);
 
         {
-            let acquire = gate.acquire(ORIGIN, 60.0);
+            let acquire = gate.acquire(ORIGIN, 60.0, 0);
             tokio::pin!(acquire);
 
             let result = tokio::time::timeout(Duration::from_millis(1), &mut acquire).await;
@@ -241,8 +241,8 @@ fn different_origins_do_not_share_origin_limit() {
     let runtime = test_runtime();
 
     runtime.block_on(async {
-        let first = gate.acquire(ORIGIN, 0.1).await.unwrap();
-        let second = gate.acquire(SECONDARY_ORIGIN, 0.1).await.unwrap();
+        let first = gate.acquire(ORIGIN, 0.1, 0).await.unwrap();
+        let second = gate.acquire(SECONDARY_ORIGIN, 0.1, 0).await.unwrap();
 
         let snapshot = metrics.snapshot();
         assert_eq!(snapshot.active_requests, 2);
@@ -273,7 +273,7 @@ fn origin_queue_full_updates_pool_timeout_without_active_leak() {
     let gate = AcquireGate::new(10, Some(0), 0, Arc::clone(&metrics));
     let runtime = test_runtime();
 
-    let error = match runtime.block_on(gate.acquire(ORIGIN, 0.1)) {
+    let error = match runtime.block_on(gate.acquire(ORIGIN, 0.1, 0)) {
         Ok(_permit) => panic!("acquire unexpectedly succeeded"),
         Err(err) => err,
     };
@@ -297,10 +297,10 @@ fn dropped_waiting_global_acquire_releases_origin_slot() {
     let runtime = test_runtime();
 
     runtime.block_on(async {
-        let global_blocker = gate.acquire(SECONDARY_ORIGIN, 0.1).await.unwrap();
+        let global_blocker = gate.acquire(SECONDARY_ORIGIN, 0.1, 0).await.unwrap();
 
         {
-            let acquire = gate.acquire(ORIGIN, 60.0);
+            let acquire = gate.acquire(ORIGIN, 60.0, 0);
             tokio::pin!(acquire);
 
             let result = tokio::time::timeout(Duration::from_millis(1), &mut acquire).await;
@@ -319,7 +319,7 @@ fn dropped_waiting_global_acquire_releases_origin_slot() {
         assert_eq!(find_origin_snapshot(&metrics, ORIGIN).pending_requests, 0);
         drop(global_blocker);
 
-        let permit = gate.acquire(ORIGIN, 0.1).await.unwrap();
+        let permit = gate.acquire(ORIGIN, 0.1, 0).await.unwrap();
         assert_eq!(metrics.snapshot().active_requests, 1);
         drop(permit);
         assert_eq!(metrics.snapshot().active_requests, 0);

@@ -48,6 +48,24 @@ except foghttp.RequestError:
     raise
 ```
 
+Timeout exceptions expose a small structured diagnostic object when FogHTTP can
+identify the timeout phase safely:
+
+```python
+try:
+    client.get("https://api.example.com/slow")
+except foghttp.TimeoutError as exc:
+    if exc.diagnostic is not None:
+        print(exc.phase)
+        print(exc.origin)
+        print(exc.elapsed, exc.timeout)
+```
+
+Current diagnostic phases are `pool_acquire`, `response_headers`, and
+`response_body`. The `origin` field is normalized and never includes path,
+query, userinfo, headers, or body data. `elapsed` and `timeout` are seconds, and
+`redirect_hop` is zero-based.
+
 ## Client Defaults And Request Overrides
 
 `Client(timeouts=...)` and `AsyncClient(timeouts=...)` define the default
@@ -98,7 +116,8 @@ If a request waits longer than `Timeouts.pool` for a slot, FogHTTP raises
 `PoolTimeout` with the message `request acquire timeout expired`.
 
 Both cases increment `TransportStats.pool_acquire_timeouts`. Waiting requests
-are not counted as `active_requests`.
+are not counted as `active_requests`. `PoolTimeout.diagnostic.phase` is
+`pool_acquire`; the diagnostic `timeout` value is the configured pool timeout.
 
 FogHTTP also records Rust-side acquire pressure metrics:
 
@@ -145,7 +164,9 @@ request path. Today it wraps:
 If `total` expires while the request is waiting for a pool slot, `total` wins
 and FogHTTP raises the base `TimeoutError`, not `PoolTimeout`. The same base
 `TimeoutError` is raised when the shared total budget expires while reading the
-buffered response body.
+buffered response body. `TimeoutError.diagnostic.phase` identifies whether the
+deadline expired in `pool_acquire`, `response_headers`, or `response_body`; the
+diagnostic `timeout` value is the configured total timeout.
 
 ```python
 with foghttp.Client(timeouts=foghttp.Timeouts(pool=1.0, total=0.05)) as client:

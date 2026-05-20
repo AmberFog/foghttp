@@ -1,9 +1,8 @@
 use crate::core::metrics::{Metrics, OriginMetrics};
-use crate::errors::FogHttpPoolTimeoutError;
-use crate::messages::POOL_ACQUIRE_QUEUE_FULL;
-use pyo3::prelude::*;
 use std::sync::Arc;
 use std::time::Instant;
+
+pub struct PendingAcquireRejected;
 
 pub struct PendingAcquire {
     metrics: Arc<Metrics>,
@@ -16,7 +15,7 @@ impl PendingAcquire {
         metrics: Arc<Metrics>,
         origin_metrics: Arc<OriginMetrics>,
         max_pending_requests: usize,
-    ) -> PyResult<Self> {
+    ) -> Result<Self, PendingAcquireRejected> {
         if metrics.pending_request_started(max_pending_requests) {
             origin_metrics.pending_request_started();
             Ok(Self {
@@ -27,7 +26,7 @@ impl PendingAcquire {
         } else {
             metrics.pool_acquire_timeout();
             origin_metrics.pool_acquire_timeout();
-            Err(FogHttpPoolTimeoutError::new_err(POOL_ACQUIRE_QUEUE_FULL))
+            Err(PendingAcquireRejected)
         }
     }
 }

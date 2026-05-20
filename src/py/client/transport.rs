@@ -1,21 +1,22 @@
 use crate::core::client::HyperClient;
 use crate::core::headers::{response_headers, HeaderPairs};
-use crate::core::numeric;
 use crate::core::request::{build_request, RequestParts};
 use crate::core::response::{collect_body, BufferedBodyBudget};
 use crate::core::url::HttpUrl;
-use crate::errors::{FogHttpError, FogHttpTimeoutError};
+use crate::errors::FogHttpError;
 use crate::messages::{redirect_limit_exceeded, REQUEST_TOTAL_TIMEOUT};
 use crate::py::client::acquire::AcquireGate;
 use crate::py::client::redirects::{
     redirect_decision, redirect_headers, RedirectAction, RedirectDecision, RedirectHeaderPolicy,
 };
+use crate::py::client::timeout_diagnostics::{
+    remaining_duration, timeout_error, TimeoutContext, TimeoutPhase,
+};
 use crate::py::response::{RawRequestInfo, RawResponse, RawResponseParts};
 use hyper::body::Incoming;
 use hyper::Response;
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 pub struct TransportRequest {
     pub method: String,
@@ -41,31 +42,50 @@ pub async fn send_request(
 
     loop {
         let mut raw = {
+            let redirect_hop = history.len();
             let origin = state.origin()?;
+            let acquire_timeout_context = TimeoutContext::new(
+                TimeoutPhase::PoolAcquire,
+                started,
+                state.total_timeout,
+                &origin,
+                redirect_hop,
+            );
             let _permit = tokio::time::timeout(
-                remaining_duration(state.total_timeout, started)?,
-                acquire_gate.acquire(&origin, pool_timeout),
+                remaining_duration("Timeouts.total", &acquire_timeout_context)?,
+                acquire_gate.acquire(&origin, pool_timeout, redirect_hop),
             )
             .await
-            .map_err(|_| FogHttpTimeoutError::new_err(REQUEST_TOTAL_TIMEOUT))??;
+            .map_err(|_| timeout_error(&acquire_timeout_context, REQUEST_TOTAL_TIMEOUT))??;
             let request_info = state.request_info();
             let request = build_request(state.request_parts())?;
 
+            let response_headers_timeout_context = TimeoutContext::new(
+                TimeoutPhase::ResponseHeaders,
+                started,
+                state.total_timeout,
+                &origin,
+                redirect_hop,
+            );
             let response = tokio::time::timeout(
-                remaining_duration(state.total_timeout, started)?,
+                remaining_duration("Timeouts.total", &response_headers_timeout_context)?,
                 client.request(request),
             )
             .await
-            .map_err(|_| FogHttpTimeoutError::new_err(REQUEST_TOTAL_TIMEOUT))?
+            .map_err(|_| timeout_error(&response_headers_timeout_context, REQUEST_TOTAL_TIMEOUT))?
             .map_err(|err| FogHttpError::new_err(err.to_string()))?;
 
             raw_response(
                 response,
                 request_info,
-                started,
-                state.total_timeout,
-                state.max_response_body_size,
-                state.buffered_body_budget.clone(),
+                RawResponseContext {
+                    started,
+                    total_timeout: state.total_timeout,
+                    max_response_body_size: state.max_response_body_size,
+                    buffered_body_budget: state.buffered_body_budget.clone(),
+                    origin: &origin,
+                    redirect_hop,
+                },
             )
             .await?
         };
@@ -171,24 +191,28 @@ impl RequestState {
 async fn raw_response(
     response: Response<Incoming>,
     request: RawRequestInfo,
-    started: Instant,
-    total_timeout: f64,
-    max_response_body_size: Option<usize>,
-    buffered_body_budget: BufferedBodyBudget,
+    context: RawResponseContext<'_>,
 ) -> PyResult<RawResponse> {
     let status_code = response.status().as_u16();
     let http_version = format!("{:?}", response.version());
     let headers = response_headers(response.headers());
+    let response_body_timeout_context = TimeoutContext::new(
+        TimeoutPhase::ResponseBody,
+        context.started,
+        context.total_timeout,
+        context.origin,
+        context.redirect_hop,
+    );
     let collected = tokio::time::timeout(
-        remaining_duration(total_timeout, started)?,
+        remaining_duration("Timeouts.total", &response_body_timeout_context)?,
         collect_body(
             response.into_body(),
-            max_response_body_size,
-            buffered_body_budget,
+            context.max_response_body_size,
+            context.buffered_body_budget,
         ),
     )
     .await
-    .map_err(|_| FogHttpTimeoutError::new_err(REQUEST_TOTAL_TIMEOUT))??;
+    .map_err(|_| timeout_error(&response_body_timeout_context, REQUEST_TOTAL_TIMEOUT))??;
     let url = request.url.clone();
 
     Ok(RawResponse::from_parts(RawResponseParts {
@@ -198,13 +222,17 @@ async fn raw_response(
         url,
         request,
         http_version,
-        elapsed: started.elapsed().as_secs_f64(),
+        elapsed: context.started.elapsed().as_secs_f64(),
         history: Vec::new(),
         body_reservation: Some(collected.reservation),
     }))
 }
 
-fn remaining_duration(total_timeout: f64, started: Instant) -> PyResult<Duration> {
-    numeric::remaining_duration("Timeouts.total", total_timeout, started)
-        .map_err(PyValueError::new_err)
+struct RawResponseContext<'a> {
+    started: Instant,
+    total_timeout: f64,
+    max_response_body_size: Option<usize>,
+    buffered_body_budget: BufferedBodyBudget,
+    origin: &'a str,
+    redirect_hop: usize,
 }

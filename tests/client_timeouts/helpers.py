@@ -1,4 +1,5 @@
 __all__ = (
+    "assert_timeout_diagnostic",
     "assert_timeout_error_stats",
     "assert_timeout_recovery_stats",
     "wait_for_async_stats",
@@ -8,6 +9,8 @@ __all__ = (
 import asyncio
 from collections.abc import Callable
 import time
+
+import pytest
 
 import foghttp
 
@@ -32,7 +35,38 @@ def assert_timeout_recovery_stats(stats: foghttp.TransportStats) -> None:
     _assert_stat("pending_requests", stats.pending_requests, 0)
 
 
-def _assert_stat(name: str, actual: int, expected: int) -> None:
+def assert_timeout_diagnostic(
+    error: foghttp.TimeoutError,
+    *,
+    phase: str,
+    origin: str,
+    timeout: float,
+    redirect_hop: int = 0,
+) -> None:
+    diagnostic = _assert_timeout_diagnostic_present(error.diagnostic)
+    _assert_stat("phase", diagnostic.phase, phase)
+    _assert_stat("origin", diagnostic.origin, origin)
+    _assert_stat("timeout", diagnostic.timeout, pytest.approx(timeout))
+    if diagnostic.elapsed < 0:
+        msg = f"elapsed: expected non-negative value, got {diagnostic.elapsed}"
+        raise AssertionError(msg)
+    _assert_stat("redirect_hop", diagnostic.redirect_hop, redirect_hop)
+    _assert_stat("error.phase", error.phase, diagnostic.phase)
+    _assert_stat("error.origin", error.origin, diagnostic.origin)
+    _assert_stat("error.timeout", error.timeout, diagnostic.timeout)
+    _assert_stat("error.redirect_hop", error.redirect_hop, diagnostic.redirect_hop)
+
+
+def _assert_timeout_diagnostic_present(
+    diagnostic: foghttp.TimeoutDiagnostic | None,
+) -> foghttp.TimeoutDiagnostic:
+    if diagnostic is None:
+        msg = "expected timeout diagnostic"
+        raise AssertionError(msg)
+    return diagnostic
+
+
+def _assert_stat(name: str, actual: object, expected: object) -> None:
     if actual != expected:
         msg = f"{name}: expected {expected}, got {actual}"
         raise AssertionError(msg)
