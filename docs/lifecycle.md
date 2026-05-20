@@ -141,14 +141,17 @@ state.
 For `Client`, `close()` is a graceful lifecycle barrier:
 
 - new requests and transport stats calls are rejected immediately
-- requests that already entered `send()` are allowed to finish
-- `close()` waits until those in-flight sync sends complete
+- sync sends already admitted by the client lifecycle are allowed to finish
+- `close()` waits until those admitted in-flight sync sends complete
 - the Rust transport is closed only after active sync sends finish
 - concurrent `close()` calls wait for the same shutdown and return safely
 
-This means `close()` can block while an already-started sync request is still
+This means `close()` can block while an already-admitted sync request is still
 running. Configure request timeouts so shutdown cannot be held indefinitely by a
 stalled upstream.
+
+An admitted sync send is one that passed the client lifecycle gate before
+shutdown started. Calls racing after shutdown starts are rejected as new work.
 
 ```python
 import foghttp
