@@ -126,12 +126,12 @@ class Client(ClientCore):
         return self.send(request, timeout=timeout)
 
     def send(self, request: Request, *, timeout: Timeouts | None = None) -> Response:
-        self._ensure_open()
-        validate_safe_request_headers(request.headers)
-        timeouts = self._request_timeouts(timeout)
-        started = time.perf_counter()
-        raw_client = self._begin_sync_send()
+        self._begin_sync_send()
         try:
+            validate_safe_request_headers(request.headers)
+            timeouts = self._request_timeouts(timeout)
+            started = time.perf_counter()
+            raw_client = self._sync_send_raw_client()
             raw = send_raw_request(
                 raw_client=raw_client,
                 method=request.method,
@@ -277,15 +277,14 @@ class Client(ClientCore):
             timeout=timeout,
         )
 
-    def _begin_sync_send(self) -> "_foghttp.RawClient":
+    def _begin_sync_send(self) -> None:
         with self._lifecycle_condition:
             self._ensure_open()
             self._active_sync_sends += 1
-            try:
-                return self._raw_client_locked()
-            except BaseException:
-                self._finish_sync_send_locked()
-                raise
+
+    def _sync_send_raw_client(self) -> "_foghttp.RawClient":
+        with self._lifecycle_condition:
+            return self._raw_client_locked()
 
     def _finish_sync_send(self) -> None:
         with self._lifecycle_condition:
