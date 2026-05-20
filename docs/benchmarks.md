@@ -231,8 +231,10 @@ What needs attention:
 
 - Short-lived client creation regressed in `0.3.0`. The worst area is
   `many-clients-open-close`, where primary throughput fell by `40.5%` geomean
-  and p95 increased by `139.7%`. This should be profiled before more constructor
-  work is added.
+  and p95 increased by `139.7%`. A local microprofile found repeated default
+  `Limits`/`Timeouts` creation and default request-builder setup in the
+  constructor path; the next full benchmark run should confirm the release-level
+  impact after those defaults were made reusable.
 - Async resource pressure p95 worsened in some expected-error cases, especially
   `pending-queue-full`. The behavior is correct, but the fast-fail path should
   stay cheap under pressure.
@@ -246,8 +248,8 @@ What needs attention:
 
 Follow-up work:
 
-- Profile and reduce short-lived client construction overhead without weakening
-  the request-builder contract.
+- Re-run the client-creation benchmark after the short-lived client
+  construction micro-optimization and publish the before/after numbers.
 - Add acquire latency and queue pressure metrics.
 - Add per-origin pressure diagnostics.
 - Add fault-injection tests around cancellation storms, partial reads, abrupt

@@ -15,6 +15,7 @@ from ..url import URL
 from .config import ClientConfig
 from .raw import create_raw_client
 from .request_builder.builder import RequestBuilder
+from .request_builder.defaults import DEFAULT_REQUEST_BUILD_DEFAULTS
 from .request_builder.merge import RequestMergeContract
 from .request_builder.models import RequestBuildOptions
 from .stats import stats_from_raw
@@ -24,14 +25,23 @@ if TYPE_CHECKING:
     from foghttp import _foghttp
 
 
+_DEFAULT_REQUEST_BUILDER = RequestBuilder(
+    merge_contract=RequestMergeContract(),
+)
+
+
 class ClientCore:
     def __init__(self, *, config: ClientConfig) -> None:
         self._config = config
         self._closed = False
         self._client_lock = threading.Lock()
         self._client: _foghttp.RawClient | None = None
-        self._request_builder = RequestBuilder(
-            merge_contract=RequestMergeContract(defaults=config.request_defaults),
+        self._request_builder = (
+            _DEFAULT_REQUEST_BUILDER
+            if config.request_defaults is DEFAULT_REQUEST_BUILD_DEFAULTS
+            else RequestBuilder(
+                merge_contract=RequestMergeContract(defaults=config.request_defaults),
+            )
         )
 
     def __del__(self) -> None:
