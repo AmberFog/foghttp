@@ -49,8 +49,8 @@ FogHTTP is designed around a few engineering priorities:
 - async cancellation that aborts in-flight Rust requests
 - redirect history and final request metadata for debugging
 - HTTPS with default WebPKI roots and explicit custom CA certificates
-- global and per-origin request backpressure with stats for operational
-  visibility
+- global and per-origin request backpressure with acquire pressure stats for
+  operational visibility
 
 Until version `0.5.0`, backward compatibility is not guaranteed. I will still
 try to keep public interfaces stable and avoid unnecessary breaking changes.
@@ -97,7 +97,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
   cancellation, and explicit client lifecycle
 - documented buffered timeout model with pool and total deadline behavior
 - global active request limits, per-origin active request limits, pending
-  acquire limits, and basic stats
+  acquire limits, and acquire pressure stats
 - default per-response and aggregate buffered response body limits
 - grouped HTTP status constants and reusable HTTP method constants
 

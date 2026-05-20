@@ -100,6 +100,21 @@ If a request waits longer than `Timeouts.pool` for a slot, FogHTTP raises
 Both cases increment `TransportStats.pool_acquire_timeouts`. Waiting requests
 are not counted as `active_requests`.
 
+FogHTTP also records Rust-side acquire pressure metrics:
+
+- `pool_acquire_attempts` counts acquire attempts for buffered request slots.
+- `pool_acquire_immediate` counts successful acquires that did not enter the
+  pending queue.
+- `pool_acquire_waited` counts requests that entered the pending queue at least
+  once.
+- `peak_pending_requests` records the highest observed pending queue depth.
+- `pool_acquire_wait_time_total_ns`, `pool_acquire_wait_time_max_ns`, and
+  `pool_acquire_wait_time_last_ns` record completed wait intervals in
+  nanoseconds.
+
+These metrics describe request-slot pressure, not physical TCP connection
+counts.
+
 ```python
 limits = foghttp.Limits(
     max_active_requests=10,
