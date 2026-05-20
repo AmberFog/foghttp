@@ -60,7 +60,7 @@ class Client(ClientCore):
             ),
         )
         self._lifecycle_condition = threading.Condition(self._client_lock)
-        self._active_sync_sends = 0
+        self._active_sync_send_tokens: set[object] = set()
         self._close_complete = False
 
     def __enter__(self) -> "Client":
@@ -84,7 +84,7 @@ class Client(ClientCore):
                 return
 
             self._closed = True
-            while self._active_sync_sends:
+            while self._active_sync_send_tokens:
                 self._lifecycle_condition.wait()
             raw_client = self._client
             self._client = None
@@ -126,8 +126,9 @@ class Client(ClientCore):
         return self.send(request, timeout=timeout)
 
     def send(self, request: Request, *, timeout: Timeouts | None = None) -> Response:
-        self._begin_sync_send()
+        sync_send_token = object()
         try:
+            self._begin_sync_send(sync_send_token)
             validate_safe_request_headers(request.headers)
             timeouts = self._request_timeouts(timeout)
             started = time.perf_counter()
@@ -143,7 +144,7 @@ class Client(ClientCore):
 
             return response_from_raw(raw=raw, started=started)
         finally:
-            self._finish_sync_send()
+            self._finish_sync_send(sync_send_token)
 
     def get(
         self,
@@ -277,20 +278,20 @@ class Client(ClientCore):
             timeout=timeout,
         )
 
-    def _begin_sync_send(self) -> None:
+    def _begin_sync_send(self, token: object) -> None:
         with self._lifecycle_condition:
             self._ensure_open()
-            self._active_sync_sends += 1
+            self._active_sync_send_tokens.add(token)
 
     def _sync_send_raw_client(self) -> "_foghttp.RawClient":
         with self._lifecycle_condition:
             return self._raw_client_locked()
 
-    def _finish_sync_send(self) -> None:
+    def _finish_sync_send(self, token: object) -> None:
         with self._lifecycle_condition:
-            self._finish_sync_send_locked()
+            self._finish_sync_send_locked(token)
 
-    def _finish_sync_send_locked(self) -> None:
-        self._active_sync_sends -= 1
-        if self._active_sync_sends == 0:
+    def _finish_sync_send_locked(self, token: object) -> None:
+        self._active_sync_send_tokens.discard(token)
+        if not self._active_sync_send_tokens:
             self._lifecycle_condition.notify_all()

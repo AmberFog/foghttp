@@ -45,7 +45,7 @@ FogHTTP is designed around a few engineering priorities:
 - one API shape for sync scripts, workers, and asyncio services
 - Rust-backed HTTP/1.1 transport with explicit runtime ownership
 - buffered JSON, form, and bytes workflows that are simple to reason about
-- graceful sync `close()` that waits for already-started sync requests
+- graceful sync `close()` that waits for in-flight sync requests
 - async cancellation that aborts in-flight Rust requests
 - redirect history and final request metadata for debugging
 - HTTPS with default WebPKI roots and explicit custom CA certificates
