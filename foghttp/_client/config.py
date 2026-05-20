@@ -12,6 +12,10 @@ from .options import validate_client_options
 from .request_builder.defaults import DEFAULT_REQUEST_BUILD_DEFAULTS, RequestBuildDefaults
 
 
+_DEFAULT_LIMITS = Limits()
+_DEFAULT_TIMEOUTS = Timeouts()
+
+
 @dataclass(frozen=True, slots=True)
 class ClientConfig:
     limits: Limits
@@ -48,8 +52,8 @@ class ClientConfig:
             http_versions=http_versions,
         )
         return cls(
-            limits=limits or Limits(),
-            timeouts=timeouts or Timeouts(),
+            limits=limits if limits is not None else _DEFAULT_LIMITS,
+            timeouts=timeouts if timeouts is not None else _DEFAULT_TIMEOUTS,
             follow_redirects=follow_redirects,
             max_redirects=max_redirects,
             trust_env=trust_env,
