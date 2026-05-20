@@ -113,7 +113,10 @@ FogHTTP also records Rust-side acquire pressure metrics:
   nanoseconds.
 
 These metrics describe request-slot pressure, not physical TCP connection
-counts.
+counts. `dump_transport_state()["origins"]` exposes the same acquire-pressure
+fields per normalized origin, with default ports omitted and non-default ports
+preserved, so a service can see which upstream is holding active slots or
+building a pending queue without logging request paths or query strings.
 
 ```python
 limits = foghttp.Limits(

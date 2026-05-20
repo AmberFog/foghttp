@@ -535,6 +535,9 @@ backpressure.
 `TransportStats.buffered_response_bytes` reports currently reserved in-flight
 buffered body bytes. `TransportStats.buffered_response_budget_rejections`
 reports requests rejected by the aggregate buffered memory budget.
+`client.dump_transport_state()["origins"]` shows request-slot pressure grouped
+by normalized origin without path, query, userinfo, headers, or body data.
+Default ports are omitted from origin keys; non-default ports are preserved.
 
 `Timeouts.connect` is client-level connector configuration. Per-request
 `timeout=` currently affects `pool` and `total`, not `connect`, `read`, or

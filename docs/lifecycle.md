@@ -67,6 +67,7 @@ assert client.dump_transport_state() == {
     "pool_acquire_wait_time_last_ns": 0,
     "buffered_response_bytes": 0,
     "buffered_response_budget_rejections": 0,
+    "origins": {},
 }
 
 client.close()
@@ -244,7 +245,15 @@ connection counters.
   `Limits.max_buffered_response_bytes`
 
 Use `dump_transport_state()` for a small debug snapshot when active, pending,
-acquire pressure, and buffered response budget state are needed.
+acquire pressure, per-origin pressure, and buffered response budget state are
+needed. The `origins` entry is keyed by normalized origin (`scheme://host`, with
+`:port` only for non-default ports) and never includes path, query, userinfo,
+headers, or body data.
+
+```python
+state = client.dump_transport_state()
+api_pressure = state["origins"].get("https://api.example.com")
+```
 
 ## Current Boundaries
 

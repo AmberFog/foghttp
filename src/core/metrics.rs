@@ -1,4 +1,16 @@
+#[path = "metrics/atomic.rs"]
+mod atomic;
+#[path = "metrics/origin.rs"]
+mod origin;
+
+pub use origin::{OriginMetrics, OriginMetricsSnapshot};
+
+use self::atomic::{
+    duration_as_nanos, saturating_atomic_u64_add, update_atomic_u64_max, update_atomic_usize_max,
+};
+use self::origin::OriginMetricsRegistry;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Default)]
@@ -17,6 +29,7 @@ pub struct Metrics {
     pool_acquire_wait_time_last_ns: AtomicU64,
     buffered_response_bytes: AtomicUsize,
     buffered_response_budget_rejections: AtomicUsize,
+    origin_registry: OriginMetricsRegistry,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -172,6 +185,14 @@ impl Metrics {
             .fetch_add(1, Ordering::Relaxed);
     }
 
+    pub fn origin_metrics(&self, origin: &str) -> Arc<OriginMetrics> {
+        self.origin_registry.metrics_for(origin)
+    }
+
+    pub fn origin_snapshots(&self) -> Vec<OriginMetricsSnapshot> {
+        self.origin_registry.snapshots()
+    }
+
     pub fn snapshot(&self) -> MetricsSnapshot {
         MetricsSnapshot {
             active_requests: self.active_requests.load(Ordering::Relaxed),
@@ -196,41 +217,6 @@ impl Metrics {
             buffered_response_budget_rejections: self
                 .buffered_response_budget_rejections
                 .load(Ordering::Relaxed),
-        }
-    }
-}
-
-fn duration_as_nanos(duration: Duration) -> u64 {
-    duration.as_nanos().try_into().unwrap_or(u64::MAX)
-}
-
-fn saturating_atomic_u64_add(target: &AtomicU64, value: u64) {
-    let mut current = target.load(Ordering::Relaxed);
-    loop {
-        let next = current.saturating_add(value);
-        match target.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
-            Ok(_previous) => return,
-            Err(actual) => current = actual,
-        }
-    }
-}
-
-fn update_atomic_usize_max(target: &AtomicUsize, value: usize) {
-    let mut current = target.load(Ordering::Relaxed);
-    while value > current {
-        match target.compare_exchange_weak(current, value, Ordering::Relaxed, Ordering::Relaxed) {
-            Ok(_previous) => return,
-            Err(actual) => current = actual,
-        }
-    }
-}
-
-fn update_atomic_u64_max(target: &AtomicU64, value: u64) {
-    let mut current = target.load(Ordering::Relaxed);
-    while value > current {
-        match target.compare_exchange_weak(current, value, Ordering::Relaxed, Ordering::Relaxed) {
-            Ok(_previous) => return,
-            Err(actual) => current = actual,
         }
     }
 }

@@ -11,6 +11,7 @@ __all__ = (
     "Headers",
     "LifecycleError",
     "Limits",
+    "OriginPressureState",
     "PoolTimeout",
     "ReadTimeout",
     "Request",
@@ -23,6 +24,7 @@ __all__ = (
     "TLSConfig",
     "TimeoutError",
     "Timeouts",
+    "TransportState",
     "TransportStats",
     "UnclosedClientError",
 )
@@ -51,5 +53,6 @@ from .request_info import RequestInfo
 from .response import Response
 from .timeouts import Timeouts
 from .tls import TLSConfig
+from .transport_state import OriginPressureState, TransportState
 from .transport_stats import TransportStats
 from .url import URL
