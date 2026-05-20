@@ -239,6 +239,9 @@ connection counters.
 - `pool_acquire_wait_time_total_ns`, `pool_acquire_wait_time_max_ns`, and
   `pool_acquire_wait_time_last_ns` describe completed acquire wait intervals in
   nanoseconds
+- per-origin `last_activity_at_ns` is a monotonic timestamp in nanoseconds
+  relative to the current transport metrics lifetime; it is not a Unix epoch
+  timestamp
 - `buffered_response_bytes` means bytes currently reserved for in-flight
   buffered response bodies before they are returned to Python
 - `buffered_response_budget_rejections` means requests rejected by

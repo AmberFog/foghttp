@@ -187,3 +187,4 @@ async def test_dump_transport_state(http_server: str) -> None:
     }
     assert state["pending_requests"] == 0
     assert state["origins"][http_server]["active_requests"] == 0
+    assert state["origins"][http_server]["last_activity_at_ns"] > 0

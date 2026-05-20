@@ -14,6 +14,7 @@ class OriginPressureState(TypedDict):
     pool_acquire_wait_time_total_ns: int
     pool_acquire_wait_time_max_ns: int
     pool_acquire_wait_time_last_ns: int
+    last_activity_at_ns: int
 
 
 class TransportState(TypedDict):

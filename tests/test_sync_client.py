@@ -186,6 +186,7 @@ def test_dump_transport_state(sync_http_server: str) -> None:
     }
     assert state["pending_requests"] == 0
     assert state["origins"][sync_http_server]["active_requests"] == 0
+    assert state["origins"][sync_http_server]["last_activity_at_ns"] > 0
 
 
 def test_dump_transport_state_origin_keys_exclude_request_target_details(

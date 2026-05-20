@@ -3,6 +3,7 @@ use crate::core::metrics::Metrics;
 use pyo3::Python;
 use std::sync::Arc;
 use std::sync::Once;
+use std::thread;
 use std::time::Duration;
 use tokio::runtime::Builder;
 
@@ -52,10 +53,14 @@ fn available_permit_does_not_use_pending_queue() {
     assert_eq!(origin_snapshot.pool_acquire_attempts, 1);
     assert_eq!(origin_snapshot.pool_acquire_immediate, 1);
     assert_eq!(origin_snapshot.pool_acquire_waited, 0);
+    let activity_before_drop = origin_snapshot.last_activity_at_ns;
 
+    thread::sleep(Duration::from_millis(1));
     drop(permit);
     assert_eq!(metrics.snapshot().active_requests, 0);
-    assert_eq!(find_origin_snapshot(&metrics, ORIGIN).active_requests, 0);
+    let origin_snapshot = find_origin_snapshot(&metrics, ORIGIN);
+    assert_eq!(origin_snapshot.active_requests, 0);
+    assert!(origin_snapshot.last_activity_at_ns > activity_before_drop);
 }
 
 #[test]

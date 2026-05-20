@@ -51,6 +51,7 @@ def test_same_origin_requests_wait_for_per_origin_slot(sync_resource_http_server
         assert origin_pressure["pool_acquire_waited"] == 1
         assert origin_pressure["pool_acquire_timeouts"] == 1
         assert origin_pressure["pool_acquire_wait_time_last_ns"] > 0
+        assert origin_pressure["last_activity_at_ns"] > 0
 
         response = blocker.result(timeout=1)
         retry_response = client.get(sync_resource_http_server)

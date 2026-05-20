@@ -154,4 +154,5 @@ def _origin_pressure_state(origin: "_foghttp.RawOriginPressure") -> OriginPressu
         "pool_acquire_wait_time_total_ns": origin.pool_acquire_wait_time_total_ns,
         "pool_acquire_wait_time_max_ns": origin.pool_acquire_wait_time_max_ns,
         "pool_acquire_wait_time_last_ns": origin.pool_acquire_wait_time_last_ns,
+        "last_activity_at_ns": origin.last_activity_at_ns,
     }

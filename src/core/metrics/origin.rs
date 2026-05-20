@@ -4,12 +4,12 @@ use super::atomic::{
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const ORIGIN_PRESSURE_CLEANUP_THRESHOLD: usize = 1024;
 
-#[derive(Default)]
 pub struct OriginMetricsRegistry {
+    started_at: Instant,
     origins: RwLock<HashMap<String, Arc<OriginMetrics>>>,
 }
 
@@ -25,10 +25,12 @@ pub struct OriginMetricsSnapshot {
     pub pool_acquire_wait_time_total_ns: u64,
     pub pool_acquire_wait_time_max_ns: u64,
     pub pool_acquire_wait_time_last_ns: u64,
+    pub last_activity_at_ns: u64,
 }
 
 pub struct OriginMetrics {
     origin: String,
+    started_at: Instant,
     active_requests: AtomicUsize,
     pending_requests: AtomicUsize,
     peak_pending_requests: AtomicUsize,
@@ -39,6 +41,16 @@ pub struct OriginMetrics {
     pool_acquire_wait_time_total_ns: AtomicU64,
     pool_acquire_wait_time_max_ns: AtomicU64,
     pool_acquire_wait_time_last_ns: AtomicU64,
+    last_activity_at_ns: AtomicU64,
+}
+
+impl Default for OriginMetricsRegistry {
+    fn default() -> Self {
+        Self {
+            started_at: Instant::now(),
+            origins: RwLock::new(HashMap::new()),
+        }
+    }
 }
 
 impl OriginMetricsRegistry {
@@ -56,7 +68,7 @@ impl OriginMetricsRegistry {
             origins.retain(|_origin, metrics| !metrics.is_idle());
         }
 
-        let metrics = Arc::new(OriginMetrics::new(origin.to_owned()));
+        let metrics = Arc::new(OriginMetrics::new(origin.to_owned(), self.started_at));
         origins.insert(origin.to_owned(), Arc::clone(&metrics));
         metrics
     }
@@ -81,9 +93,10 @@ impl OriginMetricsRegistry {
 }
 
 impl OriginMetrics {
-    fn new(origin: String) -> Self {
+    fn new(origin: String, started_at: Instant) -> Self {
         Self {
             origin,
+            started_at,
             active_requests: AtomicUsize::new(0),
             pending_requests: AtomicUsize::new(0),
             peak_pending_requests: AtomicUsize::new(0),
@@ -94,40 +107,49 @@ impl OriginMetrics {
             pool_acquire_wait_time_total_ns: AtomicU64::new(0),
             pool_acquire_wait_time_max_ns: AtomicU64::new(0),
             pool_acquire_wait_time_last_ns: AtomicU64::new(0),
+            last_activity_at_ns: AtomicU64::new(duration_as_nanos(started_at.elapsed())),
         }
     }
 
     pub fn active_request_started(&self) {
         self.active_requests.fetch_add(1, Ordering::Relaxed);
+        self.touch();
     }
 
     pub fn active_request_finished(&self) {
         self.active_requests.fetch_sub(1, Ordering::Relaxed);
+        self.touch();
     }
 
     pub fn pending_request_started(&self) {
         let current = self.pending_requests.fetch_add(1, Ordering::AcqRel) + 1;
         update_atomic_usize_max(&self.peak_pending_requests, current);
+        self.touch();
     }
 
     pub fn pending_request_finished(&self) {
         self.pending_requests.fetch_sub(1, Ordering::AcqRel);
+        self.touch();
     }
 
     pub fn pool_acquire_started(&self) {
         self.pool_acquire_attempts.fetch_add(1, Ordering::Relaxed);
+        self.touch();
     }
 
     pub fn pool_acquire_finished_immediately(&self) {
         self.pool_acquire_immediate.fetch_add(1, Ordering::Relaxed);
+        self.touch();
     }
 
     pub fn pool_acquire_waited(&self) {
         self.pool_acquire_waited.fetch_add(1, Ordering::Relaxed);
+        self.touch();
     }
 
     pub fn pool_acquire_timeout(&self) {
         self.pool_acquire_timeouts.fetch_add(1, Ordering::Relaxed);
+        self.touch();
     }
 
     pub fn pool_acquire_wait_finished(&self, elapsed: Duration) {
@@ -137,6 +159,7 @@ impl OriginMetrics {
         update_atomic_u64_max(&self.pool_acquire_wait_time_max_ns, elapsed_ns);
         self.pool_acquire_wait_time_last_ns
             .store(elapsed_ns, Ordering::Relaxed);
+        self.touch();
     }
 
     fn snapshot(&self) -> OriginMetricsSnapshot {
@@ -158,11 +181,19 @@ impl OriginMetrics {
             pool_acquire_wait_time_last_ns: self
                 .pool_acquire_wait_time_last_ns
                 .load(Ordering::Relaxed),
+            last_activity_at_ns: self.last_activity_at_ns.load(Ordering::Relaxed),
         }
     }
 
     fn is_idle(&self) -> bool {
         self.active_requests.load(Ordering::Relaxed) == 0
             && self.pending_requests.load(Ordering::Acquire) == 0
+    }
+
+    fn touch(&self) {
+        update_atomic_u64_max(
+            &self.last_activity_at_ns,
+            duration_as_nanos(self.started_at.elapsed()),
+        );
     }
 }

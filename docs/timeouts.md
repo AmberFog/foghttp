@@ -117,6 +117,8 @@ counts. `dump_transport_state()["origins"]` exposes the same acquire-pressure
 fields per normalized origin, with default ports omitted and non-default ports
 preserved, so a service can see which upstream is holding active slots or
 building a pending queue without logging request paths or query strings.
+Per-origin `last_activity_at_ns` is monotonic within the current transport
+metrics lifetime and is not a wall-clock Unix timestamp.
 
 ```python
 limits = foghttp.Limits(

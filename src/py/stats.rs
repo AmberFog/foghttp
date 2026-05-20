@@ -25,6 +25,8 @@ pub struct RawOriginPressure {
     pool_acquire_wait_time_max_ns: u64,
     #[pyo3(get)]
     pool_acquire_wait_time_last_ns: u64,
+    #[pyo3(get)]
+    last_activity_at_ns: u64,
 }
 
 #[pyclass]
@@ -94,6 +96,7 @@ impl From<OriginMetricsSnapshot> for RawOriginPressure {
             pool_acquire_wait_time_total_ns: snapshot.pool_acquire_wait_time_total_ns,
             pool_acquire_wait_time_max_ns: snapshot.pool_acquire_wait_time_max_ns,
             pool_acquire_wait_time_last_ns: snapshot.pool_acquire_wait_time_last_ns,
+            last_activity_at_ns: snapshot.last_activity_at_ns,
         }
     }
 }
