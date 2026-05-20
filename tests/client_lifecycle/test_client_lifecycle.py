@@ -68,6 +68,8 @@ def test_sync_dump_transport_state_before_first_request_do_not_create_raw_client
 
     assert state == {
         "active_requests": 0,
+        "buffered_response_bytes": 0,
+        "buffered_response_budget_rejections": 0,
         "pending_requests": 0,
     }
     assert raw_client_factory.calls == 0
@@ -308,6 +310,8 @@ async def test_async_dump_transport_state_before_first_request_do_not_create_raw
 
     assert state == {
         "active_requests": 0,
+        "buffered_response_bytes": 0,
+        "buffered_response_budget_rejections": 0,
         "pending_requests": 0,
     }
     assert raw_client_factory.calls == 0

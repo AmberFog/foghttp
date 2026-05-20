@@ -188,27 +188,46 @@ They do not yet provide:
 - dedicated `ReadTimeout` or write-specific exceptions
 
 These fields will become meaningful with the streaming response/upload work.
-Until then, use `Timeouts.total` as the shared buffered request deadline and
-`Limits.max_response_body_size` to bound buffered response memory.
+Until then, use `Timeouts.total` as the shared buffered request deadline,
+`Limits.max_response_body_size` to bound one buffered response, and
+`Limits.max_buffered_response_bytes` to bound concurrent buffered response
+memory.
 
 ## Buffered Body Limit
 
 FogHTTP is buffered today, so responses are collected into memory before the
-`Response` object is returned. To keep that safe by default,
-`Limits.max_response_body_size` defaults to `10 * 1024 * 1024` bytes.
+`Response` object is returned. To keep that safe by default, response memory is
+limited at two levels:
+
+- `Limits.max_response_body_size` protects one buffered response and defaults to
+  `10 * 1024 * 1024` bytes.
+- `Limits.max_buffered_response_bytes` protects aggregate in-flight buffered
+  response bodies across concurrent requests and defaults to
+  `100 * 1024 * 1024` bytes.
 
 ```python
-limits = foghttp.Limits(max_response_body_size=2 * 1024 * 1024)
+limits = foghttp.Limits(
+    max_response_body_size=2 * 1024 * 1024,
+    max_buffered_response_bytes=32 * 1024 * 1024,
+)
 ```
 
-Passing `None` is an explicit opt-in to unbounded buffering:
+Passing `None` is an explicit opt-in to unbounded buffering for that level:
 
 ```python
-limits = foghttp.Limits(max_response_body_size=None)
+limits = foghttp.Limits(
+    max_response_body_size=None,
+    max_buffered_response_bytes=None,
+)
 ```
 
 Use that only for controlled endpoints where another layer already enforces a
-safe body size. Large downloads should wait for streaming responses.
+safe body size and aggregate memory budget. Large downloads should wait for
+streaming responses.
+
+The aggregate budget tracks in-flight buffered response bodies while Rust is
+collecting them. Once a `Response` is returned, its Python `bytes` lifetime is
+controlled by application code.
 
 ## Practical Defaults
 
@@ -228,4 +247,5 @@ Tune from there:
 - raise `pool` when short bursts should wait for capacity
 - keep `total` larger than the expected upstream response time
 - use a separate client when an upstream needs a different `connect` timeout
-- keep `max_response_body_size` finite unless unbounded buffering is deliberate
+- keep `max_response_body_size` and `max_buffered_response_bytes` finite unless
+  unbounded buffering is deliberate

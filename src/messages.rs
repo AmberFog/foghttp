@@ -9,6 +9,10 @@ pub fn response_body_too_large(limit: usize) -> String {
     format!("response body exceeded max_response_body_size of {limit} bytes")
 }
 
+pub fn buffered_response_body_budget_exceeded(limit: usize) -> String {
+    format!("buffered response bodies exceeded max_buffered_response_bytes of {limit} bytes")
+}
+
 pub fn redirect_limit_exceeded(max_redirects: usize, url: &str) -> String {
     format!("redirect limit exceeded after {max_redirects} redirects for {url}")
 }

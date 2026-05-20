@@ -1,4 +1,8 @@
-__all__ = ("DEFAULT_MAX_RESPONSE_BODY_SIZE", "Limits")
+__all__ = (
+    "DEFAULT_MAX_BUFFERED_RESPONSE_BYTES",
+    "DEFAULT_MAX_RESPONSE_BODY_SIZE",
+    "Limits",
+)
 
 from dataclasses import dataclass
 
@@ -10,6 +14,7 @@ from ._validation.numeric import (
 
 
 DEFAULT_MAX_RESPONSE_BODY_SIZE = 10 * 1024 * 1024
+DEFAULT_MAX_BUFFERED_RESPONSE_BYTES = 100 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +23,7 @@ class Limits:
     max_active_requests_per_origin: int | None = None
     max_pending_requests: int = 1000
     max_response_body_size: int | None = DEFAULT_MAX_RESPONSE_BODY_SIZE
+    max_buffered_response_bytes: int | None = DEFAULT_MAX_BUFFERED_RESPONSE_BYTES
     max_idle_connections_per_host: int = 20
     idle_timeout: float = 30.0
     keepalive: bool = True
@@ -47,6 +53,14 @@ class Limits:
             validate_optional_non_negative_int(
                 "Limits.max_response_body_size",
                 self.max_response_body_size,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "max_buffered_response_bytes",
+            validate_optional_non_negative_int(
+                "Limits.max_buffered_response_bytes",
+                self.max_buffered_response_bytes,
             ),
         )
         object.__setattr__(

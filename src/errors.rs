@@ -6,6 +6,11 @@ create_exception!(_foghttp, FogHttpError, PyException);
 create_exception!(_foghttp, FogHttpTimeoutError, FogHttpError);
 create_exception!(_foghttp, FogHttpPoolTimeoutError, FogHttpTimeoutError);
 create_exception!(_foghttp, FogHttpResponseBodyTooLargeError, FogHttpError);
+create_exception!(
+    _foghttp,
+    FogHttpResponseBodyBudgetExceededError,
+    FogHttpError
+);
 
 pub fn register(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("FogHttpError", py.get_type::<FogHttpError>())?;
@@ -17,6 +22,10 @@ pub fn register(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add(
         "FogHttpResponseBodyTooLargeError",
         py.get_type::<FogHttpResponseBodyTooLargeError>(),
+    )?;
+    module.add(
+        "FogHttpResponseBodyBudgetExceededError",
+        py.get_type::<FogHttpResponseBodyBudgetExceededError>(),
     )?;
     Ok(())
 }

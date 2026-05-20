@@ -9,7 +9,13 @@ from collections.abc import Sequence
 
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
-from ..errors import PoolTimeout, RequestError, ResponseBodyTooLargeError, TimeoutError
+from ..errors import (
+    PoolTimeout,
+    RequestError,
+    ResponseBodyBudgetExceededError,
+    ResponseBodyTooLargeError,
+    TimeoutError,
+)
 from ..limits import Limits
 from ..timeouts import Timeouts
 from ..tls import TLSConfig
@@ -37,6 +43,7 @@ def create_raw_client(
             limits.max_idle_connections_per_host,
             limits.max_pending_requests,
             limits.max_response_body_size,
+            limits.max_buffered_response_bytes,
             limits.idle_timeout,
             limits.keepalive,
             timeouts.connect,
@@ -70,6 +77,8 @@ def send_raw_request(
         )
     except _foghttp.FogHttpResponseBodyTooLargeError as exc:
         raise ResponseBodyTooLargeError(str(exc)) from exc
+    except _foghttp.FogHttpResponseBodyBudgetExceededError as exc:
+        raise ResponseBodyBudgetExceededError(str(exc)) from exc
     except _foghttp.FogHttpPoolTimeoutError as exc:
         raise PoolTimeout(str(exc)) from exc
     except _foghttp.FogHttpTimeoutError as exc:
@@ -98,6 +107,8 @@ async def send_raw_request_async(
         )
     except _foghttp.FogHttpResponseBodyTooLargeError as exc:
         raise ResponseBodyTooLargeError(str(exc)) from exc
+    except _foghttp.FogHttpResponseBodyBudgetExceededError as exc:
+        raise ResponseBodyBudgetExceededError(str(exc)) from exc
     except _foghttp.FogHttpPoolTimeoutError as exc:
         raise PoolTimeout(str(exc)) from exc
     except _foghttp.FogHttpTimeoutError as exc:

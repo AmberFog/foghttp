@@ -3,7 +3,7 @@ import math
 import pytest
 
 import foghttp
-from foghttp.limits import DEFAULT_MAX_RESPONSE_BODY_SIZE
+from foghttp.limits import DEFAULT_MAX_BUFFERED_RESPONSE_BYTES, DEFAULT_MAX_RESPONSE_BODY_SIZE
 
 
 MAX_INVALID_NUMERIC_OPTION = 2**31
@@ -14,12 +14,14 @@ INTEGER_LIMIT_FIELDS = (
     "max_active_requests_per_origin",
     "max_pending_requests",
     "max_response_body_size",
+    "max_buffered_response_bytes",
     "max_idle_connections_per_host",
 )
 
 
 def test_limits_use_safe_default_response_body_size() -> None:
     assert foghttp.Limits().max_response_body_size == DEFAULT_MAX_RESPONSE_BODY_SIZE
+    assert foghttp.Limits().max_buffered_response_bytes == DEFAULT_MAX_BUFFERED_RESPONSE_BYTES
 
 
 @pytest.mark.parametrize("field_name", TIMEOUT_FIELDS)
@@ -83,6 +85,7 @@ def test_limits_accept_zero_for_explicit_backpressure_edges() -> None:
         max_active_requests_per_origin=0,
         max_pending_requests=0,
         max_response_body_size=0,
+        max_buffered_response_bytes=0,
         max_idle_connections_per_host=0,
         idle_timeout=0,
     )
@@ -91,6 +94,7 @@ def test_limits_accept_zero_for_explicit_backpressure_edges() -> None:
     assert limits.max_active_requests_per_origin == 0
     assert limits.max_pending_requests == 0
     assert limits.max_response_body_size == 0
+    assert limits.max_buffered_response_bytes == 0
     assert limits.max_idle_connections_per_host == 0
     assert limits.idle_timeout == 0.0
 
@@ -99,7 +103,9 @@ def test_optional_limit_fields_accept_none() -> None:
     limits = foghttp.Limits(
         max_active_requests_per_origin=None,
         max_response_body_size=None,
+        max_buffered_response_bytes=None,
     )
 
     assert limits.max_active_requests_per_origin is None
     assert limits.max_response_body_size is None
+    assert limits.max_buffered_response_bytes is None

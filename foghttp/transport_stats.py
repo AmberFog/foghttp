@@ -10,3 +10,5 @@ class TransportStats:
     total_requests: int = 0
     failed_requests: int = 0
     pool_acquire_timeouts: int = 0
+    buffered_response_bytes: int = 0
+    buffered_response_budget_rejections: int = 0

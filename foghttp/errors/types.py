@@ -7,6 +7,7 @@ __all__ = (
     "PoolTimeout",
     "ReadTimeout",
     "RequestError",
+    "ResponseBodyBudgetExceededError",
     "ResponseBodyTooLargeError",
     "ResponseError",
     "TimeoutError",
@@ -44,6 +45,10 @@ class ResponseError(FogHTTPError):
 
 class ResponseBodyTooLargeError(ResponseError):
     """Raised when a buffered response body exceeds the configured limit."""
+
+
+class ResponseBodyBudgetExceededError(ResponseError):
+    """Raised when concurrent buffered responses exceed the aggregate budget."""
 
 
 class HTTPStatusError(ResponseError):

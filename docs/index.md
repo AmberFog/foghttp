@@ -98,7 +98,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - documented buffered timeout model with pool and total deadline behavior
 - global active request limits, per-origin active request limits, pending
   acquire limits, and basic stats
-- default buffered response body size limit
+- default per-response and aggregate buffered response body limits
 - grouped HTTP status constants and reusable HTTP method constants
 
 ## Not Yet

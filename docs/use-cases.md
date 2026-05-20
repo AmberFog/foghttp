@@ -63,6 +63,7 @@ async def fetch_many(urls: list[str]) -> list[dict]:
         max_active_requests=100,
         max_active_requests_per_origin=20,
         max_pending_requests=1000,
+        max_buffered_response_bytes=100 * 1024 * 1024,
     )
 
     async with foghttp.AsyncClient(limits=limits) as client:
@@ -247,8 +248,9 @@ except foghttp.HTTPStatusError as exc:
 | Proxy and `trust_env` | Not implemented |
 | HTTP/2 | Not implemented |
 | Cookie jar and auth helper integration | Not implemented; cross-origin redirects still strip sensitive headers and drop body replay |
-| Unbounded large downloads | `max_response_body_size` defaults to 10 MiB for buffered fail-fast protection; streaming downloads are not implemented |
+| Unbounded large downloads | `max_response_body_size` defaults to 10 MiB and `max_buffered_response_bytes` defaults to 100 MiB for buffered fail-fast protection; streaming downloads are not implemented |
 
 FogHTTP is best today in controlled environments where request and response
-bodies are expected to fit in memory. Keep `max_response_body_size` finite unless
-unbounded buffering is a deliberate opt-in for a trusted endpoint.
+bodies are expected to fit in memory. Keep `max_response_body_size` and
+`max_buffered_response_bytes` finite unless unbounded buffering is a deliberate
+opt-in for a trusted endpoint.
