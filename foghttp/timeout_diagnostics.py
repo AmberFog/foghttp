@@ -6,11 +6,8 @@ from typing import Literal, TypeAlias
 
 TimeoutPhase: TypeAlias = Literal[
     "pool_acquire",
-    "connect",
     "response_headers",
     "response_body",
-    "request_body",
-    "total",
 ]
 
 
