@@ -97,6 +97,7 @@ async def test_cancelled_async_request_waiting_for_transport_slot_releases_pendi
                 pending_requests=0,
             )
             stats_after_cancellation = client.stats()
+            state_after_cancellation = client.dump_transport_state()
         finally:
             if waiter is not None and not waiter.done():
                 waiter.cancel()
@@ -110,6 +111,7 @@ async def test_cancelled_async_request_waiting_for_transport_slot_releases_pendi
         await wait_for_no_active_requests(client)
         response = await client.get(cancellation_server)
         final_stats = client.stats()
+        final_state = client.dump_transport_state()
 
     assert response.status_code == OK
     assert response.content == b"OK"
@@ -119,6 +121,11 @@ async def test_cancelled_async_request_waiting_for_transport_slot_releases_pendi
     assert stats_after_cancellation.pool_acquire_waited == 1
     assert stats_after_cancellation.pool_acquire_timeouts == 0
     assert stats_after_cancellation.pool_acquire_wait_time_last_ns > 0
+    assert state_after_cancellation["origins"][cancellation_server]["pending_requests"] == 0
+    assert state_after_cancellation["origins"][cancellation_server]["peak_pending_requests"] == 1
+    assert state_after_cancellation["origins"][cancellation_server]["pool_acquire_waited"] == 1
     assert final_stats.pool_acquire_attempts == BLOCKER_WAITER_AND_RECOVERY_ATTEMPTS
     assert final_stats.pool_acquire_immediate == BLOCKER_AND_RECOVERY_IMMEDIATE_ACQUIRES
     assert final_stats.pool_acquire_waited == 1
+    assert final_state["origins"][cancellation_server]["active_requests"] == 0
+    assert final_state["origins"][cancellation_server]["pending_requests"] == 0

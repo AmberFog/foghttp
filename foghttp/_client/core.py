@@ -9,6 +9,7 @@ from ..headers import HeaderSource
 from ..messages import CLIENT_CLOSED, UNCLOSED_CLIENT
 from ..request import Request
 from ..timeouts import Timeouts
+from ..transport_state import OriginPressureState, TransportState
 from ..transport_stats import TransportStats
 from ..types import QueryParams, RequestData
 from ..url import URL
@@ -81,8 +82,15 @@ class ClientCore:
             return TransportStats()
         return stats_from_raw(raw=raw_stats)
 
-    def dump_transport_state(self) -> dict[str, int]:
-        stats = self.stats()
+    def dump_transport_state(self) -> TransportState:
+        self._ensure_open()
+        with self._client_lock:
+            self._ensure_open()
+            raw_client = self._client
+            raw_stats = None if raw_client is None else raw_client.stats()
+            raw_origins = () if raw_client is None else raw_client.origin_pressure()
+
+        stats = TransportStats() if raw_stats is None else stats_from_raw(raw=raw_stats)
         return {
             "active_requests": stats.active_requests,
             "pending_requests": stats.pending_requests,
@@ -96,6 +104,7 @@ class ClientCore:
             "pool_acquire_wait_time_last_ns": stats.pool_acquire_wait_time_last_ns,
             "buffered_response_bytes": stats.buffered_response_bytes,
             "buffered_response_budget_rejections": stats.buffered_response_budget_rejections,
+            "origins": {origin.origin: _origin_pressure_state(origin) for origin in raw_origins},
         }
 
     def _ensure_open(self) -> None:
@@ -131,3 +140,19 @@ class ClientCore:
 
     def _request_timeouts(self, timeout: Timeouts | None) -> Timeouts:
         return timeout or self._config.timeouts
+
+
+def _origin_pressure_state(origin: "_foghttp.RawOriginPressure") -> OriginPressureState:
+    return {
+        "active_requests": origin.active_requests,
+        "pending_requests": origin.pending_requests,
+        "peak_pending_requests": origin.peak_pending_requests,
+        "pool_acquire_attempts": origin.pool_acquire_attempts,
+        "pool_acquire_immediate": origin.pool_acquire_immediate,
+        "pool_acquire_waited": origin.pool_acquire_waited,
+        "pool_acquire_timeouts": origin.pool_acquire_timeouts,
+        "pool_acquire_wait_time_total_ns": origin.pool_acquire_wait_time_total_ns,
+        "pool_acquire_wait_time_max_ns": origin.pool_acquire_wait_time_max_ns,
+        "pool_acquire_wait_time_last_ns": origin.pool_acquire_wait_time_last_ns,
+        "last_activity_at_ns": origin.last_activity_at_ns,
+    }

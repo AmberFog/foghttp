@@ -183,5 +183,8 @@ async def test_dump_transport_state(http_server: str) -> None:
         "pool_acquire_wait_time_max_ns",
         "pool_acquire_wait_time_total_ns",
         "pool_acquire_waited",
+        "origins",
     }
     assert state["pending_requests"] == 0
+    assert state["origins"][http_server]["active_requests"] == 0
+    assert state["origins"][http_server]["last_activity_at_ns"] > 0

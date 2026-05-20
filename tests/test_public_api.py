@@ -12,6 +12,8 @@ def test_top_level_exports() -> None:
     assert foghttp.ResponseBodyBudgetExceededError is not None
     assert foghttp.ResponseBodyTooLargeError is not None
     assert foghttp.TLSConfig is not None
+    assert foghttp.TransportState is not None
+    assert foghttp.OriginPressureState is not None
     assert foghttp.URL is not None
 
 

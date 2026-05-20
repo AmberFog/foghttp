@@ -67,6 +67,7 @@ assert client.dump_transport_state() == {
     "pool_acquire_wait_time_last_ns": 0,
     "buffered_response_bytes": 0,
     "buffered_response_budget_rejections": 0,
+    "origins": {},
 }
 
 client.close()
@@ -238,13 +239,24 @@ connection counters.
 - `pool_acquire_wait_time_total_ns`, `pool_acquire_wait_time_max_ns`, and
   `pool_acquire_wait_time_last_ns` describe completed acquire wait intervals in
   nanoseconds
+- per-origin `last_activity_at_ns` is a monotonic timestamp in nanoseconds
+  relative to the current transport metrics lifetime; it is not a Unix epoch
+  timestamp
 - `buffered_response_bytes` means bytes currently reserved for in-flight
   buffered response bodies before they are returned to Python
 - `buffered_response_budget_rejections` means requests rejected by
   `Limits.max_buffered_response_bytes`
 
 Use `dump_transport_state()` for a small debug snapshot when active, pending,
-acquire pressure, and buffered response budget state are needed.
+acquire pressure, per-origin pressure, and buffered response budget state are
+needed. The `origins` entry is keyed by normalized origin (`scheme://host`, with
+`:port` only for non-default ports) and never includes path, query, userinfo,
+headers, or body data.
+
+```python
+state = client.dump_transport_state()
+api_pressure = state["origins"].get("https://api.example.com")
+```
 
 ## Current Boundaries
 
