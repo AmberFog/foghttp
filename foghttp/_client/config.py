@@ -21,7 +21,6 @@ class ClientConfig:
     trust_env: bool
     tls: TLSConfig | None
     runtime_workers: int | None
-    observability: bool
     request_defaults: RequestBuildDefaults
 
     @classmethod
@@ -40,7 +39,6 @@ class ClientConfig:
         trust_env: bool,
         tls: TLSConfig | None,
         runtime_workers: int | None,
-        observability: bool,
     ) -> "ClientConfig":
         validate_client_options(
             cookies=cookies,
@@ -57,7 +55,6 @@ class ClientConfig:
             trust_env=trust_env,
             tls=tls,
             runtime_workers=runtime_workers,
-            observability=observability,
             request_defaults=(
                 DEFAULT_REQUEST_BUILD_DEFAULTS
                 if base_url is None and headers is None and params is None
