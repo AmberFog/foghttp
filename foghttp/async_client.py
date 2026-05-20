@@ -37,7 +37,6 @@ class AsyncClient(ClientCore):
         trust_env: bool = False,
         tls: TLSConfig | None = None,
         runtime_workers: int | None = None,
-        observability: bool = True,
     ) -> None:
         super().__init__(
             config=ClientConfig.from_options(
@@ -53,7 +52,6 @@ class AsyncClient(ClientCore):
                 trust_env=trust_env,
                 tls=tls,
                 runtime_workers=runtime_workers,
-                observability=observability,
             ),
         )
 
