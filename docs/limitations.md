@@ -36,7 +36,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - async request cancellation that aborts the in-flight Rust request
 - global active request limit, per-origin active request limit, pending acquire
   limit, and basic request stats
-- default `max_response_body_size` limit for buffered response memory safety
+- default per-response and aggregate buffered response memory limits
 - explicit `close()`/`aclose()` lifecycle for Rust runtime and pool resources;
   sync `close()` waits for in-flight sync requests, while async `aclose()`
   cancels in-flight async requests; see [Client lifecycle](./lifecycle.md)
@@ -73,7 +73,7 @@ Use FogHTTP today when:
 
 - you control the API or know its behavior well
 - responses are small enough to buffer in memory or bounded by
-  `max_response_body_size`
+  `max_response_body_size` and `max_buffered_response_bytes`
 - requests are JSON-heavy or use small form-urlencoded bodies
 - redirects are simple and do not require cookie jar or auth helper integration
 - sync and async clients with explicit lifecycle are enough

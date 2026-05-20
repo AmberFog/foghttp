@@ -21,6 +21,7 @@ pub struct NumericClientOptions {
     pub max_idle_connections_per_host: usize,
     pub max_pending_requests: usize,
     pub max_response_body_size: Option<usize>,
+    pub max_buffered_response_bytes: Option<usize>,
     pub idle_timeout: f64,
     pub connect_timeout: f64,
 }
@@ -43,6 +44,11 @@ pub fn validate_numeric_client_options(options: NumericClientOptions) -> PyResul
     validate_optional_usize_option(
         "Limits.max_response_body_size",
         options.max_response_body_size,
+    )
+    .map_err(PyValueError::new_err)?;
+    validate_optional_usize_option(
+        "Limits.max_buffered_response_bytes",
+        options.max_buffered_response_bytes,
     )
     .map_err(PyValueError::new_err)?;
     duration_from_secs("Limits.idle_timeout", options.idle_timeout)

@@ -9,6 +9,7 @@ mod transport;
 use crate::core::client::{build_client, ClientOptions, HyperClient};
 use crate::core::headers::HeaderPairs;
 use crate::core::metrics::Metrics;
+use crate::core::response::BufferedBodyBudget;
 use crate::errors::FogHttpError;
 use crate::py::client::acquire::AcquireGate;
 use crate::py::client::async_requests::{
@@ -35,6 +36,7 @@ pub struct RawClient {
     metrics: Arc<Metrics>,
     active_async_requests: AsyncRequestRegistry,
     max_response_body_size: Option<usize>,
+    buffered_body_budget: BufferedBodyBudget,
     follow_redirects: bool,
     max_redirects: usize,
 }
@@ -49,6 +51,7 @@ impl RawClient {
         max_idle_connections_per_host: usize,
         max_pending_requests: usize,
         max_response_body_size: Option<usize>,
+        max_buffered_response_bytes: Option<usize>,
         idle_timeout: f64,
         keepalive: bool,
         connect_timeout: f64,
@@ -65,6 +68,7 @@ impl RawClient {
             max_idle_connections_per_host,
             max_pending_requests,
             max_response_body_size,
+            max_buffered_response_bytes,
             idle_timeout,
             connect_timeout,
         })?;
@@ -79,6 +83,8 @@ impl RawClient {
         let client = build_client(&client_options).map_err(FogHttpError::new_err)?;
         let runtime = build_runtime(max_active_requests, runtime_workers)?;
         let metrics = Arc::new(Metrics::default());
+        let buffered_body_budget =
+            BufferedBodyBudget::new(max_buffered_response_bytes, Arc::clone(&metrics));
         let acquire_gate = AcquireGate::new(
             max_active_requests,
             max_active_requests_per_origin,
@@ -93,6 +99,7 @@ impl RawClient {
             metrics,
             active_async_requests: AsyncRequestRegistry::default(),
             max_response_body_size,
+            buffered_body_budget,
             follow_redirects,
             max_redirects,
         })
@@ -115,6 +122,7 @@ impl RawClient {
         let runtime = self.runtime()?;
         let acquire_gate = self.acquire_gate.clone();
         let max_response_body_size = self.max_response_body_size;
+        let buffered_body_budget = self.buffered_body_budget.clone();
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         self.metrics.request_started();
@@ -132,6 +140,7 @@ impl RawClient {
                         body,
                         total_timeout,
                         max_response_body_size,
+                        buffered_body_budget,
                         follow_redirects,
                         max_redirects,
                     },
@@ -160,6 +169,7 @@ impl RawClient {
         let client = self.client()?.clone();
         let runtime = self.runtime()?;
         let max_response_body_size = self.max_response_body_size;
+        let buffered_body_budget = self.buffered_body_budget.clone();
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         spawn_async_request(
@@ -178,6 +188,7 @@ impl RawClient {
                     body,
                     total_timeout,
                     max_response_body_size,
+                    buffered_body_budget,
                     follow_redirects,
                     max_redirects,
                 },

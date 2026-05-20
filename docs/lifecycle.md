@@ -57,6 +57,8 @@ assert client.stats() == foghttp.TransportStats()
 assert client.dump_transport_state() == {
     "active_requests": 0,
     "pending_requests": 0,
+    "buffered_response_bytes": 0,
+    "buffered_response_budget_rejections": 0,
 }
 
 client.close()
@@ -219,9 +221,13 @@ connection counters.
 - `active_requests` means requests that acquired an active transport slot
 - `pending_requests` means requests waiting for an active transport slot
 - `pool_acquire_timeouts` means requests that timed out while waiting for a slot
+- `buffered_response_bytes` means bytes currently reserved for in-flight
+  buffered response bodies before they are returned to Python
+- `buffered_response_budget_rejections` means requests rejected by
+  `Limits.max_buffered_response_bytes`
 
-Use `dump_transport_state()` for a small debug snapshot when only active and
-pending request counts are needed.
+Use `dump_transport_state()` for a small debug snapshot when active, pending,
+and buffered response budget state are needed.
 
 ## Current Boundaries
 

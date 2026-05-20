@@ -22,15 +22,18 @@ def response_from_raw(
     raw: _foghttp.RawResponse,
     started: float,
 ) -> Response:
-    elapsed = raw.elapsed if raw.elapsed >= 0 else time.perf_counter() - started
-    history = tuple(response_from_raw(raw=item, started=started) for item in raw.history)
-    return Response(
-        status_code=raw.status_code,
-        headers=Headers(raw.headers),
-        content=raw.content,
-        url=raw.url,
-        request=request_info_from_raw(raw.request),
-        http_version=raw.http_version,
-        elapsed=elapsed,
-        history=history,
-    )
+    try:
+        elapsed = raw.elapsed if raw.elapsed >= 0 else time.perf_counter() - started
+        history = tuple(response_from_raw(raw=item, started=started) for item in raw.history)
+        return Response(
+            status_code=raw.status_code,
+            headers=Headers(raw.headers),
+            content=raw.content,
+            url=raw.url,
+            request=request_info_from_raw(raw.request),
+            http_version=raw.http_version,
+            elapsed=elapsed,
+            history=history,
+        )
+    finally:
+        raw.release_buffered_body_reservations()

@@ -76,6 +76,8 @@ class ClientCore:
         return {
             "active_requests": stats.active_requests,
             "pending_requests": stats.pending_requests,
+            "buffered_response_bytes": stats.buffered_response_bytes,
+            "buffered_response_budget_rejections": stats.buffered_response_budget_rejections,
         }
 
     def _ensure_open(self) -> None:

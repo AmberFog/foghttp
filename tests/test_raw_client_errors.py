@@ -4,7 +4,12 @@ import pytest
 from foghttp import _foghttp
 from foghttp._client.constants import DEFAULT_MAX_REDIRECTS
 from foghttp._client.raw import create_raw_client, send_raw_request, send_raw_request_async
-from foghttp.errors import PoolTimeout, ResponseBodyTooLargeError, TimeoutError
+from foghttp.errors import (
+    PoolTimeout,
+    ResponseBodyBudgetExceededError,
+    ResponseBodyTooLargeError,
+    TimeoutError,
+)
 from foghttp.limits import Limits
 from foghttp.methods import GET
 from foghttp.timeouts import Timeouts
@@ -38,6 +43,16 @@ class BodyTooLargeRawClient:
     async def request_async(self, *_args: object) -> object:
         msg = "response body exceeded max_response_body_size"
         raise _foghttp.FogHttpResponseBodyTooLargeError(msg)
+
+
+class BodyBudgetExceededRawClient:
+    def request(self, *_args: object) -> object:
+        msg = "buffered response bodies exceeded max_buffered_response_bytes"
+        raise _foghttp.FogHttpResponseBodyBudgetExceededError(msg)
+
+    async def request_async(self, *_args: object) -> object:
+        msg = "buffered response bodies exceeded max_buffered_response_bytes"
+        raise _foghttp.FogHttpResponseBodyBudgetExceededError(msg)
 
 
 def test_raw_client_constructor_error_maps_to_value_error(
@@ -125,6 +140,30 @@ async def test_async_raw_body_limit_error_maps_to_public_response_error(faker: F
     with pytest.raises(ResponseBodyTooLargeError, match="max_response_body_size"):
         await send_raw_request_async(
             raw_client=BodyTooLargeRawClient(),
+            method=GET,
+            url=faker.url(),
+            headers=[],
+            body=None,
+            timeouts=Timeouts(),
+        )
+
+
+def test_sync_raw_body_budget_error_maps_to_public_response_error(faker: Faker) -> None:
+    with pytest.raises(ResponseBodyBudgetExceededError, match="max_buffered_response_bytes"):
+        send_raw_request(
+            raw_client=BodyBudgetExceededRawClient(),
+            method=GET,
+            url=faker.url(),
+            headers=[],
+            body=None,
+            timeouts=Timeouts(),
+        )
+
+
+async def test_async_raw_body_budget_error_maps_to_public_response_error(faker: Faker) -> None:
+    with pytest.raises(ResponseBodyBudgetExceededError, match="max_buffered_response_bytes"):
+        await send_raw_request_async(
+            raw_client=BodyBudgetExceededRawClient(),
             method=GET,
             url=faker.url(),
             headers=[],

@@ -15,4 +15,6 @@ def stats_from_raw(
         total_requests=raw.total_requests,
         failed_requests=raw.failed_requests,
         pool_acquire_timeouts=raw.pool_acquire_timeouts,
+        buffered_response_bytes=raw.buffered_response_bytes,
+        buffered_response_budget_rejections=raw.buffered_response_budget_rejections,
     )

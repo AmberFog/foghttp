@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 import foghttp
@@ -5,6 +7,7 @@ from foghttp.status_codes.success import OK
 from tests.http_body_scenarios import (
     INCOMPLETE_CHUNKED_BODY_PATH,
     SLOW_BODY_PATH,
+    SLOW_UNKNOWN_SIZE_BYTES_PATH,
     TOO_LARGE_SIZE_HINT_PATH,
 )
 
@@ -12,7 +15,9 @@ from .constants import (
     BODY_BELOW_LIMIT_SIZE,
     BODY_LIMIT,
     BODY_TOO_LARGE_SIZE,
+    CONCURRENT_RESPONSE_COUNT,
     EMPTY_BODY_SIZE,
+    EXPECTED_BODY_BUDGET_REJECTIONS,
     EXPECTED_TOTAL_REQUESTS_AFTER_RETRY,
     UNKNOWN_SIZE_BYTES_PATH,
 )
@@ -143,3 +148,69 @@ async def test_async_buffered_response_body_limit_error_without_known_size_relea
     assert stats_after_error.failed_requests == 1
     assert stats_after_error.active_requests == 0
     assert stats_after_error.pending_requests == 0
+
+
+async def test_async_aggregate_buffered_response_budget_limits_concurrent_bodies(
+    http_server: str,
+) -> None:
+    limits = foghttp.Limits(
+        max_response_body_size=BODY_LIMIT,
+        max_buffered_response_bytes=BODY_LIMIT,
+    )
+    url = f"{http_server}{SLOW_UNKNOWN_SIZE_BYTES_PATH}/{BODY_LIMIT}"
+
+    async with foghttp.AsyncClient(limits=limits) as client:
+        results = await asyncio.gather(
+            *(client.get(url) for _ in range(CONCURRENT_RESPONSE_COUNT)),
+            return_exceptions=True,
+        )
+        stats = client.stats()
+
+    responses = [result for result in results if isinstance(result, foghttp.Response)]
+    errors = [result for result in results if isinstance(result, foghttp.ResponseBodyBudgetExceededError)]
+    unexpected_results = [
+        result
+        for result in results
+        if not isinstance(result, (foghttp.Response, foghttp.ResponseBodyBudgetExceededError))
+    ]
+
+    assert unexpected_results == []
+    assert len(responses) == 1
+    assert responses[0].status_code == OK
+    assert responses[0].content == b"x" * BODY_LIMIT
+    assert len(errors) == EXPECTED_BODY_BUDGET_REJECTIONS
+    assert stats.total_requests == CONCURRENT_RESPONSE_COUNT
+    assert stats.failed_requests == EXPECTED_BODY_BUDGET_REJECTIONS
+    assert stats.active_requests == 0
+    assert stats.pending_requests == 0
+    assert stats.buffered_response_bytes == 0
+    assert stats.buffered_response_budget_rejections == EXPECTED_BODY_BUDGET_REJECTIONS
+
+
+async def test_async_aggregate_buffered_response_budget_releases_between_sequential_bodies(
+    http_server: str,
+) -> None:
+    limits = foghttp.Limits(
+        max_response_body_size=BODY_LIMIT,
+        max_buffered_response_bytes=BODY_LIMIT,
+    )
+    url = f"{http_server}/bytes/{BODY_LIMIT}"
+
+    async with foghttp.AsyncClient(limits=limits) as client:
+        first_response = await client.get(url)
+        stats_after_first_response = client.stats()
+        second_response = await client.get(url)
+        stats = client.stats()
+
+    assert first_response.status_code == OK
+    assert first_response.content == b"x" * BODY_LIMIT
+    assert stats_after_first_response.total_requests == 1
+    assert stats_after_first_response.buffered_response_bytes == 0
+    assert second_response.status_code == OK
+    assert second_response.content == b"x" * BODY_LIMIT
+    assert stats.total_requests == EXPECTED_TOTAL_REQUESTS_AFTER_RETRY
+    assert stats.failed_requests == 0
+    assert stats.active_requests == 0
+    assert stats.pending_requests == 0
+    assert stats.buffered_response_bytes == 0
+    assert stats.buffered_response_budget_rejections == 0

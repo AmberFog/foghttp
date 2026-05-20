@@ -1,14 +1,24 @@
+use super::budget::{BufferedBodyBudget, BufferedBodyReservation};
 use crate::errors::{FogHttpError, FogHttpResponseBodyTooLargeError};
 use crate::messages::response_body_too_large;
 use http_body_util::BodyExt;
 use hyper::body::{Body, Incoming};
 use pyo3::prelude::*;
 
+pub struct CollectedBody {
+    pub content: Vec<u8>,
+    pub reservation: BufferedBodyReservation,
+}
+
 pub async fn collect_body(
     mut body: Incoming,
     max_response_body_size: Option<usize>,
-) -> PyResult<Vec<u8>> {
-    let mut content = Vec::new();
+    budget: BufferedBodyBudget,
+) -> PyResult<CollectedBody> {
+    let mut collected = CollectedBody {
+        content: Vec::new(),
+        reservation: budget.start_response(),
+    };
     enforce_response_size_hint(&body, max_response_body_size)?;
 
     while let Some(frame) = body.frame().await {
@@ -17,11 +27,12 @@ pub async fn collect_body(
             continue;
         };
 
-        enforce_response_body_limit(content.len(), data.len(), max_response_body_size)?;
-        content.extend_from_slice(&data);
+        enforce_response_body_limit(collected.content.len(), data.len(), max_response_body_size)?;
+        collected.reservation.reserve_chunk(data.len())?;
+        collected.content.extend_from_slice(&data);
     }
 
-    Ok(content)
+    Ok(collected)
 }
 
 fn enforce_response_size_hint(

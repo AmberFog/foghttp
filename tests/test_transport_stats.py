@@ -11,6 +11,8 @@ def test_stats_from_raw_maps_unique_transport_stat_fields() -> None:
         total_requests=3,
         failed_requests=4,
         pool_acquire_timeouts=5,
+        buffered_response_bytes=6,
+        buffered_response_budget_rejections=7,
     )
 
     stats = stats_from_raw(raw=raw_stats)
@@ -21,4 +23,6 @@ def test_stats_from_raw_maps_unique_transport_stat_fields() -> None:
         total_requests=3,
         failed_requests=4,
         pool_acquire_timeouts=5,
+        buffered_response_bytes=6,
+        buffered_response_budget_rejections=7,
     )

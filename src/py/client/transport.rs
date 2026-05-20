@@ -2,7 +2,7 @@ use crate::core::client::HyperClient;
 use crate::core::headers::{response_headers, HeaderPairs};
 use crate::core::numeric;
 use crate::core::request::{build_request, RequestParts};
-use crate::core::response::collect_body;
+use crate::core::response::{collect_body, BufferedBodyBudget};
 use crate::core::url::HttpUrl;
 use crate::errors::{FogHttpError, FogHttpTimeoutError};
 use crate::messages::{redirect_limit_exceeded, REQUEST_TOTAL_TIMEOUT};
@@ -10,7 +10,7 @@ use crate::py::client::acquire::AcquireGate;
 use crate::py::client::redirects::{
     redirect_decision, redirect_headers, RedirectAction, RedirectDecision, RedirectHeaderPolicy,
 };
-use crate::py::response::{RawRequestInfo, RawResponse};
+use crate::py::response::{RawRequestInfo, RawResponse, RawResponseParts};
 use hyper::body::Incoming;
 use hyper::Response;
 use pyo3::exceptions::PyValueError;
@@ -24,6 +24,7 @@ pub struct TransportRequest {
     pub body: Option<Vec<u8>>,
     pub total_timeout: f64,
     pub max_response_body_size: Option<usize>,
+    pub buffered_body_budget: BufferedBodyBudget,
     pub follow_redirects: bool,
     pub max_redirects: usize,
 }
@@ -64,6 +65,7 @@ pub async fn send_request(
                 started,
                 state.total_timeout,
                 state.max_response_body_size,
+                state.buffered_body_budget.clone(),
             )
             .await?
         };
@@ -102,6 +104,7 @@ struct RequestState {
     body: Option<Vec<u8>>,
     total_timeout: f64,
     max_response_body_size: Option<usize>,
+    buffered_body_budget: BufferedBodyBudget,
     follow_redirects: bool,
     max_redirects: usize,
 }
@@ -158,6 +161,7 @@ impl RequestState {
             body: parts.body,
             total_timeout: parts.total_timeout,
             max_response_body_size: parts.max_response_body_size,
+            buffered_body_budget: parts.buffered_body_budget,
             follow_redirects: parts.follow_redirects,
             max_redirects: parts.max_redirects,
         })
@@ -170,28 +174,34 @@ async fn raw_response(
     started: Instant,
     total_timeout: f64,
     max_response_body_size: Option<usize>,
+    buffered_body_budget: BufferedBodyBudget,
 ) -> PyResult<RawResponse> {
     let status_code = response.status().as_u16();
     let http_version = format!("{:?}", response.version());
     let headers = response_headers(response.headers());
-    let content = tokio::time::timeout(
+    let collected = tokio::time::timeout(
         remaining_duration(total_timeout, started)?,
-        collect_body(response.into_body(), max_response_body_size),
+        collect_body(
+            response.into_body(),
+            max_response_body_size,
+            buffered_body_budget,
+        ),
     )
     .await
     .map_err(|_| FogHttpTimeoutError::new_err(REQUEST_TOTAL_TIMEOUT))??;
     let url = request.url.clone();
 
-    Ok(RawResponse {
+    Ok(RawResponse::from_parts(RawResponseParts {
         status_code,
         headers,
-        content,
+        content: collected.content,
         url,
         request,
         http_version,
         elapsed: started.elapsed().as_secs_f64(),
         history: Vec::new(),
-    })
+        body_reservation: Some(collected.reservation),
+    }))
 }
 
 fn remaining_duration(total_timeout: f64, started: Instant) -> PyResult<Duration> {

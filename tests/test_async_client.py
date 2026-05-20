@@ -170,5 +170,10 @@ async def test_dump_transport_state(http_server: str) -> None:
         await client.get(http_server)
         state = client.dump_transport_state()
 
-    assert state.keys() == {"active_requests", "pending_requests"}
+    assert state.keys() == {
+        "active_requests",
+        "buffered_response_budget_rejections",
+        "buffered_response_bytes",
+        "pending_requests",
+    }
     assert state["pending_requests"] == 0

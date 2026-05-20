@@ -21,6 +21,14 @@ def test_limits_reject_negative_max_response_body_size() -> None:
         foghttp.Limits(max_response_body_size=-1)
 
 
+def test_limits_reject_negative_max_buffered_response_bytes() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"Limits\.max_buffered_response_bytes must be an integer between 0 and",
+    ):
+        foghttp.Limits(max_buffered_response_bytes=-1)
+
+
 def test_client_rejects_cookies_until_supported() -> None:
     with pytest.raises(NotImplementedError, match="cookies are planned after the MVP"):
         foghttp.Client(cookies=True)

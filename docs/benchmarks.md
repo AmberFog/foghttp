@@ -238,7 +238,7 @@ What needs attention:
   stay cheap under pressure.
 - The request suite max RSS moved from `267.4 MB` to `356.1 MB`. This is a
   process-level maximum from a shuffled local benchmark, not proof of a leak,
-  but it is a good reason to add dedicated memory/soak measurements and an
+  but it is a good reason to keep dedicated memory/soak measurements around the
   aggregate buffered memory budget.
 - FogHTTP still uses more threads than pure-Python async clients because each
   active Rust transport owns Tokio runtime resources. That is an intentional
@@ -248,7 +248,6 @@ Follow-up work:
 
 - Profile and reduce short-lived client construction overhead without weakening
   the request-builder contract.
-- Add aggregate buffered memory budget for concurrent responses.
 - Add acquire latency and queue pressure metrics.
 - Add per-origin pressure diagnostics.
 - Add fault-injection tests around cancellation storms, partial reads, abrupt
