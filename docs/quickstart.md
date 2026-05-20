@@ -422,6 +422,8 @@ with foghttp.Client() as client:
 
 `response.headers` and `response.request.headers` are `foghttp.Headers`
 objects. Header lookup is case-insensitive, and repeated values are preserved.
+Response header bytes, including HTTP obs-text values, are exposed as Latin-1
+strings so visible headers are not silently dropped.
 
 ```python
 cookies = response.headers.get_list("set-cookie")

@@ -29,6 +29,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - lightweight `response.request`
 - prepared `Request` objects with `build_request()` and `send()`
 - case-insensitive `Headers` with repeated values
+- response header bytes exposed as Latin-1 strings, including obs-text values
 - normalized `URL` with origin comparison and relative joins
 - redirect history
 - GET/HEAD/POST redirects

@@ -89,6 +89,15 @@ def test_sync_response_preserves_repeated_headers(sync_http_server: str) -> None
     assert response.headers.get_list("x-trace") == ["one", "two"]
 
 
+def test_sync_response_preserves_obs_text_header_values(sync_http_server: str) -> None:
+    with foghttp.Client() as client:
+        response = client.get(sync_http_server + "/headers/obs-text")
+
+    assert response.status_code == OK
+    assert response.headers["x-obs-text"] == "value-\xe9"
+    assert response.headers.get_list("x-repeat") == ["ascii", "repeat-\xe9"]
+
+
 async def test_async_response_preserves_repeated_headers(http_server: str) -> None:
     async with foghttp.AsyncClient() as client:
         response = await client.get(http_server + "/headers/repeated")
@@ -97,6 +106,15 @@ async def test_async_response_preserves_repeated_headers(http_server: str) -> No
     assert response.headers["set-cookie"] == "second=2"
     assert response.headers.get_list("set-cookie") == ["first=1", "second=2"]
     assert response.headers.get_list("x-trace") == ["one", "two"]
+
+
+async def test_async_response_preserves_obs_text_header_values(http_server: str) -> None:
+    async with foghttp.AsyncClient() as client:
+        response = await client.get(http_server + "/headers/obs-text")
+
+    assert response.status_code == OK
+    assert response.headers["x-obs-text"] == "value-\xe9"
+    assert response.headers.get_list("x-repeat") == ["ascii", "repeat-\xe9"]
 
 
 def test_sync_request_sends_repeated_headers(sync_http_server: str, faker: Faker) -> None:
