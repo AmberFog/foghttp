@@ -6,9 +6,9 @@ import foghttp
 from foghttp.status_codes.success import OK
 from tests.client_timeouts.helpers import assert_timeout_diagnostic
 from tests.http_body_scenarios import (
+    DELAYED_EOF_UNKNOWN_SIZE_BYTES_PATH,
     INCOMPLETE_CHUNKED_BODY_PATH,
     SLOW_BODY_PATH,
-    SLOW_UNKNOWN_SIZE_BYTES_PATH,
     TOO_LARGE_SIZE_HINT_PATH,
 )
 
@@ -170,7 +170,7 @@ def test_sync_aggregate_buffered_response_budget_limits_concurrent_bodies(
         max_response_body_size=BODY_LIMIT,
         max_buffered_response_bytes=BODY_LIMIT,
     )
-    url = f"{sync_http_server}{SLOW_UNKNOWN_SIZE_BYTES_PATH}/{BODY_LIMIT}"
+    url = f"{sync_http_server}{DELAYED_EOF_UNKNOWN_SIZE_BYTES_PATH}/{BODY_LIMIT}"
 
     with foghttp.Client(limits=limits) as client:
         with ThreadPoolExecutor(max_workers=CONCURRENT_RESPONSE_COUNT) as executor:

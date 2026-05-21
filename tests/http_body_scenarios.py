@@ -1,7 +1,7 @@
 __all__ = (
+    "DELAYED_EOF_UNKNOWN_SIZE_BYTES_PATH",
     "INCOMPLETE_CHUNKED_BODY_PATH",
     "SLOW_BODY_PATH",
-    "SLOW_UNKNOWN_SIZE_BYTES_PATH",
     "TOO_LARGE_SIZE_HINT_PATH",
     "raw_too_large_size_hint_response",
     "write_async_body_safety_response",
@@ -18,11 +18,11 @@ from foghttp.status_codes.success import OK
 
 
 BODY_RESPONSE_DELAY = 0.25
+DELAYED_EOF_UNKNOWN_SIZE_BYTES_PATH = "/delayed-eof-unknown-size-bytes"
 INCOMPLETE_CHUNKED_BODY_PATH = "/incomplete-chunked-body"
 SLOW_BODY_PATH = "/slow-body"
-SLOW_UNKNOWN_SIZE_BYTES_PATH = "/slow-unknown-size-bytes"
 TOO_LARGE_SIZE_HINT_PATH = "/too-large-size-hint"
-SLOW_UNKNOWN_SIZE_BYTES_PATH_PARTS = 2
+DELAYED_EOF_UNKNOWN_SIZE_BYTES_PATH_PARTS = 2
 
 
 def raw_too_large_size_hint_response(path: str) -> bytes | None:
@@ -73,7 +73,7 @@ async def write_async_body_safety_response(
         await asyncio.sleep(BODY_RESPONSE_DELAY)
         return True
 
-    response_size = _slow_unknown_size_bytes_response_size(path)
+    response_size = _delayed_eof_unknown_size_bytes_response_size(path)
     if response_size is not None:
         writer.write(
             _raw_response(
@@ -85,6 +85,8 @@ async def write_async_body_safety_response(
             ),
         )
         await writer.drain()
+        # Without content-length the body remains incomplete until EOF; delaying
+        # close keeps concurrent buffered-body budget tests deterministic.
         await asyncio.sleep(BODY_RESPONSE_DELAY)
         return True
 
@@ -99,15 +101,19 @@ def write_sync_body_safety_response(
         _write_sync_too_large_size_hint(handler, path)
         or _write_sync_slow_body(handler, path)
         or _write_sync_incomplete_chunked_body(handler, path)
-        or _write_sync_slow_unknown_size_bytes(handler, path)
+        or _write_sync_delayed_eof_unknown_size_bytes(handler, path)
     )
 
 
-def _slow_unknown_size_bytes_response_size(path: str) -> int | None:
+def _delayed_eof_unknown_size_bytes_response_size(path: str) -> int | None:
     parts = path.strip("/").split("/")
-    if len(parts) == SLOW_UNKNOWN_SIZE_BYTES_PATH_PARTS and parts[0] == SLOW_UNKNOWN_SIZE_BYTES_PATH.strip("/"):
-        return int(parts[1])
-    return None
+    if len(parts) != DELAYED_EOF_UNKNOWN_SIZE_BYTES_PATH_PARTS:
+        return None
+
+    route, response_size = parts
+    if route != DELAYED_EOF_UNKNOWN_SIZE_BYTES_PATH.strip("/"):
+        return None
+    return int(response_size)
 
 
 def _raw_response(headers: list[tuple[str, str]], content: bytes = b"") -> bytes:
@@ -166,11 +172,11 @@ def _write_sync_incomplete_chunked_body(
     return True
 
 
-def _write_sync_slow_unknown_size_bytes(
+def _write_sync_delayed_eof_unknown_size_bytes(
     handler: BaseHTTPRequestHandler,
     path: str,
 ) -> bool:
-    response_size = _slow_unknown_size_bytes_response_size(path)
+    response_size = _delayed_eof_unknown_size_bytes_response_size(path)
     if response_size is None:
         return False
 
@@ -182,5 +188,7 @@ def _write_sync_slow_unknown_size_bytes(
     with suppress(OSError):
         handler.wfile.write(b"x" * response_size)
         handler.wfile.flush()
+    # Without content-length the body remains incomplete until EOF; delaying
+    # close keeps concurrent buffered-body budget tests deterministic.
     time.sleep(BODY_RESPONSE_DELAY)
     return True
