@@ -150,7 +150,7 @@ def test_close_is_idempotent() -> None:
 def test_unclosed_client_warns() -> None:
     client = foghttp.Client()
 
-    with pytest.warns(foghttp.UnclosedClientError, match="was not closed"):
+    with pytest.warns(foghttp.UnclosedClientError, match="FogHTTP client was not closed"):
         del client
         gc.collect()
 
