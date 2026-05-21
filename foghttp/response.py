@@ -6,6 +6,7 @@ from typing import Any
 import orjson
 
 from ._redaction import redact_url
+from ._response.encoding import response_encoding
 from .errors import HTTPStatusError
 from .headers import Headers
 from .messages import http_status_error
@@ -66,12 +67,7 @@ class Response:
 
     @property
     def encoding(self) -> str:
-        content_type = self.headers.get("content-type", "")
-        for part in content_type.split(";"):
-            key, _, value = part.strip().partition("=")
-            if key.lower() == "charset" and value:
-                return value.strip("\"'")
-        return "utf-8"
+        return response_encoding(self.headers, self.content)
 
     def json(self) -> Any:
         return orjson.loads(self.content)
