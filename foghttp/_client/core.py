@@ -1,12 +1,14 @@
 __all__ = ("ClientCore",)
 
 import threading
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 import warnings
 
 from ..errors import ClientClosedError, UnclosedClientError
 from ..headers import HeaderSource
+from ..limits import Limits
 from ..messages import CLIENT_CLOSED, UNCLOSED_CLIENT
+from ..pool_diagnostics import OriginPoolDiagnostics, PoolBlockingReason, PoolDiagnostics
 from ..request import Request
 from ..timeouts import Timeouts
 from ..transport_state import OriginPressureState, TransportState
@@ -107,6 +109,17 @@ class ClientCore:
             "origins": {origin.origin: _origin_pressure_state(origin) for origin in raw_origins},
         }
 
+    def dump_pool_diagnostics(self) -> PoolDiagnostics:
+        self._ensure_open()
+        with self._client_lock:
+            self._ensure_open()
+            raw_client = self._client
+            raw_diagnostics = None if raw_client is None else raw_client.pool_diagnostics()
+
+        if raw_diagnostics is None:
+            return _empty_pool_diagnostics(self._config.limits)
+        return _pool_diagnostics_state(raw_diagnostics)
+
     def _ensure_open(self) -> None:
         if self._closed:
             raise ClientClosedError(CLIENT_CLOSED)
@@ -156,3 +169,48 @@ def _origin_pressure_state(origin: "_foghttp.RawOriginPressure") -> OriginPressu
         "pool_acquire_wait_time_last_ns": origin.pool_acquire_wait_time_last_ns,
         "last_activity_at_ns": origin.last_activity_at_ns,
     }
+
+
+def _empty_pool_diagnostics(limits: Limits) -> PoolDiagnostics:
+    return {
+        "active_requests": 0,
+        "pending_requests": 0,
+        "pool_acquire_timeouts": 0,
+        "max_active_requests": limits.max_active_requests,
+        "max_active_requests_per_origin": limits.max_active_requests_per_origin,
+        "max_pending_requests": limits.max_pending_requests,
+        "pending_queue_full": limits.max_pending_requests == 0,
+        "oldest_pending_request_wait_ns": 0,
+        "blocked_by": "none",
+        "origins": {},
+    }
+
+
+def _pool_diagnostics_state(raw: "_foghttp.RawPoolDiagnostics") -> PoolDiagnostics:
+    return {
+        "active_requests": raw.active_requests,
+        "pending_requests": raw.pending_requests,
+        "pool_acquire_timeouts": raw.pool_acquire_timeouts,
+        "max_active_requests": raw.max_active_requests,
+        "max_active_requests_per_origin": raw.max_active_requests_per_origin,
+        "max_pending_requests": raw.max_pending_requests,
+        "pending_queue_full": raw.pending_queue_full,
+        "oldest_pending_request_wait_ns": raw.oldest_pending_request_wait_ns,
+        "blocked_by": _pool_blocking_reason(raw.blocked_by),
+        "origins": {origin.origin: _origin_pool_diagnostics(origin) for origin in raw.origins},
+    }
+
+
+def _origin_pool_diagnostics(raw: "_foghttp.RawOriginPoolDiagnostics") -> OriginPoolDiagnostics:
+    return {
+        "active_requests": raw.active_requests,
+        "pending_requests": raw.pending_requests,
+        "pool_acquire_timeouts": raw.pool_acquire_timeouts,
+        "oldest_pending_request_wait_ns": raw.oldest_pending_request_wait_ns,
+        "blocked_by": _pool_blocking_reason(raw.blocked_by),
+        "last_activity_at_ns": raw.last_activity_at_ns,
+    }
+
+
+def _pool_blocking_reason(value: str) -> PoolBlockingReason:
+    return cast("PoolBlockingReason", value)

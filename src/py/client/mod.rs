@@ -1,4 +1,4 @@
-mod acquire;
+pub(crate) mod acquire;
 mod async_requests;
 mod future;
 mod options;
@@ -24,6 +24,7 @@ use crate::py::client::runtime::build_runtime;
 use crate::py::client::transport::{send_request, TransportRequest};
 use crate::py::response::RawResponse;
 use crate::py::stats::{RawOriginPressure, RawStats};
+use crate::py::RawPoolDiagnostics;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 use std::sync::Arc;
@@ -211,6 +212,10 @@ impl RawClient {
             .into_iter()
             .map(Into::into)
             .collect()
+    }
+
+    fn pool_diagnostics(&self) -> RawPoolDiagnostics {
+        self.acquire_gate.diagnostics().into()
     }
 
     fn close(&mut self) {

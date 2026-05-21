@@ -37,7 +37,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
   custom-only CA trust through `TLSConfig(trust_webpki_roots=False)`
 - async request cancellation that aborts the in-flight Rust request
 - global active request limit, per-origin active request limit, pending acquire
-  limit, and basic request stats
+  limit, request stats, and stuck request pool diagnostics
 - default per-response and aggregate buffered response memory limits
 - explicit `close()`/`aclose()` lifecycle for Rust runtime and pool resources;
   sync `close()` waits for in-flight sync requests, while async `aclose()`
@@ -69,7 +69,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | true active connection-level limits | `max_active_requests_per_origin` limits buffered request slots; physical TCP connection-level accounting is not exposed yet |
 | per-request connect timeout changes | `Timeouts.connect` configures the Rust connector from client-level settings when transport state is created; per-request `timeout.connect` does not reconfigure the connector |
 | separate read/write timeout semantics | `Timeouts.read` and `Timeouts.write` exist, but separate body read/write deadlines are reserved for later streaming/body work |
-| physical connection telemetry | `TransportStats` and `dump_transport_state()["origins"]` expose request-slot pressure, acquire wait, and buffered body budget metrics; true socket opened/closed/reused/idle counters are planned later |
+| physical connection telemetry | `TransportStats`, `dump_transport_state()["origins"]`, and `dump_pool_diagnostics()` expose request-slot pressure, acquire wait, and buffered body budget metrics; true socket opened/closed/reused/idle counters are planned later |
 
 ## Practical Guidance
 

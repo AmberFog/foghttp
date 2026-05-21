@@ -4,7 +4,7 @@ layout: "home"
 hero:
   name: "FogHTTP"
   text: "Rust-powered HTTP client for Python"
-  tagline: "Buffered JSON and form requests, base URL clients, default headers and params, sync and async APIs, redirects, custom CA certificates, cancellation, and observable request limits."
+  tagline: "Buffered JSON and form requests, base URL clients, default headers and params, sync and async APIs, redirects, custom CA certificates, cancellation, and observable request limits with pool diagnostics."
 
 features:
   - title: "Rust transport"
@@ -51,7 +51,7 @@ FogHTTP is designed around a few engineering priorities:
 - HTTPS with default WebPKI roots, explicit custom CA certificates, and
   custom-only CA trust
 - global and per-origin request backpressure with per-origin acquire pressure
-  snapshots for operational visibility
+  snapshots and stuck request diagnostics for operational visibility
 
 Until version `0.5.0`, backward compatibility is not guaranteed. I will still
 try to keep public interfaces stable and avoid unnecessary breaking changes.
@@ -100,7 +100,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
   cancellation, and explicit client lifecycle
 - documented buffered timeout model with pool and total deadline behavior
 - global active request limits, per-origin active request limits, pending
-  acquire limits, and per-origin acquire pressure snapshots
+  acquire limits, per-origin acquire pressure snapshots, and stuck request
+  diagnostics
 - default per-response and aggregate buffered response body limits
 - grouped HTTP status constants and reusable HTTP method constants
 

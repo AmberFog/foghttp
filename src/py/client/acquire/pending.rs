@@ -1,4 +1,4 @@
-use crate::core::metrics::{Metrics, OriginMetrics};
+use crate::core::metrics::{Metrics, OriginMetrics, PendingRequestBlockingReason};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -8,6 +8,7 @@ pub struct PendingAcquire {
     metrics: Arc<Metrics>,
     origin_metrics: Arc<OriginMetrics>,
     started: Instant,
+    origin_waiter_id: u64,
 }
 
 impl PendingAcquire {
@@ -15,13 +16,15 @@ impl PendingAcquire {
         metrics: Arc<Metrics>,
         origin_metrics: Arc<OriginMetrics>,
         max_pending_requests: usize,
+        blocked_by: PendingRequestBlockingReason,
     ) -> Result<Self, PendingAcquireRejected> {
         if metrics.pending_request_started(max_pending_requests) {
-            origin_metrics.pending_request_started();
+            let origin_waiter_id = origin_metrics.pending_request_started(blocked_by);
             Ok(Self {
                 metrics,
                 origin_metrics,
                 started: Instant::now(),
+                origin_waiter_id,
             })
         } else {
             metrics.pool_acquire_timeout();
@@ -37,7 +40,8 @@ impl Drop for PendingAcquire {
 
         self.metrics.pending_request_finished();
         self.metrics.pool_acquire_wait_finished(elapsed);
-        self.origin_metrics.pending_request_finished();
+        self.origin_metrics
+            .pending_request_finished(self.origin_waiter_id);
         self.origin_metrics.pool_acquire_wait_finished(elapsed);
     }
 }

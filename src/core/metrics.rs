@@ -3,7 +3,10 @@ mod atomic;
 #[path = "metrics/origin.rs"]
 mod origin;
 
-pub use origin::{OriginMetrics, OriginMetricsSnapshot};
+pub use origin::{
+    OriginMetrics, OriginMetricsSnapshot, OriginPoolDiagnosticsSnapshot,
+    PendingRequestBlockingReason,
+};
 
 use self::atomic::{
     duration_as_nanos, saturating_atomic_u64_add, update_atomic_u64_max, update_atomic_usize_max,
@@ -191,6 +194,10 @@ impl Metrics {
 
     pub fn origin_snapshots(&self) -> Vec<OriginMetricsSnapshot> {
         self.origin_registry.snapshots()
+    }
+
+    pub fn origin_pool_diagnostics_snapshots(&self) -> Vec<OriginPoolDiagnosticsSnapshot> {
+        self.origin_registry.pool_diagnostics_snapshots()
     }
 
     pub fn snapshot(&self) -> MetricsSnapshot {

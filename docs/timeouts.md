@@ -140,6 +140,15 @@ building a pending queue without logging request paths or query strings.
 Per-origin `last_activity_at_ns` is monotonic within the current transport
 metrics lifetime and is not a wall-clock Unix timestamp.
 
+For incident diagnostics, `dump_pool_diagnostics()` returns an on-demand snapshot
+focused on current acquire waits: active holders, pending waiters, the oldest
+pending wait age, whether another pending waiter can be admitted, and whether
+progress is blocked by the global active request limit or the per-origin active
+request limit. `blocked_by` is one of `none`, `global_active_requests`,
+`per_origin_active_requests`, or `mixed`; `mixed` means current waiters are
+blocked by more than one acquire limit. Origin keys are normalized origins only;
+paths, queries, userinfo, headers, and bodies are not included.
+
 ```python
 limits = foghttp.Limits(
     max_active_requests=10,
@@ -150,6 +159,7 @@ timeouts = foghttp.Timeouts(pool=0.2, total=5.0)
 
 with foghttp.Client(limits=limits, timeouts=timeouts) as client:
     response = client.get("https://api.example.com/users")
+    diagnostics = client.dump_pool_diagnostics()
 ```
 
 ## Total Timeout

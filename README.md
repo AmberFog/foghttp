@@ -26,8 +26,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - sync and asyncio clients with the same request model
 - explicit `close()`/`aclose()` lifecycle for Rust runtime resources
 - graceful sync `close()` for in-flight requests and cancellable async requests
-- global/per-origin request backpressure and observable per-origin acquire
-  pressure stats
+- global/per-origin request backpressure, per-origin acquire pressure stats, and
+  stuck request diagnostics
 - advanced per-client Tokio runtime worker tuning
 - focused buffered HTTP surface for JSON and form APIs, internal services,
   workers, and benchmarks
@@ -100,7 +100,7 @@ async with foghttp.AsyncClient() as client:
 - graceful sync `close()` that waits for in-flight sync requests
 - async request cancellation that aborts the in-flight Rust request
 - global and per-origin request backpressure, per-origin acquire pressure
-  snapshots, and HTTP/1.1 over HTTP/HTTPS
+  snapshots, stuck request diagnostics, and HTTP/1.1 over HTTP/HTTPS
 - default per-response and aggregate buffered response body limits for memory
   safety
 - advanced per-client Tokio runtime worker tuning

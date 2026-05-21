@@ -1,8 +1,9 @@
+use super::diagnostics::PoolDiagnosticsSnapshot;
 use super::origin::OriginGates;
 use super::pending::PendingAcquire;
 use super::permit::AcquirePermit;
 use super::telemetry::AcquireTelemetry;
-use crate::core::metrics::{Metrics, OriginMetrics};
+use crate::core::metrics::{Metrics, OriginMetrics, PendingRequestBlockingReason};
 use crate::errors::FogHttpError;
 use crate::messages::{POOL_ACQUIRE_QUEUE_FULL, POOL_ACQUIRE_TIMEOUT};
 use crate::py::client::timeout_diagnostics::{
@@ -16,6 +17,8 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError};
 #[derive(Clone)]
 pub struct AcquireGate {
     global_semaphore: Arc<Semaphore>,
+    max_active_requests: usize,
+    max_active_requests_per_origin: Option<usize>,
     max_pending_requests: usize,
     metrics: Arc<Metrics>,
     origin_gates: Option<OriginGates>,
@@ -30,6 +33,8 @@ impl AcquireGate {
     ) -> Self {
         Self {
             global_semaphore: Arc::new(Semaphore::new(max_active_requests)),
+            max_active_requests,
+            max_active_requests_per_origin,
             max_pending_requests,
             metrics,
             origin_gates: max_active_requests_per_origin.map(OriginGates::new),
@@ -68,6 +73,7 @@ impl AcquireGate {
                 &mut telemetry,
                 Arc::clone(&origin_metrics),
                 &timeout_context,
+                PendingRequestBlockingReason::GlobalActiveRequests,
             )
             .await?;
         telemetry.finish_success();
@@ -98,6 +104,7 @@ impl AcquireGate {
             telemetry,
             origin_metrics,
             timeout_context,
+            PendingRequestBlockingReason::PerOriginActiveRequests,
         )
         .await
         .map(Some)
@@ -110,6 +117,7 @@ impl AcquireGate {
         telemetry: &mut AcquireTelemetry,
         origin_metrics: Arc<OriginMetrics>,
         timeout_context: &TimeoutContext<'_>,
+        blocked_by: PendingRequestBlockingReason,
     ) -> PyResult<OwnedSemaphorePermit> {
         match Arc::clone(&semaphore).try_acquire_owned() {
             Ok(permit) => {
@@ -125,6 +133,7 @@ impl AcquireGate {
             Arc::clone(&self.metrics),
             Arc::clone(&origin_metrics),
             self.max_pending_requests,
+            blocked_by,
         )
         .map_err(|_err| pool_timeout_error(timeout_context, POOL_ACQUIRE_QUEUE_FULL))?;
         telemetry.mark_waited();
@@ -140,5 +149,16 @@ impl AcquireGate {
                 Err(pool_timeout_error(timeout_context, POOL_ACQUIRE_TIMEOUT))
             }
         }
+    }
+
+    pub fn diagnostics(&self) -> PoolDiagnosticsSnapshot {
+        let metrics = self.metrics.snapshot();
+        PoolDiagnosticsSnapshot::new(
+            &metrics,
+            self.metrics.origin_pool_diagnostics_snapshots(),
+            self.max_active_requests,
+            self.max_active_requests_per_origin,
+            self.max_pending_requests,
+        )
     }
 }
