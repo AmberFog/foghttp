@@ -105,7 +105,7 @@ impl OriginMetricsRegistry {
             let origin_count_before_cleanup = origins.len();
             origins.retain(|_origin, metrics| !metrics.is_idle());
             if origins.len() < origin_count_before_cleanup {
-                self.pruned_idle_origins.store(true, Ordering::Relaxed);
+                self.pruned_idle_origins.store(true, Ordering::Release);
             }
         }
 
@@ -125,7 +125,7 @@ impl OriginMetricsRegistry {
     }
 
     pub fn snapshots_include_all_historical_origins(&self) -> bool {
-        !self.pruned_idle_origins.load(Ordering::Relaxed)
+        !self.pruned_idle_origins.load(Ordering::Acquire)
     }
 
     pub fn pool_diagnostics_snapshots(&self) -> Vec<OriginPoolDiagnosticsSnapshot> {
