@@ -98,7 +98,7 @@ class FaultInjectionHTTPHandler(BaseRequestHandler):
             request_index = server.state.record_request(connection_id, path)
             close_after_response = request_closes_connection(request.headers)
             try:
-                closes_connection = write_fault_response(
+                result = write_fault_response(
                     connection,
                     path=path,
                     connection_id=connection_id,
@@ -108,7 +108,8 @@ class FaultInjectionHTTPHandler(BaseRequestHandler):
             except OSError:
                 return
 
-            if closes_connection:
+            if not result.handled:
+                write_empty_response(connection, NOT_FOUND, "Not Found", close=True)
                 return
-            write_empty_response(connection, NOT_FOUND, "Not Found", close=True)
-            return
+            if result.closes_connection:
+                return

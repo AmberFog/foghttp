@@ -1,5 +1,6 @@
 __all__ = (
     "assert_client_recovered",
+    "assert_healthy_connection_reused",
     "assert_idle_stats",
     "assert_network_failure_recovered",
     "assert_poisoned_connection_not_reused",
@@ -15,8 +16,12 @@ from .constants import (
     CONNECTION_ID_KEY,
     EXPECTED_FAILED_REQUESTS_AFTER_FAILURE,
     EXPECTED_FAILED_REQUESTS_AFTER_RECOVERY,
+    EXPECTED_FIRST_REQUEST_INDEX,
+    EXPECTED_KEEPALIVE_REQUESTS,
     EXPECTED_REQUESTS_AFTER_FAILURE,
+    EXPECTED_REQUESTS_AFTER_POISONED_RECOVERY,
     EXPECTED_REQUESTS_AFTER_RECOVERY,
+    EXPECTED_SECOND_REQUEST_INDEX,
     HEALTHY_PATH,
     REQUEST_INDEX_KEY,
 )
@@ -48,6 +53,24 @@ def assert_network_failure_recovered(
     assert_client_recovered(stats_after_error, final_stats)
 
 
+def assert_healthy_connection_reused(
+    first_payload: Mapping[str, object],
+    second_payload: Mapping[str, object],
+    snapshot: FaultInjectionSnapshot,
+) -> None:
+    first_connection_id = _payload_connection_id(first_payload)
+    second_connection_id = _payload_connection_id(second_payload)
+    if first_connection_id != second_connection_id:
+        msg = f"expected healthy keep-alive reuse, got {first_connection_id} and {second_connection_id}"
+        raise AssertionError(msg)
+
+    _assert_payload_request_index(first_payload, EXPECTED_FIRST_REQUEST_INDEX)
+    _assert_payload_request_index(second_payload, EXPECTED_SECOND_REQUEST_INDEX)
+    _assert_stat("request_count", snapshot.request_count, EXPECTED_KEEPALIVE_REQUESTS)
+    _assert_connection_last_path(snapshot, first_connection_id, HEALTHY_PATH)
+    _assert_connection_request_count(snapshot, first_connection_id, EXPECTED_KEEPALIVE_REQUESTS)
+
+
 def assert_poisoned_connection_not_reused(
     first_payload: Mapping[str, object],
     recovery_payload: Mapping[str, object],
@@ -60,8 +83,8 @@ def assert_poisoned_connection_not_reused(
         msg = f"expected recovery request to avoid poisoned connection {poisoned_connection_id}"
         raise AssertionError(msg)
 
-    _assert_payload_request_index(first_payload, 1)
-    _assert_stat("request_count", snapshot.request_count, 3)
+    _assert_payload_request_index(first_payload, EXPECTED_FIRST_REQUEST_INDEX)
+    _assert_stat("request_count", snapshot.request_count, EXPECTED_REQUESTS_AFTER_POISONED_RECOVERY)
     _assert_connection_path_contains(snapshot, first_connection_id, HEALTHY_PATH)
     _assert_poisoned_connection_is_terminal(snapshot, poisoned_connection_id)
     _assert_connection_last_path(snapshot, recovery_connection_id, HEALTHY_PATH)
@@ -131,6 +154,17 @@ def _assert_connection_last_path(
     actual = snapshot.paths_by_connection.get(connection_id)
     if actual is None or actual[-1] != expected:
         msg = f"connection {connection_id}: expected last path {expected}, got {actual}"
+        raise AssertionError(msg)
+
+
+def _assert_connection_request_count(
+    snapshot: FaultInjectionSnapshot,
+    connection_id: int,
+    expected: int,
+) -> None:
+    actual = snapshot.requests_by_connection.get(connection_id)
+    if actual != expected:
+        msg = f"connection {connection_id}: expected {expected} requests, got {actual}"
         raise AssertionError(msg)
 
 

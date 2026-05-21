@@ -1,8 +1,10 @@
 __all__ = (
+    "FaultResponseResult",
     "write_empty_response",
     "write_fault_response",
 )
 
+from dataclasses import dataclass
 import json
 from socket import socket
 import time
@@ -28,6 +30,12 @@ from .constants import (
 DELAYED_EOF_PATH_PARTS = 2
 
 
+@dataclass(frozen=True, slots=True)
+class FaultResponseResult:
+    handled: bool
+    closes_connection: bool
+
+
 def write_fault_response(
     connection: socket,
     *,
@@ -35,9 +43,9 @@ def write_fault_response(
     connection_id: int,
     request_index: int,
     close: bool,
-) -> bool:
+) -> FaultResponseResult:
     delayed_eof_size = _delayed_eof_unknown_size(path)
-    closes_connection = True
+    result = FaultResponseResult(handled=True, closes_connection=True)
     if path == ABRUPT_BEFORE_HEADERS_PATH:
         # Returning without bytes simulates an upstream closing before headers.
         pass
@@ -49,20 +57,20 @@ def write_fault_response(
     elif path == SLOW_HEADERS_PATH:
         time.sleep(FAULT_DELAY)
         connection.sendall(_raw_healthy_response(connection_id, request_index, close=close))
-        closes_connection = close
+        result = FaultResponseResult(handled=True, closes_connection=close)
     elif path == SLOW_BODY_PATH:
         connection.sendall(_raw_known_size_headers(len(HEALTHY_BODY), close=close))
         time.sleep(FAULT_DELAY)
         connection.sendall(HEALTHY_BODY)
-        closes_connection = close
+        result = FaultResponseResult(handled=True, closes_connection=close)
     elif delayed_eof_size is not None:
         _write_delayed_eof_unknown_size_body(connection, delayed_eof_size)
     elif path == HEALTHY_PATH:
         connection.sendall(_raw_healthy_response(connection_id, request_index, close=close))
-        closes_connection = close
+        result = FaultResponseResult(handled=True, closes_connection=close)
     else:
-        closes_connection = False
-    return closes_connection
+        result = FaultResponseResult(handled=False, closes_connection=True)
+    return result
 
 
 def write_empty_response(connection: socket, status_code: int, reason: str, *, close: bool) -> None:

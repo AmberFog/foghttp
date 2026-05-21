@@ -25,6 +25,7 @@ from .constants import (
 from .server import FaultInjectionServer
 from .state_assertions import (
     assert_client_recovered,
+    assert_healthy_connection_reused,
     assert_idle_stats,
     assert_network_failure_recovered,
     assert_poisoned_connection_not_reused,
@@ -33,6 +34,26 @@ from .timeout_assertions import assert_timeout_error
 
 
 RECOVERY_TIMEOUTS = foghttp.Timeouts(total=1.0)
+
+
+def test_sync_healthy_fault_server_route_reuses_keepalive_connection(
+    fault_injection_server: FaultInjectionServer,
+) -> None:
+    limits = foghttp.Limits(keepalive=True, max_idle_connections_per_host=1)
+
+    with foghttp.Client(limits=limits, timeouts=RECOVERY_TIMEOUTS) as client:
+        first_response = client.get(fault_injection_server.url + HEALTHY_PATH)
+        second_response = client.get(fault_injection_server.url + HEALTHY_PATH)
+        stats = client.stats()
+
+    assert first_response.status_code == OK
+    assert second_response.status_code == OK
+    assert_idle_stats(stats)
+    assert_healthy_connection_reused(
+        first_response.json(),
+        second_response.json(),
+        fault_injection_server.snapshot(),
+    )
 
 
 def test_sync_slow_headers_total_timeout_recovers(
