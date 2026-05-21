@@ -4,7 +4,7 @@ Benchmark harness and full benchmark reports live in a separate repository:
 [github.com/AmberFog/FogHttpBenchmark](https://github.com/AmberFog/FogHttpBenchmark).
 
 The tables below are copied summary snapshots from that repository. They are
-useful for release-to-release comparison, but they are still local loopback
+useful for release-to-release comparison, but they are local loopback
 benchmarks, not a universal prediction for real network latency.
 
 ## Methodology
@@ -22,37 +22,75 @@ benchmarks, not a universal prediction for real network latency.
 
 | Suite | Latest snapshot | Previous FogHTTP baseline |
 |---|---:|---:|
-| request workloads | `20260518-131322` | `20260517-220500` |
-| client creation | `20260518-120955` | `20260517-220550` |
-| resource/backpressure | `20260518-120926` | `20260517-220805` |
-| request builder | `20260518-120300` | none |
-| one upstream | `20260518-120707` | none |
+| request workloads | `20260521-221403` | `20260518-131322` |
+| client creation | `20260521-210842` | `20260518-120955` |
+| resource/backpressure | `20260521-210812` | `20260518-120926` |
+| request builder | `20260521-205749` | `20260518-120300` |
+| one upstream | `20260521-210156` | `20260518-120707` |
+| compressed response | `20260521-210553` | none |
 
 ## Versions
 
 | Client | Latest snapshot | Previous FogHTTP baseline |
 |---|---:|---:|
-| FogHTTP | `0.3.0` | `0.2.1` |
+| FogHTTP | `0.3.1` | `0.3.0` |
 | aiohttp | `3.13.5` | `3.13.5` |
 | httpx | `0.28.1` | `0.28.1` |
 | zapros | `0.11.1` | `0.11.1` |
 
 ## Release Comparison
 
-The `0.3.0` release added the unified request builder pipeline, client defaults,
-form-urlencoded `data=`, body-source validation, stricter security validation,
-and redaction. The hot request path stayed stable, but short-lived client
-creation regressed and needs follow-up work.
+The `0.3.1` release added buffered memory budgeting, gzip/deflate/br response
+decompression, response text/encoding polish, richer transport diagnostics, and
+TLS trust-boundary hardening. The request path remains competitive, but the
+new safety and observability work has a measurable cost in the general request
+suite.
 
-| Suite | Rows | Throughput/primary delta | p95 delta | Notes |
+| Suite | Rows | Throughput/ops delta | p95 delta | Notes |
 |---|---:|---:|---:|---|
-| requests | `88` | `-0.0%` geomean | `-2.4%` | Request throughput stayed effectively flat; p95 improved slightly overall. |
-| client creation | `12` | `-29.1%` geomean | `+75.7%` | Clear regression in short-lived client scenarios, especially many-clients-open-close. |
-| resource/backpressure | `30` | `-1.7%` geomean | `-13.4%` | Resource semantics held; async pressure p95 needs attention, sync p95 improved. |
+| requests | `88` | `-3.9%` geomean | `+7.1%` | Local request throughput is lower than `0.3.0`, but FogHTTP competitive wins moved from `75/88` to `76/88`. |
+| client creation | `12` | `+2.1%` geomean | `-3.0%` | The short-lived client regression seen in `0.3.0` improved. |
+| request builder | `20` | `+0.1%` geomean | `-0.4%` | Request construction stayed effectively flat. |
+| one upstream | `48` | `-0.2%` geomean | `+1.0%` | `base_url`, defaults, prepared requests, JSON, and form bodies remain close to direct requests. |
+| resource/backpressure | `30` common rows | n/a | `-5.3%` | Existing resource scenarios improved slightly; `0.3.1` adds aggregate buffered budget checks. |
+| compressed response | new | n/a | n/a | New suite for transparent gzip, deflate, br, and stacked encodings. |
 
-Competitive request wins for FogHTTP moved from `83/88` to `75/88`. That is
-still a strong position, but it is a signal to keep watching mid-concurrency
-request variability rather than only aggregate medians.
+### Visual Summary
+
+Green nodes improved versus `0.3.0`, red nodes regressed, and gray nodes are
+effectively flat in this local benchmark set. For throughput and ops/s, higher
+is better. For p95 latency, lower is better.
+
+```mermaid
+flowchart LR
+    baseline["0.3.0 baseline"] --> req_primary["requests throughput: -3.9%"]
+    baseline --> creation_primary["client creation ops/s: +2.1%"]
+    baseline --> builder_primary["request builder ops/s: +0.1%"]
+    baseline --> upstream_primary["one upstream ok/s: -0.2%"]
+
+    classDef better fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
+    classDef neutral fill:#eef2f7,stroke:#64748b,color:#334155
+    classDef worse fill:#ffebee,stroke:#c62828,color:#7f1d1d
+    class req_primary worse
+    class creation_primary better
+    class builder_primary,upstream_primary neutral
+```
+
+```mermaid
+flowchart LR
+    baseline["0.3.0 baseline"] --> req_p95["requests p95: +7.1%"]
+    baseline --> creation_p95["client creation p95: -3.0%"]
+    baseline --> builder_p95["request builder p95: -0.4%"]
+    baseline --> upstream_p95["one upstream p95: +1.0%"]
+    baseline --> resource_p95["resource p95: -5.3%"]
+
+    classDef better fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20
+    classDef neutral fill:#eef2f7,stroke:#64748b,color:#334155
+    classDef worse fill:#ffebee,stroke:#c62828,color:#7f1d1d
+    class req_p95 worse
+    class creation_p95,resource_p95 better
+    class builder_p95,upstream_p95 neutral
+```
 
 ## Request Workloads
 
@@ -65,38 +103,54 @@ Buffered scenarios: `json-small`, `json-decode-small`, `bytes-64k`,
 
 Delay/resource scenarios: `delay-20ms`, `pool-contention-20ms`.
 
-### Latest Snapshot: FogHTTP 0.3.0
+### Latest Snapshot: FogHTTP 0.3.1
 
 | Group | Client | Wins | Median ok/s | Median p95 ms | Max threads | Max fds | Errors |
 |---|---|---:|---:|---:|---:|---:|---:|
-| async buffered | FogHTTP | `29/36` | `12919.2` | `2.04` | `18` | `213` | `0` |
-| async buffered | aiohttp | `7/36` | `9752.6` | `2.24` | `2` | `207` | `0` |
-| async buffered | zapros | `0/36` | `4104.5` | `6.24` | `2` | `307` | `0` |
-| async buffered | httpx | `0/36` | `652.1` | `266.99` | `2` | `207` | `0` |
-| async delay/pool | FogHTTP | `5/8` | `437.1` | `25.41` | `18` | `210` | `0` |
-| async delay/pool | aiohttp | `2/8` | `419.7` | `26.99` | `2` | `207` | `780` |
-| async delay/pool | httpx | `1/8` | `290.2` | `39.19` | `2` | `207` | `0` |
-| async delay/pool | zapros | `0/8` | `394.6` | `30.35` | `2` | `207` | `0` |
-| sync buffered | FogHTTP | `36/36` | `12925.4` | `1.79` | `118` | `212` | `0` |
-| sync buffered | zapros | `0/36` | `3880.4` | `8.08` | `102` | `273` | `0` |
-| sync buffered | httpx | `0/36` | `1104.8` | `33.25` | `102` | `207` | `0` |
-| sync delay/pool | FogHTTP | `5/8` | `441.8` | `23.89` | `118` | `210` | `0` |
-| sync delay/pool | httpx | `2/8` | `179.7` | `115.91` | `102` | `207` | `0` |
-| sync delay/pool | zapros | `1/8` | `426.8` | `24.41` | `102` | `207` | `0` |
+| async buffered | FogHTTP | `31/36` | `12656.5` | `2.14` | `18` | `210` | `0` |
+| async buffered | aiohttp | `5/36` | `9183.9` | `2.46` | `2` | `207` | `0` |
+| async buffered | zapros | `0/36` | `4016.3` | `6.90` | `2` | `273` | `0` |
+| async buffered | httpx | `0/36` | `630.6` | `264.46` | `2` | `207` | `0` |
+| async delay/pool | FogHTTP | `5/8` | `439.8` | `25.99` | `18` | `210` | `0` |
+| async delay/pool | aiohttp | `2/8` | `419.4` | `26.43` | `2` | `207` | `780` |
+| async delay/pool | httpx | `1/8` | `283.8` | `313.31` | `2` | `207` | `0` |
+| async delay/pool | zapros | `0/8` | `402.3` | `29.30` | `2` | `207` | `0` |
+| sync buffered | FogHTTP | `36/36` | `12117.2` | `1.82` | `118` | `212` | `0` |
+| sync buffered | zapros | `0/36` | `3640.5` | `8.68` | `102` | `272` | `0` |
+| sync buffered | httpx | `0/36` | `1203.8` | `24.19` | `102` | `207` | `0` |
+| sync delay/pool | FogHTTP | `4/8` | `440.7` | `24.92` | `118` | `210` | `0` |
+| sync delay/pool | zapros | `2/8` | `415.0` | `25.28` | `102` | `207` | `0` |
+| sync delay/pool | httpx | `2/8` | `187.6` | `121.84` | `102` | `207` | `0` |
 
-### FogHTTP 0.3.0 vs 0.2.1
+```mermaid
+xychart-beta
+    title "Async buffered request median ok/s"
+    x-axis [FogHTTP, aiohttp, zapros, httpx]
+    y-axis "ok/s" 0 --> 13000
+    bar [12656.5, 9183.9, 4016.3, 630.6]
+```
+
+```mermaid
+xychart-beta
+    title "Sync buffered request median ok/s"
+    x-axis [FogHTTP, zapros, httpx]
+    y-axis "ok/s" 0 --> 12500
+    bar [12117.2, 3640.5, 1203.8]
+```
+
+### FogHTTP 0.3.1 vs 0.3.0
 
 | Segment | Rows | Throughput delta | p95 delta |
 |---|---:|---:|---:|
-| overall | `88` | `-0.0%` | `-2.4%` |
-| async | `44` | `-0.2%` | `-2.5%` |
-| sync | `44` | `+0.1%` | `-2.3%` |
+| overall | `88` | `-3.9%` | `+7.1%` |
+| async | `44` | `-3.7%` | `+7.0%` |
+| sync | `44` | `-4.1%` | `+7.1%` |
 
-Top request improvements were mostly POST/redirect high-concurrency rows. Top
-regressions were mid-concurrency async JSON/POST rows and sync 64 KiB body rows.
-Because the overall geomean is flat, this looks more like request-path
-variability and extra per-request bookkeeping cost than a broad transport
-slowdown.
+In this local request suite, FogHTTP has the highest throughput in most rows,
+especially sync buffered workloads and redirects. The main release-to-release
+cost is visible as a small aggregate throughput drop and higher p95 on the
+general request suite, which should be watched as more safety and diagnostics
+features land.
 
 ## Client Creation And First Request
 
@@ -105,34 +159,39 @@ Iterations/run: `100`, client counts: `1,10,50`, repeats: `3`.
 Scenarios: `create-close`, `create-first-request`,
 `many-clients-open-close`, `reused-request`.
 
-### Latest Snapshot: FogHTTP 0.3.0
+### Latest Snapshot: FogHTTP 0.3.1
 
 | Mode | Client | Wins | Median ops/s | Median p95 ms | Peak threads | Peak fds | Errors |
 |---|---|---:|---:|---:|---:|---:|---:|
-| async | FogHTTP | `2/6` | `34181.7` | `0.038` | `1` | `5` | `0` |
-| async | zapros | `3/6` | `30111.0` | `0.032` | `0` | `2` | `0` |
-| async | aiohttp | `1/6` | `16541.5` | `0.046` | `0` | `2` | `0` |
-| async | httpx | `0/6` | `345.2` | `2.966` | `0` | `1` | `0` |
-| sync | zapros | `4/6` | `35104.3` | `0.021` | `0` | `2` | `0` |
-| sync | FogHTTP | `2/6` | `30963.6` | `0.034` | `1` | `5` | `0` |
-| sync | httpx | `0/6` | `355.8` | `2.830` | `0` | `2` | `0` |
+| async | FogHTTP | `3/6` | `33777.2` | `0.030` | `1` | `5` | `0` |
+| async | zapros | `2/6` | `31836.5` | `0.023` | `0` | `2` | `0` |
+| async | aiohttp | `1/6` | `14354.4` | `0.055` | `0` | `2` | `0` |
+| async | httpx | `0/6` | `340.1` | `3.102` | `0` | `1` | `0` |
+| sync | FogHTTP | `3/6` | `32921.4` | `0.034` | `1` | `5` | `0` |
+| sync | zapros | `3/6` | `32948.4` | `0.023` | `0` | `2` | `0` |
+| sync | httpx | `0/6` | `347.2` | `2.960` | `0` | `2` | `0` |
 
-### FogHTTP 0.3.0 vs 0.2.1
+```mermaid
+xychart-beta
+    title "Client creation median ops/s"
+    x-axis [FogHTTP_async, zapros_async, aiohttp_async, httpx_async, FogHTTP_sync, zapros_sync, httpx_sync]
+    y-axis "ops/s" 0 --> 34000
+    bar [33777.2, 31836.5, 14354.4, 340.1, 32921.4, 32948.4, 347.2]
+```
+
+### FogHTTP 0.3.1 vs 0.3.0
 
 | Segment | Rows | ops/s delta | p95 delta |
 |---|---:|---:|---:|
-| overall | `12` | `-29.1%` | `+75.7%` |
-| async | `6` | `-34.0%` | `+89.7%` |
-| sync | `6` | `-24.0%` | `+62.7%` |
-| many-clients-open-close | `6` | `-40.5%` | `+139.7%` |
+| overall | `12` | `+2.1%` | `-3.0%` |
+| async | `6` | `+3.0%` | `-4.7%` |
+| sync | `6` | `+1.1%` | `-1.4%` |
+| many-clients-open-close | `6` | `+5.0%` | `-5.9%` |
 
-This is the main regression in the latest benchmark set. FogHTTP is still much
-faster than HTTPX for short-lived clients, but it lost the clear lead over
-zapros in many short-lived-client rows. The likely cause is added Python-side
-construction work from the `0.3.0` request-builder/defaults foundation:
-validated config snapshots, builder objects, headers/params defaults, and
-additional safety surfaces. This needs profiling rather than guessing from
-aggregate numbers.
+FogHTTP recovered part of the short-lived-client cost introduced by the `0.3.0`
+request-builder foundation. Zapros remains very competitive on some minimal
+client-lifecycle rows, while FogHTTP has much higher median ops/s than HTTPX in
+this local suite.
 
 ## Request Builder
 
@@ -144,19 +203,26 @@ skipped because the suite requires comparable `build_request` support.
 
 | Mode | Client | Kind | Rows | Median ops/s | Median p95 ms | Max threads | Max fds | Errors |
 |---|---|---|---:|---:|---:|---:|---:|---:|
-| async | FogHTTP | build | `9` | `159328.5` | `0.0066` | `3` | `8` | `0` |
-| async | httpx | build | `9` | `44688.7` | `0.0280` | `3` | `8` | `0` |
-| async | FogHTTP | send-prepared | `1` | `8150.8` | `0.1781` | `3` | `12` | `0` |
-| async | httpx | send-prepared | `1` | `1892.5` | `0.7594` | `3` | `9` | `0` |
-| sync | FogHTTP | build | `9` | `159779.5` | `0.0069` | `3` | `7` | `0` |
-| sync | httpx | build | `9` | `45216.0` | `0.0304` | `3` | `7` | `0` |
-| sync | FogHTTP | send-prepared | `1` | `10346.6` | `0.1315` | `3` | `12` | `0` |
-| sync | httpx | send-prepared | `1` | `3683.6` | `0.4084` | `3` | `9` | `0` |
+| async | FogHTTP | build | `9` | `159329.5` | `0.0068` | `2` | `8` | `0` |
+| async | httpx | build | `9` | `42890.4` | `0.0312` | `2` | `8` | `0` |
+| async | FogHTTP | send-prepared | `1` | `7625.7` | `0.1950` | `3` | `12` | `0` |
+| async | httpx | send-prepared | `1` | `1917.1` | `0.7505` | `2` | `9` | `0` |
+| sync | FogHTTP | build | `9` | `164034.8` | `0.0067` | `2` | `7` | `0` |
+| sync | httpx | build | `9` | `42997.4` | `0.0306` | `2` | `7` | `0` |
+| sync | FogHTTP | send-prepared | `1` | `9825.1` | `0.1466` | `3` | `12` | `0` |
+| sync | httpx | send-prepared | `1` | `3525.0` | `0.4437` | `2` | `9` | `0` |
 
-FogHTTP request building is about `3.5x` HTTPX median throughput in both sync
-and async modes. Prepared send is about `4.3x` HTTPX in async and `2.8x` in
-sync. This is a strong result for the new request-builder foundation: the
-feature added real ergonomics without making request construction slow.
+```mermaid
+xychart-beta
+    title "Request builder median ops/s"
+    x-axis [FogHTTP_async, httpx_async, FogHTTP_sync, httpx_sync]
+    y-axis "ops/s" 0 --> 165000
+    bar [159329.5, 42890.4, 164034.8, 42997.4]
+```
+
+FogHTTP request building stayed effectively flat versus `0.3.0`
+(`+0.1%` geomean ops/s, `-0.4%` p95). This is an important signal for the
+`0.3.x` request-builder foundation.
 
 ## One Upstream Client Defaults
 
@@ -168,38 +234,91 @@ requests, JSON bodies, and form bodies against one upstream.
 
 | Mode | Client | Rows | Median ok/s | Median p95 ms | Max threads | Max fds | Errors |
 |---|---|---:|---:|---:|---:|---:|---:|
-| async | FogHTTP | `24` | `9689.0` | `1.30` | `18` | `110` | `0` |
-| async | httpx | `24` | `1521.9` | `6.57` | `2` | `107` | `0` |
-| sync | FogHTTP | `24` | `10355.0` | `1.07` | `68` | `110` | `0` |
-| sync | httpx | `24` | `1834.7` | `6.44` | `52` | `107` | `0` |
+| async | FogHTTP | `24` | `9673.1` | `1.30` | `18` | `110` | `0` |
+| async | httpx | `24` | `1498.1` | `6.55` | `2` | `107` | `0` |
+| sync | FogHTTP | `24` | `10359.7` | `1.05` | `68` | `110` | `0` |
+| sync | httpx | `24` | `1832.9` | `6.56` | `52` | `107` | `0` |
 
-The important signal is not only that FogHTTP is faster in this local suite.
-`base_url`, default headers, default params, prepared requests, JSON, and form
-requests stay close to the direct-request baseline. That means the new
-ergonomics are cheap on the hot path.
+```mermaid
+xychart-beta
+    title "One upstream client defaults median ok/s"
+    x-axis [FogHTTP_async, httpx_async, FogHTTP_sync, httpx_sync]
+    y-axis "ok/s" 0 --> 10500
+    bar [9673.1, 1498.1, 10359.7, 1832.9]
+```
+
+Compared with `0.3.0`, this suite is stable (`-0.2%` geomean ok/s,
+`+1.0%` p95). Client defaults and prepared requests remain cheap on the hot
+path.
+
+## Compressed Responses
+
+Requests/run: `1000`, warmup/run: `100`, repeats: `3`,
+concurrency: `1,10,50`.
+
+Scenarios: `gzip-json-small`, `gzip-64k`, `deflate-64k`, `br-64k`,
+`gzip-high-ratio-1m`, `multi-gzip-deflate-64k`.
+
+| Mode | Client | Wins | Median ok/s | Median p95 ms | Max threads | Max fds | Errors |
+|---|---|---:|---:|---:|---:|---:|---:|
+| async | FogHTTP | `16/18` | `12109.4` | `0.89` | `18` | `110` | `0` |
+| async | aiohttp | `2/18` | `6073.2` | `1.42` | `2` | `107` | `9000` |
+| async | zapros | `0/18` | `3521.2` | `2.74` | `2` | `157` | `9000` |
+| async | httpx | `0/18` | `1531.1` | `6.03` | `2` | `107` | `0` |
+| sync | FogHTTP | `18/18` | `14783.6` | `0.71` | `68` | `112` | `0` |
+| sync | zapros | `0/18` | `4073.8` | `3.25` | `52` | `157` | `9000` |
+| sync | httpx | `0/18` | `1982.9` | `6.83` | `52` | `107` | `0` |
+
+```mermaid
+xychart-beta
+    title "Compressed response median ok/s"
+    x-axis [FogHTTP_async, aiohttp_async, zapros_async, httpx_async, FogHTTP_sync, zapros_sync, httpx_sync]
+    y-axis "ok/s" 0 --> 15000
+    bar [12109.4, 6073.2, 3521.2, 1531.1, 14783.6, 4073.8, 1982.9]
+```
+
+In this local compressed-response suite, FogHTTP has the highest observed
+median throughput for concurrent buffered responses and stacked
+`Content-Encoding` decoding. The error totals for aiohttp and zapros come from
+the stacked encoding scenario in this suite.
 
 ## Resource And Backpressure Workloads
 
 Requests/run: `200`, warmup/run: `0`, repeats: `3`,
 concurrency: `10,50,100`.
 
-Scenarios: `active-limit-serial`, `pending-queue-full`,
-`per-origin-isolation`, `pool-timeout-recovery`, `response-body-limit`.
+Scenarios: `active-limit-serial`, `aggregate-buffered-budget`,
+`pending-queue-full`, `per-origin-isolation`, `pool-timeout-recovery`,
+`response-body-limit`.
 
-| Mode | Scenario | Total ok | Median errors % | Median p95 ms | Peak active | Peak pending | Pool timeouts | Recovery failures | Max threads | Max fds |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| async | active-limit-serial | `1800` | `0.00` | `1067.16` | `1` | `99` | `0` | `0` | `3` | `13` |
-| async | pending-queue-full | `0` | `100.00` | `3.82` | `0` | `0` | `200` | `0` | `3` | `11` |
-| async | per-origin-isolation | `1800` | `0.00` | `533.52` | `2` | `98` | `0` | `0` | `4` | `15` |
-| async | pool-timeout-recovery | `32` | `99.00` | `9.33` | `1` | `99` | `199` | `0` | `3` | `13` |
-| async | response-body-limit | `0` | `100.00` | `15.36` | `1` | `99` | `0` | `0` | `3` | `14` |
-| sync | active-limit-serial | `1800` | `0.00` | `1053.65` | `1` | `99` | `0` | `0` | `103` | `15` |
-| sync | pending-queue-full | `0` | `100.00` | `0.02` | `0` | `0` | `200` | `0` | `3` | `11` |
-| sync | per-origin-isolation | `1800` | `0.00` | `525.37` | `2` | `98` | `0` | `0` | `104` | `15` |
-| sync | pool-timeout-recovery | `33` | `99.00` | `7.23` | `1` | `99` | `199` | `0` | `103` | `13` |
-| sync | response-body-limit | `0` | `100.00` | `14.68` | `1` | `99` | `0` | `0` | `103` | `13` |
+| Mode | Scenario | Total ok | Median errors % | Median p95 ms | Peak active | Peak pending | Peak buffered bytes | Pool timeouts | Budget rejects | Final buffered bytes | Recovery failures | Max threads | Max fds |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| async | active-limit-serial | `1800` | `0.00` | `1049.71` | `1` | `99` | `106` | `0` | `0` | `0` | `0` | `3` | `13` |
+| async | aggregate-buffered-budget | `10` | `99.50` | `25.37` | `10` | `90` | `98304` | `0` | `199` | `0` | `0` | `12` | `55` |
+| async | pending-queue-full | `0` | `100.00` | `2.51` | `0` | `0` | `0` | `200` | `0` | `0` | `0` | `3` | `11` |
+| async | per-origin-isolation | `1800` | `0.00` | `531.84` | `2` | `98` | `212` | `0` | `0` | `0` | `0` | `4` | `15` |
+| async | pool-timeout-recovery | `34` | `99.00` | `8.25` | `1` | `99` | `0` | `199` | `0` | `0` | `0` | `3` | `13` |
+| async | response-body-limit | `0` | `100.00` | `13.94` | `1` | `99` | `0` | `0` | `0` | `0` | `0` | `3` | `14` |
+| sync | active-limit-serial | `1800` | `0.00` | `1043.19` | `1` | `99` | `106` | `0` | `0` | `0` | `0` | `103` | `13` |
+| sync | aggregate-buffered-budget | `8` | `99.50` | `29.87` | `10` | `90` | `98304` | `0` | `200` | `0` | `0` | `112` | `49` |
+| sync | pending-queue-full | `0` | `100.00` | `0.02` | `0` | `0` | `0` | `200` | `0` | `0` | `0` | `3` | `11` |
+| sync | per-origin-isolation | `1800` | `0.00` | `522.14` | `2` | `98` | `212` | `0` | `0` | `0` | `0` | `104` | `15` |
+| sync | pool-timeout-recovery | `32` | `99.00` | `7.38` | `1` | `99` | `106` | `199` | `0` | `0` | `0` | `103` | `13` |
+| sync | response-body-limit | `0` | `100.00` | `13.66` | `1` | `99` | `0` | `0` | `0` | `0` | `0` | `103` | `13` |
 
-Resource benchmarks confirm the request-slot model:
+```mermaid
+flowchart LR
+    requests["concurrent requests"] --> active["active request slots"]
+    requests --> pending["pending queue"]
+    active --> body_limit["per-response body limit"]
+    active --> buffered_budget["aggregate buffered budget"]
+    pending --> pool_timeout["PoolTimeout"]
+    body_limit --> body_too_large["ResponseBodyTooLargeError"]
+    buffered_budget --> budget_exceeded["ResponseBodyBudgetExceededError"]
+    budget_exceeded --> released["final buffered bytes = 0"]
+```
+
+Resource benchmarks confirm the request-slot and memory-budget model:
 
 - `active-limit-serial` holds active requests at `1`.
 - `per-origin-isolation` holds total active requests at `2` with one active
@@ -210,3 +329,5 @@ Resource benchmarks confirm the request-slot model:
   recovery failures.
 - `response-body-limit` fails with `ResponseBodyTooLargeError` without active
   request leaks.
+- `aggregate-buffered-budget` caps peak buffered bytes at `98304` and returns
+  to `0` final buffered bytes after expected budget rejections.
