@@ -4,7 +4,7 @@ layout: "home"
 hero:
   name: "FogHTTP"
   text: "Rust-powered HTTP client for Python"
-  tagline: "Buffered JSON and form requests, base URL clients, default headers and params, sync and async APIs, redirects, custom CA certificates, cancellation, and observable request limits with pool diagnostics."
+  tagline: "Buffered JSON and form requests, transparent response decoding, base URL clients, default headers and params, sync and async APIs, redirects, custom CA certificates, cancellation, and observable request limits with pool diagnostics."
 
 features:
   - title: "Rust transport"
@@ -14,7 +14,7 @@ features:
     details: "Use Client in scripts and workers, or AsyncClient for high-concurrency asyncio workloads."
 
   - title: "Focused MVP"
-    details: "FogHTTP is intentionally small today: buffered responses, JSON, form-urlencoded data, base URL clients, default headers and params, redirects, prepared requests, async cancellation, global and per-origin request limits, and request metadata."
+    details: "FogHTTP is intentionally small today: buffered responses with gzip/deflate/br decoding, JSON, form-urlencoded data, base URL clients, default headers and params, redirects, prepared requests, async cancellation, global and per-origin request limits, and request metadata."
 ---
 
 # FogHTTP Documentation
@@ -45,6 +45,7 @@ FogHTTP is designed around a few engineering priorities:
 - one API shape for sync scripts, workers, and asyncio services
 - Rust-backed HTTP/1.1 transport with explicit runtime ownership
 - buffered JSON, form, and bytes workflows that are simple to reason about
+- transparent `gzip`, `deflate`, and `br` decoding for buffered responses
 - graceful sync `close()` that waits for in-flight sync requests
 - async cancellation that aborts in-flight Rust requests
 - redirect history and final request metadata for debugging
@@ -86,6 +87,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - default client headers and query params for reusable API clients
 - query params with repeated keys, JSON, form-urlencoded data, and buffered
   bytes/text bodies
+- transparent `gzip`, `deflate`, and `br` decoding for buffered responses
 - response status flags for success, redirects, and client/server errors
 - prepared `Request` objects with `build_request()` and `send()`
 - case-insensitive `Headers` with repeated value support
@@ -108,6 +110,6 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 ## Not Yet
 
 FogHTTP does not yet implement streaming bodies, cookies, multipart uploads,
-proxy support, `trust_env`, HTTP/2, or advanced authentication helpers.
-Disabling TLS verification is intentionally not supported. See
-[Limitations](./limitations.md) for details.
+proxy support, `trust_env`, HTTP/2, automatic `Accept-Encoding` negotiation, or
+advanced authentication helpers. Disabling TLS verification is intentionally not
+supported. See [Limitations](./limitations.md) for details.

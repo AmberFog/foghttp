@@ -24,6 +24,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - form-urlencoded bodies through mapping or repeated-pair `data=`
 - raw bytes/text bodies through `content=`
 - buffered responses
+- transparent `gzip`, `deflate`, and `br` decoding for buffered responses
 - `response.text`, `response.json()`, response status flags, and
   `response.raise_for_status()`
 - lightweight `response.request`
@@ -63,7 +64,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | Disabling TLS verification | Not available by design; use `TLSConfig` with explicit CA certificates |
 | OS trust store integration | Not available; FogHTTP uses bundled WebPKI roots unless `trust_webpki_roots=False` is set |
 | HTTP/2 | Not available |
-| Compression decoding | Not available |
+| automatic `Accept-Encoding` negotiation | Not implemented; send `Accept-Encoding` manually when you want compressed responses |
 | transport-managed request headers | Safe API rejects manual `Host`, `Content-Length`, `Transfer-Encoding`, `TE`, `Trailer`, `Connection`, `Upgrade`, `Keep-Alive`, and `Proxy-Connection` |
 | request body source conflicts | Only one body source can be passed today: `json=`, `data=`, or `content=` |
 | true active connection-level limits | `max_active_requests_per_origin` limits buffered request slots; physical TCP connection-level accounting is not exposed yet |
@@ -98,6 +99,8 @@ Wait before using FogHTTP when:
 - you need multipart form-data or large uploads
 - you need per-request connect timeout reconfiguration or mature read/write
   timeout semantics
+- you need automatic compression negotiation instead of manual
+  `Accept-Encoding`
 - you need strict active per-host connection limits
 - you need to share one async client across multiple event loops
 

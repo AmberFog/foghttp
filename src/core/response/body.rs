@@ -53,7 +53,7 @@ fn enforce_response_size_hint(
     Ok(())
 }
 
-fn enforce_response_body_limit(
+pub(super) fn enforce_response_body_limit(
     current_size: usize,
     chunk_size: usize,
     max_response_body_size: Option<usize>,

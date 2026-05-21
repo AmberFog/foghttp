@@ -1,0 +1,42 @@
+__all__ = (
+    "BODY_CONTENT_TYPE",
+    "BROTLI_COMPRESSED_BODY",
+    "BROTLI_ENCODING_PATH",
+    "DECODED_BODY_LIMIT",
+    "DECODED_TOO_LARGE_BODY",
+    "DECODED_TOO_LARGE_PATH",
+    "DECOMPRESSED_BODY",
+    "GZIP_ENCODING_PATH",
+    "INVALID_GZIP_BODY",
+    "INVALID_GZIP_PATH",
+    "RAW_DEFLATE_ENCODING_PATH",
+    "SUPPORTED_ENCODING_CASES",
+    "UNSUPPORTED_ENCODED_BODY",
+    "UNSUPPORTED_ENCODING",
+    "UNSUPPORTED_ENCODING_PATH",
+    "ZLIB_DEFLATE_ENCODING_PATH",
+)
+
+BODY_CONTENT_TYPE = "text/plain; charset=utf-8"
+BROTLI_COMPRESSED_BODY = bytes.fromhex(
+    "1b2200f8c56d6c5df715ac7a393ca5259ae09395bce3d1f6cd26c6a02b15c87c01",  # pragma: allowlist secret
+)
+BROTLI_ENCODING_PATH = "/encoded/br"
+DECODED_BODY_LIMIT = 64
+DECODED_TOO_LARGE_BODY = b"x" * (DECODED_BODY_LIMIT + 1)
+DECODED_TOO_LARGE_PATH = "/encoded/decoded-too-large"
+DECOMPRESSED_BODY = b"foghttp compressed response payload"
+GZIP_ENCODING_PATH = "/encoded/gzip"
+INVALID_GZIP_BODY = b"not a gzip stream"
+INVALID_GZIP_PATH = "/encoded/invalid-gzip"
+RAW_DEFLATE_ENCODING_PATH = "/encoded/raw-deflate"
+ZLIB_DEFLATE_ENCODING_PATH = "/encoded/deflate"
+SUPPORTED_ENCODING_CASES = (
+    (GZIP_ENCODING_PATH, "gzip"),
+    (ZLIB_DEFLATE_ENCODING_PATH, "deflate-zlib"),
+    (RAW_DEFLATE_ENCODING_PATH, "deflate-raw"),
+    (BROTLI_ENCODING_PATH, "br"),
+)
+UNSUPPORTED_ENCODED_BODY = b"opaque zstd bytes"
+UNSUPPORTED_ENCODING = "zstd"
+UNSUPPORTED_ENCODING_PATH = "/encoded/unsupported"

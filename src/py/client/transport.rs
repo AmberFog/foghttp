@@ -1,7 +1,9 @@
 use crate::core::client::HyperClient;
 use crate::core::headers::{response_headers, HeaderPairs};
 use crate::core::request::{build_request, RequestParts};
-use crate::core::response::{collect_body, BufferedBodyBudget};
+use crate::core::response::{
+    collect_body, decode_body, decoded_response_headers, BufferedBodyBudget,
+};
 use crate::core::url::HttpUrl;
 use crate::errors::FogHttpError;
 use crate::messages::{redirect_limit_exceeded, REQUEST_TOTAL_TIMEOUT};
@@ -213,19 +215,34 @@ async fn raw_response(
     )
     .await
     .map_err(|_| timeout_error(&response_body_timeout_context, REQUEST_TOTAL_TIMEOUT))??;
+    let (headers, response_content, body_reservation) =
+        if response_body_can_be_decoded(&request.method, status_code) {
+            let body = decode_body(collected, &headers, context.max_response_body_size)?;
+            (
+                decoded_response_headers(headers, body.decoded),
+                body.content,
+                body.reservation,
+            )
+        } else {
+            (headers, collected.content, collected.reservation)
+        };
     let url = request.url.clone();
 
     Ok(RawResponse::from_parts(RawResponseParts {
         status_code,
         headers,
-        content: collected.content,
+        content: response_content,
         url,
         request,
         http_version,
         elapsed: context.started.elapsed().as_secs_f64(),
         history: Vec::new(),
-        body_reservation: Some(collected.reservation),
+        body_reservation: Some(body_reservation),
     }))
+}
+
+fn response_body_can_be_decoded(method: &str, status_code: u16) -> bool {
+    !method.eq_ignore_ascii_case("HEAD") && !matches!(status_code, 100..=199 | 204 | 304)
 }
 
 struct RawResponseContext<'a> {

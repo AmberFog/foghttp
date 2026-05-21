@@ -249,8 +249,10 @@ except foghttp.HTTPStatusError as exc:
 | HTTP/2 | Not implemented |
 | Cookie jar and auth helper integration | Not implemented; cross-origin redirects still strip sensitive headers and drop body replay |
 | Unbounded large downloads | `max_response_body_size` defaults to 10 MiB and `max_buffered_response_bytes` defaults to 100 MiB for buffered fail-fast protection; streaming downloads are not implemented |
+| Automatic compression negotiation | Not implemented; pass `Accept-Encoding` manually when you want compressed buffered responses |
 
 FogHTTP is best today in controlled environments where request and response
-bodies are expected to fit in memory. Keep `max_response_body_size` and
-`max_buffered_response_bytes` finite unless unbounded buffering is a deliberate
-opt-in for a trusted endpoint.
+bodies are expected to fit in memory. `gzip`, `deflate`, and `br` response
+bodies are decoded for buffered responses, and body limits still apply to the
+decoded bytes. Keep `max_response_body_size` and `max_buffered_response_bytes`
+finite unless unbounded buffering is a deliberate opt-in for a trusted endpoint.

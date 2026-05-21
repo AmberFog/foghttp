@@ -66,6 +66,20 @@ impl BufferedBodyReservation {
         self.reserved_bytes = next_reserved_bytes;
         Ok(())
     }
+
+    pub fn release_chunk(&mut self, chunk_size: usize) {
+        if chunk_size == 0 {
+            return;
+        }
+
+        let Some(next_reserved_bytes) = self.reserved_bytes.checked_sub(chunk_size) else {
+            debug_assert!(false, "buffered response byte reservation underflow");
+            return;
+        };
+
+        self.budget.release_bytes(chunk_size);
+        self.reserved_bytes = next_reserved_bytes;
+    }
 }
 
 impl Drop for BufferedBodyReservation {

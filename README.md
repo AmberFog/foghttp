@@ -88,6 +88,7 @@ async with foghttp.AsyncClient() as client:
   bytes/text bodies
 - buffered `Response` with status flags, `text`, `json()`,
   `raise_for_status()`, and request metadata
+- transparent `gzip`, `deflate`, and `br` decoding for buffered responses
 - prepared `Request` objects with `build_request()` and `send()`
 - case-insensitive `Headers` with repeated values
 - safe policy for transport-managed request headers
@@ -124,9 +125,10 @@ async with foghttp.AsyncClient() as client:
 
 FogHTTP is currently focused on controlled buffered HTTP workloads. Streaming
 bodies, cookies, auth helpers, proxy support, multipart uploads, HTTP/2,
-compression decoding, true connection-level pool metrics, per-request connect
-timeout reconfiguration, and separate read/write timeout semantics are planned
-for later versions. Disabling TLS verification is intentionally not supported.
+automatic `Accept-Encoding` negotiation, true connection-level pool metrics,
+per-request connect timeout reconfiguration, and separate read/write timeout
+semantics are planned for later versions. Disabling TLS verification is
+intentionally not supported.
 
 ## Development
 
