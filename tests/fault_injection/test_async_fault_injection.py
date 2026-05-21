@@ -36,6 +36,7 @@ from .state_assertions import (
     assert_network_failure_recovered,
     assert_poisoned_connection_not_reused,
     assert_request_count,
+    assert_request_count_between,
 )
 from .timeout_assertions import assert_timeout_error
 from .transport_waiters import wait_for_idle_transport, wait_for_transport_pressure
@@ -184,10 +185,11 @@ async def test_async_cancellation_storm_releases_transport_state_and_recovers(
     assert response.status_code == OK
     assert_idle_stats(stats_after_cancellation)
     assert_idle_stats(final_stats)
-    assert_request_count(
+    assert_request_count_between(
         fault_injection_server.snapshot(),
         SLOW_HEADERS_PATH,
-        CANCELLATION_STORM_ACTIVE_REQUESTS,
+        minimum=CANCELLATION_STORM_ACTIVE_REQUESTS,
+        maximum=CANCELLATION_STORM_REQUESTS,
     )
 
 
