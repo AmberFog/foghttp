@@ -17,6 +17,7 @@ pub struct ClientOptions {
     pub keepalive: bool,
     pub connect_timeout: f64,
     pub ca_certificates: Vec<Vec<u8>>,
+    pub trust_webpki_roots: bool,
 }
 
 pub fn build_client(options: &ClientOptions) -> Result<HyperClient, String> {
@@ -27,7 +28,7 @@ pub fn build_client(options: &ClientOptions) -> Result<HyperClient, String> {
         options.connect_timeout,
     )?));
 
-    let tls_config = build_tls_config(&options.ca_certificates)?;
+    let tls_config = build_tls_config(&options.ca_certificates, options.trust_webpki_roots)?;
     let connector = HttpsConnectorBuilder::new()
         .with_tls_config(tls_config)
         .https_or_http()

@@ -45,7 +45,9 @@ pub struct RawClient {
 #[pymethods]
 impl RawClient {
     #[new]
-    #[allow(clippy::too_many_arguments)]
+    // The private PyO3 boundary mirrors Python client options. Internally we
+    // group these values into typed option structs before building transport.
+    #[allow(clippy::fn_params_excessive_bools, clippy::too_many_arguments)]
     fn new(
         max_active_requests: usize,
         max_active_requests_per_origin: Option<usize>,
@@ -59,6 +61,7 @@ impl RawClient {
         follow_redirects: bool,
         max_redirects: usize,
         ca_certificates: Vec<Vec<u8>>,
+        trust_webpki_roots: bool,
         trust_env: bool,
         runtime_workers: Option<usize>,
     ) -> PyResult<Self> {
@@ -80,6 +83,7 @@ impl RawClient {
             keepalive,
             connect_timeout,
             ca_certificates,
+            trust_webpki_roots,
         };
         let client = build_client(&client_options).map_err(FogHttpError::new_err)?;
         let runtime = build_runtime(max_active_requests, runtime_workers)?;

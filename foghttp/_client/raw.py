@@ -21,7 +21,7 @@ from ..limits import Limits
 from ..timeout_diagnostics import TimeoutDiagnostic, TimeoutPhase
 from ..timeouts import Timeouts
 from ..tls import TLSConfig
-from .tls import ca_certificate_bytes
+from .tls import ca_certificate_bytes, trust_webpki_roots
 
 
 _TIMEOUT_DIAGNOSTIC_ARG_COUNT = 6
@@ -55,6 +55,7 @@ def create_raw_client(
             follow_redirects,
             max_redirects,
             ca_certificate_bytes(tls),
+            trust_webpki_roots(tls),
             trust_env,
             runtime_workers,
         )

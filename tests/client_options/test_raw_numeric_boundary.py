@@ -9,7 +9,33 @@ from foghttp.methods import GET
 
 KEEPALIVE = True
 FOLLOW_REDIRECTS = False
+TRUST_WEBPKI_ROOTS = True
+CUSTOM_ONLY_TRUST_WEBPKI_ROOTS = False
 TRUST_ENV = False
+
+
+def test_raw_client_rejects_empty_custom_only_tls_trust_store() -> None:
+    with pytest.raises(
+        _foghttp.FogHttpError,
+        match="TLS trust store is empty; enable WebPKI roots or provide CA certificates",
+    ):
+        _foghttp.RawClient(
+            1,
+            None,
+            1,
+            1,
+            None,
+            None,
+            30.0,
+            KEEPALIVE,
+            2.0,
+            FOLLOW_REDIRECTS,
+            20,
+            (),
+            CUSTOM_ONLY_TRUST_WEBPKI_ROOTS,
+            TRUST_ENV,
+            None,
+        )
 
 
 def test_raw_client_rejects_invalid_idle_timeout_without_panic() -> None:
@@ -30,6 +56,7 @@ def test_raw_client_rejects_invalid_idle_timeout_without_panic() -> None:
             FOLLOW_REDIRECTS,
             20,
             (),
+            TRUST_WEBPKI_ROOTS,
             TRUST_ENV,
             None,
         )
@@ -53,6 +80,7 @@ def test_raw_client_rejects_too_large_active_request_limit_without_panic() -> No
             FOLLOW_REDIRECTS,
             20,
             (),
+            TRUST_WEBPKI_ROOTS,
             TRUST_ENV,
             None,
         )
@@ -98,6 +126,7 @@ def _raw_client() -> _foghttp.RawClient:
         FOLLOW_REDIRECTS,
         20,
         (),
+        TRUST_WEBPKI_ROOTS,
         TRUST_ENV,
         None,
     )

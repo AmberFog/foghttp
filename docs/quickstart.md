@@ -457,7 +457,7 @@ see [Request builder compatibility](./request-builder.md).
 
 FogHTTP uses WebPKI roots by default for HTTPS. For private services with an
 internal certificate authority, pass explicit CA certificate files through
-`TLSConfig`.
+`TLSConfig`. Custom CA files are added to WebPKI roots by default.
 
 ```python
 from pathlib import Path
@@ -476,6 +476,17 @@ with foghttp.Client(tls=tls) as client:
 
 The same `TLSConfig` works with `AsyncClient`. Disabling certificate
 verification is intentionally not exposed; use a trusted CA bundle instead.
+For custom-only enterprise trust, pass `trust_webpki_roots=False` together with
+one or more CA certificate files.
+
+```python
+tls = foghttp.TLSConfig(
+    ca_certificates=("/etc/company/ca.pem",),
+    trust_webpki_roots=False,
+)
+```
+
+See [TLS trust](./tls.md) for the full trust-boundary contract.
 
 ## URL
 

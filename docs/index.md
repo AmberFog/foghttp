@@ -48,7 +48,8 @@ FogHTTP is designed around a few engineering priorities:
 - graceful sync `close()` that waits for in-flight sync requests
 - async cancellation that aborts in-flight Rust requests
 - redirect history and final request metadata for debugging
-- HTTPS with default WebPKI roots and explicit custom CA certificates
+- HTTPS with default WebPKI roots, explicit custom CA certificates, and
+  custom-only CA trust
 - global and per-origin request backpressure with per-origin acquire pressure
   snapshots for operational visibility
 
@@ -61,6 +62,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - [Request builder compatibility](./request-builder.md)
 - [Client lifecycle](./lifecycle.md)
 - [Timeout model](./timeouts.md)
+- [TLS trust](./tls.md)
 - [Use cases](./use-cases.md)
 - [Redirects](./redirects.md)
 - [Limitations](./limitations.md)
@@ -92,7 +94,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
   token-like URL params, and buffered body bytes
 - normalized `URL` model with origin comparison and relative joins
 - GET/HEAD/POST redirects with final URL, history, and conservative replay policy
-- HTTPS with default WebPKI roots and explicit custom CA certificates
+- HTTPS with default WebPKI roots, explicit custom CA certificates, and
+  custom-only CA trust
 - documented lazy transport creation, graceful sync close, async request
   cancellation, and explicit client lifecycle
 - documented buffered timeout model with pool and total deadline behavior
@@ -104,5 +107,6 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 ## Not Yet
 
 FogHTTP does not yet implement streaming bodies, cookies, multipart uploads,
-proxy support, `trust_env`, `verify=False`, HTTP/2, or advanced authentication
-helpers. See [Limitations](./limitations.md) for details.
+proxy support, `trust_env`, HTTP/2, or advanced authentication helpers.
+Disabling TLS verification is intentionally not supported. See
+[Limitations](./limitations.md) for details.

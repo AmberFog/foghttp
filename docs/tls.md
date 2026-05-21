@@ -1,0 +1,79 @@
+# TLS Trust
+
+FogHTTP verifies HTTPS certificates by default. There is no `verify=False`
+mode because disabling certificate verification creates a silent production
+security footgun. Use explicit trust roots instead.
+
+## Default Trust
+
+By default FogHTTP trusts the bundled WebPKI root store used by the Rust
+transport.
+
+```python
+import foghttp
+
+
+with foghttp.Client() as client:
+    response = client.get("https://api.example.com/health")
+    response.raise_for_status()
+```
+
+This mode is intended for public HTTPS endpoints whose certificates chain to
+public WebPKI roots.
+
+## WebPKI Plus Custom CA
+
+For private services that use an internal CA, pass CA certificate files through
+`TLSConfig`. By default these certificates are added to the WebPKI root store.
+
+```python
+from pathlib import Path
+
+import foghttp
+
+
+tls = foghttp.TLSConfig(
+    ca_certificates=(Path("/etc/company/ca.pem"),),
+)
+
+with foghttp.Client(tls=tls) as client:
+    response = client.get("https://internal-api.example.com/health")
+    response.raise_for_status()
+```
+
+Use this when the client talks to both public HTTPS endpoints and internal
+endpoints signed by a private CA.
+
+## Custom-Only CA
+
+For tighter enterprise trust boundaries, disable WebPKI roots and provide one
+or more custom CA certificate files.
+
+```python
+from pathlib import Path
+
+import foghttp
+
+
+tls = foghttp.TLSConfig(
+    ca_certificates=(Path("/etc/company/ca.pem"),),
+    trust_webpki_roots=False,
+)
+
+with foghttp.Client(tls=tls) as client:
+    response = client.get("https://internal-api.example.com/health")
+    response.raise_for_status()
+```
+
+This mode trusts only the CA files you pass. `TLSConfig` rejects
+`trust_webpki_roots=False` without custom CA certificates so the transport
+cannot accidentally run with an empty or verification-free trust boundary.
+
+## Current Boundaries
+
+- Custom certificates must be PEM files containing CA certificates.
+- Certificate files are read when the Rust transport is created.
+- The same `TLSConfig` works with `Client` and `AsyncClient`.
+- Operating-system trust stores and `trust_env` proxy/TLS behavior are not used
+  today.
+- Disabling certificate verification is intentionally not supported.

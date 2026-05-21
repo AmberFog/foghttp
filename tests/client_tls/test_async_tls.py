@@ -22,6 +22,22 @@ async def test_async_client_accepts_custom_ca_certificate(
     assert response.content == TLS_OK_BODY
 
 
+async def test_async_client_accepts_custom_only_ca_trust(
+    tls_certificates: TLSCertificateBundle,
+    tls_http_server: TLSServer,
+) -> None:
+    tls = foghttp.TLSConfig(
+        ca_certificates=(tls_certificates.ca_path,),
+        trust_webpki_roots=False,
+    )
+
+    async with foghttp.AsyncClient(tls=tls) as client:
+        response = await client.get(tls_http_server.url + TLS_PATH)
+
+    assert response.status_code == OK
+    assert response.content == TLS_OK_BODY
+
+
 async def test_async_client_rejects_untrusted_tls_certificate_and_recovers(
     tls_http_server: TLSServer,
     http_server: str,
