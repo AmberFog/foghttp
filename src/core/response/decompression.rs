@@ -3,17 +3,23 @@ use crate::core::headers::HeaderPairs;
 use crate::errors::FogHttpError;
 use brotli::Decompressor;
 use flate2::read::{DeflateDecoder, MultiGzDecoder, ZlibDecoder};
+use hyper::header::CONTENT_ENCODING;
+use hyper::HeaderMap;
 use pyo3::prelude::*;
 use std::io::{Cursor, Read};
 
 const DECODE_BUFFER_SIZE: usize = 8192;
-const CONTENT_ENCODING: &str = "content-encoding";
-const CONTENT_LENGTH: &str = "content-length";
+const CONTENT_ENCODING_HEADER: &str = "content-encoding";
+const CONTENT_LENGTH_HEADER: &str = "content-length";
 
 pub struct ResponseBody {
     pub content: Vec<u8>,
     pub reservation: super::BufferedBodyReservation,
     pub decoded: bool,
+}
+
+pub struct ResponseBodyDecodingPlan {
+    plan: ContentCodingPlan,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -29,12 +35,18 @@ enum ContentCodingPlan {
     LeaveEncoded,
 }
 
+pub fn response_body_decoding_plan(headers: &HeaderMap) -> ResponseBodyDecodingPlan {
+    ResponseBodyDecodingPlan {
+        plan: content_coding_plan(headers),
+    }
+}
+
 pub fn decode_body(
     collected: CollectedBody,
-    headers: &HeaderPairs,
+    decoding_plan: ResponseBodyDecodingPlan,
     max_response_body_size: Option<usize>,
 ) -> PyResult<ResponseBody> {
-    match content_coding_plan(headers) {
+    match decoding_plan.plan {
         ContentCodingPlan::Decode(codings) => {
             decode_supported_body(collected, codings.as_slice(), max_response_body_size)
         }
@@ -57,12 +69,12 @@ pub fn decoded_response_headers(headers: HeaderPairs, decoded: bool) -> HeaderPa
         .collect()
 }
 
-fn content_coding_plan(headers: &HeaderPairs) -> ContentCodingPlan {
+fn content_coding_plan(headers: &HeaderMap) -> ContentCodingPlan {
     let mut codings = Vec::new();
-    for (_name, value) in headers
-        .iter()
-        .filter(|(name, _value)| name.eq_ignore_ascii_case(CONTENT_ENCODING))
-    {
+    for value in &headers.get_all(CONTENT_ENCODING) {
+        let Ok(value) = value.to_str() else {
+            return ContentCodingPlan::LeaveEncoded;
+        };
         for item in value.split(',') {
             let coding = item.trim().to_ascii_lowercase();
             if coding.is_empty() || coding == "identity" {
@@ -241,19 +253,28 @@ fn content_coding_name(coding: ContentCoding) -> &'static str {
 }
 
 fn decoded_body_header(name: &str) -> bool {
-    name.eq_ignore_ascii_case(CONTENT_ENCODING) || name.eq_ignore_ascii_case(CONTENT_LENGTH)
+    name.eq_ignore_ascii_case(CONTENT_ENCODING_HEADER)
+        || name.eq_ignore_ascii_case(CONTENT_LENGTH_HEADER)
 }
 
 #[cfg(test)]
 mod tests {
     use super::{content_coding_plan, decoded_response_headers, ContentCoding, ContentCodingPlan};
+    use hyper::header::{HeaderValue, CONTENT_ENCODING};
+    use hyper::HeaderMap;
+
+    fn content_encoding_headers(values: &[&'static str]) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        for value in values {
+            headers.append(CONTENT_ENCODING, HeaderValue::from_static(value));
+        }
+        headers
+    }
 
     #[test]
-    fn content_coding_plan_supports_multiple_encodings() {
-        let plan = content_coding_plan(&vec![(
-            "content-encoding".to_owned(),
-            "gzip, br".to_owned(),
-        )]);
+    fn content_coding_plan_supports_comma_separated_encodings() {
+        let headers = content_encoding_headers(&["gzip, br"]);
+        let plan = content_coding_plan(&headers);
 
         assert_eq!(
             plan,
@@ -262,8 +283,20 @@ mod tests {
     }
 
     #[test]
+    fn content_coding_plan_preserves_multiple_header_field_order() {
+        let headers = content_encoding_headers(&["gzip", "deflate"]);
+        let plan = content_coding_plan(&headers);
+
+        assert_eq!(
+            plan,
+            ContentCodingPlan::Decode(vec![ContentCoding::Gzip, ContentCoding::Deflate]),
+        );
+    }
+
+    #[test]
     fn content_coding_plan_leaves_unknown_encoding_untouched() {
-        let plan = content_coding_plan(&vec![("content-encoding".to_owned(), "zstd".to_owned())]);
+        let headers = content_encoding_headers(&["zstd"]);
+        let plan = content_coding_plan(&headers);
 
         assert_eq!(plan, ContentCodingPlan::LeaveEncoded);
     }

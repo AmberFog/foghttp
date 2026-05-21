@@ -9,6 +9,7 @@ __all__ = (
     "GZIP_ENCODING_PATH",
     "INVALID_GZIP_BODY",
     "INVALID_GZIP_PATH",
+    "MULTIPLE_ENCODING_FIELDS_PATH",
     "RAW_DEFLATE_ENCODING_PATH",
     "RESET_CONTENT_PATH",
     "SUPPORTED_ENCODING_CASES",
@@ -30,6 +31,7 @@ DECOMPRESSED_BODY = b"foghttp compressed response payload"
 GZIP_ENCODING_PATH = "/encoded/gzip"
 INVALID_GZIP_BODY = b"not a gzip stream"
 INVALID_GZIP_PATH = "/encoded/invalid-gzip"
+MULTIPLE_ENCODING_FIELDS_PATH = "/encoded/multiple-fields"
 RAW_DEFLATE_ENCODING_PATH = "/encoded/raw-deflate"
 RESET_CONTENT_PATH = "/encoded/reset-content"
 ZLIB_DEFLATE_ENCODING_PATH = "/encoded/deflate"

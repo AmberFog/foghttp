@@ -11,6 +11,7 @@ from .constants import (
     DECOMPRESSED_BODY,
     GZIP_ENCODING_PATH,
     INVALID_GZIP_PATH,
+    MULTIPLE_ENCODING_FIELDS_PATH,
     RESET_CONTENT_PATH,
     SUPPORTED_ENCODING_CASES,
     UNSUPPORTED_ENCODED_BODY,
@@ -56,6 +57,23 @@ def test_sync_buffered_response_leaves_unsupported_content_encoding_encoded(
     assert response.content == UNSUPPORTED_ENCODED_BODY
     assert response.headers["content-encoding"] == UNSUPPORTED_ENCODING
     assert response.headers["content-length"] == str(len(UNSUPPORTED_ENCODED_BODY))
+
+
+def test_sync_buffered_response_decodes_multiple_content_encoding_fields(
+    response_decompression_server: ResponseDecompressionServer,
+) -> None:
+    with foghttp.Client() as client:
+        response = client.get(
+            f"{response_decompression_server.url}{MULTIPLE_ENCODING_FIELDS_PATH}",
+        )
+        stats = client.stats()
+
+    assert response.status_code == OK
+    assert response.content == DECOMPRESSED_BODY
+    assert "content-encoding" not in response.headers
+    assert "content-length" not in response.headers
+    assert stats.total_requests == 1
+    assert stats.failed_requests == 0
 
 
 def test_sync_head_response_preserves_encoded_body_metadata(

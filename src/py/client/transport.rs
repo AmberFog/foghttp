@@ -2,7 +2,8 @@ use crate::core::client::HyperClient;
 use crate::core::headers::{response_headers, HeaderPairs};
 use crate::core::request::{build_request, RequestParts};
 use crate::core::response::{
-    collect_body, decode_body, decoded_response_headers, BufferedBodyBudget,
+    collect_body, decode_body, decoded_response_headers, response_body_decoding_plan,
+    BufferedBodyBudget,
 };
 use crate::core::url::HttpUrl;
 use crate::errors::FogHttpError;
@@ -198,6 +199,8 @@ async fn raw_response(
     let status = response.status();
     let status_code = status.as_u16();
     let http_version = format!("{:?}", response.version());
+    let decoding_plan = response_body_can_be_decoded(&request.method, status)
+        .then(|| response_body_decoding_plan(response.headers()));
     let headers = response_headers(response.headers());
     let response_body_timeout_context = TimeoutContext::new(
         TimeoutPhase::ResponseBody,
@@ -216,17 +219,16 @@ async fn raw_response(
     )
     .await
     .map_err(|_| timeout_error(&response_body_timeout_context, REQUEST_TOTAL_TIMEOUT))??;
-    let (headers, response_content, body_reservation) =
-        if response_body_can_be_decoded(&request.method, status) {
-            let body = decode_body(collected, &headers, context.max_response_body_size)?;
-            (
-                decoded_response_headers(headers, body.decoded),
-                body.content,
-                body.reservation,
-            )
-        } else {
-            (headers, collected.content, collected.reservation)
-        };
+    let (headers, response_content, body_reservation) = if let Some(decoding_plan) = decoding_plan {
+        let body = decode_body(collected, decoding_plan, context.max_response_body_size)?;
+        (
+            decoded_response_headers(headers, body.decoded),
+            body.content,
+            body.reservation,
+        )
+    } else {
+        (headers, collected.content, collected.reservation)
+    };
     let url = request.url.clone();
 
     Ok(RawResponse::from_parts(RawResponseParts {

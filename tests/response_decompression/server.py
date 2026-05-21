@@ -6,7 +6,7 @@ __all__ = (
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
-from typing import Self
+from typing import Self, TypeAlias
 from urllib.parse import urlsplit
 
 from foghttp.status_codes.client_error import NOT_FOUND
@@ -20,6 +20,7 @@ from .constants import (
     GZIP_ENCODING_PATH,
     INVALID_GZIP_BODY,
     INVALID_GZIP_PATH,
+    MULTIPLE_ENCODING_FIELDS_PATH,
     RAW_DEFLATE_ENCODING_PATH,
     RESET_CONTENT_PATH,
     UNSUPPORTED_ENCODED_BODY,
@@ -27,11 +28,12 @@ from .constants import (
     UNSUPPORTED_ENCODING_PATH,
     ZLIB_DEFLATE_ENCODING_PATH,
 )
-from .payloads import compressed_body, gzip_body
+from .payloads import compressed_body, gzip_body, multiple_encoding_fields_body
 
 
 SERVER_HOST = "127.0.0.1"
 SERVER_JOIN_TIMEOUT = 1.0
+ContentEncodingHeader: TypeAlias = str | tuple[str, ...]
 
 
 @dataclass(slots=True)
@@ -90,6 +92,12 @@ class ResponseDecompressionHandler(BaseHTTPRequestHandler):
                 content_encoding="gzip",
             )
             return
+        if path == MULTIPLE_ENCODING_FIELDS_PATH:
+            self._write_response(
+                multiple_encoding_fields_body(),
+                content_encoding=("gzip", "deflate"),
+            )
+            return
         if path == RESET_CONTENT_PATH:
             self._write_encoded_metadata_response(RESET_CONTENT, content_encoding="gzip")
             return
@@ -115,12 +123,13 @@ class ResponseDecompressionHandler(BaseHTTPRequestHandler):
         self,
         body: bytes,
         *,
-        content_encoding: str,
+        content_encoding: ContentEncodingHeader,
         write_body: bool = True,
     ) -> None:
         self.send_response(OK)
         self.send_header("content-type", BODY_CONTENT_TYPE)
-        self.send_header("content-encoding", content_encoding)
+        for value in _content_encoding_values(content_encoding):
+            self.send_header("content-encoding", value)
         self.send_header("content-length", str(len(body)))
         self.send_header("connection", "close")
         self.end_headers()
@@ -153,3 +162,9 @@ ENCODED_RESPONSE_ENCODINGS = {
     ZLIB_DEFLATE_ENCODING_PATH: "deflate",
 }
 ENCODED_PATHS = frozenset(ENCODED_RESPONSE_ENCODINGS)
+
+
+def _content_encoding_values(content_encoding: ContentEncodingHeader) -> tuple[str, ...]:
+    if isinstance(content_encoding, str):
+        return (content_encoding,)
+    return content_encoding

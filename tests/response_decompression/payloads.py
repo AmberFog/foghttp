@@ -1,6 +1,7 @@
 __all__ = (
     "compressed_body",
     "gzip_body",
+    "multiple_encoding_fields_body",
     "raw_deflate_body",
     "zlib_deflate_body",
 )
@@ -19,22 +20,25 @@ from .constants import (
 
 
 def compressed_body(path: str, body: bytes = DECOMPRESSED_BODY) -> bytes:
-    match path:
-        case path if path == GZIP_ENCODING_PATH:
-            return gzip_body(body)
-        case path if path == ZLIB_DEFLATE_ENCODING_PATH:
-            return zlib_deflate_body(body)
-        case path if path == RAW_DEFLATE_ENCODING_PATH:
-            return raw_deflate_body(body)
-        case path if path == BROTLI_ENCODING_PATH:
-            return BROTLI_COMPRESSED_BODY
-        case _unknown:
-            msg = f"unsupported compressed response path: {path}"
-            raise ValueError(msg)
+    if path == GZIP_ENCODING_PATH:
+        return gzip_body(body)
+    if path == ZLIB_DEFLATE_ENCODING_PATH:
+        return zlib_deflate_body(body)
+    if path == RAW_DEFLATE_ENCODING_PATH:
+        return raw_deflate_body(body)
+    if path == BROTLI_ENCODING_PATH:
+        return BROTLI_COMPRESSED_BODY
+
+    msg = f"unsupported compressed response path: {path}"
+    raise ValueError(msg)
 
 
 def gzip_body(body: bytes) -> bytes:
     return gzip.compress(body)
+
+
+def multiple_encoding_fields_body(body: bytes = DECOMPRESSED_BODY) -> bytes:
+    return zlib_deflate_body(gzip_body(body))
 
 
 def zlib_deflate_body(body: bytes) -> bytes:
