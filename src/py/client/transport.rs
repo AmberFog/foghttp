@@ -1,7 +1,10 @@
 use crate::core::client::HyperClient;
 use crate::core::headers::{response_headers, HeaderPairs};
 use crate::core::request::{build_request, RequestParts};
-use crate::core::response::{collect_body, BufferedBodyBudget};
+use crate::core::response::{
+    collect_body, decode_body, decoded_response_headers, response_body_decoding_plan,
+    BufferedBodyBudget,
+};
 use crate::core::url::HttpUrl;
 use crate::errors::FogHttpError;
 use crate::messages::{redirect_limit_exceeded, REQUEST_TOTAL_TIMEOUT};
@@ -14,7 +17,7 @@ use crate::py::client::timeout_diagnostics::{
 };
 use crate::py::response::{RawRequestInfo, RawResponse, RawResponseParts};
 use hyper::body::Incoming;
-use hyper::Response;
+use hyper::{Response, StatusCode};
 use pyo3::prelude::*;
 use std::time::Instant;
 
@@ -193,8 +196,11 @@ async fn raw_response(
     request: RawRequestInfo,
     context: RawResponseContext<'_>,
 ) -> PyResult<RawResponse> {
-    let status_code = response.status().as_u16();
+    let status = response.status();
+    let status_code = status.as_u16();
     let http_version = format!("{:?}", response.version());
+    let decoding_plan = response_body_can_be_decoded(&request.method, status)
+        .then(|| response_body_decoding_plan(response.headers()));
     let headers = response_headers(response.headers());
     let response_body_timeout_context = TimeoutContext::new(
         TimeoutPhase::ResponseBody,
@@ -213,19 +219,38 @@ async fn raw_response(
     )
     .await
     .map_err(|_| timeout_error(&response_body_timeout_context, REQUEST_TOTAL_TIMEOUT))??;
+    let (headers, response_content, body_reservation) = if let Some(decoding_plan) = decoding_plan {
+        let body = decode_body(collected, decoding_plan, context.max_response_body_size)?;
+        (
+            decoded_response_headers(headers, body.decoded),
+            body.content,
+            body.reservation,
+        )
+    } else {
+        (headers, collected.content, collected.reservation)
+    };
     let url = request.url.clone();
 
     Ok(RawResponse::from_parts(RawResponseParts {
         status_code,
         headers,
-        content: collected.content,
+        content: response_content,
         url,
         request,
         http_version,
         elapsed: context.started.elapsed().as_secs_f64(),
         history: Vec::new(),
-        body_reservation: Some(collected.reservation),
+        body_reservation: Some(body_reservation),
     }))
+}
+
+fn response_body_can_be_decoded(method: &str, status: StatusCode) -> bool {
+    !method.eq_ignore_ascii_case("HEAD")
+        && !status.is_informational()
+        && !matches!(
+            status,
+            StatusCode::NO_CONTENT | StatusCode::RESET_CONTENT | StatusCode::NOT_MODIFIED
+        )
 }
 
 struct RawResponseContext<'a> {

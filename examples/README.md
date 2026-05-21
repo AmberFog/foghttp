@@ -12,6 +12,7 @@ uv run --with "maturin>=1.7,<2" maturin develop
 uv run examples/sync_json_api.py
 uv run examples/async_json_fanout.py
 uv run examples/async_resource_limits.py
+uv run examples/compressed_response.py
 uv run examples/redirects.py
 uv run examples/prepared_requests.py
 uv run examples/request_builder_compatibility.py
@@ -24,6 +25,8 @@ uv run examples/request_builder_compatibility.py
   with global/per-origin active request limits and stats.
 - [async_resource_limits.py](./async_resource_limits.py): explicit global and
   per-origin request backpressure with pool timeout settings and diagnostics.
+- [compressed_response.py](./compressed_response.py): manual
+  `Accept-Encoding` negotiation with transparent buffered response decoding.
 - [redirects.py](./redirects.py): GET and POST redirects, final URL, and
   history.
 - [prepared_requests.py](./prepared_requests.py): build, inspect, adjust, and

@@ -347,6 +347,30 @@ and `content=` bodies are replayable for the current redirect policy. Iterator,
 async iterator, and streaming request bodies are not accepted yet and will need
 an explicit non-replayable body contract later.
 
+## Buffered Response Decoding
+
+Buffered responses with `content-encoding: gzip`, `deflate`, or `br` are
+decoded before `response.content`, `response.text`, or `response.json()` see the
+body. After successful decoding, FogHTTP removes `content-encoding` and
+`content-length` from `response.headers` because they described the encoded wire
+body, not the decoded buffered body.
+
+```python
+import foghttp
+
+
+with foghttp.Client(headers={"accept-encoding": "gzip, deflate, br"}) as client:
+    response = client.get("https://api.example.com/data")
+    print(response.content)
+```
+
+FogHTTP does not add `Accept-Encoding` automatically yet. Send that header when
+you want to negotiate compressed responses. Unsupported content encodings are
+left untouched. Invalid compressed bodies raise `RequestError`. Responses that
+must not carry a body, such as `HEAD`, `204 No Content`, `205 Reset Content`,
+and `304 Not Modified`, are not decoded and keep their original body metadata
+headers.
+
 ## Request Metadata
 
 Every response includes lightweight request metadata. The request body is not
@@ -543,6 +567,10 @@ defaults to `10 * 1024 * 1024` bytes and protects one response.
 protects aggregate in-flight buffered response bodies across concurrent
 requests. Set smaller or larger explicit limits for your workload, or pass
 `None` only when unbounded buffering is an intentional opt-in.
+For compressed responses, `Limits.max_response_body_size` applies to both the
+encoded wire body and the decoded buffered body. The aggregate buffered budget
+also covers bytes held while decoding, so compressed responses remain bounded
+under concurrency.
 `Limits.max_idle_connections_per_host` controls idle keep-alive pool capacity;
 it is not an active request limit and is separate from per-origin request
 backpressure.
