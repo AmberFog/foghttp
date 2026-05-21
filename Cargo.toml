@@ -29,10 +29,8 @@ version = "0.27.3"
 default-features = false
 features = [
     "http1",
-    "native-tokio",
     "ring",
     "tls12",
-    "webpki-roots",
 ]
 
 [dependencies.hyper-util]
