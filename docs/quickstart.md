@@ -481,7 +481,7 @@ one or more CA certificate files.
 
 ```python
 tls = foghttp.TLSConfig(
-    ca_certificates=(Path("/etc/company/ca.pem"),),
+    ca_certificates=("/etc/company/ca.pem",),
     trust_webpki_roots=False,
 )
 ```
