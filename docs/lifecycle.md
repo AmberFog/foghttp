@@ -258,6 +258,11 @@ acquire pressure, per-origin pressure, and buffered response budget state are
 needed. The `origins` entry is keyed by normalized origin (`scheme://host`, with
 `:port` only for non-default ports) and never includes path, query, userinfo,
 headers, or body data.
+The snapshot is collected by the Rust transport state layer in one raw boundary
+call; Python only formats the already collected aggregate and per-origin data.
+Rust also retries briefly when aggregate active/pending request-slot counters
+and per-origin pressure are caught between matching atomic updates. The snapshot
+is still diagnostic state, not a lock-protected transaction over the transport.
 
 ```python
 state = client.dump_transport_state()

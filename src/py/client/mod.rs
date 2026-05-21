@@ -23,8 +23,8 @@ use crate::py::client::options::{
 use crate::py::client::runtime::build_runtime;
 use crate::py::client::transport::{send_request, TransportRequest};
 use crate::py::response::RawResponse;
-use crate::py::stats::{RawOriginPressure, RawStats};
-use crate::py::RawPoolDiagnostics;
+use crate::py::stats::RawStats;
+use crate::py::{RawPoolDiagnostics, RawTransportState};
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 use std::sync::Arc;
@@ -206,12 +206,8 @@ impl RawClient {
         self.metrics.snapshot().into()
     }
 
-    fn origin_pressure(&self) -> Vec<RawOriginPressure> {
-        self.metrics
-            .origin_snapshots()
-            .into_iter()
-            .map(Into::into)
-            .collect()
+    fn transport_state(&self) -> RawTransportState {
+        self.metrics.transport_state_snapshot().into()
     }
 
     fn pool_diagnostics(&self) -> RawPoolDiagnostics {

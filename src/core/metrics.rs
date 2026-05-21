@@ -16,6 +16,8 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+const TRANSPORT_STATE_SNAPSHOT_ATTEMPTS: usize = 8;
+
 #[derive(Default)]
 pub struct Metrics {
     active_requests: AtomicUsize,
@@ -56,6 +58,11 @@ pub struct MetricsSnapshot {
     pub pool_acquire_wait_time_last_ns: u64,
     pub buffered_response_bytes: usize,
     pub buffered_response_budget_rejections: usize,
+}
+
+pub struct TransportStateSnapshot {
+    pub metrics: MetricsSnapshot,
+    pub origins: Vec<OriginMetricsSnapshot>,
 }
 
 impl Metrics {
@@ -200,6 +207,26 @@ impl Metrics {
         self.origin_registry.pool_diagnostics_snapshots()
     }
 
+    pub fn transport_state_snapshot(&self) -> TransportStateSnapshot {
+        let mut snapshot = self.transport_state_snapshot_once();
+        for _attempt in 1..TRANSPORT_STATE_SNAPSHOT_ATTEMPTS {
+            if snapshot.has_coherent_request_pressure() {
+                return snapshot;
+            }
+
+            std::hint::spin_loop();
+            snapshot = self.transport_state_snapshot_once();
+        }
+        snapshot
+    }
+
+    fn transport_state_snapshot_once(&self) -> TransportStateSnapshot {
+        TransportStateSnapshot {
+            metrics: self.snapshot(),
+            origins: self.origin_snapshots(),
+        }
+    }
+
     pub fn snapshot(&self) -> MetricsSnapshot {
         MetricsSnapshot {
             active_requests: self.active_requests.load(Ordering::Relaxed),
@@ -225,6 +252,20 @@ impl Metrics {
                 .buffered_response_budget_rejections
                 .load(Ordering::Relaxed),
         }
+    }
+}
+
+impl TransportStateSnapshot {
+    fn has_coherent_request_pressure(&self) -> bool {
+        let origin_active_requests = self.origins.iter().fold(0usize, |total, origin| {
+            total.saturating_add(origin.active_requests)
+        });
+        let origin_pending_requests = self.origins.iter().fold(0usize, |total, origin| {
+            total.saturating_add(origin.pending_requests)
+        });
+
+        self.metrics.active_requests == origin_active_requests
+            && self.metrics.pending_requests == origin_pending_requests
     }
 }
 
@@ -274,5 +315,30 @@ mod tests {
         assert_eq!(snapshot.pool_acquire_wait_time_total_ns, 25);
         assert_eq!(snapshot.pool_acquire_wait_time_max_ns, 15);
         assert_eq!(snapshot.pool_acquire_wait_time_last_ns, 15);
+    }
+
+    #[test]
+    fn transport_state_snapshot_includes_aggregate_metrics_and_origins() {
+        let metrics = Metrics::default();
+
+        metrics.request_started();
+        metrics.active_request_started();
+        let origin_metrics = metrics.origin_metrics("https://api.example.com");
+        origin_metrics.active_request_started();
+        origin_metrics.pool_acquire_started();
+        let secondary_origin_metrics = metrics.origin_metrics("https://secondary.example.com");
+        secondary_origin_metrics.pool_acquire_started();
+
+        let snapshot = metrics.transport_state_snapshot();
+
+        assert_eq!(snapshot.metrics.active_requests, 1);
+        assert_eq!(snapshot.metrics.total_requests, 1);
+        assert!(snapshot.has_coherent_request_pressure());
+        assert_eq!(snapshot.origins.len(), 2);
+        assert_eq!(snapshot.origins[0].origin, "https://api.example.com");
+        assert_eq!(snapshot.origins[0].active_requests, 1);
+        assert_eq!(snapshot.origins[0].pool_acquire_attempts, 1);
+        assert_eq!(snapshot.origins[1].origin, "https://secondary.example.com");
+        assert_eq!(snapshot.origins[1].pool_acquire_attempts, 1);
     }
 }
