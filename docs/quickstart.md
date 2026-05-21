@@ -371,6 +371,10 @@ must not carry a body, such as `HEAD`, `204 No Content`, `205 Reset Content`,
 and `304 Not Modified`, are not decoded and keep their original body metadata
 headers.
 
+`response.text` uses the `Content-Type` charset when it names a valid Python
+codec. If the charset is missing or invalid, FogHTTP falls back to a Unicode BOM
+when present, otherwise to UTF-8.
+
 ## Request Metadata
 
 Every response includes lightweight request metadata. The request body is not

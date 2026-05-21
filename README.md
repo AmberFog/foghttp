@@ -86,7 +86,7 @@ async with foghttp.AsyncClient() as client:
 - default client headers and query params for reusable API clients
 - query params with repeated keys, JSON, form-urlencoded data, and buffered
   bytes/text bodies
-- buffered `Response` with status flags, `text`, `json()`,
+- buffered `Response` with status flags, charset-aware `text`, `json()`,
   `raise_for_status()`, and request metadata
 - transparent `gzip`, `deflate`, and `br` decoding for buffered responses
 - prepared `Request` objects with `build_request()` and `send()`
