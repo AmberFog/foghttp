@@ -45,6 +45,7 @@ async def main() -> None:
     async with foghttp.AsyncClient(limits=limits, timeouts=timeouts) as client:
         await asyncio.gather(*(fetch(client, url) for url in URLS))
         print(client.stats())
+        print(client.dump_pool_diagnostics())
 
 
 if __name__ == "__main__":

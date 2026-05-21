@@ -3,10 +3,28 @@ use super::atomic::{
 };
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::{Duration, Instant};
 
 const ORIGIN_PRESSURE_CLEANUP_THRESHOLD: usize = 1024;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PendingRequestBlockingReason {
+    None,
+    GlobalActiveRequests,
+    PerOriginActiveRequests,
+    Mixed,
+}
+
+pub struct OriginPoolDiagnosticsSnapshot {
+    pub origin: String,
+    pub active_requests: usize,
+    pub pending_requests: usize,
+    pub pool_acquire_timeouts: usize,
+    pub oldest_pending_request_wait_ns: u64,
+    pub blocked_by: PendingRequestBlockingReason,
+    pub last_activity_at_ns: u64,
+}
 
 pub struct OriginMetricsRegistry {
     started_at: Instant,
@@ -42,6 +60,22 @@ pub struct OriginMetrics {
     pool_acquire_wait_time_max_ns: AtomicU64,
     pool_acquire_wait_time_last_ns: AtomicU64,
     last_activity_at_ns: AtomicU64,
+    pending_waiters: Mutex<PendingWaiters>,
+}
+
+struct PendingWaiters {
+    next_waiter_id: u64,
+    waiters: HashMap<u64, PendingWaiter>,
+}
+
+struct PendingWaiter {
+    started: Instant,
+    blocked_by: PendingRequestBlockingReason,
+}
+
+struct PendingWaitersSnapshot {
+    oldest_pending_request_wait_ns: u64,
+    blocked_by: PendingRequestBlockingReason,
 }
 
 impl Default for OriginMetricsRegistry {
@@ -83,6 +117,16 @@ impl OriginMetricsRegistry {
         snapshots
     }
 
+    pub fn pool_diagnostics_snapshots(&self) -> Vec<OriginPoolDiagnosticsSnapshot> {
+        let origins = self.read_origins();
+        let mut snapshots = origins
+            .values()
+            .map(|metrics| metrics.pool_diagnostics_snapshot())
+            .collect::<Vec<_>>();
+        snapshots.sort_by(|left, right| left.origin.cmp(&right.origin));
+        snapshots
+    }
+
     fn read_origins(&self) -> RwLockReadGuard<'_, HashMap<String, Arc<OriginMetrics>>> {
         self.origins.read().unwrap_or_else(PoisonError::into_inner)
     }
@@ -108,6 +152,7 @@ impl OriginMetrics {
             pool_acquire_wait_time_max_ns: AtomicU64::new(0),
             pool_acquire_wait_time_last_ns: AtomicU64::new(0),
             last_activity_at_ns: AtomicU64::new(duration_as_nanos(started_at.elapsed())),
+            pending_waiters: Mutex::new(PendingWaiters::default()),
         }
     }
 
@@ -121,13 +166,16 @@ impl OriginMetrics {
         self.touch();
     }
 
-    pub fn pending_request_started(&self) {
+    pub fn pending_request_started(&self, blocked_by: PendingRequestBlockingReason) -> u64 {
         let current = self.pending_requests.fetch_add(1, Ordering::AcqRel) + 1;
         update_atomic_usize_max(&self.peak_pending_requests, current);
+        let waiter_id = self.lock_pending_waiters().insert(blocked_by);
         self.touch();
+        waiter_id
     }
 
-    pub fn pending_request_finished(&self) {
+    pub fn pending_request_finished(&self, waiter_id: u64) {
+        self.lock_pending_waiters().remove(waiter_id);
         self.pending_requests.fetch_sub(1, Ordering::AcqRel);
         self.touch();
     }
@@ -185,6 +233,19 @@ impl OriginMetrics {
         }
     }
 
+    fn pool_diagnostics_snapshot(&self) -> OriginPoolDiagnosticsSnapshot {
+        let waiters = self.lock_pending_waiters().snapshot();
+        OriginPoolDiagnosticsSnapshot {
+            origin: self.origin.clone(),
+            active_requests: self.active_requests.load(Ordering::Relaxed),
+            pending_requests: self.pending_requests.load(Ordering::Acquire),
+            pool_acquire_timeouts: self.pool_acquire_timeouts.load(Ordering::Relaxed),
+            oldest_pending_request_wait_ns: waiters.oldest_pending_request_wait_ns,
+            blocked_by: waiters.blocked_by,
+            last_activity_at_ns: self.last_activity_at_ns.load(Ordering::Relaxed),
+        }
+    }
+
     fn is_idle(&self) -> bool {
         self.active_requests.load(Ordering::Relaxed) == 0
             && self.pending_requests.load(Ordering::Acquire) == 0
@@ -195,5 +256,69 @@ impl OriginMetrics {
             &self.last_activity_at_ns,
             duration_as_nanos(self.started_at.elapsed()),
         );
+    }
+
+    fn lock_pending_waiters(&self) -> MutexGuard<'_, PendingWaiters> {
+        self.pending_waiters
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+impl Default for PendingWaiters {
+    fn default() -> Self {
+        Self {
+            next_waiter_id: 1,
+            waiters: HashMap::new(),
+        }
+    }
+}
+
+impl PendingWaiters {
+    fn insert(&mut self, blocked_by: PendingRequestBlockingReason) -> u64 {
+        let waiter_id = self.next_waiter_id;
+        self.next_waiter_id = self.next_waiter_id.saturating_add(1);
+        self.waiters.insert(
+            waiter_id,
+            PendingWaiter {
+                started: Instant::now(),
+                blocked_by,
+            },
+        );
+        waiter_id
+    }
+
+    fn remove(&mut self, waiter_id: u64) {
+        self.waiters.remove(&waiter_id);
+    }
+
+    fn snapshot(&self) -> PendingWaitersSnapshot {
+        let Some(first_waiter) = self.waiters.values().next() else {
+            return PendingWaitersSnapshot {
+                oldest_pending_request_wait_ns: 0,
+                blocked_by: PendingRequestBlockingReason::None,
+            };
+        };
+
+        let mut oldest_pending_request_wait_ns = duration_as_nanos(first_waiter.started.elapsed());
+        let blocked_by = first_waiter.blocked_by;
+        let mut is_mixed = false;
+
+        for waiter in self.waiters.values().skip(1) {
+            oldest_pending_request_wait_ns =
+                oldest_pending_request_wait_ns.max(duration_as_nanos(waiter.started.elapsed()));
+            if waiter.blocked_by != blocked_by {
+                is_mixed = true;
+            }
+        }
+
+        PendingWaitersSnapshot {
+            oldest_pending_request_wait_ns,
+            blocked_by: if is_mixed {
+                PendingRequestBlockingReason::Mixed
+            } else {
+                blocked_by
+            },
+        }
     }
 }

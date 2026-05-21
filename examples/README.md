@@ -23,7 +23,7 @@ uv run examples/request_builder_compatibility.py
 - [async_json_fanout.py](./async_json_fanout.py): concurrent async GET requests
   with global/per-origin active request limits and stats.
 - [async_resource_limits.py](./async_resource_limits.py): explicit global and
-  per-origin request backpressure with pool timeout settings.
+  per-origin request backpressure with pool timeout settings and diagnostics.
 - [redirects.py](./redirects.py): GET and POST redirects, final URL, and
   history.
 - [prepared_requests.py](./prepared_requests.py): build, inspect, adjust, and

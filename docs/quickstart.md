@@ -555,6 +555,10 @@ by normalized origin without path, query, userinfo, headers, or body data.
 Default ports are omitted from origin keys; non-default ports are preserved.
 Each origin also exposes `last_activity_at_ns`, a monotonic timestamp relative
 to the current transport metrics lifetime, not a Unix epoch timestamp.
+Use `client.dump_pool_diagnostics()` when a workload appears stuck waiting for
+capacity: it reports current active holders, pending waiters, the oldest pending
+wait age, whether another pending waiter can be admitted, and whether requests
+are waiting on the global or per-origin active request limit.
 
 `Timeouts.connect` is client-level connector configuration. Per-request
 `timeout=` currently affects `pool` and `total`, not `connect`, `read`, or

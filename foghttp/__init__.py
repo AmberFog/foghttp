@@ -11,7 +11,10 @@ __all__ = (
     "Headers",
     "LifecycleError",
     "Limits",
+    "OriginPoolDiagnostics",
     "OriginPressureState",
+    "PoolBlockingReason",
+    "PoolDiagnostics",
     "PoolTimeout",
     "ReadTimeout",
     "Request",
@@ -50,6 +53,7 @@ from .errors import (
 )
 from .headers import Headers
 from .limits import Limits
+from .pool_diagnostics import OriginPoolDiagnostics, PoolBlockingReason, PoolDiagnostics
 from .request import Request
 from .request_info import RequestInfo
 from .response import Response

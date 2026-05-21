@@ -42,10 +42,12 @@ These operations do not create the Rust transport:
 - building a prepared `Request`
 - calling `stats()` before the first request
 - calling `dump_transport_state()` before the first request
+- calling `dump_pool_diagnostics()` before the first request
 - closing a never-used client
 
 Before the first request, `stats()` returns an empty `TransportStats` value and
-`dump_transport_state()` returns zero resource and acquire-pressure counters.
+`dump_transport_state()` and `dump_pool_diagnostics()` return zero resource and
+acquire-pressure counters.
 
 ```python
 import foghttp
@@ -69,6 +71,7 @@ assert client.dump_transport_state() == {
     "buffered_response_budget_rejections": 0,
     "origins": {},
 }
+assert client.dump_pool_diagnostics()["origins"] == {}
 
 client.close()
 ```
@@ -116,8 +119,8 @@ as lifecycle management.
 ## Closed Client Behavior
 
 After `close()` or `aclose()` starts, the client rejects new transport work.
-Shortcut requests, `send()`, `stats()`, and `dump_transport_state()` raise
-`ClientClosedError`.
+Shortcut requests, `send()`, `stats()`, `dump_transport_state()`, and
+`dump_pool_diagnostics()` raise `ClientClosedError`.
 
 ```python
 import foghttp
@@ -259,6 +262,18 @@ headers, or body data.
 ```python
 state = client.dump_transport_state()
 api_pressure = state["origins"].get("https://api.example.com")
+```
+
+Use `dump_pool_diagnostics()` when the question is specifically why requests are
+waiting for capacity. It reports the current pending queue, the oldest pending
+wait age in nanoseconds, whether another pending waiter can be admitted, and
+whether current waiters are blocked by the global active request limit or the
+per-origin active request limit.
+
+```python
+diagnostics = client.dump_pool_diagnostics()
+if diagnostics["pending_requests"]:
+    print(diagnostics["blocked_by"], diagnostics["oldest_pending_request_wait_ns"])
 ```
 
 ## Current Boundaries
