@@ -95,7 +95,8 @@ async with foghttp.AsyncClient() as client:
   token-like URL params, and buffered body bytes
 - normalized `URL` model with origin comparison and relative joins
 - GET/HEAD/POST redirects with final URL, history, and conservative replay policy
-- HTTPS with default WebPKI roots and explicit custom CA certificates
+- HTTPS with default WebPKI roots, explicit custom CA certificates, and
+  custom-only CA trust
 - graceful sync `close()` that waits for in-flight sync requests
 - async request cancellation that aborts the in-flight Rust request
 - global and per-origin request backpressure, per-origin acquire pressure
@@ -112,6 +113,7 @@ async with foghttp.AsyncClient() as client:
 - [Request builder compatibility](https://github.com/AmberFog/foghttp/blob/main/docs/request-builder.md)
 - [Client lifecycle](https://github.com/AmberFog/foghttp/blob/main/docs/lifecycle.md)
 - [Timeout model](https://github.com/AmberFog/foghttp/blob/main/docs/timeouts.md)
+- [TLS trust](https://github.com/AmberFog/foghttp/blob/main/docs/tls.md)
 - [Use cases](https://github.com/AmberFog/foghttp/blob/main/docs/use-cases.md)
 - [Redirects](https://github.com/AmberFog/foghttp/blob/main/docs/redirects.md)
 - [Limitations](https://github.com/AmberFog/foghttp/blob/main/docs/limitations.md)
@@ -121,10 +123,10 @@ async with foghttp.AsyncClient() as client:
 ## Current Limitations
 
 FogHTTP is currently focused on controlled buffered HTTP workloads. Streaming
-bodies, cookies, auth helpers, proxy support, `verify=False`, multipart
-uploads, HTTP/2, compression decoding, true connection-level pool metrics,
-per-request connect timeout reconfiguration, and separate read/write timeout
-semantics are planned for later versions.
+bodies, cookies, auth helpers, proxy support, multipart uploads, HTTP/2,
+compression decoding, true connection-level pool metrics, per-request connect
+timeout reconfiguration, and separate read/write timeout semantics are planned
+for later versions. Disabling TLS verification is intentionally not supported.
 
 ## Development
 

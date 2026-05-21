@@ -1,4 +1,4 @@
-__all__ = ("ca_certificate_bytes",)
+__all__ = ("ca_certificate_bytes", "trust_webpki_roots")
 
 from pathlib import Path
 
@@ -9,6 +9,10 @@ def ca_certificate_bytes(tls: TLSConfig | None) -> tuple[bytes, ...]:
     if tls is None:
         return ()
     return tuple(_read_ca_certificate(certificate) for certificate in tls.ca_certificates)
+
+
+def trust_webpki_roots(tls: TLSConfig | None) -> bool:
+    return True if tls is None else tls.trust_webpki_roots
 
 
 def _read_ca_certificate(certificate: CertificatePath) -> bytes:

@@ -5,9 +5,21 @@ use rustls::crypto::ring;
 use rustls::pki_types::{pem::PemObject, CertificateDer};
 use rustls::{ClientConfig, RootCertStore};
 
-pub fn build_tls_config(ca_certificates: &[Vec<u8>]) -> Result<ClientConfig, String> {
-    let mut roots = webpki_root_store();
+pub fn build_tls_config(
+    ca_certificates: &[Vec<u8>],
+    trust_webpki_roots: bool,
+) -> Result<ClientConfig, String> {
+    let mut roots = if trust_webpki_roots {
+        webpki_root_store()
+    } else {
+        RootCertStore::empty()
+    };
     add_ca_certificates(&mut roots, ca_certificates)?;
+    if roots.roots.is_empty() {
+        return Err(
+            "TLS trust store is empty; enable WebPKI roots or provide CA certificates".to_owned(),
+        );
+    }
 
     let provider = ring::default_provider();
     let builder = ClientConfig::builder_with_provider(provider.into())

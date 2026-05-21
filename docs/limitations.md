@@ -33,7 +33,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - normalized `URL` with origin comparison and relative joins
 - redirect history
 - GET/HEAD/POST redirects
-- HTTPS with default WebPKI roots and explicit custom CA certificate files
+- HTTPS with default WebPKI roots, explicit custom CA certificate files, and
+  custom-only CA trust through `TLSConfig(trust_webpki_roots=False)`
 - async request cancellation that aborts the in-flight Rust request
 - global active request limit, per-origin active request limit, pending acquire
   limit, and basic request stats
@@ -59,7 +60,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | Cookie jar | `cookies=True` is rejected |
 | Proxy support | `trust_env=True` is rejected |
 | Auth helpers | Use manual headers for simple cases |
-| Disabling TLS verification | Not available; use `TLSConfig` with explicit CA certificates |
+| Disabling TLS verification | Not available by design; use `TLSConfig` with explicit CA certificates |
+| OS trust store integration | Not available; FogHTTP uses bundled WebPKI roots unless `trust_webpki_roots=False` is set |
 | HTTP/2 | Not available |
 | Compression decoding | Not available |
 | transport-managed request headers | Safe API rejects manual `Host`, `Content-Length`, `Transfer-Encoding`, `TE`, `Trailer`, `Connection`, `Upgrade`, `Keep-Alive`, and `Proxy-Connection` |
