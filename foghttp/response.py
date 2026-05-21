@@ -77,7 +77,7 @@ class Response:
         return orjson.loads(self.content)
 
     def raise_for_status(self) -> None:
-        if self.status_code >= MIN_CLIENT_ERROR_STATUS_CODE:
+        if self.is_error:
             raise HTTPStatusError(
                 http_status_error(
                     self.request.method,

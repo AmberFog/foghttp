@@ -47,6 +47,43 @@ def test_response_status_flags(
     assert actual_flags == expected_flags
 
 
+@pytest.mark.parametrize(
+    "status_code",
+    [
+        MIN_CLIENT_ERROR_STATUS_CODE,
+        MAX_CLIENT_ERROR_STATUS_CODE,
+        MIN_SERVER_ERROR_STATUS_CODE,
+        MAX_SERVER_ERROR_STATUS_CODE,
+    ],
+)
+def test_raise_for_status_raises_for_error_status_flags(
+    status_code: int,
+    faker: Faker,
+) -> None:
+    response = _response(status_code, url=faker.url())
+
+    assert response.is_error
+    with pytest.raises(foghttp.HTTPStatusError):
+        response.raise_for_status()
+
+
+@pytest.mark.parametrize(
+    "status_code",
+    [
+        MIN_CLIENT_ERROR_STATUS_CODE - 1,
+        MAX_SERVER_ERROR_STATUS_CODE + 1,
+    ],
+)
+def test_raise_for_status_allows_non_error_status_flags(
+    status_code: int,
+    faker: Faker,
+) -> None:
+    response = _response(status_code, url=faker.url())
+
+    assert not response.is_error
+    response.raise_for_status()
+
+
 def _response(status_code: int, *, url: str) -> foghttp.Response:
     return foghttp.Response(
         status_code=status_code,
