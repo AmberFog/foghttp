@@ -137,6 +137,14 @@ counts. `dump_transport_state()["origins"]` exposes the same acquire-pressure
 fields per normalized origin, with default ports omitted and non-default ports
 preserved, so a service can see which upstream is holding active slots or
 building a pending queue without logging request paths or query strings.
+FogHTTP collects this transport-state snapshot in Rust and returns aggregate
+and per-origin pressure through one raw client boundary call. The Rust snapshot
+path retries briefly if current active/pending aggregate counters or
+historical acquire-pressure counters are caught between matching per-origin
+updates. Historical acquire counters are compared with per-origin sums only
+while the origin registry still contains all historical origins; after idle
+origin pruning, the per-origin history can be incomplete. The snapshot remains
+diagnostic state rather than a lock-protected transport transaction.
 Per-origin `last_activity_at_ns` is monotonic within the current transport
 metrics lifetime and is not a wall-clock Unix timestamp.
 

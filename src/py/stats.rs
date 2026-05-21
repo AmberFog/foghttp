@@ -1,7 +1,8 @@
 use crate::core::metrics::{MetricsSnapshot, OriginMetricsSnapshot};
 use pyo3::prelude::*;
 
-#[pyclass]
+#[derive(Clone)]
+#[pyclass(skip_from_py_object)]
 pub struct RawOriginPressure {
     #[pyo3(get)]
     origin: String,

@@ -89,24 +89,24 @@ class ClientCore:
         with self._client_lock:
             self._ensure_open()
             raw_client = self._client
-            raw_stats = None if raw_client is None else raw_client.stats()
-            raw_origins = () if raw_client is None else raw_client.origin_pressure()
+            raw_state = None if raw_client is None else raw_client.transport_state()
 
-        stats = TransportStats() if raw_stats is None else stats_from_raw(raw=raw_stats)
+        if raw_state is None:
+            return _empty_transport_state()
         return {
-            "active_requests": stats.active_requests,
-            "pending_requests": stats.pending_requests,
-            "peak_pending_requests": stats.peak_pending_requests,
-            "pool_acquire_attempts": stats.pool_acquire_attempts,
-            "pool_acquire_immediate": stats.pool_acquire_immediate,
-            "pool_acquire_waited": stats.pool_acquire_waited,
-            "pool_acquire_timeouts": stats.pool_acquire_timeouts,
-            "pool_acquire_wait_time_total_ns": stats.pool_acquire_wait_time_total_ns,
-            "pool_acquire_wait_time_max_ns": stats.pool_acquire_wait_time_max_ns,
-            "pool_acquire_wait_time_last_ns": stats.pool_acquire_wait_time_last_ns,
-            "buffered_response_bytes": stats.buffered_response_bytes,
-            "buffered_response_budget_rejections": stats.buffered_response_budget_rejections,
-            "origins": {origin.origin: _origin_pressure_state(origin) for origin in raw_origins},
+            "active_requests": raw_state.active_requests,
+            "pending_requests": raw_state.pending_requests,
+            "peak_pending_requests": raw_state.peak_pending_requests,
+            "pool_acquire_attempts": raw_state.pool_acquire_attempts,
+            "pool_acquire_immediate": raw_state.pool_acquire_immediate,
+            "pool_acquire_waited": raw_state.pool_acquire_waited,
+            "pool_acquire_timeouts": raw_state.pool_acquire_timeouts,
+            "pool_acquire_wait_time_total_ns": raw_state.pool_acquire_wait_time_total_ns,
+            "pool_acquire_wait_time_max_ns": raw_state.pool_acquire_wait_time_max_ns,
+            "pool_acquire_wait_time_last_ns": raw_state.pool_acquire_wait_time_last_ns,
+            "buffered_response_bytes": raw_state.buffered_response_bytes,
+            "buffered_response_budget_rejections": raw_state.buffered_response_budget_rejections,
+            "origins": {origin.origin: _origin_pressure_state(origin) for origin in raw_state.origins},
         }
 
     def dump_pool_diagnostics(self) -> PoolDiagnostics:
@@ -168,6 +168,24 @@ def _origin_pressure_state(origin: "_foghttp.RawOriginPressure") -> OriginPressu
         "pool_acquire_wait_time_max_ns": origin.pool_acquire_wait_time_max_ns,
         "pool_acquire_wait_time_last_ns": origin.pool_acquire_wait_time_last_ns,
         "last_activity_at_ns": origin.last_activity_at_ns,
+    }
+
+
+def _empty_transport_state() -> TransportState:
+    return {
+        "active_requests": 0,
+        "pending_requests": 0,
+        "peak_pending_requests": 0,
+        "pool_acquire_attempts": 0,
+        "pool_acquire_immediate": 0,
+        "pool_acquire_waited": 0,
+        "pool_acquire_timeouts": 0,
+        "pool_acquire_wait_time_total_ns": 0,
+        "pool_acquire_wait_time_max_ns": 0,
+        "pool_acquire_wait_time_last_ns": 0,
+        "buffered_response_bytes": 0,
+        "buffered_response_budget_rejections": 0,
+        "origins": {},
     }
 
 

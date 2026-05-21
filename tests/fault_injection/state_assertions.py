@@ -5,6 +5,7 @@ __all__ = (
     "assert_network_failure_recovered",
     "assert_poisoned_connection_not_reused",
     "assert_request_count",
+    "assert_request_count_between",
 )
 
 from collections.abc import Mapping
@@ -93,6 +94,21 @@ def assert_poisoned_connection_not_reused(
 def assert_request_count(snapshot: FaultInjectionSnapshot, path: str, expected: int) -> None:
     actual = snapshot.requests_by_path.get(path, 0)
     _assert_stat(f"requests_by_path[{path}]", actual, expected)
+
+
+def assert_request_count_between(
+    snapshot: FaultInjectionSnapshot,
+    path: str,
+    *,
+    minimum: int,
+    maximum: int,
+) -> None:
+    actual = snapshot.requests_by_path.get(path, 0)
+    if minimum <= actual <= maximum:
+        return
+
+    msg = f"requests_by_path[{path}]: expected between {minimum} and {maximum}, got {actual}"
+    raise AssertionError(msg)
 
 
 def _payload_connection_id(payload: Mapping[str, object]) -> int:
