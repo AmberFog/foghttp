@@ -11,7 +11,7 @@ from .constants import (
     NO_POOL_BLOCK,
     SLOW_RESPONSE_PATH,
 )
-from .helpers import wait_for_sync_stats
+from .helpers import has_pending_pool_waiter, wait_for_sync_pool_diagnostics, wait_for_sync_stats
 
 
 def test_dump_pool_diagnostics_reports_empty_state_before_transport_creation() -> None:
@@ -53,7 +53,14 @@ def test_dump_pool_diagnostics_reports_global_active_request_pressure(
         waiter = executor.submit(client.get, sync_resource_http_server)
         wait_for_sync_stats(client, lambda stats: stats.pending_requests == 1)
 
-        diagnostics = client.dump_pool_diagnostics()
+        diagnostics = wait_for_sync_pool_diagnostics(
+            client,
+            lambda diagnostics: has_pending_pool_waiter(
+                diagnostics,
+                origin=sync_resource_http_server,
+                blocked_by=GLOBAL_ACTIVE_REQUESTS_BLOCK,
+            ),
+        )
         origin_diagnostics = diagnostics["origins"][sync_resource_http_server]
 
         blocker_response = blocker.result(timeout=1)

@@ -267,8 +267,8 @@ api_pressure = state["origins"].get("https://api.example.com")
 Use `dump_pool_diagnostics()` when the question is specifically why requests are
 waiting for capacity. It reports the current pending queue, the oldest pending
 wait age in nanoseconds, whether another pending waiter can be admitted, and
-whether current waiters are blocked by the global active request limit or the
-per-origin active request limit.
+whether current waiters are blocked by the global active request limit, the
+per-origin active request limit, or both.
 
 ```python
 diagnostics = client.dump_pool_diagnostics()

@@ -144,8 +144,10 @@ For incident diagnostics, `dump_pool_diagnostics()` returns an on-demand snapsho
 focused on current acquire waits: active holders, pending waiters, the oldest
 pending wait age, whether another pending waiter can be admitted, and whether
 progress is blocked by the global active request limit or the per-origin active
-request limit. Origin keys are normalized origins only; paths, queries,
-userinfo, headers, and bodies are not included.
+request limit. `blocked_by` is one of `none`, `global_active_requests`,
+`per_origin_active_requests`, or `mixed`; `mixed` means current waiters are
+blocked by more than one acquire limit. Origin keys are normalized origins only;
+paths, queries, userinfo, headers, and bodies are not included.
 
 ```python
 limits = foghttp.Limits(

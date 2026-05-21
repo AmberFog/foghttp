@@ -23,9 +23,11 @@ impl PoolDiagnosticsSnapshot {
         max_active_requests_per_origin: Option<usize>,
         max_pending_requests: usize,
     ) -> Self {
+        let mut pending_requests = 0;
         let mut oldest_pending_request_wait_ns = 0;
         let mut blocked_by = PendingRequestBlockingReason::None;
         for origin in &origins {
+            pending_requests += origin.pending_requests;
             if origin.pending_requests == 0 {
                 continue;
             }
@@ -37,12 +39,12 @@ impl PoolDiagnosticsSnapshot {
 
         Self {
             active_requests: metrics.active_requests,
-            pending_requests: metrics.pending_requests,
+            pending_requests,
             pool_acquire_timeouts: metrics.pool_acquire_timeouts,
             max_active_requests,
             max_active_requests_per_origin,
             max_pending_requests,
-            pending_queue_full: metrics.pending_requests >= max_pending_requests,
+            pending_queue_full: pending_requests >= max_pending_requests,
             oldest_pending_request_wait_ns,
             blocked_by,
             origins,

@@ -74,6 +74,7 @@ struct PendingWaiter {
 }
 
 struct PendingWaitersSnapshot {
+    pending_requests: usize,
     oldest_pending_request_wait_ns: u64,
     blocked_by: PendingRequestBlockingReason,
 }
@@ -238,7 +239,7 @@ impl OriginMetrics {
         OriginPoolDiagnosticsSnapshot {
             origin: self.origin.clone(),
             active_requests: self.active_requests.load(Ordering::Relaxed),
-            pending_requests: self.pending_requests.load(Ordering::Acquire),
+            pending_requests: waiters.pending_requests,
             pool_acquire_timeouts: self.pool_acquire_timeouts.load(Ordering::Relaxed),
             oldest_pending_request_wait_ns: waiters.oldest_pending_request_wait_ns,
             blocked_by: waiters.blocked_by,
@@ -295,6 +296,7 @@ impl PendingWaiters {
     fn snapshot(&self) -> PendingWaitersSnapshot {
         let Some(first_waiter) = self.waiters.values().next() else {
             return PendingWaitersSnapshot {
+                pending_requests: 0,
                 oldest_pending_request_wait_ns: 0,
                 blocked_by: PendingRequestBlockingReason::None,
             };
@@ -313,6 +315,7 @@ impl PendingWaiters {
         }
 
         PendingWaitersSnapshot {
+            pending_requests: self.waiters.len(),
             oldest_pending_request_wait_ns,
             blocked_by: if is_mixed {
                 PendingRequestBlockingReason::Mixed

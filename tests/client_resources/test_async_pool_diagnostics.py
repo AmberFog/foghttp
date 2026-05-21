@@ -10,7 +10,7 @@ from .constants import (
     PER_ORIGIN_ACTIVE_REQUESTS_BLOCK,
     SLOW_RESPONSE_PATH,
 )
-from .helpers import wait_for_async_stats
+from .helpers import has_pending_pool_waiter, wait_for_async_pool_diagnostics, wait_for_async_stats
 
 
 async def test_dump_pool_diagnostics_reports_per_origin_pressure_and_clears_cancelled_waiter(
@@ -32,7 +32,14 @@ async def test_dump_pool_diagnostics_reports_per_origin_pressure_and_clears_canc
             waiter = asyncio.create_task(client.get(resource_http_server))
             await wait_for_async_stats(client, lambda stats: stats.pending_requests == 1)
 
-            diagnostics = client.dump_pool_diagnostics()
+            diagnostics = await wait_for_async_pool_diagnostics(
+                client,
+                lambda diagnostics: has_pending_pool_waiter(
+                    diagnostics,
+                    origin=resource_http_server,
+                    blocked_by=PER_ORIGIN_ACTIVE_REQUESTS_BLOCK,
+                ),
+            )
             origin_diagnostics = diagnostics["origins"][resource_http_server]
 
             waiter.cancel()
