@@ -27,7 +27,7 @@ BASE_URL_QUERY_OR_FRAGMENT_UNSUPPORTED = "base_url must not include query or fra
 BODY_CONTENT_UNSUPPORTED = "content must be bytes, str, or None"
 BODY_DATA_UNSUPPORTED = "data must be a mapping, sequence of pairs, bytes, str, or None"
 BODY_PARAMETER_CONFLICT = "pass only one body parameter: content, data, or json"
-CLIENT_CLOSED = "AsyncClient is closed"
+CLIENT_CLOSED = "FogHTTP client is closed"
 COOKIES_UNSUPPORTED = "cookies are planned after the MVP"
 HTTP_VERSION_UNSUPPORTED = "only HTTP/1.1 is supported in the MVP"
 MAX_REDIRECTS_INVALID = "max_redirects must be greater than or equal to 0"
@@ -36,7 +36,7 @@ POOL_ACQUIRE_TIMEOUT = "request acquire timeout expired"
 RUNTIME_WORKERS_ENV_INVALID = "FOGHTTP_RUNTIME_WORKERS must be an integer between 1 and 32"
 RUNTIME_WORKERS_INVALID = "runtime_workers must be an integer between 1 and 32"
 TRUST_ENV_UNSUPPORTED = "trust_env/proxy support is planned after the MVP"
-UNCLOSED_CLIENT = "AsyncClient was not closed"
+UNCLOSED_CLIENT = "FogHTTP client was not closed"
 
 
 def http_status_error(method: str, url: str, status_code: int) -> str:

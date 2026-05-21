@@ -53,7 +53,7 @@ def test_sync_closed_client_rejects_stats(
     client = sync_client_factory()
     client.close()
 
-    with pytest.raises(foghttp.ClientClosedError):
+    with pytest.raises(foghttp.ClientClosedError, match="FogHTTP client is closed"):
         client.stats()
 
 
@@ -304,7 +304,7 @@ async def test_async_closed_client_rejects_stats(
     client = async_client_factory()
     await client.aclose()
 
-    with pytest.raises(foghttp.ClientClosedError):
+    with pytest.raises(foghttp.ClientClosedError, match="FogHTTP client is closed"):
         client.stats()
 
 
