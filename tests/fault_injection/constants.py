@@ -23,6 +23,8 @@ __all__ = (
     "HEALTHY_BODY",
     "HEALTHY_PATH",
     "INCOMPLETE_BODY_PATH",
+    "INVALID_SIZE_SEGMENT",
+    "NEGATIVE_SIZE_SEGMENT",
     "PARTIAL_BODY",
     "REQUEST_INDEX_KEY",
     "SLOW_BODY_PATH",
@@ -36,6 +38,8 @@ ABRUPT_DURING_BODY_PATH = "/abrupt-during-body"
 DELAYED_EOF_UNKNOWN_SIZE_BODY_PATH = "/delayed-eof-unknown-size-body"
 HEALTHY_PATH = "/healthy"
 INCOMPLETE_BODY_PATH = "/incomplete-body"
+INVALID_SIZE_SEGMENT = "not-an-int"
+NEGATIVE_SIZE_SEGMENT = "-1"
 SLOW_BODY_PATH = "/slow-body"
 SLOW_HEADERS_PATH = "/slow-headers"
 

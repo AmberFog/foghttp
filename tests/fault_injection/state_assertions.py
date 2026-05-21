@@ -67,7 +67,7 @@ def assert_healthy_connection_reused(
     _assert_payload_request_index(first_payload, EXPECTED_FIRST_REQUEST_INDEX)
     _assert_payload_request_index(second_payload, EXPECTED_SECOND_REQUEST_INDEX)
     _assert_stat("request_count", snapshot.request_count, EXPECTED_KEEPALIVE_REQUESTS)
-    _assert_connection_last_path(snapshot, first_connection_id, HEALTHY_PATH)
+    _assert_connection_paths(snapshot, first_connection_id, (HEALTHY_PATH, HEALTHY_PATH))
     _assert_connection_request_count(snapshot, first_connection_id, EXPECTED_KEEPALIVE_REQUESTS)
 
 
@@ -154,6 +154,17 @@ def _assert_connection_last_path(
     actual = snapshot.paths_by_connection.get(connection_id)
     if actual is None or actual[-1] != expected:
         msg = f"connection {connection_id}: expected last path {expected}, got {actual}"
+        raise AssertionError(msg)
+
+
+def _assert_connection_paths(
+    snapshot: FaultInjectionSnapshot,
+    connection_id: int,
+    expected: tuple[str, ...],
+) -> None:
+    actual = snapshot.paths_by_connection.get(connection_id)
+    if actual != expected:
+        msg = f"connection {connection_id}: expected paths {expected}, got {actual}"
         raise AssertionError(msg)
 
 

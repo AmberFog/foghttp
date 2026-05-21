@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 import foghttp
+from foghttp.status_codes.client_error import NOT_FOUND
 from foghttp.status_codes.success import OK
 
 from .constants import (
@@ -18,6 +19,8 @@ from .constants import (
     EXPECTED_REQUESTS_AFTER_POISONED_RECOVERY,
     HEALTHY_PATH,
     INCOMPLETE_BODY_PATH,
+    INVALID_SIZE_SEGMENT,
+    NEGATIVE_SIZE_SEGMENT,
     SLOW_BODY_PATH,
     SLOW_HEADERS_PATH,
     TOTAL_TIMEOUT,
@@ -115,9 +118,9 @@ def test_sync_slow_body_total_timeout_recovers(
 @pytest.mark.parametrize(
     "fault_path",
     (
-        ABRUPT_BEFORE_HEADERS_PATH,
-        ABRUPT_DURING_BODY_PATH,
-        INCOMPLETE_BODY_PATH,
+        pytest.param(ABRUPT_BEFORE_HEADERS_PATH, id="abrupt-before-headers"),
+        pytest.param(ABRUPT_DURING_BODY_PATH, id="abrupt-during-body"),
+        pytest.param(INCOMPLETE_BODY_PATH, id="incomplete-body"),
     ),
 )
 def test_sync_network_fault_recovers_next_request(
@@ -183,6 +186,28 @@ def test_sync_delayed_eof_body_limit_failure_releases_resources(
 
     assert response.status_code == OK
     assert_client_recovered(stats_after_error, final_stats)
+
+
+@pytest.mark.parametrize(
+    "size_segment",
+    (
+        pytest.param(INVALID_SIZE_SEGMENT, id="not-an-int-size"),
+        pytest.param(NEGATIVE_SIZE_SEGMENT, id="negative-size"),
+    ),
+)
+def test_sync_invalid_delayed_eof_size_returns_not_found(
+    fault_injection_server: FaultInjectionServer,
+    size_segment: str,
+) -> None:
+    with foghttp.Client(timeouts=RECOVERY_TIMEOUTS) as client:
+        response = client.get(
+            f"{fault_injection_server.url}{DELAYED_EOF_UNKNOWN_SIZE_BODY_PATH}/{size_segment}",
+        )
+        stats = client.stats()
+
+    assert response.status_code == NOT_FOUND
+    assert response.content == b""
+    assert_idle_stats(stats)
 
 
 def test_sync_delayed_eof_budget_limits_concurrent_unknown_size_bodies(

@@ -1,5 +1,7 @@
 __all__ = ("assert_timeout_error",)
 
+import pytest
+
 import foghttp
 
 from .state_assertions import assert_idle_stats
@@ -22,7 +24,11 @@ def assert_timeout_error(
     if error.diagnostic.origin != origin:
         msg = f"timeout origin: expected {origin}, got {error.diagnostic.origin}"
         raise AssertionError(msg)
-    if error.diagnostic.timeout != timeout:
+    if timeout is None:
+        if error.diagnostic.timeout is not None:
+            msg = f"timeout value: expected None, got {error.diagnostic.timeout}"
+            raise AssertionError(msg)
+    elif error.diagnostic.timeout != pytest.approx(timeout):
         msg = f"timeout value: expected {timeout}, got {error.diagnostic.timeout}"
         raise AssertionError(msg)
 

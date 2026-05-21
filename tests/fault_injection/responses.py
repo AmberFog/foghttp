@@ -109,7 +109,11 @@ def _delayed_eof_unknown_size(path: str) -> int | None:
     route, response_size = parts
     if route != DELAYED_EOF_UNKNOWN_SIZE_BODY_PATH.strip("/"):
         return None
-    return int(response_size)
+    try:
+        size = int(response_size)
+    except ValueError:
+        return None
+    return size if size >= 0 else None
 
 
 def _raw_healthy_response(connection_id: int, request_index: int, *, close: bool) -> bytes:

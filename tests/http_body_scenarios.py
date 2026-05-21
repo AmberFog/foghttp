@@ -113,7 +113,11 @@ def _delayed_eof_unknown_size_bytes_response_size(path: str) -> int | None:
     route, response_size = parts
     if route != DELAYED_EOF_UNKNOWN_SIZE_BYTES_PATH.strip("/"):
         return None
-    return int(response_size)
+    try:
+        size = int(response_size)
+    except ValueError:
+        return None
+    return size if size >= 0 else None
 
 
 def _raw_response(headers: list[tuple[str, str]], content: bytes = b"") -> bytes:
