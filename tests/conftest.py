@@ -24,6 +24,7 @@ REDIRECT_PATH_PARTS = 2
 REDIRECT_TO_STATUS_PATH_PARTS = 3
 STATUS_PATH_PARTS = 2
 ECHO_HEADERS_PATH = "/headers/echo"
+OBS_TEXT_HEADERS_PATH = "/headers/obs-text"
 REPEATED_HEADERS_PATH = "/headers/repeated"
 REDIRECT_TO_LOCATION_PATH = "/redirect-to-location"
 SECURITY_HEADERS_PATH = "/headers/security"
@@ -251,6 +252,21 @@ def _raw_repeated_headers_response(path: str) -> bytes | None:
     )
 
 
+def _raw_obs_text_headers_response(path: str) -> bytes | None:
+    if path != OBS_TEXT_HEADERS_PATH:
+        return None
+
+    return (
+        b"HTTP/1.1 200 OK\r\n"
+        b"x-obs-text: value-\xe9\r\n"
+        b"x-repeat: ascii\r\n"
+        b"x-repeat: repeat-\xe9\r\n"
+        b"content-length: 0\r\n"
+        b"connection: close\r\n"
+        b"\r\n"
+    )
+
+
 def _raw_echo_headers_response(path: str, headers: str) -> bytes | None:
     if path != ECHO_HEADERS_PATH:
         return None
@@ -338,6 +354,7 @@ def _raw_http_server_response(headers: str, body: bytes) -> bytes:
         or _raw_unknown_size_bytes_response(path)
         or _raw_text_response(path)
         or _raw_repeated_headers_response(path)
+        or _raw_obs_text_headers_response(path)
         or _raw_echo_headers_response(path, headers)
         or _raw_security_headers_response(path, headers, body)
     )
@@ -426,6 +443,7 @@ class SyncHTTPHandler(BaseHTTPRequestHandler):
                 lambda: self._write_unknown_size_bytes(path),
                 lambda: self._write_text(path),
                 lambda: self._write_repeated_headers(path),
+                lambda: self._write_obs_text_headers(path),
                 lambda: self._write_echo_headers(path),
                 lambda: self._write_security_headers(path, body),
             )
@@ -532,6 +550,19 @@ class SyncHTTPHandler(BaseHTTPRequestHandler):
         self.send_header("set-cookie", "second=2")
         self.send_header("x-trace", "one")
         self.send_header("x-trace", "two")
+        self.send_header("content-length", "0")
+        self.send_header("connection", "close")
+        self.end_headers()
+        return True
+
+    def _write_obs_text_headers(self, path: str) -> bool:
+        if path != OBS_TEXT_HEADERS_PATH:
+            return False
+
+        self.send_response(OK)
+        self.send_header("x-obs-text", "value-\xe9")
+        self.send_header("x-repeat", "ascii")
+        self.send_header("x-repeat", "repeat-\xe9")
         self.send_header("content-length", "0")
         self.send_header("connection", "close")
         self.end_headers()
