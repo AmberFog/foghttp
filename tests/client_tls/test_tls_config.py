@@ -44,6 +44,29 @@ def test_client_accepts_custom_only_ca_trust(
     assert response.content == TLS_OK_BODY
 
 
+def test_client_rejects_custom_only_trust_signed_by_unrelated_ca(
+    tls_http_server: TLSServer,
+    unrelated_tls_certificates: TLSCertificateBundle,
+) -> None:
+    tls = foghttp.TLSConfig(
+        ca_certificates=(unrelated_tls_certificates.ca_path,),
+        trust_webpki_roots=False,
+    )
+
+    with (
+        foghttp.Client(tls=tls) as client,
+        pytest.raises(foghttp.RequestError) as exc_info,
+    ):
+        client.get(tls_http_server.url + TLS_PATH)
+
+    assert not isinstance(exc_info.value, foghttp.TimeoutError)
+
+
+def test_tls_config_does_not_expose_verify_false_escape_hatch() -> None:
+    with pytest.raises(TypeError, match="unexpected keyword argument 'verify'"):
+        foghttp.TLSConfig(verify=False)  # type: ignore[call-arg]
+
+
 def test_tls_config_rejects_custom_only_without_ca_certificates() -> None:
     with pytest.raises(ValueError, match="custom-only TLS trust requires at least one CA certificate"):
         foghttp.TLSConfig(trust_webpki_roots=False)
