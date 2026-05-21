@@ -3,42 +3,21 @@ __all__ = (
     "wait_for_sync_stats",
 )
 
-import asyncio
 from collections.abc import Callable
-import time
 
 import foghttp
-
-
-MAX_STATS_POLLS = 100
-STATS_POLL_INTERVAL = 0.01
+from tests.support.transport_stats import wait_for_async_transport_stats, wait_for_sync_transport_stats
 
 
 def wait_for_sync_stats(
     client: foghttp.Client,
     condition: Callable[[foghttp.TransportStats], bool],
 ) -> None:
-    for _ in range(MAX_STATS_POLLS):
-        stats = client.stats()
-        if condition(stats):
-            return
-        time.sleep(STATS_POLL_INTERVAL)
-
-    stats = client.stats()
-    msg = f"transport stats did not settle: {stats}"
-    raise AssertionError(msg)
+    wait_for_sync_transport_stats(client, condition, message="transport stats did not settle")
 
 
 async def wait_for_async_stats(
     client: foghttp.AsyncClient,
     condition: Callable[[foghttp.TransportStats], bool],
 ) -> None:
-    for _ in range(MAX_STATS_POLLS):
-        stats = client.stats()
-        if condition(stats):
-            return
-        await asyncio.sleep(STATS_POLL_INTERVAL)
-
-    stats = client.stats()
-    msg = f"transport stats did not settle: {stats}"
-    raise AssertionError(msg)
+    await wait_for_async_transport_stats(client, condition, message="transport stats did not settle")
