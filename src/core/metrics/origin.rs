@@ -2,7 +2,7 @@ use super::atomic::{
     duration_as_nanos, saturating_atomic_u64_add, update_atomic_u64_max, update_atomic_usize_max,
 };
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::{Duration, Instant};
 
@@ -29,6 +29,7 @@ pub struct OriginPoolDiagnosticsSnapshot {
 pub struct OriginMetricsRegistry {
     started_at: Instant,
     origins: RwLock<HashMap<String, Arc<OriginMetrics>>>,
+    pruned_idle_origins: AtomicBool,
 }
 
 pub struct OriginMetricsSnapshot {
@@ -84,6 +85,7 @@ impl Default for OriginMetricsRegistry {
         Self {
             started_at: Instant::now(),
             origins: RwLock::new(HashMap::new()),
+            pruned_idle_origins: AtomicBool::new(false),
         }
     }
 }
@@ -100,7 +102,11 @@ impl OriginMetricsRegistry {
         }
 
         if origins.len() >= ORIGIN_PRESSURE_CLEANUP_THRESHOLD {
+            let origin_count_before_cleanup = origins.len();
             origins.retain(|_origin, metrics| !metrics.is_idle());
+            if origins.len() < origin_count_before_cleanup {
+                self.pruned_idle_origins.store(true, Ordering::Relaxed);
+            }
         }
 
         let metrics = Arc::new(OriginMetrics::new(origin.to_owned(), self.started_at));
@@ -116,6 +122,10 @@ impl OriginMetricsRegistry {
             .collect::<Vec<_>>();
         snapshots.sort_by(|left, right| left.origin.cmp(&right.origin));
         snapshots
+    }
+
+    pub fn snapshots_include_all_historical_origins(&self) -> bool {
+        !self.pruned_idle_origins.load(Ordering::Relaxed)
     }
 
     pub fn pool_diagnostics_snapshots(&self) -> Vec<OriginPoolDiagnosticsSnapshot> {
