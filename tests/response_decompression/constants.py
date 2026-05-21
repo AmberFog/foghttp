@@ -10,6 +10,7 @@ __all__ = (
     "INVALID_GZIP_BODY",
     "INVALID_GZIP_PATH",
     "RAW_DEFLATE_ENCODING_PATH",
+    "RESET_CONTENT_PATH",
     "SUPPORTED_ENCODING_CASES",
     "UNSUPPORTED_ENCODED_BODY",
     "UNSUPPORTED_ENCODING",
@@ -30,6 +31,7 @@ GZIP_ENCODING_PATH = "/encoded/gzip"
 INVALID_GZIP_BODY = b"not a gzip stream"
 INVALID_GZIP_PATH = "/encoded/invalid-gzip"
 RAW_DEFLATE_ENCODING_PATH = "/encoded/raw-deflate"
+RESET_CONTENT_PATH = "/encoded/reset-content"
 ZLIB_DEFLATE_ENCODING_PATH = "/encoded/deflate"
 SUPPORTED_ENCODING_CASES = (
     (GZIP_ENCODING_PATH, "gzip"),

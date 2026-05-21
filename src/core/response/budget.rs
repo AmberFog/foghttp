@@ -67,23 +67,58 @@ impl BufferedBodyReservation {
         Ok(())
     }
 
-    pub fn release_chunk(&mut self, chunk_size: usize) {
+    pub fn release_chunk(&mut self, chunk_size: usize) -> PyResult<()> {
         if chunk_size == 0 {
-            return;
+            return Ok(());
         }
 
         let Some(next_reserved_bytes) = self.reserved_bytes.checked_sub(chunk_size) else {
-            debug_assert!(false, "buffered response byte reservation underflow");
-            return;
+            return Err(FogHttpError::new_err(
+                "buffered response byte reservation underflow",
+            ));
         };
 
         self.budget.release_bytes(chunk_size);
         self.reserved_bytes = next_reserved_bytes;
+        Ok(())
     }
 }
 
 impl Drop for BufferedBodyReservation {
     fn drop(&mut self) {
         self.budget.release_bytes(self.reserved_bytes);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BufferedBodyBudget;
+    use crate::core::metrics::Metrics;
+    use std::sync::Arc;
+
+    #[test]
+    fn release_chunk_releases_owned_buffered_bytes() {
+        let metrics = Arc::new(Metrics::default());
+        let budget = BufferedBodyBudget::new(None, Arc::clone(&metrics));
+        let mut reservation = budget.start_response();
+
+        reservation.reserve_chunk(8).unwrap();
+        reservation.release_chunk(3).unwrap();
+
+        assert_eq!(metrics.snapshot().buffered_response_bytes, 5);
+    }
+
+    #[test]
+    fn release_chunk_rejects_reservation_underflow() {
+        let metrics = Arc::new(Metrics::default());
+        let budget = BufferedBodyBudget::new(None, Arc::clone(&metrics));
+        let mut reservation = budget.start_response();
+
+        reservation.reserve_chunk(8).unwrap();
+        assert!(reservation.release_chunk(9).is_err());
+        assert_eq!(metrics.snapshot().buffered_response_bytes, 8);
+
+        drop(reservation);
+        assert_eq!(metrics.snapshot().buffered_response_bytes, 0);
     }
 }

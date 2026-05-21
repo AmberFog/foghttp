@@ -367,8 +367,9 @@ with foghttp.Client(headers={"accept-encoding": "gzip, deflate, br"}) as client:
 FogHTTP does not add `Accept-Encoding` automatically yet. Send that header when
 you want to negotiate compressed responses. Unsupported content encodings are
 left untouched. Invalid compressed bodies raise `RequestError`. Responses that
-must not carry a body, such as `HEAD`, `204`, and `304`, are not decoded and
-keep their original body metadata headers.
+must not carry a body, such as `HEAD`, `204 No Content`, `205 Reset Content`,
+and `304 Not Modified`, are not decoded and keep their original body metadata
+headers.
 
 ## Request Metadata
 

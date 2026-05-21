@@ -1,7 +1,7 @@
 import pytest
 
 import foghttp
-from foghttp.status_codes.success import OK
+from foghttp.status_codes.success import OK, RESET_CONTENT
 
 from .constants import (
     BODY_CONTENT_TYPE,
@@ -11,6 +11,7 @@ from .constants import (
     DECOMPRESSED_BODY,
     GZIP_ENCODING_PATH,
     INVALID_GZIP_PATH,
+    RESET_CONTENT_PATH,
     SUPPORTED_ENCODING_CASES,
     UNSUPPORTED_ENCODED_BODY,
     UNSUPPORTED_ENCODING,
@@ -70,6 +71,21 @@ async def test_async_head_response_preserves_encoded_body_metadata(
     assert response.content == b""
     assert response.headers["content-encoding"] == "gzip"
     assert response.headers["content-length"] == str(len(encoded_body))
+    assert stats.total_requests == 1
+    assert stats.failed_requests == 0
+
+
+async def test_async_reset_content_response_preserves_encoded_body_metadata(
+    response_decompression_server: ResponseDecompressionServer,
+) -> None:
+    async with foghttp.AsyncClient() as client:
+        response = await client.get(f"{response_decompression_server.url}{RESET_CONTENT_PATH}")
+        stats = client.stats()
+
+    assert response.status_code == RESET_CONTENT
+    assert response.content == b""
+    assert response.headers["content-encoding"] == "gzip"
+    assert response.headers["content-length"] == "0"
     assert stats.total_requests == 1
     assert stats.failed_requests == 0
 

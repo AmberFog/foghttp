@@ -10,7 +10,7 @@ from typing import Self
 from urllib.parse import urlsplit
 
 from foghttp.status_codes.client_error import NOT_FOUND
-from foghttp.status_codes.success import OK
+from foghttp.status_codes.success import OK, RESET_CONTENT
 
 from .constants import (
     BODY_CONTENT_TYPE,
@@ -21,6 +21,7 @@ from .constants import (
     INVALID_GZIP_BODY,
     INVALID_GZIP_PATH,
     RAW_DEFLATE_ENCODING_PATH,
+    RESET_CONTENT_PATH,
     UNSUPPORTED_ENCODED_BODY,
     UNSUPPORTED_ENCODING,
     UNSUPPORTED_ENCODING_PATH,
@@ -89,6 +90,9 @@ class ResponseDecompressionHandler(BaseHTTPRequestHandler):
                 content_encoding="gzip",
             )
             return
+        if path == RESET_CONTENT_PATH:
+            self._write_encoded_metadata_response(RESET_CONTENT, content_encoding="gzip")
+            return
 
         self._write_empty_response(NOT_FOUND)
 
@@ -122,6 +126,18 @@ class ResponseDecompressionHandler(BaseHTTPRequestHandler):
         self.end_headers()
         if write_body:
             self.wfile.write(body)
+
+    def _write_encoded_metadata_response(
+        self,
+        status_code: int,
+        *,
+        content_encoding: str,
+    ) -> None:
+        self.send_response(status_code)
+        self.send_header("content-encoding", content_encoding)
+        self.send_header("content-length", "0")
+        self.send_header("connection", "close")
+        self.end_headers()
 
     def _write_empty_response(self, status_code: int) -> None:
         self.send_response(status_code)

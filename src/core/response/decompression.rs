@@ -105,7 +105,7 @@ fn decode_supported_body(
             max_response_body_size,
             &mut body.reservation,
         )?;
-        body.reservation.release_chunk(encoded_size);
+        body.reservation.release_chunk(encoded_size)?;
     }
 
     Ok(ResponseBody {
@@ -187,7 +187,9 @@ fn decode_reader_result<R: Read>(
         let read = match reader.read(&mut buffer) {
             Ok(read) => read,
             Err(err) => {
-                reservation.release_chunk(attempt_reserved);
+                if let Err(release_error) = reservation.release_chunk(attempt_reserved) {
+                    return Err(DecodeAttemptError::Runtime(release_error));
+                }
                 return Err(DecodeAttemptError::Read(err));
             }
         };
@@ -196,15 +198,21 @@ fn decode_reader_result<R: Read>(
         }
 
         if let Err(err) = enforce_response_body_limit(decoded.len(), read, max_response_body_size) {
-            reservation.release_chunk(attempt_reserved);
+            if let Err(release_error) = reservation.release_chunk(attempt_reserved) {
+                return Err(DecodeAttemptError::Runtime(release_error));
+            }
             return Err(DecodeAttemptError::Runtime(err));
         }
         if let Err(err) = reservation.reserve_chunk(read) {
-            reservation.release_chunk(attempt_reserved);
+            if let Err(release_error) = reservation.release_chunk(attempt_reserved) {
+                return Err(DecodeAttemptError::Runtime(release_error));
+            }
             return Err(DecodeAttemptError::Runtime(err));
         }
         let Some(next_attempt_reserved) = attempt_reserved.checked_add(read) else {
-            reservation.release_chunk(attempt_reserved);
+            if let Err(release_error) = reservation.release_chunk(attempt_reserved) {
+                return Err(DecodeAttemptError::Runtime(release_error));
+            }
             return Err(DecodeAttemptError::Runtime(FogHttpError::new_err(
                 "decoded response byte reservation overflow",
             )));
