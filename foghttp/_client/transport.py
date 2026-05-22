@@ -24,13 +24,11 @@ RawClientProvider: TypeAlias = Callable[[], "_foghttp.RawClient"]
 
 
 class SyncTransport(Protocol):
-    def send(self, request: Request, *, timeouts: Timeouts) -> Response:
-        pass
+    def send(self, request: Request, *, timeouts: Timeouts) -> Response: ...
 
 
 class AsyncTransport(Protocol):
-    async def send(self, request: Request, *, timeouts: Timeouts) -> Response:
-        pass
+    async def send(self, request: Request, *, timeouts: Timeouts) -> Response: ...
 
 
 class RawSyncTransport:
