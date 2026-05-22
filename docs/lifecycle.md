@@ -257,8 +257,9 @@ connection counters.
   end-of-body but the response version or headers made the connection
   non-reusable
 - `response_body_aborted` means buffered response body handling ended before a
-  clean success because of timeout, cancellation, transport error, memory
-  budget rejection, body-size rejection, or decoding failure
+  clean success after response headers were received because of body-phase
+  timeout, cancellation, body transport error, memory budget rejection,
+  body-size rejection, or decoding failure
 - `buffered_response_bytes` means bytes currently reserved for in-flight
   buffered response bodies before they are returned to Python
 - `buffered_response_budget_rejections` means requests rejected by

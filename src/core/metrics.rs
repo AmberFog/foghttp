@@ -298,7 +298,7 @@ impl TransportStateSnapshot {
             // Historical acquire counters can only be compared while the
             // per-origin registry still contains all origins ever observed.
             && (!self.origins_include_all_historical_pressure
-                || self.has_coherent_historical_acquire_pressure(&totals))
+                || self.has_coherent_historical_transport_counters(&totals))
     }
 
     fn has_coherent_current_pressure(&self, totals: &OriginPressureTotals) -> bool {
@@ -306,7 +306,7 @@ impl TransportStateSnapshot {
             && self.metrics.pending_requests == totals.pending_requests
     }
 
-    fn has_coherent_historical_acquire_pressure(&self, totals: &OriginPressureTotals) -> bool {
+    fn has_coherent_historical_transport_counters(&self, totals: &OriginPressureTotals) -> bool {
         self.metrics.pool_acquire_attempts == totals.pool_acquire_attempts
             && self.metrics.pool_acquire_immediate == totals.pool_acquire_immediate
             && self.metrics.pool_acquire_waited == totals.pool_acquire_waited
