@@ -32,9 +32,19 @@ pub struct Metrics {
     pool_acquire_wait_time_total_ns: AtomicU64,
     pool_acquire_wait_time_max_ns: AtomicU64,
     pool_acquire_wait_time_last_ns: AtomicU64,
+    response_body_reuse_eligible: AtomicUsize,
+    response_body_closed: AtomicUsize,
+    response_body_aborted: AtomicUsize,
     buffered_response_bytes: AtomicUsize,
     buffered_response_budget_rejections: AtomicUsize,
     origin_registry: OriginMetricsRegistry,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResponseBodyLifecycleOutcome {
+    ReuseEligible,
+    Closed,
+    Aborted,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -56,6 +66,9 @@ pub struct MetricsSnapshot {
     pub pool_acquire_wait_time_total_ns: u64,
     pub pool_acquire_wait_time_max_ns: u64,
     pub pool_acquire_wait_time_last_ns: u64,
+    pub response_body_reuse_eligible: usize,
+    pub response_body_closed: usize,
+    pub response_body_aborted: usize,
     pub buffered_response_bytes: usize,
     pub buffered_response_budget_rejections: usize,
 }
@@ -134,6 +147,21 @@ impl Metrics {
         update_atomic_u64_max(&self.pool_acquire_wait_time_max_ns, elapsed_ns);
         self.pool_acquire_wait_time_last_ns
             .store(elapsed_ns, Ordering::Relaxed);
+    }
+
+    pub fn response_body_finished(&self, outcome: ResponseBodyLifecycleOutcome) {
+        match outcome {
+            ResponseBodyLifecycleOutcome::ReuseEligible => {
+                self.response_body_reuse_eligible
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+            ResponseBodyLifecycleOutcome::Closed => {
+                self.response_body_closed.fetch_add(1, Ordering::Relaxed);
+            }
+            ResponseBodyLifecycleOutcome::Aborted => {
+                self.response_body_aborted.fetch_add(1, Ordering::Relaxed);
+            }
+        }
     }
 
     pub fn reserve_buffered_response_bytes(
@@ -251,6 +279,9 @@ impl Metrics {
             pool_acquire_wait_time_last_ns: self
                 .pool_acquire_wait_time_last_ns
                 .load(Ordering::Relaxed),
+            response_body_reuse_eligible: self.response_body_reuse_eligible.load(Ordering::Relaxed),
+            response_body_closed: self.response_body_closed.load(Ordering::Relaxed),
+            response_body_aborted: self.response_body_aborted.load(Ordering::Relaxed),
             buffered_response_bytes: self.buffered_response_bytes.load(Ordering::Acquire),
             buffered_response_budget_rejections: self
                 .buffered_response_budget_rejections
@@ -283,6 +314,9 @@ impl TransportStateSnapshot {
             && self.metrics.pool_acquire_wait_time_total_ns
                 == totals.pool_acquire_wait_time_total_ns
             && self.metrics.pool_acquire_wait_time_max_ns == totals.pool_acquire_wait_time_max_ns
+            && self.metrics.response_body_reuse_eligible == totals.response_body_reuse_eligible
+            && self.metrics.response_body_closed == totals.response_body_closed
+            && self.metrics.response_body_aborted == totals.response_body_aborted
     }
 }
 
@@ -296,6 +330,9 @@ struct OriginPressureTotals {
     pool_acquire_timeouts: usize,
     pool_acquire_wait_time_total_ns: u64,
     pool_acquire_wait_time_max_ns: u64,
+    response_body_reuse_eligible: usize,
+    response_body_closed: usize,
+    response_body_aborted: usize,
 }
 
 impl OriginPressureTotals {
@@ -325,6 +362,15 @@ impl OriginPressureTotals {
             totals.pool_acquire_wait_time_max_ns = totals
                 .pool_acquire_wait_time_max_ns
                 .max(origin.pool_acquire_wait_time_max_ns);
+            totals.response_body_reuse_eligible = totals
+                .response_body_reuse_eligible
+                .saturating_add(origin.response_body_reuse_eligible);
+            totals.response_body_closed = totals
+                .response_body_closed
+                .saturating_add(origin.response_body_closed);
+            totals.response_body_aborted = totals
+                .response_body_aborted
+                .saturating_add(origin.response_body_aborted);
             totals
         })
     }
@@ -413,6 +459,20 @@ mod tests {
         assert_eq!(snapshot.origins[1].origin, "https://secondary.example.com");
         assert_eq!(snapshot.origins[1].pool_acquire_attempts, 1);
         assert_eq!(snapshot.origins[1].pool_acquire_immediate, 1);
+    }
+
+    #[test]
+    fn response_body_lifecycle_metrics_track_outcomes() {
+        let metrics = Metrics::default();
+
+        metrics.response_body_finished(super::ResponseBodyLifecycleOutcome::ReuseEligible);
+        metrics.response_body_finished(super::ResponseBodyLifecycleOutcome::Closed);
+        metrics.response_body_finished(super::ResponseBodyLifecycleOutcome::Aborted);
+
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.response_body_reuse_eligible, 1);
+        assert_eq!(snapshot.response_body_closed, 1);
+        assert_eq!(snapshot.response_body_aborted, 1);
     }
 
     #[test]

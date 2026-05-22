@@ -48,7 +48,14 @@ pub fn spawn_async_request(
 
     metrics.request_started();
     let handle = runtime.spawn(async move {
-        let result = send_request(client, acquire_gate, pool_timeout, request).await;
+        let result = send_request(
+            client,
+            acquire_gate,
+            Arc::clone(&task_metrics),
+            pool_timeout,
+            request,
+        )
+        .await;
         if task_completion.finish() {
             task_registry.remove(request_id);
             task_metrics.request_finished(result.is_err());

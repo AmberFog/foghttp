@@ -1,5 +1,6 @@
 use crate::core::client::HyperClient;
 use crate::core::headers::{response_headers, HeaderPairs};
+use crate::core::metrics::{Metrics, OriginMetrics};
 use crate::core::request::{build_request, RequestParts};
 use crate::core::response::{
     collect_body, decode_body, decoded_response_headers, response_body_decoding_plan,
@@ -12,6 +13,7 @@ use crate::messages::{
 };
 use crate::py::client::acquire::AcquireGate;
 use crate::py::client::body::BodyReplayability;
+use crate::py::client::lifecycle::{successful_response_body_outcome, ResponseBodyLifecycle};
 use crate::py::client::redirects::{
     redirect_decision, redirect_headers, RedirectAction, RedirectDecision, RedirectHeaderPolicy,
 };
@@ -22,6 +24,7 @@ use crate::py::response::{RawRequestInfo, RawResponse, RawResponseParts};
 use hyper::body::Incoming;
 use hyper::{Response, StatusCode};
 use pyo3::prelude::*;
+use std::sync::Arc;
 use std::time::Instant;
 
 pub struct TransportRequest {
@@ -40,6 +43,7 @@ pub struct TransportRequest {
 pub async fn send_request(
     client: HyperClient,
     acquire_gate: AcquireGate,
+    metrics: Arc<Metrics>,
     pool_timeout: f64,
     parts: TransportRequest,
 ) -> PyResult<RawResponse> {
@@ -58,12 +62,13 @@ pub async fn send_request(
                 &origin,
                 redirect_hop,
             );
-            let _permit = tokio::time::timeout(
+            let permit = tokio::time::timeout(
                 remaining_duration("Timeouts.total", &acquire_timeout_context)?,
                 acquire_gate.acquire(&origin, pool_timeout, redirect_hop),
             )
             .await
             .map_err(|_| timeout_error(&acquire_timeout_context, REQUEST_TOTAL_TIMEOUT))??;
+            let origin_metrics = permit.origin_metrics();
             let request_info = state.request_info();
             let request = build_request(state.request_parts())?;
 
@@ -91,6 +96,8 @@ pub async fn send_request(
                     max_response_body_size: state.max_response_body_size,
                     buffered_body_budget: state.buffered_body_budget.clone(),
                     origin: &origin,
+                    metrics: Arc::clone(&metrics),
+                    origin_metrics,
                     redirect_hop,
                 },
             )
@@ -213,9 +220,12 @@ async fn raw_response(
     let status = response.status();
     let status_code = status.as_u16();
     let http_version = format!("{:?}", response.version());
+    let successful_body_outcome =
+        successful_response_body_outcome(response.version(), response.headers());
     let decoding_plan = response_body_can_be_decoded(&request.method, status)
         .then(|| response_body_decoding_plan(response.headers()));
     let headers = response_headers(response.headers());
+    let mut lifecycle = ResponseBodyLifecycle::new(context.metrics, context.origin_metrics);
     let response_body_timeout_context = TimeoutContext::new(
         TimeoutPhase::ResponseBody,
         context.started,
@@ -243,6 +253,7 @@ async fn raw_response(
     } else {
         (headers, collected.content, collected.reservation)
     };
+    lifecycle.finish(successful_body_outcome);
     let url = request.url.clone();
 
     Ok(RawResponse::from_parts(RawResponseParts {
@@ -273,6 +284,8 @@ struct RawResponseContext<'a> {
     max_response_body_size: Option<usize>,
     buffered_body_budget: BufferedBodyBudget,
     origin: &'a str,
+    metrics: Arc<Metrics>,
+    origin_metrics: Arc<OriginMetrics>,
     redirect_hop: usize,
 }
 

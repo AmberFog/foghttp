@@ -67,6 +67,9 @@ assert client.dump_transport_state() == {
     "pool_acquire_wait_time_total_ns": 0,
     "pool_acquire_wait_time_max_ns": 0,
     "pool_acquire_wait_time_last_ns": 0,
+    "response_body_reuse_eligible": 0,
+    "response_body_closed": 0,
+    "response_body_aborted": 0,
     "buffered_response_bytes": 0,
     "buffered_response_budget_rejections": 0,
     "origins": {},
@@ -248,10 +251,23 @@ connection counters.
 - per-origin `last_activity_at_ns` is a monotonic timestamp in nanoseconds
   relative to the current transport metrics lifetime; it is not a Unix epoch
   timestamp
+- `response_body_reuse_eligible` means buffered response bodies that reached a
+  clean end-of-body and had no response-level close signal
+- `response_body_closed` means buffered response bodies that reached a clean
+  end-of-body but the response version or headers made the connection
+  non-reusable
+- `response_body_aborted` means buffered response body handling ended before a
+  clean success because of timeout, cancellation, transport error, memory
+  budget rejection, body-size rejection, or decoding failure
 - `buffered_response_bytes` means bytes currently reserved for in-flight
   buffered response bodies before they are returned to Python
 - `buffered_response_budget_rejections` means requests rejected by
   `Limits.max_buffered_response_bytes`
+
+The response body lifecycle counters describe FogHTTP's Rust-side buffered body
+contract. `response_body_reuse_eligible` is an eligibility signal, not a
+guarantee that Hyper physically reused the TCP connection for a later request.
+True socket opened/closed/reused/idle telemetry is a separate future layer.
 
 Use `dump_transport_state()` for a small debug snapshot when active, pending,
 acquire pressure, per-origin pressure, and buffered response budget state are

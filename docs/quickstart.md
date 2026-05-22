@@ -582,6 +582,11 @@ backpressure.
 `TransportStats.buffered_response_bytes` reports currently reserved in-flight
 buffered body bytes. `TransportStats.buffered_response_budget_rejections`
 reports requests rejected by the aggregate buffered memory budget.
+`TransportStats.response_body_reuse_eligible`, `response_body_closed`, and
+`response_body_aborted` report Rust-side buffered body lifecycle outcomes:
+clean reusable-eligible completion, clean non-reusable completion, and aborted
+body handling. They are body lifecycle counters, not exact physical socket reuse
+telemetry.
 `client.dump_transport_state()["origins"]` shows request-slot pressure grouped
 by normalized origin without path, query, userinfo, headers, or body data.
 Default ports are omitted from origin keys; non-default ports are preserved.

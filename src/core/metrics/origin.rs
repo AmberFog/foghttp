@@ -1,6 +1,7 @@
 use super::atomic::{
     duration_as_nanos, saturating_atomic_u64_add, update_atomic_u64_max, update_atomic_usize_max,
 };
+use crate::core::metrics::ResponseBodyLifecycleOutcome;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -44,6 +45,9 @@ pub struct OriginMetricsSnapshot {
     pub pool_acquire_wait_time_total_ns: u64,
     pub pool_acquire_wait_time_max_ns: u64,
     pub pool_acquire_wait_time_last_ns: u64,
+    pub response_body_reuse_eligible: usize,
+    pub response_body_closed: usize,
+    pub response_body_aborted: usize,
     pub last_activity_at_ns: u64,
 }
 
@@ -60,6 +64,9 @@ pub struct OriginMetrics {
     pool_acquire_wait_time_total_ns: AtomicU64,
     pool_acquire_wait_time_max_ns: AtomicU64,
     pool_acquire_wait_time_last_ns: AtomicU64,
+    response_body_reuse_eligible: AtomicUsize,
+    response_body_closed: AtomicUsize,
+    response_body_aborted: AtomicUsize,
     last_activity_at_ns: AtomicU64,
     pending_waiters: Mutex<PendingWaiters>,
 }
@@ -162,6 +169,9 @@ impl OriginMetrics {
             pool_acquire_wait_time_total_ns: AtomicU64::new(0),
             pool_acquire_wait_time_max_ns: AtomicU64::new(0),
             pool_acquire_wait_time_last_ns: AtomicU64::new(0),
+            response_body_reuse_eligible: AtomicUsize::new(0),
+            response_body_closed: AtomicUsize::new(0),
+            response_body_aborted: AtomicUsize::new(0),
             last_activity_at_ns: AtomicU64::new(duration_as_nanos(started_at.elapsed())),
             pending_waiters: Mutex::new(PendingWaiters::default()),
         }
@@ -221,6 +231,22 @@ impl OriginMetrics {
         self.touch();
     }
 
+    pub fn response_body_finished(&self, outcome: ResponseBodyLifecycleOutcome) {
+        match outcome {
+            ResponseBodyLifecycleOutcome::ReuseEligible => {
+                self.response_body_reuse_eligible
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+            ResponseBodyLifecycleOutcome::Closed => {
+                self.response_body_closed.fetch_add(1, Ordering::Relaxed);
+            }
+            ResponseBodyLifecycleOutcome::Aborted => {
+                self.response_body_aborted.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        self.touch();
+    }
+
     fn snapshot(&self) -> OriginMetricsSnapshot {
         OriginMetricsSnapshot {
             origin: self.origin.clone(),
@@ -240,6 +266,9 @@ impl OriginMetrics {
             pool_acquire_wait_time_last_ns: self
                 .pool_acquire_wait_time_last_ns
                 .load(Ordering::Relaxed),
+            response_body_reuse_eligible: self.response_body_reuse_eligible.load(Ordering::Relaxed),
+            response_body_closed: self.response_body_closed.load(Ordering::Relaxed),
+            response_body_aborted: self.response_body_aborted.load(Ordering::Relaxed),
             last_activity_at_ns: self.last_activity_at_ns.load(Ordering::Relaxed),
         }
     }

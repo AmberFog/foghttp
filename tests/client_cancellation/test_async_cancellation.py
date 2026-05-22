@@ -53,10 +53,14 @@ async def test_cancelled_async_request_during_slow_body_aborts_rust_request(canc
             await task
 
         await wait_for_no_active_requests(client)
+        stats_after_cancellation = client.stats()
         response = await client.get(cancellation_server)
+        final_stats = client.stats()
 
     assert response.status_code == OK
     assert response.content == b"OK"
+    assert stats_after_cancellation.response_body_aborted == 1
+    assert final_stats.response_body_closed == 1
 
 
 async def test_aclose_cancels_in_flight_async_request(cancellation_server: str) -> None:
