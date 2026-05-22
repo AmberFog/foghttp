@@ -27,12 +27,9 @@ def test_sync_send_uses_transport_adapter_without_opening_raw_client(
     request = Request(GET, faker.url())
     response = response_for_request(request)
     transport = SyncRecordingTransport(response=response)
-    client = SyncTransportClient(transport=transport, timeouts=client_timeouts)
 
-    try:
+    with SyncTransportClient(transport=transport, timeouts=client_timeouts) as client:
         result = client.send(request)
-    finally:
-        client.close()
 
     assert result is response
     assert transport.calls == [TransportCall(request=request, timeouts=client_timeouts)]
@@ -47,12 +44,9 @@ async def test_async_send_uses_transport_adapter_without_opening_raw_client(
     request = Request(GET, faker.url())
     response = response_for_request(request)
     transport = AsyncRecordingTransport(response=response)
-    client = AsyncTransportClient(transport=transport, timeouts=client_timeouts)
 
-    try:
+    async with AsyncTransportClient(transport=transport, timeouts=client_timeouts) as client:
         result = await client.send(request)
-    finally:
-        await client.aclose()
 
     assert result is response
     assert transport.calls == [TransportCall(request=request, timeouts=client_timeouts)]
