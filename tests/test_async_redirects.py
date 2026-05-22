@@ -20,10 +20,15 @@ from tests.redirect_helpers import (
     header_values,
     redirect_to_location_url,
 )
+from tests.request_factories import non_replayable_request
 
 
 POST_REDIRECTS_TO_GET_STATUS_CODES = (MOVED_PERMANENTLY, FOUND, SEE_OTHER)
 POST_REDIRECTS_PRESERVE_METHOD_STATUS_CODES = (TEMPORARY_REDIRECT, PERMANENT_REDIRECT)
+METHOD_PRESERVING_REDIRECT_PARAMS = (
+    pytest.param(TEMPORARY_REDIRECT, id="307-temporary"),
+    pytest.param(PERMANENT_REDIRECT, id="308-permanent"),
+)
 
 
 async def test_get_follows_redirects(http_server: str) -> None:
@@ -110,6 +115,29 @@ async def test_post_redirects_preserve_method_and_body(http_server: str, faker: 
             assert response.history[0].status_code == status_code
             assert response.history[0].request.method == POST
             assert response.history[0].request.url == f"{http_server}/redirect/{status_code}"
+
+
+@pytest.mark.parametrize("status_code", METHOD_PRESERVING_REDIRECT_PARAMS)
+async def test_post_method_preserving_redirect_rejects_non_replayable_body(
+    http_server: str,
+    faker: Faker,
+    status_code: int,
+) -> None:
+    request = non_replayable_request(
+        POST,
+        f"{http_server}/redirect/{status_code}",
+        content=faker.binary(length=16),
+    )
+
+    async with foghttp.AsyncClient(follow_redirects=True) as client:
+        with pytest.raises(foghttp.RequestError, match="non-replayable request body"):
+            await client.send(request)
+
+        stats = client.stats()
+
+    assert stats.total_requests == 1
+    assert stats.failed_requests == 1
+    assert stats.active_requests == 0
 
 
 async def test_same_origin_redirect_preserves_sensitive_headers(http_server: str) -> None:

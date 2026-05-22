@@ -70,6 +70,7 @@ def send_raw_request(
     url: str,
     headers: Sequence[tuple[str, str]],
     body: bytes | None,
+    body_replayable: bool,
     timeouts: Timeouts,
 ) -> _foghttp.RawResponse:
     try:
@@ -78,6 +79,7 @@ def send_raw_request(
             url,
             headers,
             body,
+            body_replayable,
             timeouts.pool,
             timeouts.total,
         )
@@ -100,6 +102,7 @@ async def send_raw_request_async(
     url: str,
     headers: Sequence[tuple[str, str]],
     body: bytes | None,
+    body_replayable: bool,
     timeouts: Timeouts,
 ) -> _foghttp.RawResponse:
     try:
@@ -108,6 +111,7 @@ async def send_raw_request_async(
             url,
             headers,
             body,
+            body_replayable,
             timeouts.pool,
             timeouts.total,
         )

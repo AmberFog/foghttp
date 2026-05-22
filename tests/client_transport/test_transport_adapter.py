@@ -4,9 +4,11 @@ from faker import Faker
 import pytest
 
 from foghttp._client.transport import RawAsyncTransport, RawSyncTransport
+from foghttp._request_body import request_body
 from foghttp.methods import GET, POST
 from foghttp.request import Request
 from foghttp.timeouts import Timeouts
+from tests.request_factories import non_replayable_request
 
 from .models import (
     AsyncRecordingTransport,
@@ -59,9 +61,15 @@ def test_raw_sync_transport_sends_prepared_request_through_raw_client(
     captured_request: dict[str, object] = {}
     raw_client = object()
     raw_response = object()
-    request = Request(POST, faker.url(), headers=[("X-Trace", faker.uuid4())], content=faker.binary(length=8))
+    request = non_replayable_request(
+        POST,
+        faker.url(),
+        headers=[("X-Trace", faker.uuid4())],
+        content=faker.binary(length=8),
+    )
     response = response_for_request(request)
     timeouts = Timeouts(pool=0.5, total=2.0)
+    body = request_body(request)
 
     def fake_send_raw_request(**kwargs: object) -> object:
         captured_request.update(kwargs)
@@ -83,7 +91,8 @@ def test_raw_sync_transport_sends_prepared_request_through_raw_client(
         "method": request.method,
         "url": request.url,
         "headers": request.headers.multi_items(),
-        "body": request.content,
+        "body": body.content,
+        "body_replayable": body.replayable,
         "timeouts": timeouts,
     }
 
@@ -98,6 +107,7 @@ async def test_raw_async_transport_sends_prepared_request_through_raw_client(
     request = Request(POST, faker.url(), headers=[("X-Trace", faker.uuid4())], content=faker.binary(length=8))
     response = response_for_request(request)
     timeouts = Timeouts(pool=0.5, total=2.0)
+    body = request_body(request)
 
     async def fake_send_raw_request_async(**kwargs: object) -> object:
         captured_request.update(kwargs)
@@ -119,7 +129,8 @@ async def test_raw_async_transport_sends_prepared_request_through_raw_client(
         "method": request.method,
         "url": request.url,
         "headers": request.headers.multi_items(),
-        "body": request.content,
+        "body": body.content,
+        "body_replayable": body.replayable,
         "timeouts": timeouts,
     }
 

@@ -12,6 +12,7 @@ FOLLOW_REDIRECTS = False
 TRUST_WEBPKI_ROOTS = True
 CUSTOM_ONLY_TRUST_WEBPKI_ROOTS = False
 TRUST_ENV = False
+REQUEST_BODY_REPLAYABLE = True
 
 
 def test_raw_client_rejects_empty_custom_only_tls_trust_store() -> None:
@@ -93,7 +94,7 @@ def test_raw_client_sync_request_rejects_invalid_timeout_without_panic(faker: Fa
             ValueError,
             match=r"Timeouts\.pool must be a finite number between 0 and",
         ):
-            raw_client.request(GET, faker.url(), [], None, math.nan, 1.0)
+            raw_client.request(GET, faker.url(), [], None, REQUEST_BODY_REPLAYABLE, math.nan, 1.0)
     finally:
         raw_client.close()
 
@@ -107,7 +108,7 @@ async def test_raw_client_async_request_rejects_invalid_timeout_without_panic(
             ValueError,
             match=r"Timeouts\.total must be a finite number between 0 and",
         ):
-            raw_client.request_async(GET, faker.url(), [], None, 1.0, math.inf)
+            raw_client.request_async(GET, faker.url(), [], None, REQUEST_BODY_REPLAYABLE, 1.0, math.inf)
     finally:
         raw_client.close()
 

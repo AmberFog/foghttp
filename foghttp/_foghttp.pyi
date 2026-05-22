@@ -204,6 +204,7 @@ class RawClient:
         url: str,
         headers: HeaderPairs,
         body: bytes | None,
+        body_replayable: bool,
         pool_timeout: float,
         total_timeout: float,
     ) -> RawResponse: ...
@@ -213,6 +214,7 @@ class RawClient:
         url: str,
         headers: HeaderPairs,
         body: bytes | None,
+        body_replayable: bool,
         pool_timeout: float,
         total_timeout: float,
     ) -> RawResponse: ...

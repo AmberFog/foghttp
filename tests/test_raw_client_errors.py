@@ -84,6 +84,7 @@ def test_sync_raw_timeout_maps_to_public_timeout(faker: Faker) -> None:
             url=faker.url(),
             headers=[],
             body=None,
+            body_replayable=True,
             timeouts=Timeouts(),
         )
 
@@ -96,6 +97,7 @@ async def test_async_raw_timeout_maps_to_public_timeout(faker: Faker) -> None:
             url=faker.url(),
             headers=[],
             body=None,
+            body_replayable=True,
             timeouts=Timeouts(),
         )
 
@@ -108,6 +110,7 @@ def test_sync_raw_pool_timeout_maps_to_public_pool_timeout(faker: Faker) -> None
             url=faker.url(),
             headers=[],
             body=None,
+            body_replayable=True,
             timeouts=Timeouts(),
         )
 
@@ -120,6 +123,7 @@ async def test_async_raw_pool_timeout_maps_to_public_pool_timeout(faker: Faker) 
             url=faker.url(),
             headers=[],
             body=None,
+            body_replayable=True,
             timeouts=Timeouts(),
         )
 
@@ -132,6 +136,7 @@ def test_sync_raw_body_limit_error_maps_to_public_response_error(faker: Faker) -
             url=faker.url(),
             headers=[],
             body=None,
+            body_replayable=True,
             timeouts=Timeouts(),
         )
 
@@ -144,6 +149,7 @@ async def test_async_raw_body_limit_error_maps_to_public_response_error(faker: F
             url=faker.url(),
             headers=[],
             body=None,
+            body_replayable=True,
             timeouts=Timeouts(),
         )
 
@@ -156,6 +162,7 @@ def test_sync_raw_body_budget_error_maps_to_public_response_error(faker: Faker) 
             url=faker.url(),
             headers=[],
             body=None,
+            body_replayable=True,
             timeouts=Timeouts(),
         )
 
@@ -168,5 +175,6 @@ async def test_async_raw_body_budget_error_maps_to_public_response_error(faker: 
             url=faker.url(),
             headers=[],
             body=None,
+            body_replayable=True,
             timeouts=Timeouts(),
         )
