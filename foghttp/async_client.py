@@ -1,15 +1,14 @@
 __all__ = ("AsyncClient",)
 
-import time
 from types import TracebackType
 from typing import Any
 
 from ._client.config import ClientConfig
 from ._client.constants import DEFAULT_MAX_REDIRECTS
 from ._client.core import ClientCore
-from ._client.raw import close_raw_client, send_raw_request_async
+from ._client.raw import close_raw_client
 from ._client.request_builder.header_policy import validate_safe_request_headers
-from ._client.response import response_from_raw
+from ._client.transport import AsyncTransport, RawAsyncTransport
 from .headers import HeaderSource
 from .limits import Limits
 from .methods import DELETE, GET, HEAD, PATCH, POST, PUT
@@ -22,6 +21,8 @@ from .url import URL
 
 
 class AsyncClient(ClientCore):
+    _transport: AsyncTransport
+
     def __init__(
         self,
         *,
@@ -54,6 +55,7 @@ class AsyncClient(ClientCore):
                 runtime_workers=runtime_workers,
             ),
         )
+        self._transport = self._create_transport()
 
     async def __aenter__(self) -> "AsyncClient":
         self._ensure_open()
@@ -76,6 +78,9 @@ class AsyncClient(ClientCore):
                 self._client = None
         if raw_client is not None:
             close_raw_client(raw_client)
+
+    def _create_transport(self) -> AsyncTransport:
+        return RawAsyncTransport(self._raw_client)
 
     async def request(
         self,
@@ -105,18 +110,7 @@ class AsyncClient(ClientCore):
         self._ensure_open()
         validate_safe_request_headers(request.headers)
         timeouts = self._request_timeouts(timeout)
-        started = time.perf_counter()
-        raw_client = self._raw_client()
-        raw = await send_raw_request_async(
-            raw_client=raw_client,
-            method=request.method,
-            url=request.url,
-            headers=request.headers.multi_items(),
-            body=request.content,
-            timeouts=timeouts,
-        )
-
-        return response_from_raw(raw=raw, started=started)
+        return await self._transport.send(request, timeouts=timeouts)
 
     async def get(
         self,

@@ -182,6 +182,7 @@ def test_sync_close_waits_for_in_flight_send(
     raw_close_started = threading.Event()
     raw_response = object()
     response = object()
+    transport_module = importlib.import_module("foghttp._client.transport")
 
     def fake_send_raw_request(**_kwargs: object) -> object:
         request_started.set()
@@ -197,8 +198,8 @@ def test_sync_close_waits_for_in_flight_send(
         raw_close_started.set()
         raw_client_to_close.close()
 
-    monkeypatch.setattr(client_module, "send_raw_request", fake_send_raw_request)
-    monkeypatch.setattr(client_module, "response_from_raw", fake_response_from_raw)
+    monkeypatch.setattr(transport_module, "send_raw_request", fake_send_raw_request)
+    monkeypatch.setattr(transport_module, "response_from_raw", fake_response_from_raw)
     monkeypatch.setattr(client_module, "close_raw_client", fake_close_raw_client)
 
     client = sync_client_factory()

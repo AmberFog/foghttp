@@ -97,7 +97,7 @@ def async_client_factory(
 
 @pytest.fixture
 def sync_noop_transport(monkeypatch: pytest.MonkeyPatch) -> None:
-    client_module = importlib.import_module("foghttp.client")
+    transport_module = importlib.import_module("foghttp._client.transport")
 
     def fake_send_raw_request(**_kwargs: object) -> object:
         return object()
@@ -105,13 +105,13 @@ def sync_noop_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_response_from_raw(**_kwargs: object) -> object:
         return object()
 
-    monkeypatch.setattr(client_module, "send_raw_request", fake_send_raw_request)
-    monkeypatch.setattr(client_module, "response_from_raw", fake_response_from_raw)
+    monkeypatch.setattr(transport_module, "send_raw_request", fake_send_raw_request)
+    monkeypatch.setattr(transport_module, "response_from_raw", fake_response_from_raw)
 
 
 @pytest.fixture
 def async_noop_transport(monkeypatch: pytest.MonkeyPatch) -> None:
-    client_module = importlib.import_module("foghttp.async_client")
+    transport_module = importlib.import_module("foghttp._client.transport")
 
     async def fake_send_raw_request_async(**_kwargs: object) -> object:
         return object()
@@ -119,5 +119,5 @@ def async_noop_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_response_from_raw(**_kwargs: object) -> object:
         return object()
 
-    monkeypatch.setattr(client_module, "send_raw_request_async", fake_send_raw_request_async)
-    monkeypatch.setattr(client_module, "response_from_raw", fake_response_from_raw)
+    monkeypatch.setattr(transport_module, "send_raw_request_async", fake_send_raw_request_async)
+    monkeypatch.setattr(transport_module, "response_from_raw", fake_response_from_raw)
