@@ -36,6 +36,7 @@ def test_sync_close_waits_for_send_in_validation_window(
     raw_close_started = threading.Event()
     raw_response = object()
     response = object()
+    transport_module = importlib.import_module("foghttp._client.transport")
 
     def fake_validate_safe_request_headers(_headers: foghttp.Headers) -> None:
         validation_started.set()
@@ -58,8 +59,8 @@ def test_sync_close_waits_for_send_in_validation_window(
         "validate_safe_request_headers",
         fake_validate_safe_request_headers,
     )
-    monkeypatch.setattr(client_module, "send_raw_request", fake_send_raw_request)
-    monkeypatch.setattr(client_module, "response_from_raw", fake_response_from_raw)
+    monkeypatch.setattr(transport_module, "send_raw_request", fake_send_raw_request)
+    monkeypatch.setattr(transport_module, "response_from_raw", fake_response_from_raw)
     monkeypatch.setattr(client_module, "close_raw_client", fake_close_raw_client)
 
     client = sync_client_factory()

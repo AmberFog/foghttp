@@ -1,16 +1,15 @@
 __all__ = ("Client",)
 
 import threading
-import time
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
 from ._client.config import ClientConfig
 from ._client.constants import DEFAULT_MAX_REDIRECTS
 from ._client.core import ClientCore
-from ._client.raw import close_raw_client, send_raw_request
+from ._client.raw import close_raw_client
 from ._client.request_builder.header_policy import validate_safe_request_headers
-from ._client.response import response_from_raw
+from ._client.transport import RawSyncTransport, SyncTransport
 from .headers import HeaderSource
 from .limits import Limits
 from .methods import DELETE, GET, HEAD, PATCH, POST, PUT
@@ -27,6 +26,8 @@ if TYPE_CHECKING:
 
 
 class Client(ClientCore):
+    _transport: SyncTransport
+
     def __init__(
         self,
         *,
@@ -62,6 +63,7 @@ class Client(ClientCore):
         self._lifecycle_condition = threading.Condition(self._client_lock)
         self._active_sync_send_tokens: set[object] = set()
         self._close_complete = False
+        self._transport = self._create_transport()
 
     def __enter__(self) -> "Client":
         self._ensure_open()
@@ -131,18 +133,7 @@ class Client(ClientCore):
             self._begin_sync_send(sync_send_token)
             validate_safe_request_headers(request.headers)
             timeouts = self._request_timeouts(timeout)
-            started = time.perf_counter()
-            raw_client = self._sync_send_raw_client()
-            raw = send_raw_request(
-                raw_client=raw_client,
-                method=request.method,
-                url=request.url,
-                headers=request.headers.multi_items(),
-                body=request.content,
-                timeouts=timeouts,
-            )
-
-            return response_from_raw(raw=raw, started=started)
+            return self._transport.send(request, timeouts=timeouts)
         finally:
             self._finish_sync_send(sync_send_token)
 
@@ -286,6 +277,9 @@ class Client(ClientCore):
     def _sync_send_raw_client(self) -> "_foghttp.RawClient":
         with self._lifecycle_condition:
             return self._raw_client_locked()
+
+    def _create_transport(self) -> SyncTransport:
+        return RawSyncTransport(self._sync_send_raw_client)
 
     def _finish_sync_send(self, token: object) -> None:
         with self._lifecycle_condition:
