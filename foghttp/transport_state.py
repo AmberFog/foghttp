@@ -14,6 +14,9 @@ class OriginPressureState(TypedDict):
     pool_acquire_wait_time_total_ns: int
     pool_acquire_wait_time_max_ns: int
     pool_acquire_wait_time_last_ns: int
+    response_body_reuse_eligible: int
+    response_body_closed: int
+    response_body_aborted: int
     last_activity_at_ns: int
 
 
@@ -28,6 +31,9 @@ class TransportState(TypedDict):
     pool_acquire_wait_time_total_ns: int
     pool_acquire_wait_time_max_ns: int
     pool_acquire_wait_time_last_ns: int
+    response_body_reuse_eligible: int
+    response_body_closed: int
+    response_body_aborted: int
     buffered_response_bytes: int
     buffered_response_budget_rejections: int
     origins: dict[str, OriginPressureState]

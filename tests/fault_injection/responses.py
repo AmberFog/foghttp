@@ -14,6 +14,7 @@ from foghttp.status_codes.success import OK
 from .constants import (
     ABRUPT_BEFORE_HEADERS_PATH,
     ABRUPT_DURING_BODY_PATH,
+    CLOSE_AFTER_BODY_PATH,
     CONNECTION_ID_KEY,
     DELAYED_EOF_UNKNOWN_SIZE_BODY_PATH,
     FAULT_DELAY,
@@ -65,6 +66,9 @@ def write_fault_response(
         result = FaultResponseResult(handled=True, closes_connection=close)
     elif delayed_eof_size is not None:
         _write_delayed_eof_unknown_size_body(connection, delayed_eof_size)
+    elif path == CLOSE_AFTER_BODY_PATH:
+        connection.sendall(_raw_healthy_response(connection_id, request_index, close=True))
+        result = FaultResponseResult(handled=True, closes_connection=True)
     elif path == HEALTHY_PATH:
         connection.sendall(_raw_healthy_response(connection_id, request_index, close=close))
         result = FaultResponseResult(handled=True, closes_connection=close)

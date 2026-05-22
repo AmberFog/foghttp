@@ -26,6 +26,12 @@ pub struct RawTransportState {
     #[pyo3(get)]
     pool_acquire_wait_time_last_ns: u64,
     #[pyo3(get)]
+    response_body_reuse_eligible: usize,
+    #[pyo3(get)]
+    response_body_closed: usize,
+    #[pyo3(get)]
+    response_body_aborted: usize,
+    #[pyo3(get)]
     buffered_response_bytes: usize,
     #[pyo3(get)]
     buffered_response_budget_rejections: usize,
@@ -47,6 +53,9 @@ impl From<TransportStateSnapshot> for RawTransportState {
             pool_acquire_wait_time_total_ns: metrics.pool_acquire_wait_time_total_ns,
             pool_acquire_wait_time_max_ns: metrics.pool_acquire_wait_time_max_ns,
             pool_acquire_wait_time_last_ns: metrics.pool_acquire_wait_time_last_ns,
+            response_body_reuse_eligible: metrics.response_body_reuse_eligible,
+            response_body_closed: metrics.response_body_closed,
+            response_body_aborted: metrics.response_body_aborted,
             buffered_response_bytes: metrics.buffered_response_bytes,
             buffered_response_budget_rejections: metrics.buffered_response_budget_rejections,
             origins: snapshot.origins.into_iter().map(Into::into).collect(),

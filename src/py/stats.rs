@@ -27,6 +27,12 @@ pub struct RawOriginPressure {
     #[pyo3(get)]
     pool_acquire_wait_time_last_ns: u64,
     #[pyo3(get)]
+    response_body_reuse_eligible: usize,
+    #[pyo3(get)]
+    response_body_closed: usize,
+    #[pyo3(get)]
+    response_body_aborted: usize,
+    #[pyo3(get)]
     last_activity_at_ns: u64,
 }
 
@@ -57,6 +63,12 @@ pub struct RawStats {
     #[pyo3(get)]
     pool_acquire_wait_time_last_ns: u64,
     #[pyo3(get)]
+    response_body_reuse_eligible: usize,
+    #[pyo3(get)]
+    response_body_closed: usize,
+    #[pyo3(get)]
+    response_body_aborted: usize,
+    #[pyo3(get)]
     buffered_response_bytes: usize,
     #[pyo3(get)]
     buffered_response_budget_rejections: usize,
@@ -77,6 +89,9 @@ impl From<MetricsSnapshot> for RawStats {
             pool_acquire_wait_time_total_ns: snapshot.pool_acquire_wait_time_total_ns,
             pool_acquire_wait_time_max_ns: snapshot.pool_acquire_wait_time_max_ns,
             pool_acquire_wait_time_last_ns: snapshot.pool_acquire_wait_time_last_ns,
+            response_body_reuse_eligible: snapshot.response_body_reuse_eligible,
+            response_body_closed: snapshot.response_body_closed,
+            response_body_aborted: snapshot.response_body_aborted,
             buffered_response_bytes: snapshot.buffered_response_bytes,
             buffered_response_budget_rejections: snapshot.buffered_response_budget_rejections,
         }
@@ -97,6 +112,9 @@ impl From<OriginMetricsSnapshot> for RawOriginPressure {
             pool_acquire_wait_time_total_ns: snapshot.pool_acquire_wait_time_total_ns,
             pool_acquire_wait_time_max_ns: snapshot.pool_acquire_wait_time_max_ns,
             pool_acquire_wait_time_last_ns: snapshot.pool_acquire_wait_time_last_ns,
+            response_body_reuse_eligible: snapshot.response_body_reuse_eligible,
+            response_body_closed: snapshot.response_body_closed,
+            response_body_aborted: snapshot.response_body_aborted,
             last_activity_at_ns: snapshot.last_activity_at_ns,
         }
     }

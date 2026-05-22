@@ -1,5 +1,6 @@
 __all__ = (
     "assert_client_recovered",
+    "assert_faulted_connection_not_reused",
     "assert_healthy_connection_reused",
     "assert_idle_stats",
     "assert_network_failure_recovered",
@@ -52,6 +53,21 @@ def assert_network_failure_recovered(
     final_stats: foghttp.TransportStats,
 ) -> None:
     assert_client_recovered(stats_after_error, final_stats)
+
+
+def assert_faulted_connection_not_reused(
+    recovery_payload: Mapping[str, object],
+    snapshot: FaultInjectionSnapshot,
+    fault_path: str,
+) -> None:
+    recovery_connection_id = _payload_connection_id(recovery_payload)
+    faulted_connection_id = _single_connection_id_for_path(snapshot, fault_path)
+    if recovery_connection_id == faulted_connection_id:
+        msg = f"expected recovery request to avoid faulted connection {faulted_connection_id}"
+        raise AssertionError(msg)
+
+    _assert_connection_last_path(snapshot, faulted_connection_id, fault_path)
+    _assert_connection_last_path(snapshot, recovery_connection_id, HEALTHY_PATH)
 
 
 def assert_healthy_connection_reused(
@@ -127,15 +143,23 @@ def _assert_payload_request_index(payload: Mapping[str, object], expected: int) 
 
 
 def _poisoned_connection_id(snapshot: FaultInjectionSnapshot) -> int:
-    poisoned_connection_ids = [
-        connection_id
-        for connection_id, paths in snapshot.paths_by_connection.items()
-        if ABRUPT_DURING_BODY_PATH in paths
-    ]
+    poisoned_connection_ids = _connection_ids_for_path(snapshot, ABRUPT_DURING_BODY_PATH)
     if len(poisoned_connection_ids) != 1:
         msg = f"expected one poisoned connection, got {poisoned_connection_ids}"
         raise AssertionError(msg)
     return poisoned_connection_ids[0]
+
+
+def _single_connection_id_for_path(snapshot: FaultInjectionSnapshot, path: str) -> int:
+    connection_ids = _connection_ids_for_path(snapshot, path)
+    if len(connection_ids) != 1:
+        msg = f"expected one connection for path {path}, got {connection_ids}"
+        raise AssertionError(msg)
+    return connection_ids[0]
+
+
+def _connection_ids_for_path(snapshot: FaultInjectionSnapshot, path: str) -> list[int]:
+    return [connection_id for connection_id, paths in snapshot.paths_by_connection.items() if path in paths]
 
 
 def _assert_poisoned_connection_is_terminal(

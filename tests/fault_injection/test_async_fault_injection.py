@@ -13,6 +13,7 @@ from .constants import (
     CANCELLATION_STORM_ACTIVE_REQUESTS,
     CANCELLATION_STORM_PENDING_REQUESTS,
     CANCELLATION_STORM_REQUESTS,
+    CLOSE_AFTER_BODY_PATH,
     CONCURRENT_BODY_REQUESTS,
     DELAYED_EOF_UNKNOWN_SIZE_BODY_PATH,
     EXPECTED_BODY_BUDGET_REJECTIONS,
@@ -20,6 +21,8 @@ from .constants import (
     EXPECTED_REQUESTS_AFTER_POISONED_FAILURE,
     EXPECTED_REQUESTS_AFTER_POISONED_RECOVERY,
     EXPECTED_REQUESTS_AFTER_RECOVERY,
+    EXPECTED_REUSE_ELIGIBLE_BODIES_AFTER_HEALTHY_REUSE,
+    EXPECTED_REUSE_ELIGIBLE_BODIES_AFTER_POISONED_RECOVERY,
     HEALTHY_PATH,
     INCOMPLETE_BODY_PATH,
     INVALID_SIZE_SEGMENT,
@@ -31,6 +34,7 @@ from .constants import (
 from .server import FaultInjectionServer
 from .state_assertions import (
     assert_client_recovered,
+    assert_faulted_connection_not_reused,
     assert_healthy_connection_reused,
     assert_idle_stats,
     assert_network_failure_recovered,
@@ -57,12 +61,33 @@ async def test_async_healthy_fault_server_route_reuses_keepalive_connection(
 
     assert first_response.status_code == OK
     assert second_response.status_code == OK
+    assert stats.response_body_reuse_eligible == EXPECTED_REUSE_ELIGIBLE_BODIES_AFTER_HEALTHY_REUSE
+    assert stats.response_body_closed == 0
+    assert stats.response_body_aborted == 0
     assert_idle_stats(stats)
     assert_healthy_connection_reused(
         first_response.json(),
         second_response.json(),
         fault_injection_server.snapshot(),
     )
+
+
+async def test_async_clean_response_with_connection_close_records_closed_body(
+    fault_injection_server: FaultInjectionServer,
+) -> None:
+    async with foghttp.AsyncClient(timeouts=RECOVERY_TIMEOUTS) as client:
+        response = await client.get(fault_injection_server.url + CLOSE_AFTER_BODY_PATH)
+        stats = client.stats()
+        state = client.dump_transport_state()
+
+    origin_state = state["origins"][fault_injection_server.url]
+    assert response.status_code == OK
+    assert stats.response_body_reuse_eligible == 0
+    assert stats.response_body_closed == 1
+    assert stats.response_body_aborted == 0
+    assert state["response_body_closed"] == 1
+    assert origin_state["response_body_closed"] == 1
+    assert_idle_stats(stats)
 
 
 async def test_async_slow_headers_total_timeout_recovers(
@@ -90,6 +115,11 @@ async def test_async_slow_headers_total_timeout_recovers(
         timeout=timeouts.total,
     )
     assert_client_recovered(stats_after_error, final_stats)
+    assert_faulted_connection_not_reused(
+        response.json(),
+        fault_injection_server.snapshot(),
+        SLOW_HEADERS_PATH,
+    )
 
 
 async def test_async_slow_body_total_timeout_recovers(
@@ -116,9 +146,15 @@ async def test_async_slow_body_total_timeout_recovers(
         origin=fault_injection_server.url,
         timeout=timeouts.total,
     )
+    assert stats_after_error.response_body_aborted == 1
     assert final_stats.total_requests == EXPECTED_REQUESTS_AFTER_RECOVERY
     assert final_stats.failed_requests == EXPECTED_FAILED_REQUESTS_AFTER_RECOVERY
     assert_idle_stats(final_stats)
+    assert_faulted_connection_not_reused(
+        response.json(),
+        fault_injection_server.snapshot(),
+        SLOW_BODY_PATH,
+    )
 
 
 @pytest.mark.parametrize(
@@ -211,8 +247,11 @@ async def test_async_partial_body_connection_is_not_reused(
     assert recovery_response.status_code == OK
     assert stats_after_error.total_requests == EXPECTED_REQUESTS_AFTER_POISONED_FAILURE
     assert stats_after_error.failed_requests == EXPECTED_FAILED_REQUESTS_AFTER_RECOVERY
+    assert stats_after_error.response_body_aborted == 1
     assert final_stats.total_requests == EXPECTED_REQUESTS_AFTER_POISONED_RECOVERY
     assert final_stats.failed_requests == EXPECTED_FAILED_REQUESTS_AFTER_RECOVERY
+    assert final_stats.response_body_reuse_eligible == EXPECTED_REUSE_ELIGIBLE_BODIES_AFTER_POISONED_RECOVERY
+    assert final_stats.response_body_aborted == 1
     assert_idle_stats(final_stats)
     assert_poisoned_connection_not_reused(
         first_response.json(),
@@ -275,4 +314,6 @@ async def test_async_delayed_eof_budget_limits_concurrent_unknown_size_bodies(
     assert stats.total_requests == CONCURRENT_BODY_REQUESTS
     assert stats.failed_requests == EXPECTED_BODY_BUDGET_REJECTIONS
     assert stats.buffered_response_budget_rejections == EXPECTED_BODY_BUDGET_REJECTIONS
+    assert stats.response_body_closed == len(responses)
+    assert stats.response_body_aborted == len(errors)
     assert_idle_stats(stats)

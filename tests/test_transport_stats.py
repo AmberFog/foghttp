@@ -18,8 +18,11 @@ def test_stats_from_raw_maps_unique_transport_stat_fields() -> None:
         pool_acquire_wait_time_total_ns=10,
         pool_acquire_wait_time_max_ns=11,
         pool_acquire_wait_time_last_ns=12,
-        buffered_response_bytes=13,
-        buffered_response_budget_rejections=14,
+        response_body_reuse_eligible=13,
+        response_body_closed=14,
+        response_body_aborted=15,
+        buffered_response_bytes=16,
+        buffered_response_budget_rejections=17,
     )
 
     stats = stats_from_raw(raw=raw_stats)
@@ -37,6 +40,9 @@ def test_stats_from_raw_maps_unique_transport_stat_fields() -> None:
         pool_acquire_wait_time_total_ns=10,
         pool_acquire_wait_time_max_ns=11,
         pool_acquire_wait_time_last_ns=12,
-        buffered_response_bytes=13,
-        buffered_response_budget_rejections=14,
+        response_body_reuse_eligible=13,
+        response_body_closed=14,
+        response_body_aborted=15,
+        buffered_response_bytes=16,
+        buffered_response_budget_rejections=17,
     )

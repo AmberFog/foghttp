@@ -137,6 +137,16 @@ counts. `dump_transport_state()["origins"]` exposes the same acquire-pressure
 fields per normalized origin, with default ports omitted and non-default ports
 preserved, so a service can see which upstream is holding active slots or
 building a pending queue without logging request paths or query strings.
+FogHTTP also records buffered response body lifecycle counters. A clean
+end-of-body increments either `response_body_reuse_eligible` or
+`response_body_closed`, depending on whether the response is eligible for
+keep-alive reuse. After response headers are received and buffered body
+handling starts, timeout, cancellation, body transport error, memory budget
+rejection, body-size rejection, and decoding failure increment
+`response_body_aborted`. Errors before buffered body handling starts, such as
+pool acquire or response-header failures, do not increment this body lifecycle
+counter. These counters describe Rust-side buffered body outcomes; they do not
+claim exact physical socket reuse.
 FogHTTP collects this transport-state snapshot in Rust and returns aggregate
 and per-origin pressure through one raw client boundary call. The Rust snapshot
 path retries briefly if current active/pending aggregate counters or

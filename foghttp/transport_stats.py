@@ -17,5 +17,8 @@ class TransportStats:
     pool_acquire_wait_time_total_ns: int = 0
     pool_acquire_wait_time_max_ns: int = 0
     pool_acquire_wait_time_last_ns: int = 0
+    response_body_reuse_eligible: int = 0
+    response_body_closed: int = 0
+    response_body_aborted: int = 0
     buffered_response_bytes: int = 0
     buffered_response_budget_rejections: int = 0

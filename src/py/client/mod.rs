@@ -2,6 +2,7 @@ pub(crate) mod acquire;
 mod async_requests;
 mod body;
 mod future;
+mod lifecycle;
 mod options;
 mod redirects;
 mod runtime;
@@ -129,6 +130,7 @@ impl RawClient {
         let client = self.client()?.clone();
         let runtime = self.runtime()?;
         let acquire_gate = self.acquire_gate.clone();
+        let metrics = Arc::clone(&self.metrics);
         let max_response_body_size = self.max_response_body_size;
         let buffered_body_budget = self.buffered_body_budget.clone();
         let follow_redirects = self.follow_redirects;
@@ -140,6 +142,7 @@ impl RawClient {
                 send_request(
                     client,
                     acquire_gate,
+                    metrics,
                     pool_timeout,
                     TransportRequest {
                         method,

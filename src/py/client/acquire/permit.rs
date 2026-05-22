@@ -25,6 +25,10 @@ impl AcquirePermit {
             _origin_permit: origin_permit,
         }
     }
+
+    pub fn origin_metrics(&self) -> Arc<OriginMetrics> {
+        Arc::clone(&self.origin_metrics)
+    }
 }
 
 impl Drop for AcquirePermit {

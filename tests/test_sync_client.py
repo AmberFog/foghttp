@@ -182,6 +182,9 @@ def test_dump_transport_state(sync_http_server: str) -> None:
         "pool_acquire_wait_time_max_ns",
         "pool_acquire_wait_time_total_ns",
         "pool_acquire_waited",
+        "response_body_aborted",
+        "response_body_closed",
+        "response_body_reuse_eligible",
         "origins",
     }
     assert state["pending_requests"] == 0
