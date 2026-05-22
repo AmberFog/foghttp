@@ -5,15 +5,22 @@ use crate::core::metrics::Metrics;
 use crate::core::response::BufferedBodyBudget;
 use crate::messages::NON_REPLAYABLE_REQUEST_BODY_REDIRECT;
 use crate::py::client::redirects::RedirectAction;
+use pyo3::Python;
 use std::sync::Arc;
+use std::sync::Once;
 
 const INITIAL_URL: &str = "http://example.com/start";
 const REDIRECT_URL: &str = "http://example.com/next";
 const TOTAL_TIMEOUT: f64 = 30.0;
 
+fn initialize_python() {
+    static PYTHON: Once = Once::new();
+    PYTHON.call_once(Python::initialize);
+}
+
 #[test]
 fn method_preserving_redirect_rejects_non_replayable_body() {
-    pyo3::Python::initialize();
+    initialize_python();
     let mut state = request_state(Some(vec![1, 2, 3]), false);
 
     let error = state
