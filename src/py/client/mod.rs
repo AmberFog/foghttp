@@ -1,5 +1,6 @@
 pub(crate) mod acquire;
 mod async_requests;
+mod body;
 mod future;
 mod options;
 mod redirects;
@@ -119,6 +120,7 @@ impl RawClient {
         url: String,
         headers: HeaderPairs,
         body: Option<Vec<u8>>,
+        body_replayable: bool,
         pool_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<RawResponse> {
@@ -144,6 +146,7 @@ impl RawClient {
                         url,
                         headers,
                         body,
+                        body_replayable,
                         total_timeout,
                         max_response_body_size,
                         buffered_body_budget,
@@ -167,6 +170,7 @@ impl RawClient {
         url: String,
         headers: HeaderPairs,
         body: Option<Vec<u8>>,
+        body_replayable: bool,
         pool_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<Py<PyAny>> {
@@ -192,6 +196,7 @@ impl RawClient {
                     url,
                     headers,
                     body,
+                    body_replayable,
                     total_timeout,
                     max_response_body_size,
                     buffered_body_budget,

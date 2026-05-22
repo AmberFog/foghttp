@@ -27,6 +27,7 @@ def test_raw_client_rejects_requests_after_close_without_leaking_metrics(faker: 
             url=faker.url(),
             headers=[],
             body=None,
+            body_replayable=True,
             timeouts=Timeouts(),
         )
 

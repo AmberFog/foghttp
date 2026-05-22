@@ -7,8 +7,11 @@ use crate::core::response::{
 };
 use crate::core::url::HttpUrl;
 use crate::errors::FogHttpError;
-use crate::messages::{redirect_limit_exceeded, REQUEST_TOTAL_TIMEOUT};
+use crate::messages::{
+    redirect_limit_exceeded, NON_REPLAYABLE_REQUEST_BODY_REDIRECT, REQUEST_TOTAL_TIMEOUT,
+};
 use crate::py::client::acquire::AcquireGate;
+use crate::py::client::body::BodyReplayability;
 use crate::py::client::redirects::{
     redirect_decision, redirect_headers, RedirectAction, RedirectDecision, RedirectHeaderPolicy,
 };
@@ -26,6 +29,7 @@ pub struct TransportRequest {
     pub url: String,
     pub headers: HeaderPairs,
     pub body: Option<Vec<u8>>,
+    pub body_replayable: bool,
     pub total_timeout: f64,
     pub max_response_body_size: Option<usize>,
     pub buffered_body_budget: BufferedBodyBudget,
@@ -114,7 +118,7 @@ pub async fn send_request(
             RedirectDecision::Block(reason) => return Err(FogHttpError::new_err(reason)),
             RedirectDecision::Follow(action) => {
                 history.push(raw);
-                state.apply_redirect(action);
+                state.apply_redirect(action)?;
             }
         }
     }
@@ -125,6 +129,7 @@ struct RequestState {
     url: String,
     headers: HeaderPairs,
     body: Option<Vec<u8>>,
+    body_replayability: BodyReplayability,
     total_timeout: f64,
     max_response_body_size: Option<usize>,
     buffered_body_budget: BufferedBodyBudget,
@@ -156,7 +161,11 @@ impl RequestState {
             .map_err(FogHttpError::new_err)
     }
 
-    fn apply_redirect(&mut self, redirect: RedirectAction) {
+    fn apply_redirect(&mut self, redirect: RedirectAction) -> PyResult<()> {
+        if redirect.preserve_body && self.body.is_some() && !self.body_replayability.can_replay() {
+            return Err(FogHttpError::new_err(NON_REPLAYABLE_REQUEST_BODY_REDIRECT));
+        }
+
         self.method = redirect.method;
         self.url = redirect.url;
         self.headers = redirect_headers(
@@ -169,19 +178,24 @@ impl RequestState {
 
         if !redirect.preserve_body {
             self.body = None;
+            self.body_replayability = BodyReplayability::Replayable;
         }
+        Ok(())
     }
 }
 
 impl RequestState {
     fn try_from(parts: TransportRequest) -> PyResult<Self> {
         let url = HttpUrl::parse(&parts.url).map_err(FogHttpError::new_err)?;
+        let body_replayability =
+            BodyReplayability::from_buffered_body(parts.body.as_deref(), parts.body_replayable);
 
         Ok(Self {
             method: parts.method.to_uppercase(),
             url: url.as_str().to_owned(),
             headers: parts.headers,
             body: parts.body,
+            body_replayability,
             total_timeout: parts.total_timeout,
             max_response_body_size: parts.max_response_body_size,
             buffered_body_budget: parts.buffered_body_budget,
@@ -261,3 +275,6 @@ struct RawResponseContext<'a> {
     origin: &'a str,
     redirect_hop: usize,
 }
+
+#[cfg(test)]
+mod tests;

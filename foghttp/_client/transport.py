@@ -9,6 +9,7 @@ from collections.abc import Callable
 import time
 from typing import TYPE_CHECKING, Protocol, TypeAlias
 
+from .._request_body import request_body
 from ..request import Request
 from ..response import Response
 from ..timeouts import Timeouts
@@ -37,12 +38,14 @@ class RawSyncTransport:
 
     def send(self, request: Request, *, timeouts: Timeouts) -> Response:
         started = time.perf_counter()
+        body = request_body(request)
         raw = send_raw_request(
             raw_client=self._raw_client_provider(),
             method=request.method,
             url=request.url,
             headers=request.headers.multi_items(),
-            body=request.content,
+            body=body.content,
+            body_replayable=body.replayable,
             timeouts=timeouts,
         )
         return response_from_raw(raw=raw, started=started)
@@ -54,12 +57,14 @@ class RawAsyncTransport:
 
     async def send(self, request: Request, *, timeouts: Timeouts) -> Response:
         started = time.perf_counter()
+        body = request_body(request)
         raw = await send_raw_request_async(
             raw_client=self._raw_client_provider(),
             method=request.method,
             url=request.url,
             headers=request.headers.multi_items(),
-            body=request.content,
+            body=body.content,
+            body_replayable=body.replayable,
             timeouts=timeouts,
         )
         return response_from_raw(raw=raw, started=started)

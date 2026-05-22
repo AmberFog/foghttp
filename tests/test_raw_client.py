@@ -35,6 +35,7 @@ RAW_REQUEST_ARGUMENTS = (
     "url",
     "headers",
     "body",
+    "body_replayable",
     "pool_timeout",
     "total_timeout",
 )
@@ -139,13 +140,16 @@ def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker:
 
     timeouts = Timeouts(connect=2.5, pool=3.5, total=4.5)
     url = faker.url()
+    body = faker.binary(length=8)
+    body_replayable = False
 
     response = send_raw_request(
         raw_client=RawClientProbe(),
         method=GET,
         url=url,
         headers=[],
-        body=None,
+        body=body,
+        body_replayable=body_replayable,
         timeouts=timeouts,
     )
 
@@ -154,7 +158,8 @@ def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker:
         "method": GET,
         "url": url,
         "headers": [],
-        "body": None,
+        "body": body,
+        "body_replayable": body_replayable,
         "pool_timeout": timeouts.pool,
         "total_timeout": timeouts.total,
     }
@@ -178,6 +183,7 @@ async def test_send_raw_request_async_passes_request_timeouts_without_connect_ti
         url=url,
         headers=[],
         body=None,
+        body_replayable=True,
         timeouts=timeouts,
     )
 
@@ -187,6 +193,7 @@ async def test_send_raw_request_async_passes_request_timeouts_without_connect_ti
         "url": url,
         "headers": [],
         "body": None,
+        "body_replayable": True,
         "pool_timeout": timeouts.pool,
         "total_timeout": timeouts.total,
     }
