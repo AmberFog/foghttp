@@ -33,6 +33,20 @@ pub struct RawOriginPressure {
     #[pyo3(get)]
     response_body_aborted: usize,
     #[pyo3(get)]
+    active_connections: usize,
+    #[pyo3(get)]
+    idle_connections: usize,
+    #[pyo3(get)]
+    connections_opened: usize,
+    #[pyo3(get)]
+    connections_open_failed: usize,
+    #[pyo3(get)]
+    connections_closed: usize,
+    #[pyo3(get)]
+    connections_reused: usize,
+    #[pyo3(get)]
+    connections_aborted: usize,
+    #[pyo3(get)]
     last_activity_at_ns: u64,
 }
 
@@ -69,6 +83,20 @@ pub struct RawStats {
     #[pyo3(get)]
     response_body_aborted: usize,
     #[pyo3(get)]
+    active_connections: usize,
+    #[pyo3(get)]
+    idle_connections: usize,
+    #[pyo3(get)]
+    connections_opened: usize,
+    #[pyo3(get)]
+    connections_open_failed: usize,
+    #[pyo3(get)]
+    connections_closed: usize,
+    #[pyo3(get)]
+    connections_reused: usize,
+    #[pyo3(get)]
+    connections_aborted: usize,
+    #[pyo3(get)]
     buffered_response_bytes: usize,
     #[pyo3(get)]
     buffered_response_budget_rejections: usize,
@@ -92,6 +120,13 @@ impl From<MetricsSnapshot> for RawStats {
             response_body_reuse_eligible: snapshot.response_body_reuse_eligible,
             response_body_closed: snapshot.response_body_closed,
             response_body_aborted: snapshot.response_body_aborted,
+            active_connections: snapshot.active_connections,
+            idle_connections: snapshot.idle_connections,
+            connections_opened: snapshot.connections_opened,
+            connections_open_failed: snapshot.connections_open_failed,
+            connections_closed: snapshot.connections_closed,
+            connections_reused: snapshot.connections_reused,
+            connections_aborted: snapshot.connections_aborted,
             buffered_response_bytes: snapshot.buffered_response_bytes,
             buffered_response_budget_rejections: snapshot.buffered_response_budget_rejections,
         }
@@ -115,6 +150,13 @@ impl From<OriginMetricsSnapshot> for RawOriginPressure {
             response_body_reuse_eligible: snapshot.response_body_reuse_eligible,
             response_body_closed: snapshot.response_body_closed,
             response_body_aborted: snapshot.response_body_aborted,
+            active_connections: snapshot.active_connections,
+            idle_connections: snapshot.idle_connections,
+            connections_opened: snapshot.connections_opened,
+            connections_open_failed: snapshot.connections_open_failed,
+            connections_closed: snapshot.connections_closed,
+            connections_reused: snapshot.connections_reused,
+            connections_aborted: snapshot.connections_aborted,
             last_activity_at_ns: snapshot.last_activity_at_ns,
         }
     }

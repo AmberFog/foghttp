@@ -80,6 +80,7 @@ impl RawClient {
             connect_timeout,
         })?;
 
+        let metrics = Arc::new(Metrics::default());
         let client_options = ClientOptions {
             max_idle_connections_per_host,
             idle_timeout,
@@ -88,9 +89,9 @@ impl RawClient {
             ca_certificates,
             trust_webpki_roots,
         };
-        let client = build_client(&client_options).map_err(FogHttpError::new_err)?;
+        let client =
+            build_client(&client_options, Arc::clone(&metrics)).map_err(FogHttpError::new_err)?;
         let runtime = build_runtime(max_active_requests, runtime_workers)?;
-        let metrics = Arc::new(Metrics::default());
         let buffered_body_budget =
             BufferedBodyBudget::new(max_buffered_response_bytes, Arc::clone(&metrics));
         let acquire_gate = AcquireGate::new(

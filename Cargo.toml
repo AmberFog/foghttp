@@ -64,5 +64,8 @@ features = [
     "time",
 ]
 
+[dependencies.tower-service]
+version = "0.3.3"
+
 [dependencies.webpki-roots]
 version = "1.0.7"

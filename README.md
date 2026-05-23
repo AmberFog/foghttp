@@ -125,9 +125,10 @@ async with foghttp.AsyncClient() as client:
 
 FogHTTP is currently focused on controlled buffered HTTP workloads. Streaming
 bodies, cookies, auth helpers, proxy support, multipart uploads, HTTP/2,
-automatic `Accept-Encoding` negotiation, true connection-level pool metrics,
+automatic `Accept-Encoding` negotiation, strict connection-level pool limits,
 per-request connect timeout reconfiguration, and separate read/write timeout
-semantics are planned for later versions. Disabling TLS verification is
+semantics are planned for later versions. Socket lifecycle telemetry is
+available for the current HTTP/1 buffered path. Disabling TLS verification is
 intentionally not supported.
 
 ## Development

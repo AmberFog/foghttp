@@ -1,3 +1,8 @@
+mod telemetry;
+
+pub(crate) use telemetry::{ConnectionTelemetry, InstrumentedConnector};
+
+use crate::core::metrics::Metrics;
 use crate::core::numeric::duration_from_secs;
 use crate::core::tls::build_tls_config;
 use bytes::Bytes;
@@ -6,9 +11,10 @@ use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
+use std::sync::Arc;
 
 pub type RequestBody = Full<Bytes>;
-pub type HyperClient = Client<HttpsConnector<HttpConnector>, RequestBody>;
+pub type HyperClient = Client<InstrumentedConnector<HttpsConnector<HttpConnector>>, RequestBody>;
 
 #[derive(Clone, Debug)]
 pub struct ClientOptions {
@@ -20,7 +26,7 @@ pub struct ClientOptions {
     pub trust_webpki_roots: bool,
 }
 
-pub fn build_client(options: &ClientOptions) -> Result<HyperClient, String> {
+pub fn build_client(options: &ClientOptions, metrics: Arc<Metrics>) -> Result<HyperClient, String> {
     let mut http = HttpConnector::new();
     http.enforce_http(false);
     http.set_connect_timeout(Some(duration_from_secs(
@@ -34,6 +40,7 @@ pub fn build_client(options: &ClientOptions) -> Result<HyperClient, String> {
         .https_or_http()
         .enable_http1()
         .wrap_connector(http);
+    let connector = InstrumentedConnector::new(connector, metrics);
 
     let mut builder = Client::builder(TokioExecutor::new());
     builder.pool_max_idle_per_host(if options.keepalive {

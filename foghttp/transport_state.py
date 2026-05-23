@@ -17,6 +17,13 @@ class OriginPressureState(TypedDict):
     response_body_reuse_eligible: int
     response_body_closed: int
     response_body_aborted: int
+    active_connections: int
+    idle_connections: int
+    connections_opened: int
+    connections_open_failed: int
+    connections_closed: int
+    connections_reused: int
+    connections_aborted: int
     last_activity_at_ns: int
 
 
@@ -34,6 +41,13 @@ class TransportState(TypedDict):
     response_body_reuse_eligible: int
     response_body_closed: int
     response_body_aborted: int
+    active_connections: int
+    idle_connections: int
+    connections_opened: int
+    connections_open_failed: int
+    connections_closed: int
+    connections_reused: int
+    connections_aborted: int
     buffered_response_bytes: int
     buffered_response_budget_rejections: int
     origins: dict[str, OriginPressureState]

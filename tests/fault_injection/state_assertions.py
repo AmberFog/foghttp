@@ -7,6 +7,8 @@ __all__ = (
     "assert_poisoned_connection_not_reused",
     "assert_request_count",
     "assert_request_count_between",
+    "assert_socket_closed",
+    "assert_socket_reused",
 )
 
 from collections.abc import Mapping
@@ -34,6 +36,50 @@ def assert_idle_stats(stats: foghttp.TransportStats) -> None:
     _assert_stat("active_requests", stats.active_requests, 0)
     _assert_stat("pending_requests", stats.pending_requests, 0)
     _assert_stat("buffered_response_bytes", stats.buffered_response_bytes, 0)
+
+
+def assert_socket_reused(
+    stats: foghttp.TransportStats,
+    state: foghttp.TransportState,
+    origin: str,
+) -> None:
+    origin_state = state["origins"][origin]
+    _assert_stat("active_connections", stats.active_connections, 1)
+    _assert_stat("idle_connections", stats.idle_connections, 1)
+    _assert_stat("connections_opened", stats.connections_opened, 1)
+    _assert_stat("connections_open_failed", stats.connections_open_failed, 0)
+    _assert_stat("connections_closed", stats.connections_closed, 0)
+    _assert_stat("connections_reused", stats.connections_reused, 1)
+    _assert_stat("connections_aborted", stats.connections_aborted, 0)
+    _assert_stat("origin.active_connections", origin_state["active_connections"], 1)
+    _assert_stat("origin.idle_connections", origin_state["idle_connections"], 1)
+    _assert_stat("origin.connections_opened", origin_state["connections_opened"], 1)
+    _assert_stat("origin.connections_open_failed", origin_state["connections_open_failed"], 0)
+    _assert_stat("origin.connections_closed", origin_state["connections_closed"], 0)
+    _assert_stat("origin.connections_reused", origin_state["connections_reused"], 1)
+    _assert_stat("origin.connections_aborted", origin_state["connections_aborted"], 0)
+
+
+def assert_socket_closed(
+    stats: foghttp.TransportStats,
+    state: foghttp.TransportState,
+    origin: str,
+) -> None:
+    origin_state = state["origins"][origin]
+    _assert_stat("active_connections", stats.active_connections, 0)
+    _assert_stat("idle_connections", stats.idle_connections, 0)
+    _assert_stat("connections_opened", stats.connections_opened, 1)
+    _assert_stat("connections_open_failed", stats.connections_open_failed, 0)
+    _assert_stat("connections_closed", stats.connections_closed, 1)
+    _assert_stat("connections_reused", stats.connections_reused, 0)
+    _assert_stat("connections_aborted", stats.connections_aborted, 0)
+    _assert_stat("origin.active_connections", origin_state["active_connections"], 0)
+    _assert_stat("origin.idle_connections", origin_state["idle_connections"], 0)
+    _assert_stat("origin.connections_opened", origin_state["connections_opened"], 1)
+    _assert_stat("origin.connections_open_failed", origin_state["connections_open_failed"], 0)
+    _assert_stat("origin.connections_closed", origin_state["connections_closed"], 1)
+    _assert_stat("origin.connections_reused", origin_state["connections_reused"], 0)
+    _assert_stat("origin.connections_aborted", origin_state["connections_aborted"], 0)
 
 
 def assert_client_recovered(

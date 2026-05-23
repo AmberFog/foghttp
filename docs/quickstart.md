@@ -585,10 +585,14 @@ reports requests rejected by the aggregate buffered memory budget.
 `TransportStats.response_body_reuse_eligible`, `response_body_closed`, and
 `response_body_aborted` report Rust-side buffered body lifecycle outcomes:
 clean reusable-eligible completion, clean non-reusable completion, and aborted
-body handling. They are body lifecycle counters, not exact physical socket reuse
-telemetry.
+body handling.
+`TransportStats.connections_opened`, `connections_open_failed`,
+`connections_closed`, `connections_reused`, `connections_aborted`,
+`active_connections`, and `idle_connections` report Rust-side socket lifecycle
+telemetry observed around the connector and buffered response lifecycle.
 `client.dump_transport_state()["origins"]` shows request-slot pressure grouped
-by normalized origin without path, query, userinfo, headers, or body data.
+by normalized origin without path, query, userinfo, headers, or body data and
+includes the same socket lifecycle fields per origin.
 Default ports are omitted from origin keys; non-default ports are preserved.
 Each origin also exposes `last_activity_at_ns`, a monotonic timestamp relative
 to the current transport metrics lifetime, not a Unix epoch timestamp.

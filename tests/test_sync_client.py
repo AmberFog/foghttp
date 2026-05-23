@@ -170,9 +170,16 @@ def test_dump_transport_state(sync_http_server: str) -> None:
         state = client.dump_transport_state()
 
     assert state.keys() == {
+        "active_connections",
         "active_requests",
         "buffered_response_budget_rejections",
         "buffered_response_bytes",
+        "connections_aborted",
+        "connections_closed",
+        "connections_open_failed",
+        "connections_opened",
+        "connections_reused",
+        "idle_connections",
         "peak_pending_requests",
         "pending_requests",
         "pool_acquire_attempts",

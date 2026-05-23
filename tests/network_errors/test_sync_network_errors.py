@@ -10,6 +10,7 @@ from .constants import (
     NETWORK_ERROR_TIMEOUTS,
 )
 from .helpers import (
+    assert_connection_open_failed_stats,
     assert_invalid_url_does_not_touch_transport,
     assert_network_error_stats,
     assert_recovered_stats,
@@ -39,7 +40,7 @@ def test_sync_connection_refused_maps_to_request_error_and_client_recovers(
         final_stats = client.stats()
 
     assert not isinstance(exc_info.value, foghttp.TimeoutError)
-    assert_network_error_stats(stats_after_error)
+    assert_connection_open_failed_stats(stats_after_error)
     assert response.status_code == OK
     assert_recovered_stats(final_stats)
 

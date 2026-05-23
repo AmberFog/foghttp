@@ -5,6 +5,7 @@ import pytest
 import foghttp
 from foghttp.status_codes.client_error import NOT_FOUND
 from foghttp.status_codes.success import OK
+from tests.support.transport_stats import wait_for_sync_transport_stats
 
 from .constants import (
     ABRUPT_BEFORE_HEADERS_PATH,
@@ -36,6 +37,8 @@ from .state_assertions import (
     assert_idle_stats,
     assert_network_failure_recovered,
     assert_poisoned_connection_not_reused,
+    assert_socket_closed,
+    assert_socket_reused,
 )
 from .timeout_assertions import assert_timeout_error
 
@@ -52,6 +55,7 @@ def test_sync_healthy_fault_server_route_reuses_keepalive_connection(
         first_response = client.get(fault_injection_server.url + HEALTHY_PATH)
         second_response = client.get(fault_injection_server.url + HEALTHY_PATH)
         stats = client.stats()
+        state = client.dump_transport_state()
 
     assert first_response.status_code == OK
     assert second_response.status_code == OK
@@ -59,6 +63,7 @@ def test_sync_healthy_fault_server_route_reuses_keepalive_connection(
     assert stats.response_body_closed == 0
     assert stats.response_body_aborted == 0
     assert_idle_stats(stats)
+    assert_socket_reused(stats, state, fault_injection_server.url)
     assert_healthy_connection_reused(
         first_response.json(),
         second_response.json(),
@@ -71,6 +76,11 @@ def test_sync_clean_response_with_connection_close_records_closed_body(
 ) -> None:
     with foghttp.Client(timeouts=RECOVERY_TIMEOUTS) as client:
         response = client.get(fault_injection_server.url + CLOSE_AFTER_BODY_PATH)
+        wait_for_sync_transport_stats(
+            client,
+            lambda stats: stats.connections_closed == 1 and stats.active_connections == 0,
+            message="socket close telemetry did not settle",
+        )
         stats = client.stats()
         state = client.dump_transport_state()
 
@@ -82,6 +92,7 @@ def test_sync_clean_response_with_connection_close_records_closed_body(
     assert state["response_body_closed"] == 1
     assert origin_state["response_body_closed"] == 1
     assert_idle_stats(stats)
+    assert_socket_closed(stats, state, fault_injection_server.url)
 
 
 def test_sync_slow_headers_total_timeout_recovers(
@@ -143,6 +154,7 @@ def test_sync_slow_body_total_timeout_recovers(
         timeout=timeouts.total,
     )
     assert stats_after_error.response_body_aborted == 1
+    assert stats_after_error.connections_aborted == 1
     assert_client_recovered(stats_after_error, final_stats)
     assert_faulted_connection_not_reused(
         response.json(),
@@ -195,6 +207,7 @@ def test_sync_partial_body_connection_is_not_reused(
     assert stats_after_error.total_requests == EXPECTED_REQUESTS_AFTER_POISONED_FAILURE
     assert stats_after_error.failed_requests == EXPECTED_FAILED_REQUESTS_AFTER_RECOVERY
     assert stats_after_error.response_body_aborted == 1
+    assert stats_after_error.connections_aborted == 1
     assert final_stats.total_requests == EXPECTED_REQUESTS_AFTER_POISONED_RECOVERY
     assert final_stats.failed_requests == EXPECTED_FAILED_REQUESTS_AFTER_RECOVERY
     assert final_stats.response_body_reuse_eligible == EXPECTED_REUSE_ELIGIBLE_BODIES_AFTER_POISONED_RECOVERY
