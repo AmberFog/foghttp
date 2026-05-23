@@ -124,8 +124,6 @@ impl RawStreamResponse {
             loop_.clone_ref(py),
             future.clone_ref(py),
         )) {
-            handle.abort();
-            future.bind(py).call_method1("set_result", (py.None(),))?;
             return Ok(future);
         }
 

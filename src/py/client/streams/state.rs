@@ -131,7 +131,8 @@ impl StreamState {
     pub(super) fn register_read_task(&self, read_task: ActiveStreamRead) -> bool {
         let mut fields = self.fields();
         if fields.finished || !fields.read_in_progress {
-            read_task.abort();
+            drop(fields);
+            read_task.abort_and_cancel_python();
             return false;
         }
         fields.read_task = Some(read_task);
@@ -221,10 +222,6 @@ impl ActiveStreamRead {
             loop_,
             future,
         }
-    }
-
-    fn abort(self) {
-        self.abort_handle.abort();
     }
 
     fn abort_and_cancel_python(self) {
@@ -324,3 +321,7 @@ enum StreamFinish {
     Success,
     Abort,
 }
+
+#[cfg(test)]
+#[path = "state_tests.rs"]
+mod tests;

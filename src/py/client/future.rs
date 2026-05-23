@@ -74,12 +74,10 @@ pub fn complete_python_bytes_future(
 }
 
 fn schedule_cancel(py: Python<'_>, loop_: &Py<PyAny>, future: &Py<PyAny>) -> PyResult<()> {
-    let helper = py
-        .import("foghttp._client.asyncio_futures")?
-        .getattr("cancel_if_pending")?;
+    let cancel = future.bind(py).getattr("cancel")?;
     loop_
         .bind(py)
-        .call_method1("call_soon_threadsafe", (helper, future.bind(py)))?;
+        .call_method1("call_soon_threadsafe", (cancel,))?;
     Ok(())
 }
 
