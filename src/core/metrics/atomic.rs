@@ -16,6 +16,17 @@ pub(super) fn saturating_atomic_u64_add(target: &AtomicU64, value: u64) {
     }
 }
 
+pub(super) fn saturating_atomic_usize_sub(target: &AtomicUsize, value: usize) {
+    let mut current = target.load(Ordering::Relaxed);
+    loop {
+        let next = current.saturating_sub(value);
+        match target.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_previous) => return,
+            Err(actual) => current = actual,
+        }
+    }
+}
+
 pub(super) fn update_atomic_usize_max(target: &AtomicUsize, value: usize) {
     let mut current = target.load(Ordering::Relaxed);
     while value > current {

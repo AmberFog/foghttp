@@ -9,7 +9,8 @@ pub use origin::{
 };
 
 use self::atomic::{
-    duration_as_nanos, saturating_atomic_u64_add, update_atomic_u64_max, update_atomic_usize_max,
+    duration_as_nanos, saturating_atomic_u64_add, saturating_atomic_usize_sub,
+    update_atomic_u64_max, update_atomic_usize_max,
 };
 use self::origin::OriginMetricsRegistry;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -35,6 +36,13 @@ pub struct Metrics {
     response_body_reuse_eligible: AtomicUsize,
     response_body_closed: AtomicUsize,
     response_body_aborted: AtomicUsize,
+    active_connections: AtomicUsize,
+    idle_connections: AtomicUsize,
+    connections_opened: AtomicUsize,
+    connections_open_failed: AtomicUsize,
+    connections_closed: AtomicUsize,
+    connections_reused: AtomicUsize,
+    connections_aborted: AtomicUsize,
     buffered_response_bytes: AtomicUsize,
     buffered_response_budget_rejections: AtomicUsize,
     origin_registry: OriginMetricsRegistry,
@@ -69,6 +77,13 @@ pub struct MetricsSnapshot {
     pub response_body_reuse_eligible: usize,
     pub response_body_closed: usize,
     pub response_body_aborted: usize,
+    pub active_connections: usize,
+    pub idle_connections: usize,
+    pub connections_opened: usize,
+    pub connections_open_failed: usize,
+    pub connections_closed: usize,
+    pub connections_reused: usize,
+    pub connections_aborted: usize,
     pub buffered_response_bytes: usize,
     pub buffered_response_budget_rejections: usize,
 }
@@ -162,6 +177,36 @@ impl Metrics {
                 self.response_body_aborted.fetch_add(1, Ordering::Relaxed);
             }
         }
+    }
+
+    pub fn connection_opened(&self) {
+        self.active_connections.fetch_add(1, Ordering::Relaxed);
+        self.connections_opened.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn connection_open_failed(&self) {
+        self.connections_open_failed.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn connection_closed(&self) {
+        saturating_atomic_usize_sub(&self.active_connections, 1);
+        self.connections_closed.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn connection_became_idle(&self) {
+        self.idle_connections.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn connection_left_idle(&self) {
+        saturating_atomic_usize_sub(&self.idle_connections, 1);
+    }
+
+    pub fn connection_reused(&self) {
+        self.connections_reused.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn connection_aborted(&self) {
+        self.connections_aborted.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn reserve_buffered_response_bytes(
@@ -282,6 +327,13 @@ impl Metrics {
             response_body_reuse_eligible: self.response_body_reuse_eligible.load(Ordering::Relaxed),
             response_body_closed: self.response_body_closed.load(Ordering::Relaxed),
             response_body_aborted: self.response_body_aborted.load(Ordering::Relaxed),
+            active_connections: self.active_connections.load(Ordering::Relaxed),
+            idle_connections: self.idle_connections.load(Ordering::Relaxed),
+            connections_opened: self.connections_opened.load(Ordering::Relaxed),
+            connections_open_failed: self.connections_open_failed.load(Ordering::Relaxed),
+            connections_closed: self.connections_closed.load(Ordering::Relaxed),
+            connections_reused: self.connections_reused.load(Ordering::Relaxed),
+            connections_aborted: self.connections_aborted.load(Ordering::Relaxed),
             buffered_response_bytes: self.buffered_response_bytes.load(Ordering::Acquire),
             buffered_response_budget_rejections: self
                 .buffered_response_budget_rejections
@@ -304,6 +356,8 @@ impl TransportStateSnapshot {
     fn has_coherent_current_pressure(&self, totals: &OriginPressureTotals) -> bool {
         self.metrics.active_requests == totals.active_requests
             && self.metrics.pending_requests == totals.pending_requests
+            && self.metrics.active_connections == totals.active_connections
+            && self.metrics.idle_connections == totals.idle_connections
     }
 
     fn has_coherent_historical_transport_counters(&self, totals: &OriginPressureTotals) -> bool {
@@ -317,6 +371,11 @@ impl TransportStateSnapshot {
             && self.metrics.response_body_reuse_eligible == totals.response_body_reuse_eligible
             && self.metrics.response_body_closed == totals.response_body_closed
             && self.metrics.response_body_aborted == totals.response_body_aborted
+            && self.metrics.connections_opened == totals.connections_opened
+            && self.metrics.connections_open_failed == totals.connections_open_failed
+            && self.metrics.connections_closed == totals.connections_closed
+            && self.metrics.connections_reused == totals.connections_reused
+            && self.metrics.connections_aborted == totals.connections_aborted
     }
 }
 
@@ -324,6 +383,8 @@ impl TransportStateSnapshot {
 struct OriginPressureTotals {
     active_requests: usize,
     pending_requests: usize,
+    active_connections: usize,
+    idle_connections: usize,
     pool_acquire_attempts: usize,
     pool_acquire_immediate: usize,
     pool_acquire_waited: usize,
@@ -333,6 +394,11 @@ struct OriginPressureTotals {
     response_body_reuse_eligible: usize,
     response_body_closed: usize,
     response_body_aborted: usize,
+    connections_opened: usize,
+    connections_open_failed: usize,
+    connections_closed: usize,
+    connections_reused: usize,
+    connections_aborted: usize,
 }
 
 impl OriginPressureTotals {
@@ -344,6 +410,12 @@ impl OriginPressureTotals {
             totals.pending_requests = totals
                 .pending_requests
                 .saturating_add(origin.pending_requests);
+            totals.active_connections = totals
+                .active_connections
+                .saturating_add(origin.active_connections);
+            totals.idle_connections = totals
+                .idle_connections
+                .saturating_add(origin.idle_connections);
             totals.pool_acquire_attempts = totals
                 .pool_acquire_attempts
                 .saturating_add(origin.pool_acquire_attempts);
@@ -371,6 +443,21 @@ impl OriginPressureTotals {
             totals.response_body_aborted = totals
                 .response_body_aborted
                 .saturating_add(origin.response_body_aborted);
+            totals.connections_opened = totals
+                .connections_opened
+                .saturating_add(origin.connections_opened);
+            totals.connections_open_failed = totals
+                .connections_open_failed
+                .saturating_add(origin.connections_open_failed);
+            totals.connections_closed = totals
+                .connections_closed
+                .saturating_add(origin.connections_closed);
+            totals.connections_reused = totals
+                .connections_reused
+                .saturating_add(origin.connections_reused);
+            totals.connections_aborted = totals
+                .connections_aborted
+                .saturating_add(origin.connections_aborted);
             totals
         })
     }
@@ -476,6 +563,28 @@ mod tests {
     }
 
     #[test]
+    fn connection_lifecycle_metrics_track_current_and_historical_counts() {
+        let metrics = Metrics::default();
+
+        metrics.connection_opened();
+        metrics.connection_became_idle();
+        metrics.connection_reused();
+        metrics.connection_left_idle();
+        metrics.connection_aborted();
+        metrics.connection_closed();
+        metrics.connection_open_failed();
+
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.active_connections, 0);
+        assert_eq!(snapshot.idle_connections, 0);
+        assert_eq!(snapshot.connections_opened, 1);
+        assert_eq!(snapshot.connections_open_failed, 1);
+        assert_eq!(snapshot.connections_closed, 1);
+        assert_eq!(snapshot.connections_reused, 1);
+        assert_eq!(snapshot.connections_aborted, 1);
+    }
+
+    #[test]
     fn transport_state_coherence_rejects_mismatched_acquire_pressure() {
         let metrics = Metrics::default();
 
@@ -483,6 +592,20 @@ mod tests {
         metrics.pool_acquire_started();
         origin_metrics.pool_acquire_started();
         metrics.pool_acquire_waited();
+
+        let snapshot = metrics.transport_state_snapshot_once();
+
+        assert!(!snapshot.has_coherent_pressure());
+    }
+
+    #[test]
+    fn transport_state_coherence_rejects_mismatched_connection_lifecycle() {
+        let metrics = Metrics::default();
+
+        let origin_metrics = metrics.origin_metrics("https://api.example.com");
+        metrics.connection_opened();
+        origin_metrics.connection_opened();
+        metrics.connection_reused();
 
         let snapshot = metrics.transport_state_snapshot_once();
 

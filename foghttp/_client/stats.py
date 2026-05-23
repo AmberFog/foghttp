@@ -25,6 +25,13 @@ def stats_from_raw(
         response_body_reuse_eligible=raw.response_body_reuse_eligible,
         response_body_closed=raw.response_body_closed,
         response_body_aborted=raw.response_body_aborted,
+        active_connections=raw.active_connections,
+        idle_connections=raw.idle_connections,
+        connections_opened=raw.connections_opened,
+        connections_open_failed=raw.connections_open_failed,
+        connections_closed=raw.connections_closed,
+        connections_reused=raw.connections_reused,
+        connections_aborted=raw.connections_aborted,
         buffered_response_bytes=raw.buffered_response_bytes,
         buffered_response_budget_rejections=raw.buffered_response_budget_rejections,
     )

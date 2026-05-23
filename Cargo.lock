@@ -122,6 +122,7 @@ dependencies = [
  "pyo3",
  "rustls",
  "tokio",
+ "tower-service",
  "url",
  "webpki-roots",
 ]

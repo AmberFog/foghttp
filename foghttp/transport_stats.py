@@ -20,5 +20,12 @@ class TransportStats:
     response_body_reuse_eligible: int = 0
     response_body_closed: int = 0
     response_body_aborted: int = 0
+    active_connections: int = 0
+    idle_connections: int = 0
+    connections_opened: int = 0
+    connections_open_failed: int = 0
+    connections_closed: int = 0
+    connections_reused: int = 0
+    connections_aborted: int = 0
     buffered_response_bytes: int = 0
     buffered_response_budget_rejections: int = 0

@@ -1,3 +1,4 @@
+use crate::core::client::ConnectionTelemetry;
 use crate::core::client::HyperClient;
 use crate::core::headers::{response_headers, HeaderPairs};
 use crate::core::metrics::{Metrics, OriginMetrics};
@@ -225,6 +226,10 @@ async fn raw_response(
     let decoding_plan = response_body_can_be_decoded(&request.method, status)
         .then(|| response_body_decoding_plan(response.headers()));
     let headers = response_headers(response.headers());
+    let mut connection_use = response
+        .extensions()
+        .get::<ConnectionTelemetry>()
+        .map(ConnectionTelemetry::response_started);
     let mut lifecycle = ResponseBodyLifecycle::new(context.metrics, context.origin_metrics);
     let response_body_timeout_context = TimeoutContext::new(
         TimeoutPhase::ResponseBody,
@@ -243,6 +248,9 @@ async fn raw_response(
     )
     .await
     .map_err(|_| timeout_error(&response_body_timeout_context, REQUEST_TOTAL_TIMEOUT))??;
+    if let Some(connection_use) = connection_use.take() {
+        connection_use.finish(successful_body_outcome);
+    }
     let (headers, response_content, body_reservation) = if let Some(decoding_plan) = decoding_plan {
         let body = decode_body(collected, decoding_plan, context.max_response_body_size)?;
         (

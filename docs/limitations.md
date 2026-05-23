@@ -67,10 +67,10 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | automatic `Accept-Encoding` negotiation | Not implemented; send `Accept-Encoding` manually when you want compressed responses |
 | transport-managed request headers | Safe API rejects manual `Host`, `Content-Length`, `Transfer-Encoding`, `TE`, `Trailer`, `Connection`, `Upgrade`, `Keep-Alive`, and `Proxy-Connection` |
 | request body source conflicts | Only one body source can be passed today: `json=`, `data=`, or `content=` |
-| true active connection-level limits | `max_active_requests_per_origin` limits buffered request slots; physical TCP connection-level accounting is not exposed yet |
+| true active connection-level limits | `max_active_requests_per_origin` limits buffered request slots; socket lifecycle telemetry is observable, but FogHTTP does not yet expose separate physical connection limits |
 | per-request connect timeout changes | `Timeouts.connect` configures the Rust connector from client-level settings when transport state is created; per-request `timeout.connect` does not reconfigure the connector |
 | separate read/write timeout semantics | `Timeouts.read` and `Timeouts.write` exist, but separate body read/write deadlines are reserved for later streaming/body work |
-| physical connection telemetry | `TransportStats`, `dump_transport_state()["origins"]`, and `dump_pool_diagnostics()` expose request-slot pressure, acquire wait, buffered body budget, and Rust-side buffered body lifecycle counters; true socket opened/closed/reused/idle counters are planned later |
+| socket lifecycle telemetry granularity | `TransportStats` and `dump_transport_state()["origins"]` expose opened, open-failed, closed, reused, aborted, active, and idle tracked connection counters for the current HTTP/1 buffered path; these are connector/lifecycle diagnostics, not a stable public view into Hyper's private pool internals |
 
 ## Practical Guidance
 

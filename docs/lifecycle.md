@@ -57,22 +57,29 @@ client = foghttp.Client()
 
 assert client.stats() == foghttp.TransportStats()
 assert client.dump_transport_state() == {
+    "active_connections": 0,
     "active_requests": 0,
-    "pending_requests": 0,
-    "peak_pending_requests": 0,
+    "buffered_response_bytes": 0,
+    "buffered_response_budget_rejections": 0,
+    "connections_aborted": 0,
+    "connections_closed": 0,
+    "connections_open_failed": 0,
+    "connections_opened": 0,
+    "connections_reused": 0,
+    "idle_connections": 0,
+    "origins": {},
     "pool_acquire_attempts": 0,
     "pool_acquire_immediate": 0,
-    "pool_acquire_waited": 0,
     "pool_acquire_timeouts": 0,
-    "pool_acquire_wait_time_total_ns": 0,
-    "pool_acquire_wait_time_max_ns": 0,
     "pool_acquire_wait_time_last_ns": 0,
+    "pool_acquire_wait_time_max_ns": 0,
+    "pool_acquire_wait_time_total_ns": 0,
+    "pool_acquire_waited": 0,
+    "peak_pending_requests": 0,
+    "pending_requests": 0,
     "response_body_reuse_eligible": 0,
     "response_body_closed": 0,
     "response_body_aborted": 0,
-    "buffered_response_bytes": 0,
-    "buffered_response_budget_rejections": 0,
-    "origins": {},
 }
 assert client.dump_pool_diagnostics()["origins"] == {}
 
@@ -260,15 +267,31 @@ connection counters.
   clean success after response headers were received because of body-phase
   timeout, cancellation, body transport error, memory budget rejection,
   body-size rejection, or decoding failure
+- `active_connections` means tracked physical connector I/O handles that were
+  successfully opened and have not yet been dropped
+- `idle_connections` means tracked connections that completed a reusable
+  buffered response and have not yet been observed serving another response or
+  closing
+- `connections_opened` means successful connector handoffs to Hyper after TCP
+  and, for HTTPS, TLS setup
+- `connections_open_failed` means connector failures before a usable transport
+  was handed to Hyper
+- `connections_closed` means tracked transport I/O handles dropped by Hyper
+- `connections_reused` means a response was observed on a tracked connection
+  after that same connection had already served an earlier response
+- `connections_aborted` means a tracked connection saw wire response body
+  collection abort after response headers were received
 - `buffered_response_bytes` means bytes currently reserved for in-flight
   buffered response bodies before they are returned to Python
 - `buffered_response_budget_rejections` means requests rejected by
   `Limits.max_buffered_response_bytes`
 
 The response body lifecycle counters describe FogHTTP's Rust-side buffered body
-contract. `response_body_reuse_eligible` is an eligibility signal, not a
-guarantee that Hyper physically reused the TCP connection for a later request.
-True socket opened/closed/reused/idle telemetry is a separate future layer.
+contract. Socket lifecycle counters describe tracked connector I/O lifecycle:
+opened/closed are physical connector events, while reused/idle/aborted are
+derived from responses observed on those tracked connections. `idle_connections`
+is diagnostic state for the current HTTP/1 buffered path, not a public promise
+about Hyper's private pool internals.
 
 Use `dump_transport_state()` for a small debug snapshot when active, pending,
 acquire pressure, per-origin pressure, and buffered response budget state are
@@ -307,6 +330,6 @@ The lifecycle contract currently applies to buffered requests and responses.
 Streaming response bodies, streaming uploads, cookies, proxies, and advanced
 auth helpers are planned later and may extend the lifecycle model.
 
-FogHTTP does not expose true connection-level pool metrics yet. Until that lands,
-resource stats intentionally describe request backpressure rather than raw TCP
-connection accounting.
+FogHTTP exposes socket lifecycle telemetry for the current HTTP/1 buffered path,
+but resource limits still describe request backpressure rather than strict raw
+TCP connection caps.

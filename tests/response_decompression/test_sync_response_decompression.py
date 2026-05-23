@@ -119,6 +119,12 @@ def test_sync_buffered_response_rejects_invalid_encoded_body(
 
     assert stats.total_requests == 1
     assert stats.failed_requests == 1
+    assert stats.response_body_aborted == 1
+    assert stats.active_connections == 0
+    assert stats.idle_connections == 0
+    assert stats.connections_aborted == 0
+    assert stats.connections_opened == 1
+    assert stats.connections_closed == 1
     assert stats.buffered_response_bytes == 0
 
 

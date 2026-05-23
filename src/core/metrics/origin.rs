@@ -1,5 +1,6 @@
 use super::atomic::{
-    duration_as_nanos, saturating_atomic_u64_add, update_atomic_u64_max, update_atomic_usize_max,
+    duration_as_nanos, saturating_atomic_u64_add, saturating_atomic_usize_sub,
+    update_atomic_u64_max, update_atomic_usize_max,
 };
 use crate::core::metrics::ResponseBodyLifecycleOutcome;
 use std::collections::HashMap;
@@ -48,6 +49,13 @@ pub struct OriginMetricsSnapshot {
     pub response_body_reuse_eligible: usize,
     pub response_body_closed: usize,
     pub response_body_aborted: usize,
+    pub active_connections: usize,
+    pub idle_connections: usize,
+    pub connections_opened: usize,
+    pub connections_open_failed: usize,
+    pub connections_closed: usize,
+    pub connections_reused: usize,
+    pub connections_aborted: usize,
     pub last_activity_at_ns: u64,
 }
 
@@ -67,6 +75,13 @@ pub struct OriginMetrics {
     response_body_reuse_eligible: AtomicUsize,
     response_body_closed: AtomicUsize,
     response_body_aborted: AtomicUsize,
+    active_connections: AtomicUsize,
+    idle_connections: AtomicUsize,
+    connections_opened: AtomicUsize,
+    connections_open_failed: AtomicUsize,
+    connections_closed: AtomicUsize,
+    connections_reused: AtomicUsize,
+    connections_aborted: AtomicUsize,
     last_activity_at_ns: AtomicU64,
     pending_waiters: Mutex<PendingWaiters>,
 }
@@ -172,6 +187,13 @@ impl OriginMetrics {
             response_body_reuse_eligible: AtomicUsize::new(0),
             response_body_closed: AtomicUsize::new(0),
             response_body_aborted: AtomicUsize::new(0),
+            active_connections: AtomicUsize::new(0),
+            idle_connections: AtomicUsize::new(0),
+            connections_opened: AtomicUsize::new(0),
+            connections_open_failed: AtomicUsize::new(0),
+            connections_closed: AtomicUsize::new(0),
+            connections_reused: AtomicUsize::new(0),
+            connections_aborted: AtomicUsize::new(0),
             last_activity_at_ns: AtomicU64::new(duration_as_nanos(started_at.elapsed())),
             pending_waiters: Mutex::new(PendingWaiters::default()),
         }
@@ -247,6 +269,43 @@ impl OriginMetrics {
         self.touch();
     }
 
+    pub fn connection_opened(&self) {
+        self.active_connections.fetch_add(1, Ordering::Relaxed);
+        self.connections_opened.fetch_add(1, Ordering::Relaxed);
+        self.touch();
+    }
+
+    pub fn connection_open_failed(&self) {
+        self.connections_open_failed.fetch_add(1, Ordering::Relaxed);
+        self.touch();
+    }
+
+    pub fn connection_closed(&self) {
+        saturating_atomic_usize_sub(&self.active_connections, 1);
+        self.connections_closed.fetch_add(1, Ordering::Relaxed);
+        self.touch();
+    }
+
+    pub fn connection_became_idle(&self) {
+        self.idle_connections.fetch_add(1, Ordering::Relaxed);
+        self.touch();
+    }
+
+    pub fn connection_left_idle(&self) {
+        saturating_atomic_usize_sub(&self.idle_connections, 1);
+        self.touch();
+    }
+
+    pub fn connection_reused(&self) {
+        self.connections_reused.fetch_add(1, Ordering::Relaxed);
+        self.touch();
+    }
+
+    pub fn connection_aborted(&self) {
+        self.connections_aborted.fetch_add(1, Ordering::Relaxed);
+        self.touch();
+    }
+
     fn snapshot(&self) -> OriginMetricsSnapshot {
         OriginMetricsSnapshot {
             origin: self.origin.clone(),
@@ -269,6 +328,13 @@ impl OriginMetrics {
             response_body_reuse_eligible: self.response_body_reuse_eligible.load(Ordering::Relaxed),
             response_body_closed: self.response_body_closed.load(Ordering::Relaxed),
             response_body_aborted: self.response_body_aborted.load(Ordering::Relaxed),
+            active_connections: self.active_connections.load(Ordering::Relaxed),
+            idle_connections: self.idle_connections.load(Ordering::Relaxed),
+            connections_opened: self.connections_opened.load(Ordering::Relaxed),
+            connections_open_failed: self.connections_open_failed.load(Ordering::Relaxed),
+            connections_closed: self.connections_closed.load(Ordering::Relaxed),
+            connections_reused: self.connections_reused.load(Ordering::Relaxed),
+            connections_aborted: self.connections_aborted.load(Ordering::Relaxed),
             last_activity_at_ns: self.last_activity_at_ns.load(Ordering::Relaxed),
         }
     }
@@ -289,6 +355,7 @@ impl OriginMetrics {
     fn is_idle(&self) -> bool {
         self.active_requests.load(Ordering::Relaxed) == 0
             && self.pending_requests.load(Ordering::Acquire) == 0
+            && self.active_connections.load(Ordering::Relaxed) == 0
     }
 
     fn touch(&self) {
