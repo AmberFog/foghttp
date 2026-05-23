@@ -124,9 +124,10 @@ impl RawClient {
         body: Option<Vec<u8>>,
         body_replayable: bool,
         pool_timeout: f64,
+        read_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<RawResponse> {
-        validate_request_timeouts(pool_timeout, total_timeout)?;
+        validate_request_timeouts(pool_timeout, read_timeout, total_timeout)?;
 
         let client = self.client()?.clone();
         let runtime = self.runtime()?;
@@ -152,6 +153,7 @@ impl RawClient {
                         body,
                         body_replayable,
                         total_timeout,
+                        read_timeout,
                         max_response_body_size,
                         buffered_body_budget,
                         follow_redirects,
@@ -176,9 +178,10 @@ impl RawClient {
         body: Option<Vec<u8>>,
         body_replayable: bool,
         pool_timeout: f64,
+        read_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<Py<PyAny>> {
-        validate_request_timeouts(pool_timeout, total_timeout)?;
+        validate_request_timeouts(pool_timeout, read_timeout, total_timeout)?;
 
         let client = self.client()?.clone();
         let runtime = self.runtime()?;
@@ -202,6 +205,7 @@ impl RawClient {
                     body,
                     body_replayable,
                     total_timeout,
+                    read_timeout,
                     max_response_body_size,
                     buffered_body_budget,
                     follow_redirects,

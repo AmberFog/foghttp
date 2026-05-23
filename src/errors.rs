@@ -5,6 +5,7 @@ use pyo3::prelude::*;
 create_exception!(_foghttp, FogHttpError, PyException);
 create_exception!(_foghttp, FogHttpTimeoutError, FogHttpError);
 create_exception!(_foghttp, FogHttpPoolTimeoutError, FogHttpTimeoutError);
+create_exception!(_foghttp, FogHttpReadTimeoutError, FogHttpTimeoutError);
 create_exception!(_foghttp, FogHttpResponseBodyTooLargeError, FogHttpError);
 create_exception!(
     _foghttp,
@@ -18,6 +19,10 @@ pub fn register(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add(
         "FogHttpPoolTimeoutError",
         py.get_type::<FogHttpPoolTimeoutError>(),
+    )?;
+    module.add(
+        "FogHttpReadTimeoutError",
+        py.get_type::<FogHttpReadTimeoutError>(),
     )?;
     module.add(
         "FogHttpResponseBodyTooLargeError",

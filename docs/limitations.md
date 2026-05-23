@@ -44,7 +44,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
   sync `close()` waits for in-flight sync requests, while async `aclose()`
   cancels in-flight async requests; see [Client lifecycle](./lifecycle.md)
 - documented current timeout model for client-level `connect`, per-request
-  `pool`/`total`, and reserved `read`/`write`; see
+  `pool`/`read`/`total`, and reserved `write`; see
   [Timeout model](./timeouts.md)
 - advanced `runtime_workers` tuning for the per-client Tokio runtime
 - reusable HTTP method constants through `foghttp.methods`
@@ -69,7 +69,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | request body source conflicts | Only one body source can be passed today: `json=`, `data=`, or `content=` |
 | true active connection-level limits | `max_active_requests_per_origin` limits buffered request slots; socket lifecycle telemetry is observable, but FogHTTP does not yet expose separate physical connection limits |
 | per-request connect timeout changes | `Timeouts.connect` configures the Rust connector from client-level settings when transport state is created; per-request `timeout.connect` does not reconfigure the connector |
-| separate read/write timeout semantics | `Timeouts.read` and `Timeouts.write` exist, but separate body read/write deadlines are reserved for later streaming/body work |
+| separate read/write timeout semantics | `Timeouts.read` is implemented as a buffered response body progress timeout; `Timeouts.write` is reserved for later streaming upload/body work |
 | socket lifecycle telemetry granularity | `TransportStats` and `dump_transport_state()["origins"]` expose opened, open-failed, closed, reused, aborted, active, and idle tracked connection counters for the current HTTP/1 buffered path; these are connector/lifecycle diagnostics, not a stable public view into Hyper's private pool internals |
 
 ## Practical Guidance
@@ -97,7 +97,7 @@ Wait before using FogHTTP when:
 - you need proxy behavior from environment variables
 - you rely on cookies across requests
 - you need multipart form-data or large uploads
-- you need per-request connect timeout reconfiguration or mature read/write
+- you need per-request connect timeout reconfiguration or request-body write
   timeout semantics
 - you need automatic compression negotiation instead of manual
   `Accept-Encoding`
@@ -107,8 +107,9 @@ Wait before using FogHTTP when:
 ## Error Surface
 
 Network and protocol failures map to `RequestError`. Pool acquire timeout and
-queue-full conditions map to `PoolTimeout`. The broader buffered transport
-deadline maps to the base `TimeoutError` with phase-aware diagnostics for the
-current buffered path. Dedicated connect/read/write timeout exception mappings
-are reserved for later timeout work. See
+queue-full conditions map to `PoolTimeout`. Response body progress timeout maps
+to `ReadTimeout`. The broader buffered transport deadline maps to the base
+`TimeoutError` with phase-aware diagnostics for the current buffered path.
+Dedicated connect/write timeout exception mappings are reserved for later
+timeout work. See
 [Timeout model](./timeouts.md) for the current behavior.

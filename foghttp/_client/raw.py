@@ -12,6 +12,7 @@ import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
 from ..errors import (
     PoolTimeout,
+    ReadTimeout,
     RequestError,
     ResponseBodyBudgetExceededError,
     ResponseBodyTooLargeError,
@@ -81,6 +82,7 @@ def send_raw_request(
             body,
             body_replayable,
             timeouts.pool,
+            timeouts.read,
             timeouts.total,
         )
     except _foghttp.FogHttpResponseBodyTooLargeError as exc:
@@ -89,6 +91,8 @@ def send_raw_request(
         raise ResponseBodyBudgetExceededError(str(exc)) from exc
     except _foghttp.FogHttpPoolTimeoutError as exc:
         raise _timeout_error_from_raw(exc, PoolTimeout) from exc
+    except _foghttp.FogHttpReadTimeoutError as exc:
+        raise _timeout_error_from_raw(exc, ReadTimeout) from exc
     except _foghttp.FogHttpTimeoutError as exc:
         raise _timeout_error_from_raw(exc, TimeoutError) from exc
     except _foghttp.FogHttpError as exc:
@@ -113,6 +117,7 @@ async def send_raw_request_async(
             body,
             body_replayable,
             timeouts.pool,
+            timeouts.read,
             timeouts.total,
         )
     except _foghttp.FogHttpResponseBodyTooLargeError as exc:
@@ -121,6 +126,8 @@ async def send_raw_request_async(
         raise ResponseBodyBudgetExceededError(str(exc)) from exc
     except _foghttp.FogHttpPoolTimeoutError as exc:
         raise _timeout_error_from_raw(exc, PoolTimeout) from exc
+    except _foghttp.FogHttpReadTimeoutError as exc:
+        raise _timeout_error_from_raw(exc, ReadTimeout) from exc
     except _foghttp.FogHttpTimeoutError as exc:
         raise _timeout_error_from_raw(exc, TimeoutError) from exc
     except _foghttp.FogHttpError as exc:

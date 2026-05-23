@@ -2,15 +2,17 @@ use crate::core::client::ConnectionTelemetry;
 use crate::core::client::HyperClient;
 use crate::core::headers::{response_headers, HeaderPairs};
 use crate::core::metrics::{Metrics, OriginMetrics};
+use crate::core::numeric::duration_from_secs;
 use crate::core::request::{build_request, RequestParts};
 use crate::core::response::{
-    collect_body, decode_body, decoded_response_headers, response_body_decoding_plan,
-    BufferedBodyBudget,
+    decode_body, decoded_response_headers, response_body_decoding_plan, BufferedBodyBudget,
+    BufferedBodyCollector, CollectedBody,
 };
 use crate::core::url::HttpUrl;
 use crate::errors::FogHttpError;
 use crate::messages::{
     redirect_limit_exceeded, NON_REPLAYABLE_REQUEST_BODY_REDIRECT, REQUEST_TOTAL_TIMEOUT,
+    RESPONSE_BODY_READ_TIMEOUT,
 };
 use crate::py::client::acquire::AcquireGate;
 use crate::py::client::body::BodyReplayability;
@@ -19,14 +21,16 @@ use crate::py::client::redirects::{
     redirect_decision, redirect_headers, RedirectAction, RedirectDecision, RedirectHeaderPolicy,
 };
 use crate::py::client::timeout_diagnostics::{
-    remaining_duration, timeout_error, TimeoutContext, TimeoutPhase,
+    read_timeout_error, remaining_duration, timeout_error, TimeoutContext, TimeoutPhase,
 };
 use crate::py::response::{RawRequestInfo, RawResponse, RawResponseParts};
-use hyper::body::Incoming;
-use hyper::{Response, StatusCode};
+use bytes::Bytes;
+use http_body_util::BodyExt;
+use hyper::body::{Frame, Incoming};
+use hyper::{Error as HyperError, Response, StatusCode};
 use pyo3::prelude::*;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub struct TransportRequest {
     pub method: String,
@@ -35,6 +39,7 @@ pub struct TransportRequest {
     pub body: Option<Vec<u8>>,
     pub body_replayable: bool,
     pub total_timeout: f64,
+    pub read_timeout: f64,
     pub max_response_body_size: Option<usize>,
     pub buffered_body_budget: BufferedBodyBudget,
     pub follow_redirects: bool,
@@ -94,6 +99,7 @@ pub async fn send_request(
                 RawResponseContext {
                     started,
                     total_timeout: state.total_timeout,
+                    read_timeout: state.read_timeout,
                     max_response_body_size: state.max_response_body_size,
                     buffered_body_budget: state.buffered_body_budget.clone(),
                     origin: &origin,
@@ -139,6 +145,7 @@ struct RequestState {
     body: Option<Vec<u8>>,
     body_replayability: BodyReplayability,
     total_timeout: f64,
+    read_timeout: f64,
     max_response_body_size: Option<usize>,
     buffered_body_budget: BufferedBodyBudget,
     follow_redirects: bool,
@@ -205,6 +212,7 @@ impl RequestState {
             body: parts.body,
             body_replayability,
             total_timeout: parts.total_timeout,
+            read_timeout: parts.read_timeout,
             max_response_body_size: parts.max_response_body_size,
             buffered_body_budget: parts.buffered_body_budget,
             follow_redirects: parts.follow_redirects,
@@ -230,24 +238,13 @@ async fn raw_response(
         .extensions()
         .get::<ConnectionTelemetry>()
         .map(ConnectionTelemetry::response_started);
-    let mut lifecycle = ResponseBodyLifecycle::new(context.metrics, context.origin_metrics);
-    let response_body_timeout_context = TimeoutContext::new(
-        TimeoutPhase::ResponseBody,
-        context.started,
-        context.total_timeout,
-        context.origin,
-        context.redirect_hop,
+    let mut lifecycle = ResponseBodyLifecycle::new(
+        Arc::clone(&context.metrics),
+        Arc::clone(&context.origin_metrics),
     );
-    let collected = tokio::time::timeout(
-        remaining_duration("Timeouts.total", &response_body_timeout_context)?,
-        collect_body(
-            response.into_body(),
-            context.max_response_body_size,
-            context.buffered_body_budget,
-        ),
-    )
-    .await
-    .map_err(|_| timeout_error(&response_body_timeout_context, REQUEST_TOTAL_TIMEOUT))??;
+    let read_timeout = duration_from_secs("Timeouts.read", context.read_timeout)
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
+    let collected = collect_response_body(response.into_body(), &context, read_timeout).await?;
     if let Some(connection_use) = connection_use.take() {
         connection_use.finish(successful_body_outcome);
     }
@@ -289,12 +286,64 @@ fn response_body_can_be_decoded(method: &str, status: StatusCode) -> bool {
 struct RawResponseContext<'a> {
     started: Instant,
     total_timeout: f64,
+    read_timeout: f64,
     max_response_body_size: Option<usize>,
     buffered_body_budget: BufferedBodyBudget,
     origin: &'a str,
     metrics: Arc<Metrics>,
     origin_metrics: Arc<OriginMetrics>,
     redirect_hop: usize,
+}
+
+async fn collect_response_body(
+    mut body: Incoming,
+    context: &RawResponseContext<'_>,
+    read_timeout: Duration,
+) -> PyResult<CollectedBody> {
+    let mut collector = BufferedBodyCollector::new(
+        &body,
+        context.max_response_body_size,
+        &context.buffered_body_budget,
+    )?;
+
+    while let Some(frame) = next_response_body_frame(&mut body, context, read_timeout).await? {
+        let frame = frame.map_err(|err| FogHttpError::new_err(err.to_string()))?;
+        let Ok(data) = frame.into_data() else {
+            continue;
+        };
+
+        collector.push_data(&data)?;
+    }
+
+    Ok(collector.finish())
+}
+
+async fn next_response_body_frame(
+    body: &mut Incoming,
+    context: &RawResponseContext<'_>,
+    read_timeout: Duration,
+) -> PyResult<Option<Result<Frame<Bytes>, HyperError>>> {
+    let total_timeout_context = TimeoutContext::new(
+        TimeoutPhase::ResponseBody,
+        context.started,
+        context.total_timeout,
+        context.origin,
+        context.redirect_hop,
+    );
+    let read_timeout_context = TimeoutContext::new(
+        TimeoutPhase::ResponseBody,
+        Instant::now(),
+        context.read_timeout,
+        context.origin,
+        context.redirect_hop,
+    );
+    tokio::time::timeout(
+        remaining_duration("Timeouts.total", &total_timeout_context)?,
+        tokio::time::timeout(read_timeout, body.frame()),
+    )
+    .await
+    .map_err(|_| timeout_error(&total_timeout_context, REQUEST_TOTAL_TIMEOUT))?
+    .map_err(|_| read_timeout_error(&read_timeout_context, RESPONSE_BODY_READ_TIMEOUT))
 }
 
 #[cfg(test)]
