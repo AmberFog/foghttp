@@ -22,7 +22,7 @@ classifiers = [
 dependencies = ["orjson>=3.11,<4"]
 
 [project.urls]
-Code_of_Conduct = "https://github.com/AmberFog/foghttp/blob/main/CODE_OF_CONDUCT.md"
+CodeOfConduct = "https://github.com/AmberFog/foghttp/blob/main/CODE_OF_CONDUCT.md"
 Contributing = "https://github.com/AmberFog/foghttp/blob/main/CONTRIBUTING.md"
 Discussions = "https://github.com/AmberFog/foghttp/discussions"
 Documentation = "https://github.com/AmberFog/foghttp/blob/main/docs/index.md"
