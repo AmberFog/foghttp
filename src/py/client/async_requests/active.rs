@@ -63,12 +63,12 @@ impl ActiveAsyncRequest {
 }
 
 #[derive(Clone, Default)]
-pub(super) struct RequestCompletion {
+pub(crate) struct RequestCompletion {
     finished: Arc<AtomicBool>,
 }
 
 impl RequestCompletion {
-    pub(super) fn finish(&self) -> bool {
+    pub(crate) fn finish(&self) -> bool {
         self.finished
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()

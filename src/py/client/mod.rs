@@ -6,6 +6,7 @@ mod lifecycle;
 mod options;
 mod redirects;
 mod runtime;
+mod streams;
 mod timeout_diagnostics;
 mod transport;
 
@@ -16,13 +17,15 @@ use crate::core::response::BufferedBodyBudget;
 use crate::errors::FogHttpError;
 use crate::py::client::acquire::AcquireGate;
 use crate::py::client::async_requests::{
-    spawn_async_request, AsyncRequestRegistry, AsyncRequestSpawn,
+    spawn_async_request, spawn_async_stream_request, AsyncRequestRegistry, AsyncRequestSpawn,
+    AsyncStreamRequestSpawn,
 };
 use crate::py::client::options::{
     validate_numeric_client_options, validate_request_timeouts, validate_unsupported_options,
     NumericClientOptions,
 };
 use crate::py::client::runtime::build_runtime;
+use crate::py::client::streams::AsyncStreamRegistry;
 use crate::py::client::transport::{send_request, TransportRequest};
 use crate::py::response::RawResponse;
 use crate::py::stats::RawStats;
@@ -32,6 +35,8 @@ use pyo3::types::PyAny;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
+pub use streams::RawStreamResponse;
+
 #[pyclass]
 pub struct RawClient {
     client: Option<HyperClient>,
@@ -39,6 +44,7 @@ pub struct RawClient {
     acquire_gate: AcquireGate,
     metrics: Arc<Metrics>,
     active_async_requests: AsyncRequestRegistry,
+    active_async_streams: AsyncStreamRegistry,
     max_response_body_size: Option<usize>,
     buffered_body_budget: BufferedBodyBudget,
     follow_redirects: bool,
@@ -107,6 +113,7 @@ impl RawClient {
             acquire_gate,
             metrics,
             active_async_requests: AsyncRequestRegistry::default(),
+            active_async_streams: AsyncStreamRegistry::default(),
             max_response_body_size,
             buffered_body_budget,
             follow_redirects,
@@ -215,6 +222,54 @@ impl RawClient {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn request_stream_async(
+        &self,
+        py: Python<'_>,
+        method: String,
+        url: String,
+        headers: HeaderPairs,
+        body: Option<Vec<u8>>,
+        body_replayable: bool,
+        pool_timeout: f64,
+        read_timeout: f64,
+        total_timeout: f64,
+    ) -> PyResult<Py<PyAny>> {
+        validate_request_timeouts(pool_timeout, read_timeout, total_timeout)?;
+
+        let client = self.client()?.clone();
+        let runtime = self.runtime()?;
+        let max_response_body_size = self.max_response_body_size;
+        let buffered_body_budget = self.buffered_body_budget.clone();
+        let follow_redirects = self.follow_redirects;
+        let max_redirects = self.max_redirects;
+        spawn_async_stream_request(
+            py,
+            runtime,
+            &self.active_async_requests,
+            AsyncStreamRequestSpawn {
+                acquire_gate: self.acquire_gate.clone(),
+                client,
+                metrics: Arc::clone(&self.metrics),
+                active_streams: self.active_async_streams.clone(),
+                pool_timeout,
+                request: TransportRequest {
+                    method,
+                    url,
+                    headers,
+                    body,
+                    body_replayable,
+                    total_timeout,
+                    read_timeout,
+                    max_response_body_size,
+                    buffered_body_budget,
+                    follow_redirects,
+                    max_redirects,
+                },
+            },
+        )
+    }
+
     fn stats(&self) -> RawStats {
         self.metrics.snapshot().into()
     }
@@ -247,6 +302,7 @@ impl RawClient {
 
     fn close_resources(&mut self) {
         self.active_async_requests.abort_all();
+        self.active_async_streams.abort_all();
         self.client.take();
         if let Some(runtime) = self.runtime.take() {
             runtime.shutdown_background();
