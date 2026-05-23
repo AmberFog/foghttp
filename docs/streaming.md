@@ -58,6 +58,9 @@ Clean EOF marks the response body as completed. Leaving the context before EOF,
 cancelling a body read, a body transport error, or a response-body read timeout
 aborts the streamed body and releases the active request slot.
 
+Manual cleanup is idempotent. Use `response.close()` when synchronous cleanup is
+needed, or `await response.aclose()` when an async close shape is more convenient.
+
 ## Redirects
 
 Redirect handling follows the same policy as buffered requests. Final response

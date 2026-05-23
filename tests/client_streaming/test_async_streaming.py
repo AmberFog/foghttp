@@ -26,6 +26,13 @@ from tests.client_streaming.stream_readers import (
 from tests.support.transport_stats import wait_for_async_transport_stats
 
 
+async def _close_stream_from_cancelled_task(response: foghttp.AsyncStreamResponse) -> None:
+    current_task = asyncio.current_task()
+    assert current_task is not None
+    current_task.cancel()
+    await response.aclose()
+
+
 async def test_stream_enters_after_headers_without_buffering_tail(
     streaming_server: AsyncStreamingServer,
 ) -> None:
@@ -140,6 +147,26 @@ async def test_stream_aclose_cancels_pending_body_read(
             client,
             lambda stats: stats.active_requests == 0 and stats.response_body_aborted == 1,
             message="closing a stream with a pending body read should cancel it and release resources",
+        )
+
+
+async def test_stream_aclose_releases_slot_when_close_task_is_already_cancelled(
+    streaming_server: AsyncStreamingServer,
+) -> None:
+    async with foghttp.AsyncClient() as client:
+        async with client.stream(GET, f"{streaming_server.base_url}{GATED_STREAM_PATH}") as response:
+            byte_stream = response.aiter_bytes()
+            assert await next_stream_chunk(byte_stream) == FIRST_CHUNK
+            close_task = asyncio.create_task(_close_stream_from_cancelled_task(response))
+
+            with pytest.raises(asyncio.CancelledError):
+                await close_task
+
+        streaming_server.release_tail.set()
+        await wait_for_async_transport_stats(
+            client,
+            lambda stats: stats.active_requests == 0 and stats.response_body_aborted == 1,
+            message="stream close should release resources even when the close task is already cancelled",
         )
 
 

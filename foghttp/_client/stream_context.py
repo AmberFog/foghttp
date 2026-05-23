@@ -23,4 +23,4 @@ class AsyncStreamContext:
         traceback: TracebackType | None,
     ) -> None:
         if self._response is not None:
-            await self._response.aclose()
+            self._response.close()

@@ -55,7 +55,7 @@ class AsyncStreamResponse:
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        await self.aclose()
+        self.close()
 
     @property
     def is_success(self) -> bool:
@@ -89,9 +89,12 @@ class AsyncStreamResponse:
                 yield chunk
         finally:
             if not self._closed:
-                await self.aclose()
+                self.close()
 
     async def aclose(self) -> None:
+        self.close()
+
+    def close(self) -> None:
         if self._closed:
             return
         self._closed = True
@@ -112,6 +115,5 @@ class AsyncStreamResponse:
         try:
             return await self._raw.next_chunk_async()
         except _foghttp.FogHttpError as exc:
-            self._closed = True
-            self._raw.close()
+            self.close()
             raise_public_raw_error(exc)
