@@ -1,4 +1,4 @@
-use super::callback::PythonStreamReadCancellation;
+use super::callback::PythonStreamReadCallback;
 use super::parts::RawStreamResponseParts;
 use super::state::{ActiveStreamRead, StreamState, StreamStateParts};
 use crate::core::headers::HeaderPairs;
@@ -131,7 +131,7 @@ impl RawStreamResponse {
 
         let callback = Py::new(
             py,
-            PythonStreamReadCancellation::new(state.clone(), abort_handle),
+            PythonStreamReadCallback::new(state.clone(), abort_handle),
         )?;
         if let Err(err) = future
             .bind(py)

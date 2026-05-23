@@ -146,10 +146,17 @@ impl StreamState {
         self.finish(StreamFinish::Abort, true);
     }
 
-    fn complete_read(&self, body: Incoming) {
+    pub(super) fn finish_read_delivery(&self) {
         let mut fields = self.fields();
+        if fields.finished {
+            return;
+        }
         fields.read_task = None;
         fields.read_in_progress = false;
+    }
+
+    fn complete_read(&self, body: Incoming) {
+        let mut fields = self.fields();
         if fields.finished {
             return;
         }
@@ -165,20 +172,19 @@ impl StreamState {
     }
 
     fn finish(&self, finish: StreamFinish, abort_read_task: bool) {
-        let finish_result = {
+        let (finished_request, metrics, read_task_to_cancel) = {
             let mut fields = self.fields();
             if fields.finished {
                 return;
             }
             fields.finished = true;
             self.inner.registry.remove(self.inner.stream_id);
-            if abort_read_task {
-                if let Some(read_task) = fields.read_task.take() {
-                    read_task.abort_and_cancel_python();
-                }
+            let read_task_to_cancel = if abort_read_task {
+                fields.read_task.take()
             } else {
                 fields.read_task.take();
-            }
+                None
+            };
             fields.body.take();
             match finish {
                 StreamFinish::Success => fields.finish_successful_body(),
@@ -187,12 +193,16 @@ impl StreamState {
             fields.permit.take();
             let metrics = Arc::clone(&fields.metrics);
             let finished_request = fields.completion.finish();
-            (finished_request, metrics)
+            (finished_request, metrics, read_task_to_cancel)
         };
 
-        if finish_result.0 {
+        if let Some(read_task) = read_task_to_cancel {
+            read_task.abort_and_cancel_python();
+        }
+
+        if finished_request {
             let failed = matches!(finish, StreamFinish::Abort);
-            finish_result.1.request_finished(failed);
+            metrics.request_finished(failed);
         }
     }
 
