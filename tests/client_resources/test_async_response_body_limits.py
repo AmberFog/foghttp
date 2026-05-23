@@ -122,6 +122,39 @@ async def test_async_total_timeout_applies_to_slow_response_body(
     assert stats_after_error.pending_requests == 0
 
 
+@pytest.mark.parametrize(
+    "body_path",
+    (
+        pytest.param(SLOW_BODY_PATH, id="slow-first-body-frame"),
+        pytest.param(INCOMPLETE_CHUNKED_BODY_PATH, id="stalled-chunked-body"),
+    ),
+)
+async def test_async_read_timeout_applies_to_stalled_response_body(
+    http_server: str,
+    body_path: str,
+) -> None:
+    timeouts = foghttp.Timeouts(read=0.05, total=1.0)
+
+    async with foghttp.AsyncClient(timeouts=timeouts) as client:
+        with pytest.raises(foghttp.ReadTimeout, match="response body read timeout expired") as exc_info:
+            await client.get(f"{http_server}{body_path}")
+
+        stats_after_error = client.stats()
+
+    assert_timeout_diagnostic(
+        exc_info.value,
+        phase="response_body",
+        origin=http_server,
+        timeout=timeouts.read,
+    )
+    assert stats_after_error.total_requests == 1
+    assert stats_after_error.failed_requests == 1
+    assert stats_after_error.active_requests == 0
+    assert stats_after_error.pending_requests == 0
+    assert stats_after_error.response_body_aborted == 1
+    assert stats_after_error.connections_aborted == 1
+
+
 async def test_async_total_timeout_applies_to_incomplete_chunked_response_body(
     http_server: str,
 ) -> None:

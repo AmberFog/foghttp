@@ -11,6 +11,7 @@ use std::sync::Once;
 
 const INITIAL_URL: &str = "http://example.com/start";
 const REDIRECT_URL: &str = "http://example.com/next";
+const READ_TIMEOUT: f64 = 10.0;
 const TOTAL_TIMEOUT: f64 = 30.0;
 
 fn initialize_python() {
@@ -66,6 +67,7 @@ fn request_state(body: Option<Vec<u8>>, body_replayable: bool) -> RequestState {
         body,
         body_replayable,
         total_timeout: TOTAL_TIMEOUT,
+        read_timeout: READ_TIMEOUT,
         max_response_body_size: None,
         buffered_body_budget: BufferedBodyBudget::new(None, Arc::new(Metrics::default())),
         follow_redirects: true,

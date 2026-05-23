@@ -547,6 +547,7 @@ limits = foghttp.Limits(
 timeouts = foghttp.Timeouts(
     connect=2.0,
     pool=1.0,
+    read=10.0,
     total=30.0,
 )
 
@@ -558,7 +559,9 @@ async with foghttp.AsyncClient(limits=limits, timeouts=timeouts) as client:
 `Timeouts.pool` controls waiting for Rust-side acquire gates and raises
 `PoolTimeout` when the acquire queue is full or a request waits too long for a
 slot. `Timeouts.total` is the broader buffered transport deadline and raises the
-base `TimeoutError` when it expires.
+base `TimeoutError` when it expires. `Timeouts.read` controls how long FogHTTP
+waits for the next response body frame/chunk while collecting a buffered
+response and raises `ReadTimeout` when body progress stalls.
 Timeout exceptions include a safe `diagnostic` object when FogHTTP can identify
 the phase, elapsed time, configured budget, normalized origin, and redirect hop.
 
@@ -603,7 +606,7 @@ are waiting on the global active request limit, per-origin active request limit,
 or both.
 
 `Timeouts.connect` is client-level connector configuration. Per-request
-`timeout=` currently affects `pool` and `total`, not `connect`, `read`, or
+`timeout=` currently affects `pool`, `read`, and `total`, not `connect` or
 `write`. See [Timeout model](./timeouts.md) for the detailed current contract
 and limitations.
 

@@ -1,5 +1,5 @@
 use crate::core::numeric;
-use crate::errors::{FogHttpPoolTimeoutError, FogHttpTimeoutError};
+use crate::errors::{FogHttpPoolTimeoutError, FogHttpReadTimeoutError, FogHttpTimeoutError};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::time::{Duration, Instant};
@@ -64,6 +64,10 @@ pub fn timeout_error(context: &TimeoutContext<'_>, message: &'static str) -> PyE
 
 pub fn pool_timeout_error(context: &TimeoutContext<'_>, message: &'static str) -> PyErr {
     FogHttpPoolTimeoutError::new_err(context.args(message))
+}
+
+pub fn read_timeout_error(context: &TimeoutContext<'_>, message: &'static str) -> PyErr {
+    FogHttpReadTimeoutError::new_err(context.args(message))
 }
 
 pub fn remaining_duration(name: &str, context: &TimeoutContext<'_>) -> PyResult<Duration> {

@@ -6,6 +6,7 @@ from foghttp._client.constants import DEFAULT_MAX_REDIRECTS
 from foghttp._client.raw import create_raw_client, send_raw_request, send_raw_request_async
 from foghttp.errors import (
     PoolTimeout,
+    ReadTimeout,
     ResponseBodyBudgetExceededError,
     ResponseBodyTooLargeError,
     TimeoutError,
@@ -13,6 +14,16 @@ from foghttp.errors import (
 from foghttp.limits import Limits
 from foghttp.methods import GET
 from foghttp.timeouts import Timeouts
+
+
+READ_TIMEOUT_RAW_ARGS = (
+    "response body read timeout expired",
+    "response_body",
+    0.1,
+    0.1,
+    "https://example.com",
+    0,
+)
 
 
 class TimeoutRawClient:
@@ -23,6 +34,14 @@ class TimeoutRawClient:
     async def request_async(self, *_args: object) -> object:
         msg = "request timed out"
         raise _foghttp.FogHttpTimeoutError(msg)
+
+
+class ReadTimeoutRawClient:
+    def request(self, *_args: object) -> object:
+        raise _foghttp.FogHttpReadTimeoutError(READ_TIMEOUT_RAW_ARGS)
+
+    async def request_async(self, *_args: object) -> object:
+        raise _foghttp.FogHttpReadTimeoutError(READ_TIMEOUT_RAW_ARGS)
 
 
 class PoolTimeoutRawClient:
@@ -93,6 +112,32 @@ async def test_async_raw_timeout_maps_to_public_timeout(faker: Faker) -> None:
     with pytest.raises(TimeoutError, match="request timed out"):
         await send_raw_request_async(
             raw_client=TimeoutRawClient(),
+            method=GET,
+            url=faker.url(),
+            headers=[],
+            body=None,
+            body_replayable=True,
+            timeouts=Timeouts(),
+        )
+
+
+def test_sync_raw_read_timeout_maps_to_public_read_timeout(faker: Faker) -> None:
+    with pytest.raises(ReadTimeout, match="response body read timeout expired"):
+        send_raw_request(
+            raw_client=ReadTimeoutRawClient(),
+            method=GET,
+            url=faker.url(),
+            headers=[],
+            body=None,
+            body_replayable=True,
+            timeouts=Timeouts(),
+        )
+
+
+async def test_async_raw_read_timeout_maps_to_public_read_timeout(faker: Faker) -> None:
+    with pytest.raises(ReadTimeout, match="response body read timeout expired"):
+        await send_raw_request_async(
+            raw_client=ReadTimeoutRawClient(),
             method=GET,
             url=faker.url(),
             headers=[],

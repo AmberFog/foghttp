@@ -1,5 +1,6 @@
 pub const POOL_ACQUIRE_QUEUE_FULL: &str = "request acquire queue is full";
 pub const POOL_ACQUIRE_TIMEOUT: &str = "request acquire timeout expired";
+pub const RESPONSE_BODY_READ_TIMEOUT: &str = "response body read timeout expired";
 pub const REQUEST_TOTAL_TIMEOUT: &str = "request total timeout expired";
 pub const HTTPS_TO_HTTP_REDIRECT_BLOCKED: &str =
     "https-to-http redirect blocked by redirect security policy";

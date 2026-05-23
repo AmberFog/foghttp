@@ -2,8 +2,8 @@
 
 FogHTTP timeout settings are seconds as `float` values. The current timeout
 model is intentionally documented for the buffered client that exists today.
-Streaming bodies, mature read/write deadlines, and more specific timeout
-exception classes are planned later.
+Streaming bodies, request-body write deadlines, and more specific connect/write
+timeout exception classes are planned later.
 
 ```python
 import foghttp
@@ -26,19 +26,23 @@ with foghttp.Client(timeouts=timeouts) as client:
 |---|---:|---|---|
 | `connect` | `2.0` | Client-level Rust connector TCP connect timeout. It is read when the lazy Rust transport is created from the client constructor settings. | No stable dedicated `ConnectTimeout` mapping yet; low-level connect failures can surface as `RequestError`, while the outer `total` deadline can raise `TimeoutError`. |
 | `pool` | `1.0` | Waiting for a global or per-origin active request slot. | `PoolTimeout` for acquire timeout or full pending queue. |
-| `total` | `30.0` | Outer deadline for acquiring a request slot and waiting for response headers for each transport hop. The same budget is shared across redirect hops. | Base `TimeoutError`. |
-| `read` | `10.0` | Reserved for future response body read deadlines. | Not emitted separately today. |
+| `total` | `30.0` | Outer deadline for acquiring a request slot, waiting for response headers, and collecting the buffered response body for each transport hop. The same budget is shared across redirect hops. | Base `TimeoutError`. |
+| `read` | `10.0` | Waiting for the next response body frame/chunk while collecting the current buffered response body. | `ReadTimeout`. |
 | `write` | `10.0` | Reserved for future request body write deadlines. | Not emitted separately today. |
 
-`PoolTimeout` is a subclass of `TimeoutError`. Catch `PoolTimeout` first when
-application code wants to handle pool saturation differently from the broader
-request deadline.
+`PoolTimeout` and `ReadTimeout` are subclasses of `TimeoutError`. Catch the
+more specific subclasses first when application code wants to handle pool
+saturation or slow response bodies differently from the broader request
+deadline.
 
 ```python
 try:
     response = client.get("https://api.example.com/users")
 except foghttp.PoolTimeout:
     # The request could not acquire a transport slot in time.
+    raise
+except foghttp.ReadTimeout:
+    # The upstream stopped making response body progress in time.
     raise
 except foghttp.TimeoutError:
     # The broader buffered transport deadline expired.
@@ -72,9 +76,9 @@ is zero-based.
 `Client(timeouts=...)` and `AsyncClient(timeouts=...)` define the default
 timeouts for requests sent by that client.
 
-Per-request `timeout=Timeouts(...)` currently affects only `pool` and `total`
-for that request. It does not change the Rust connector's `connect` timeout,
-and it does not activate separate `read` or `write` behavior.
+Per-request `timeout=Timeouts(...)` currently affects `pool`, `read`, and
+`total` for that request. It does not change the Rust connector's `connect`
+timeout, and it does not activate separate `write` behavior.
 
 ```python
 default_timeouts = foghttp.Timeouts(
@@ -88,6 +92,7 @@ with foghttp.Client(timeouts=default_timeouts) as client:
         "https://api.example.com/fast",
         timeout=foghttp.Timeouts(
             pool=0.1,
+            read=0.5,
             total=2.0,
         ),
     )
@@ -228,6 +233,30 @@ async with foghttp.AsyncClient() as client:
         pass
 ```
 
+## Read Timeout
+
+`Timeouts.read` controls how long FogHTTP waits for the next response body
+frame/chunk while collecting a buffered response body. It is a progress timeout,
+not a maximum total download duration. A response that keeps producing body data
+before the read deadline expires can take longer than `Timeouts.read`, as long
+as it still fits inside `Timeouts.total`.
+
+If `read` expires while buffered body handling is waiting for the next frame,
+FogHTTP raises `ReadTimeout` with the message
+`response body read timeout expired`. The diagnostic phase is `response_body`
+and the diagnostic `timeout` value is the configured read timeout.
+
+If `total` expires first, `total` wins and FogHTTP raises the base
+`TimeoutError` with the message `request total timeout expired`.
+
+```python
+with foghttp.Client(timeouts=foghttp.Timeouts(read=0.2, total=5.0)) as client:
+    try:
+        client.get("https://api.example.com/slow-body")
+    except foghttp.ReadTimeout:
+        pass
+```
+
 ## Connect Timeout
 
 `Timeouts.connect` configures the Rust HTTP connector for the client transport.
@@ -250,19 +279,19 @@ guarantee a dedicated `ConnectTimeout` exception. Treat `Timeouts.total` as the
 public request budget and `Timeouts.connect` as lower-level connector
 configuration until the timeout exception split is expanded.
 
-## Reserved Read And Write Timeouts
+## Reserved Write Timeout
 
-`Timeouts.read` and `Timeouts.write` exist to preserve the public shape of the
-timeout model, but they are reserved today.
+`Timeouts.write` exists to preserve the public shape of the timeout model, but
+it is reserved today.
 
-They do not yet provide:
+It does not yet provide:
 
-- a per-chunk response body read deadline
 - a request body upload write deadline
-- dedicated `ReadTimeout` or write-specific exceptions
+- a write-specific exception
 
-These fields will become meaningful with the streaming response/upload work.
-Until then, use `Timeouts.total` as the shared buffered request deadline,
+`Timeouts.write` will become meaningful with the streaming upload work. Until
+then, use `Timeouts.total` as the shared buffered request deadline,
+`Timeouts.read` as the response body progress deadline,
 `Limits.max_response_body_size` to bound one buffered response, and
 `Limits.max_buffered_response_bytes` to bound concurrent buffered response
 memory.
@@ -311,6 +340,7 @@ For service-to-service JSON APIs, start with:
 timeouts = foghttp.Timeouts(
     connect=2.0,
     pool=0.5,
+    read=2.0,
     total=10.0,
 )
 ```
@@ -319,6 +349,7 @@ Tune from there:
 
 - lower `pool` when saturation should fail fast
 - raise `pool` when short bursts should wait for capacity
+- lower `read` when stalled response bodies should fail fast
 - keep `total` larger than the expected upstream response time
 - use a separate client when an upstream needs a different `connect` timeout
 - keep `max_response_body_size` and `max_buffered_response_bytes` finite unless

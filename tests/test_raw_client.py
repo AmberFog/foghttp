@@ -37,6 +37,7 @@ RAW_REQUEST_ARGUMENTS = (
     "body",
     "body_replayable",
     "pool_timeout",
+    "read_timeout",
     "total_timeout",
 )
 
@@ -138,7 +139,7 @@ def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker:
             captured_options.update(dict(zip(RAW_REQUEST_ARGUMENTS, args, strict=True)))
             return raw_response
 
-    timeouts = Timeouts(connect=2.5, pool=3.5, total=4.5)
+    timeouts = Timeouts(connect=2.5, pool=3.5, read=4.5, total=5.5)
     url = faker.url()
     body = faker.binary(length=8)
     body_replayable = False
@@ -161,6 +162,7 @@ def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker:
         "body": body,
         "body_replayable": body_replayable,
         "pool_timeout": timeouts.pool,
+        "read_timeout": timeouts.read,
         "total_timeout": timeouts.total,
     }
 
@@ -174,7 +176,7 @@ async def test_send_raw_request_async_passes_request_timeouts_without_connect_ti
             captured_options.update(dict(zip(RAW_REQUEST_ARGUMENTS, args, strict=True)))
             return raw_response
 
-    timeouts = Timeouts(connect=2.5, pool=3.5, total=4.5)
+    timeouts = Timeouts(connect=2.5, pool=3.5, read=4.5, total=5.5)
     url = faker.url()
 
     response = await send_raw_request_async(
@@ -195,5 +197,6 @@ async def test_send_raw_request_async_passes_request_timeouts_without_connect_ti
         "body": None,
         "body_replayable": True,
         "pool_timeout": timeouts.pool,
+        "read_timeout": timeouts.read,
         "total_timeout": timeouts.total,
     }

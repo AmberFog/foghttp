@@ -1,7 +1,6 @@
 use super::budget::{BufferedBodyBudget, BufferedBodyReservation};
-use crate::errors::{FogHttpError, FogHttpResponseBodyTooLargeError};
+use crate::errors::FogHttpResponseBodyTooLargeError;
 use crate::messages::response_body_too_large;
-use http_body_util::BodyExt;
 use hyper::body::{Body, Incoming};
 use pyo3::prelude::*;
 
@@ -10,29 +9,42 @@ pub struct CollectedBody {
     pub reservation: BufferedBodyReservation,
 }
 
-pub async fn collect_body(
-    mut body: Incoming,
+pub struct BufferedBodyCollector {
+    collected: CollectedBody,
     max_response_body_size: Option<usize>,
-    budget: BufferedBodyBudget,
-) -> PyResult<CollectedBody> {
-    let mut collected = CollectedBody {
-        content: Vec::new(),
-        reservation: budget.start_response(),
-    };
-    enforce_response_size_hint(&body, max_response_body_size)?;
+}
 
-    while let Some(frame) = body.frame().await {
-        let frame = frame.map_err(|err| FogHttpError::new_err(err.to_string()))?;
-        let Ok(data) = frame.into_data() else {
-            continue;
-        };
+impl BufferedBodyCollector {
+    pub fn new(
+        body: &Incoming,
+        max_response_body_size: Option<usize>,
+        budget: &BufferedBodyBudget,
+    ) -> PyResult<Self> {
+        enforce_response_size_hint(body, max_response_body_size)?;
 
-        enforce_response_body_limit(collected.content.len(), data.len(), max_response_body_size)?;
-        collected.reservation.reserve_chunk(data.len())?;
-        collected.content.extend_from_slice(&data);
+        Ok(Self {
+            collected: CollectedBody {
+                content: Vec::new(),
+                reservation: budget.start_response(),
+            },
+            max_response_body_size,
+        })
     }
 
-    Ok(collected)
+    pub fn push_data(&mut self, data: &[u8]) -> PyResult<()> {
+        enforce_response_body_limit(
+            self.collected.content.len(),
+            data.len(),
+            self.max_response_body_size,
+        )?;
+        self.collected.reservation.reserve_chunk(data.len())?;
+        self.collected.content.extend_from_slice(data);
+        Ok(())
+    }
+
+    pub fn finish(self) -> CollectedBody {
+        self.collected
+    }
 }
 
 fn enforce_response_size_hint(
