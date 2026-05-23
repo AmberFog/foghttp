@@ -25,6 +25,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - raw bytes/text bodies through `content=`
 - buffered responses
 - transparent `gzip`, `deflate`, and `br` decoding for buffered responses
+- async bytes-first response streaming through `AsyncClient.stream()`
 - `response.text`, `response.json()`, response status flags, and
   `response.raise_for_status()`
 - lightweight `response.request`
@@ -54,7 +55,9 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 
 | Feature | Current behavior |
 |---|---|
-| Streaming responses | Not available; responses are fully buffered |
+| Sync streaming responses | Not available; use async `AsyncClient.stream()` or buffered sync responses |
+| Streaming response text/lines | Not available; async streaming currently yields bytes |
+| Streaming response decompression | Not available; buffered responses support transparent decoding |
 | Streaming uploads | Not available; request bodies are buffered |
 | Multipart uploads | Not available |
 | `files=` | Reserved in the body matrix; not available yet |
@@ -77,22 +80,22 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 Use FogHTTP today when:
 
 - you control the API or know its behavior well
-- responses are small enough to buffer in memory or bounded by
-  `max_response_body_size` and `max_buffered_response_bytes`
+- responses are small enough to buffer in memory or can be consumed through the
+  async bytes-first streaming API
 - requests are JSON-heavy or use small form-urlencoded bodies
 - redirects are simple and do not require cookie jar or auth helper integration
 - sync and async clients with explicit lifecycle are enough
-- async request cancellation behavior is useful, but you do not need streaming
-  cancellation semantics yet
-- global and per-origin buffered request backpressure is enough for your
+- async request cancellation and stream cleanup behavior are useful
+- global and per-origin request-slot backpressure is enough for your
   resource control needs
 - you can reuse clients instead of creating many short-lived runtime instances
   once requests start flowing
 
 Wait before using FogHTTP when:
 
-- you download large files and need streaming instead of buffered fail-fast
-  limits
+- you download large files from sync code
+- you need streaming text, line iteration, or transparent streaming
+  decompression
 - you upload large files
 - you need proxy behavior from environment variables
 - you rely on cookies across requests
@@ -108,8 +111,9 @@ Wait before using FogHTTP when:
 
 Network and protocol failures map to `RequestError`. Pool acquire timeout and
 queue-full conditions map to `PoolTimeout`. Response body progress timeout maps
-to `ReadTimeout`. The broader buffered transport deadline maps to the base
-`TimeoutError` with phase-aware diagnostics for the current buffered path.
-Dedicated connect/write timeout exception mappings are reserved for later
-timeout work. See
+to `ReadTimeout` for buffered responses and async streamed body chunks. The
+broader buffered transport deadline maps to the base `TimeoutError` with
+phase-aware diagnostics; for async streaming it covers acquire, redirects, and
+response headers before the stream is returned. Dedicated connect/write timeout
+exception mappings are reserved for later timeout work. See
 [Timeout model](./timeouts.md) for the current behavior.

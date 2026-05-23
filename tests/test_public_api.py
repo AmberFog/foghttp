@@ -6,6 +6,7 @@ import foghttp.stats
 def test_top_level_exports() -> None:
     assert foghttp.Client is not None
     assert foghttp.AsyncClient is not None
+    assert foghttp.AsyncStreamResponse is not None
     assert foghttp.Headers is not None
     assert foghttp.Request is not None
     assert foghttp.RequestInfo is not None
@@ -24,6 +25,7 @@ def test_compatibility_modules_reexport_models() -> None:
     assert foghttp.models.Headers is foghttp.Headers
     assert foghttp.models.Request is foghttp.Request
     assert foghttp.models.Response is foghttp.Response
+    assert foghttp.models.AsyncStreamResponse is foghttp.AsyncStreamResponse
     assert foghttp.models.TLSConfig is foghttp.TLSConfig
     assert foghttp.models.TimeoutDiagnostic is foghttp.TimeoutDiagnostic
     assert foghttp.models.TimeoutPhase is foghttp.TimeoutPhase

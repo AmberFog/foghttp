@@ -1,0 +1,26 @@
+__all__ = (
+    "ENTER_STREAM_TIMEOUT",
+    "FIRST_CHUNK",
+    "GATED_STREAM_PATH",
+    "READ_TIMEOUT_SECONDS",
+    "SECOND_CHUNK",
+    "SLOW_TAIL_DELAY",
+    "SLOW_TAIL_STREAM_PATH",
+    "STREAM_NETWORK_ERROR_TIMEOUTS",
+    "STREAM_READ_TIMEOUT",
+    "TAIL_WAIT_TIMEOUT",
+)
+
+import foghttp
+
+
+ENTER_STREAM_TIMEOUT = 1.0
+FIRST_CHUNK = b"first-stream-chunk"
+GATED_STREAM_PATH = "/stream/gated"
+READ_TIMEOUT_SECONDS = 0.05
+SECOND_CHUNK = b"second-stream-chunk"
+SLOW_TAIL_DELAY = 0.25
+SLOW_TAIL_STREAM_PATH = "/stream/slow-tail"
+STREAM_NETWORK_ERROR_TIMEOUTS = foghttp.Timeouts(connect=0.2, pool=0.2, total=1.0)
+STREAM_READ_TIMEOUT = 1.0
+TAIL_WAIT_TIMEOUT = 5.0

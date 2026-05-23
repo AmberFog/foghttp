@@ -1,12 +1,14 @@
 __all__ = (
     "close_raw_client",
     "create_raw_client",
+    "raise_public_raw_error",
     "send_raw_request",
     "send_raw_request_async",
+    "send_raw_stream_request_async",
 )
 
 from collections.abc import Sequence
-from typing import cast
+from typing import NoReturn, cast
 
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
@@ -85,18 +87,8 @@ def send_raw_request(
             timeouts.read,
             timeouts.total,
         )
-    except _foghttp.FogHttpResponseBodyTooLargeError as exc:
-        raise ResponseBodyTooLargeError(str(exc)) from exc
-    except _foghttp.FogHttpResponseBodyBudgetExceededError as exc:
-        raise ResponseBodyBudgetExceededError(str(exc)) from exc
-    except _foghttp.FogHttpPoolTimeoutError as exc:
-        raise _timeout_error_from_raw(exc, PoolTimeout) from exc
-    except _foghttp.FogHttpReadTimeoutError as exc:
-        raise _timeout_error_from_raw(exc, ReadTimeout) from exc
-    except _foghttp.FogHttpTimeoutError as exc:
-        raise _timeout_error_from_raw(exc, TimeoutError) from exc
     except _foghttp.FogHttpError as exc:
-        raise RequestError(str(exc)) from exc
+        raise_public_raw_error(exc)
 
 
 async def send_raw_request_async(
@@ -120,18 +112,47 @@ async def send_raw_request_async(
             timeouts.read,
             timeouts.total,
         )
-    except _foghttp.FogHttpResponseBodyTooLargeError as exc:
-        raise ResponseBodyTooLargeError(str(exc)) from exc
-    except _foghttp.FogHttpResponseBodyBudgetExceededError as exc:
-        raise ResponseBodyBudgetExceededError(str(exc)) from exc
-    except _foghttp.FogHttpPoolTimeoutError as exc:
-        raise _timeout_error_from_raw(exc, PoolTimeout) from exc
-    except _foghttp.FogHttpReadTimeoutError as exc:
-        raise _timeout_error_from_raw(exc, ReadTimeout) from exc
-    except _foghttp.FogHttpTimeoutError as exc:
-        raise _timeout_error_from_raw(exc, TimeoutError) from exc
     except _foghttp.FogHttpError as exc:
-        raise RequestError(str(exc)) from exc
+        raise_public_raw_error(exc)
+
+
+async def send_raw_stream_request_async(
+    *,
+    raw_client: _foghttp.RawClient,
+    method: str,
+    url: str,
+    headers: Sequence[tuple[str, str]],
+    body: bytes | None,
+    body_replayable: bool,
+    timeouts: Timeouts,
+) -> _foghttp.RawStreamResponse:
+    try:
+        return await raw_client.request_stream_async(
+            method.upper(),
+            url,
+            headers,
+            body,
+            body_replayable,
+            timeouts.pool,
+            timeouts.read,
+            timeouts.total,
+        )
+    except _foghttp.FogHttpError as exc:
+        raise_public_raw_error(exc)
+
+
+def raise_public_raw_error(exc: BaseException) -> NoReturn:
+    if isinstance(exc, _foghttp.FogHttpResponseBodyTooLargeError):
+        raise ResponseBodyTooLargeError(str(exc)) from exc
+    if isinstance(exc, _foghttp.FogHttpResponseBodyBudgetExceededError):
+        raise ResponseBodyBudgetExceededError(str(exc)) from exc
+    if isinstance(exc, _foghttp.FogHttpPoolTimeoutError):
+        raise _timeout_error_from_raw(exc, PoolTimeout) from exc
+    if isinstance(exc, _foghttp.FogHttpReadTimeoutError):
+        raise _timeout_error_from_raw(exc, ReadTimeout) from exc
+    if isinstance(exc, _foghttp.FogHttpTimeoutError):
+        raise _timeout_error_from_raw(exc, TimeoutError) from exc
+    raise RequestError(str(exc)) from exc
 
 
 def _timeout_error_from_raw(

@@ -86,7 +86,7 @@ impl RawResponse {
         }
     }
 
-    fn release_body_reservations(&mut self) {
+    pub(crate) fn release_body_reservations(&mut self) {
         self.body_reservation.take();
         for response in &mut self.history {
             response.release_body_reservations();

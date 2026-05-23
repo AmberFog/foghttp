@@ -7,7 +7,7 @@ mod url;
 
 use pyo3::prelude::*;
 
-pub use client::RawClient;
+pub use client::{RawClient, RawStreamResponse};
 pub use pool_diagnostics::{RawOriginPoolDiagnostics, RawPoolDiagnostics};
 pub use response::{RawRequestInfo, RawResponse};
 pub use stats::{RawOriginPressure, RawStats};
@@ -16,6 +16,7 @@ pub use url::RawUrl;
 
 pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<RawClient>()?;
+    module.add_class::<RawStreamResponse>()?;
     module.add_class::<RawRequestInfo>()?;
     module.add_class::<RawResponse>()?;
     module.add_class::<RawOriginPoolDiagnostics>()?;

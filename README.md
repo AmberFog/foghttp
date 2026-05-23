@@ -89,6 +89,7 @@ async with foghttp.AsyncClient() as client:
 - buffered `Response` with status flags, charset-aware `text`, `json()`,
   `raise_for_status()`, and request metadata
 - transparent `gzip`, `deflate`, and `br` decoding for buffered responses
+- async bytes-first response streaming with explicit context-managed lifecycle
 - prepared `Request` objects with `build_request()` and `send()`
 - case-insensitive `Headers` with repeated values
 - safe policy for transport-managed request headers
@@ -114,6 +115,7 @@ async with foghttp.AsyncClient() as client:
 - [Request builder compatibility](https://github.com/AmberFog/foghttp/blob/main/docs/request-builder.md)
 - [Client lifecycle](https://github.com/AmberFog/foghttp/blob/main/docs/lifecycle.md)
 - [Timeout model](https://github.com/AmberFog/foghttp/blob/main/docs/timeouts.md)
+- [Async streaming](https://github.com/AmberFog/foghttp/blob/main/docs/streaming.md)
 - [TLS trust](https://github.com/AmberFog/foghttp/blob/main/docs/tls.md)
 - [Use cases](https://github.com/AmberFog/foghttp/blob/main/docs/use-cases.md)
 - [Redirects](https://github.com/AmberFog/foghttp/blob/main/docs/redirects.md)
@@ -123,14 +125,16 @@ async with foghttp.AsyncClient() as client:
 
 ## Current Limitations
 
-FogHTTP is currently focused on controlled buffered HTTP workloads. Streaming
-bodies, cookies, auth helpers, proxy support, multipart uploads, HTTP/2,
-automatic `Accept-Encoding` negotiation, strict connection-level pool limits,
-per-request connect timeout reconfiguration, and request-body write timeout
-semantics are planned for later versions. Response body read timeout is
-available for the current buffered path. Socket lifecycle telemetry is
-available for the current HTTP/1 buffered path. Disabling TLS verification is
-intentionally not supported.
+FogHTTP is currently focused on controlled HTTP workloads. Buffered responses
+are the broadest supported path; async response streaming is available as a
+bytes-first context-managed API. Sync streaming, streaming uploads, cookies,
+auth helpers, proxy support, multipart uploads, HTTP/2, automatic
+`Accept-Encoding` negotiation, streaming decompression, strict connection-level
+pool limits, per-request connect timeout reconfiguration, and request-body
+write timeout semantics are planned for later versions. Response body read
+timeout is available for buffered and async streaming response bodies. Socket
+lifecycle telemetry is available for the current HTTP/1 path. Disabling TLS
+verification is intentionally not supported.
 
 ## Development
 

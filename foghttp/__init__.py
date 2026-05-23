@@ -3,6 +3,7 @@
 __all__ = (
     "URL",
     "AsyncClient",
+    "AsyncStreamResponse",
     "Client",
     "ClientClosedError",
     "ConnectTimeout",
@@ -57,6 +58,7 @@ from .pool_diagnostics import OriginPoolDiagnostics, PoolBlockingReason, PoolDia
 from .request import Request
 from .request_info import RequestInfo
 from .response import Response
+from .stream_response import AsyncStreamResponse
 from .timeout_diagnostics import TimeoutDiagnostic, TimeoutPhase
 from .timeouts import Timeouts
 from .tls import TLSConfig

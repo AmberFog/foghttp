@@ -32,8 +32,8 @@ with foghttp.Client() as client:
 ## Lazy Transport Creation
 
 Constructing `Client` or `AsyncClient` does not create the Rust transport. The
-transport is created lazily on the first `send()` or shortcut request such as
-`get()` or `post()`.
+transport is created lazily on the first `send()`, `stream()`, or shortcut
+request such as `get()` or `post()`.
 
 These operations do not create the Rust transport:
 
@@ -146,8 +146,8 @@ except foghttp.ClientClosedError:
 ```
 
 `build_request()` is a pure request construction helper. It does not open the
-transport by itself; only `send()` or shortcut request methods use transport
-state.
+transport by itself; only `send()`, `stream()`, or shortcut request methods use
+transport state.
 
 ## Sync Close Semantics
 
@@ -198,8 +198,9 @@ async with foghttp.AsyncClient() as client:
         pass
 ```
 
-Calling `aclose()` closes the async client for everyone using it and cancels
-in-flight async requests before shutting down the Rust transport.
+Calling `aclose()` closes the async client for everyone using it, cancels
+in-flight async requests, aborts active async streamed response bodies, and then
+shuts down the Rust transport.
 
 ```python
 import asyncio
@@ -258,20 +259,18 @@ connection counters.
 - per-origin `last_activity_at_ns` is a monotonic timestamp in nanoseconds
   relative to the current transport metrics lifetime; it is not a Unix epoch
   timestamp
-- `response_body_reuse_eligible` means buffered response bodies that reached a
-  clean end-of-body and had no response-level close signal
-- `response_body_closed` means buffered response bodies that reached a clean
-  end-of-body but the response version or headers made the connection
-  non-reusable
-- `response_body_aborted` means buffered response body handling ended before a
-  clean success after response headers were received because of body-phase
-  timeout, cancellation, body transport error, memory budget rejection,
-  body-size rejection, or decoding failure
+- `response_body_reuse_eligible` means response bodies that reached a clean
+  end-of-body and had no response-level close signal
+- `response_body_closed` means response bodies that reached a clean end-of-body
+  but the response version or headers made the connection non-reusable
+- `response_body_aborted` means response body handling ended before a clean
+  success after response headers were received because of body-phase timeout,
+  cancellation, body transport error, memory budget rejection, body-size
+  rejection, decoding failure, or partial stream close
 - `active_connections` means tracked physical connector I/O handles that were
   successfully opened and have not yet been dropped
 - `idle_connections` means tracked connections that completed a reusable
-  buffered response and have not yet been observed serving another response or
-  closing
+  response and have not yet been observed serving another response or closing
 - `connections_opened` means successful connector handoffs to Hyper after TCP
   and, for HTTPS, TLS setup
 - `connections_open_failed` means connector failures before a usable transport
@@ -286,8 +285,14 @@ connection counters.
 - `buffered_response_budget_rejections` means requests rejected by
   `Limits.max_buffered_response_bytes`
 
-The response body lifecycle counters describe FogHTTP's Rust-side buffered body
-contract. Socket lifecycle counters describe tracked connector I/O lifecycle:
+For buffered responses, the active request slot is released after the body has
+been collected or aborted. For async streamed responses, the active request slot
+is held until the streamed body reaches EOF, the stream context is closed, the
+body read is cancelled, or the client is closed.
+
+The response body lifecycle counters describe FogHTTP's Rust-side body
+contract for buffered and async streamed response bodies. Socket lifecycle
+counters describe tracked connector I/O lifecycle:
 opened/closed are physical connector events, while reused/idle/aborted are
 derived from responses observed on those tracked connections. `idle_connections`
 is diagnostic state for the current HTTP/1 buffered path, not a public promise
@@ -326,10 +331,11 @@ if diagnostics["pending_requests"]:
 
 ## Current Boundaries
 
-The lifecycle contract currently applies to buffered requests and responses.
-Streaming response bodies, streaming uploads, cookies, proxies, and advanced
-auth helpers are planned later and may extend the lifecycle model.
+The lifecycle contract currently applies to buffered requests/responses and
+async streamed response bodies. Sync streaming, streaming uploads, cookies,
+proxies, and advanced auth helpers are planned later and may extend the
+lifecycle model.
 
-FogHTTP exposes socket lifecycle telemetry for the current HTTP/1 buffered path,
-but resource limits still describe request backpressure rather than strict raw
-TCP connection caps.
+FogHTTP exposes socket lifecycle telemetry for the current HTTP/1 path, but
+resource limits still describe request backpressure rather than strict raw TCP
+connection caps.

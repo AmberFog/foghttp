@@ -57,6 +57,37 @@ with foghttp.Client() as client:
 
 :::
 
+## Async Streaming Response
+
+Use `AsyncClient.stream()` when the final response body should be read
+incrementally as bytes. The stream is an async context manager; leaving the
+context before EOF aborts the body and releases the active request slot.
+
+```python
+import asyncio
+
+import foghttp
+from foghttp.methods import GET
+
+
+async def main() -> None:
+    async with foghttp.AsyncClient() as client:
+        async with client.stream(GET, "https://httpbin.org/stream-bytes/65536") as response:
+            response.raise_for_status()
+
+            total = 0
+            async for chunk in response.aiter_bytes():
+                total += len(chunk)
+
+            print(response.status_code, total)
+
+
+asyncio.run(main())
+```
+
+See [Async streaming](./streaming.md) for lifecycle, timeout, redirect, and
+current boundary details.
+
 ## Base URL
 
 Use `base_url=` when one client talks to one upstream service. Request URLs can

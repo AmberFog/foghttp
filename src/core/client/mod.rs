@@ -1,6 +1,6 @@
 mod telemetry;
 
-pub(crate) use telemetry::{ConnectionTelemetry, InstrumentedConnector};
+pub(crate) use telemetry::{ConnectionTelemetry, ConnectionUseGuard, InstrumentedConnector};
 
 use crate::core::metrics::Metrics;
 use crate::core::numeric::duration_from_secs;

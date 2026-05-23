@@ -1,4 +1,7 @@
+import json
+
 import foghttp
+from foghttp.methods import GET
 from foghttp.status_codes.success import OK
 
 from .assertions import (
@@ -24,6 +27,28 @@ async def test_async_client_reuses_keepalive_connection(keepalive_http_server: K
     assert first_response.status_code == OK
     assert second_response.status_code == OK
     assert_reused_connection_payloads(first_response.json(), second_response.json())
+    assert_reused_connection_snapshot(keepalive_http_server.snapshot())
+
+
+async def test_async_stream_reuses_keepalive_connection_after_clean_eof(
+    keepalive_http_server: KeepAliveServer,
+) -> None:
+    limits = foghttp.Limits(
+        keepalive=True,
+        max_idle_connections_per_host=EXPECTED_REUSED_CONNECTIONS,
+    )
+    url = keepalive_http_server.url + KEEPALIVE_PATH
+
+    async with (
+        foghttp.AsyncClient(limits=limits) as client,
+        client.stream(GET, url) as first_response,
+    ):
+        first_payload = json.loads(b"".join([chunk async for chunk in first_response.aiter_bytes()]))
+        second_response = await client.get(url)
+
+    assert first_response.status_code == OK
+    assert second_response.status_code == OK
+    assert_reused_connection_payloads(first_payload, second_response.json())
     assert_reused_connection_snapshot(keepalive_http_server.snapshot())
 
 
