@@ -4,12 +4,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 #[derive(Clone, Default)]
-pub(crate) struct AsyncStreamRegistry {
+pub(crate) struct StreamRegistry {
     active: Arc<Mutex<HashMap<u64, Weak<StreamStateInner>>>>,
     next_stream_id: Arc<AtomicU64>,
 }
 
-impl AsyncStreamRegistry {
+impl StreamRegistry {
     pub(crate) fn abort_all(&self) {
         let active_streams = {
             let mut active = self.active_streams();

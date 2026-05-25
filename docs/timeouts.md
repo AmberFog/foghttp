@@ -1,7 +1,7 @@
 # Timeout Model
 
 FogHTTP timeout settings are seconds as `float` values. The current timeout
-model covers buffered responses and async response byte streaming. Streaming
+model covers buffered responses and sync/async response byte streaming. Streaming
 uploads, request-body write deadlines, and more specific connect/write timeout
 exception classes are planned later.
 
@@ -26,8 +26,8 @@ with foghttp.Client(timeouts=timeouts) as client:
 |---|---:|---|---|
 | `connect` | `2.0` | Client-level Rust connector TCP connect timeout. It is read when the lazy Rust transport is created from the client constructor settings. | No stable dedicated `ConnectTimeout` mapping yet; low-level connect failures can surface as `RequestError`, while the outer `total` deadline can raise `TimeoutError`. |
 | `pool` | `1.0` | Waiting for a global or per-origin active request slot. | `PoolTimeout` for acquire timeout or full pending queue. |
-| `total` | `30.0` | Buffered path: outer deadline for acquiring a request slot, waiting for response headers, and collecting the buffered response body for each transport hop. Async stream path: acquire, redirect hops, and response headers before the stream is returned. The same budget is shared across redirect hops. | Base `TimeoutError`. |
-| `read` | `10.0` | Waiting for the next response body frame/chunk while collecting a buffered response body or consuming an async streamed body. | `ReadTimeout`. |
+| `total` | `30.0` | Buffered path: outer deadline for acquiring a request slot, waiting for response headers, and collecting the buffered response body for each transport hop. Stream path: acquire, redirect hops, and response headers before the stream is returned. The same budget is shared across redirect hops. | Base `TimeoutError`. |
+| `read` | `10.0` | Waiting for the next response body frame/chunk while collecting a buffered response body or consuming a streamed body. | `ReadTimeout`. |
 | `write` | `10.0` | Reserved for future request body write deadlines. | Not emitted separately today. |
 
 `PoolTimeout` and `ReadTimeout` are subclasses of `TimeoutError`. Catch the
@@ -199,11 +199,11 @@ path. For buffered responses it wraps:
 - collecting the buffered response body for the current hop
 - redirect hops as one shared budget
 
-For async streaming responses, `total` wraps acquire, redirect hops, and
-response headers before the stream is returned. It does not cap the full
-application-level streaming consumption phase after headers. Use
-`asyncio.timeout()` around the streaming block when the whole download needs a
-wall-clock budget.
+For streaming responses, `total` wraps acquire, redirect hops, and response
+headers before the stream is returned. It does not cap the full
+application-level streaming consumption phase after headers. Async callers can
+use `asyncio.timeout()` around the streaming block when the whole download needs
+a wall-clock budget.
 
 If `total` expires while the request is waiting for a pool slot, `total` wins
 and FogHTTP raises the base `TimeoutError`, not `PoolTimeout`. The same base
@@ -242,27 +242,29 @@ async with foghttp.AsyncClient() as client:
 ## Read Timeout
 
 `Timeouts.read` controls how long FogHTTP waits for the next response body
-frame/chunk while collecting a buffered response body or consuming an async
-streamed body. It is a progress timeout, not a maximum total download duration.
+frame/chunk while collecting a buffered response body or consuming a streamed
+body. It is a progress timeout, not a maximum total download duration.
 A response that keeps producing body data before the read deadline expires can
 take longer than `Timeouts.read`. Buffered responses still need to fit inside
-`Timeouts.total`; async streaming responses use `total` before the stream is
-returned and rely on `read` plus optional application-level cancellation during
-body consumption.
+`Timeouts.total`; streaming responses use `total` before the stream is returned
+and rely on `read` plus optional application-level cancellation during body
+consumption.
 
-If `read` expires while buffered body handling or async stream consumption is
-waiting for the next frame, FogHTTP raises `ReadTimeout` with the message
+If `read` expires while buffered body handling or stream consumption is waiting
+for the next frame, FogHTTP raises `ReadTimeout` with the message
 `response body read timeout expired`. The diagnostic phase is `response_body`
 and the diagnostic `timeout` value is the configured read timeout.
 
 If `total` expires first, `total` wins and FogHTTP raises the base
-`TimeoutError` with the message `request total timeout expired`. For async
-streaming, this applies before the streamed response is returned.
+`TimeoutError` with the message `request total timeout expired`. For streaming,
+this applies before the streamed response is returned.
 
 ```python
 with foghttp.Client(timeouts=foghttp.Timeouts(read=0.2, total=5.0)) as client:
     try:
-        client.get("https://api.example.com/slow-body")
+        with client.stream("GET", "https://api.example.com/slow-body") as response:
+            for chunk in response.iter_bytes():
+                print(len(chunk))
     except foghttp.ReadTimeout:
         pass
 ```
@@ -345,8 +347,8 @@ limits = foghttp.Limits(
 ```
 
 Use that only for controlled endpoints where another layer already enforces a
-safe body size and aggregate memory budget. Large async downloads should use
-`AsyncClient.stream()`.
+safe body size and aggregate memory budget. Large downloads should use
+`Client.stream()` or `AsyncClient.stream()`.
 
 The aggregate budget tracks in-flight buffered response bodies while Rust is
 collecting them. Once a `Response` is returned, its Python `bytes` lifetime is

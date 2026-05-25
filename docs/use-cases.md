@@ -1,11 +1,11 @@
 # Use Cases
 
-FogHTTP is useful today when the workload is simple, explicit, and buffered.
-Think controlled service-to-service calls rather than browser-like sessions.
-Its strongest current fit is Python service code that wants a small API,
-Rust-backed transport execution, predictable cancellation, redirect/debug
-metadata, and observable request backpressure without adopting a large client
-surface.
+FogHTTP is useful today when the workload is simple, explicit, and controlled.
+Think service-to-service calls, bounded buffered bodies, and byte streaming
+rather than browser-like sessions. Its strongest current fit is Python service
+code that wants a small API, Rust-backed transport execution, predictable
+cancellation, redirect/debug metadata, and observable request backpressure
+without adopting a large client surface.
 
 ## Works Well Today
 
@@ -112,6 +112,34 @@ def send_event(payload: dict) -> None:
         )
         response.raise_for_status()
 ```
+
+### Byte Streaming Downloads
+
+Use `stream()` when a response should be consumed incrementally instead of
+collected into `Response.content`.
+
+::: code-group
+
+```python [Async]
+async with foghttp.AsyncClient() as client:
+    async with client.stream("GET", "https://api.example.com/export") as response:
+        response.raise_for_status()
+        async for chunk in response.aiter_bytes():
+            process(chunk)
+```
+
+```python [Sync]
+with foghttp.Client() as client:
+    with client.stream("GET", "https://api.example.com/export") as response:
+        response.raise_for_status()
+        for chunk in response.iter_bytes():
+            process(chunk)
+```
+
+:::
+
+The current streaming API is bytes-first. Text, line iteration, streaming
+decompression, and streaming uploads are planned separately.
 
 ### Redirect-Aware APIs
 
@@ -241,18 +269,20 @@ except foghttp.HTTPStatusError as exc:
 
 | Need | Status |
 |---|---|
-| Streaming downloads | Not implemented |
+| Streaming text/line helpers | Not implemented; byte streaming is available |
+| Streaming decompression | Not implemented; buffered responses support transparent decoding |
 | Streaming uploads | Not implemented |
 | Multipart files | Not implemented |
 | Cookies/session jar | Not implemented |
 | Proxy and `trust_env` | Not implemented |
 | HTTP/2 | Not implemented |
 | Cookie jar and auth helper integration | Not implemented; cross-origin redirects still strip sensitive headers and drop body replay |
-| Unbounded large downloads | `max_response_body_size` defaults to 10 MiB and `max_buffered_response_bytes` defaults to 100 MiB for buffered fail-fast protection; streaming downloads are not implemented |
+| Unbounded buffered large downloads | `max_response_body_size` defaults to 10 MiB and `max_buffered_response_bytes` defaults to 100 MiB for buffered fail-fast protection; use `stream()` for incremental byte downloads |
 | Automatic compression negotiation | Not implemented; pass `Accept-Encoding` manually when you want compressed buffered responses |
 
-FogHTTP is best today in controlled environments where request and response
-bodies are expected to fit in memory. `gzip`, `deflate`, and `br` response
-bodies are decoded for buffered responses, and body limits still apply to the
-decoded bytes. Keep `max_response_body_size` and `max_buffered_response_bytes`
-finite unless unbounded buffering is a deliberate opt-in for a trusted endpoint.
+FogHTTP is best today in controlled environments where request bodies are small
+and response bodies either fit in memory or can be consumed through
+context-managed byte streaming. `gzip`, `deflate`, and `br` response bodies are
+decoded for buffered responses, and body limits still apply to the decoded
+bytes. Keep `max_response_body_size` and `max_buffered_response_bytes` finite
+unless unbounded buffering is a deliberate opt-in for a trusted endpoint.

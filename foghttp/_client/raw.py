@@ -4,6 +4,7 @@ __all__ = (
     "raise_public_raw_error",
     "send_raw_request",
     "send_raw_request_async",
+    "send_raw_stream_request",
     "send_raw_stream_request_async",
 )
 
@@ -78,6 +79,31 @@ def send_raw_request(
 ) -> _foghttp.RawResponse:
     try:
         return raw_client.request(
+            method.upper(),
+            url,
+            headers,
+            body,
+            body_replayable,
+            timeouts.pool,
+            timeouts.read,
+            timeouts.total,
+        )
+    except _foghttp.FogHttpError as exc:
+        raise_public_raw_error(exc)
+
+
+def send_raw_stream_request(
+    *,
+    raw_client: _foghttp.RawClient,
+    method: str,
+    url: str,
+    headers: Sequence[tuple[str, str]],
+    body: bytes | None,
+    body_replayable: bool,
+    timeouts: Timeouts,
+) -> _foghttp.RawStreamResponse:
+    try:
+        return raw_client.request_stream(
             method.upper(),
             url,
             headers,

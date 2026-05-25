@@ -25,7 +25,7 @@ pub(crate) struct RawStreamResponseParts {
     pub(crate) successful_body_outcome: ResponseBodyLifecycleOutcome,
     pub(crate) metrics: Arc<Metrics>,
     pub(crate) completion: RequestCompletion,
-    pub(crate) registry: super::registry::AsyncStreamRegistry,
+    pub(crate) registry: super::registry::StreamRegistry,
     pub(crate) runtime_handle: Handle,
     pub(crate) read_timeout: Duration,
     pub(crate) read_timeout_secs: f64,

@@ -21,7 +21,7 @@ use crate::py::client::lifecycle::{successful_response_body_outcome, ResponseBod
 use crate::py::client::redirects::{
     redirect_decision, redirect_headers, RedirectAction, RedirectDecision, RedirectHeaderPolicy,
 };
-use crate::py::client::streams::{AsyncStreamRegistry, RawStreamResponse, RawStreamResponseParts};
+use crate::py::client::streams::{RawStreamResponse, RawStreamResponseParts, StreamRegistry};
 use crate::py::client::timeout_diagnostics::{
     read_timeout_error, remaining_duration, timeout_error, TimeoutContext, TimeoutPhase,
 };
@@ -146,7 +146,7 @@ pub async fn send_stream_request(
     client: HyperClient,
     acquire_gate: AcquireGate,
     metrics: Arc<Metrics>,
-    active_streams: AsyncStreamRegistry,
+    active_streams: StreamRegistry,
     runtime_handle: Handle,
     pool_timeout: f64,
     parts: TransportRequest,
@@ -467,7 +467,7 @@ struct RawStreamResponseContext {
     origin: String,
     origin_metrics: Arc<OriginMetrics>,
     metrics: Arc<Metrics>,
-    active_streams: AsyncStreamRegistry,
+    active_streams: StreamRegistry,
     runtime_handle: Handle,
     completion: RequestCompletion,
     permit: AcquirePermit,

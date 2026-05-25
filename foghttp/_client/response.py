@@ -1,4 +1,8 @@
-__all__ = ("response_from_raw", "stream_response_from_raw")
+__all__ = (
+    "async_stream_response_from_raw",
+    "response_from_raw",
+    "stream_response_from_raw",
+)
 
 import time
 
@@ -7,7 +11,7 @@ import foghttp._foghttp as _foghttp  # noqa: PLR0402
 from ..headers import Headers
 from ..request_info import RequestInfo
 from ..response import Response
-from ..stream_response import AsyncStreamResponse
+from ..stream_response import AsyncStreamResponse, StreamResponse
 
 
 def request_info_from_raw(raw: _foghttp.RawRequestInfo) -> RequestInfo:
@@ -41,6 +45,28 @@ def response_from_raw(
 
 
 def stream_response_from_raw(
+    *,
+    raw: _foghttp.RawStreamResponse,
+    started: float,
+) -> StreamResponse:
+    try:
+        elapsed = raw.elapsed if raw.elapsed >= 0 else time.perf_counter() - started
+        history = tuple(response_from_raw(raw=item, started=started) for item in raw.history)
+        return StreamResponse(
+            status_code=raw.status_code,
+            headers=Headers(raw.headers),
+            url=raw.url,
+            request=request_info_from_raw(raw.request),
+            http_version=raw.http_version,
+            elapsed=elapsed,
+            _raw=raw,
+            history=history,
+        )
+    finally:
+        raw.release_buffered_body_reservations()
+
+
+def async_stream_response_from_raw(
     *,
     raw: _foghttp.RawStreamResponse,
     started: float,

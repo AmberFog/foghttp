@@ -1,14 +1,25 @@
-__all__ = ("AsyncStreamingServer", "start_async_streaming_server")
+__all__ = (
+    "AsyncStreamingServer",
+    "SyncStreamingServer",
+    "start_async_streaming_server",
+    "start_sync_streaming_server",
+)
 
 import asyncio
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager, suppress
 from dataclasses import dataclass
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import sys
+import threading
+import time
+from typing import Protocol
 from urllib.parse import urlsplit
 
 from foghttp.status_codes.success import OK
 
 from .constants import (
+    EMPTY_STREAM_PATH,
     FIRST_CHUNK,
     GATED_STREAM_PATH,
     SECOND_CHUNK,
@@ -23,6 +34,27 @@ class AsyncStreamingServer:
     base_url: str
     first_chunk_sent: asyncio.Event
     release_tail: asyncio.Event
+
+
+@dataclass(frozen=True, slots=True)
+class SyncStreamingServer:
+    base_url: str
+    first_chunk_sent: threading.Event
+    release_tail: threading.Event
+
+
+class SyncStreamWriter(Protocol):
+    def write(self, data: bytes) -> object: ...
+
+    def flush(self) -> None: ...
+
+
+class SyncStreamingHTTPServer(ThreadingHTTPServer):
+    def handle_error(self, request: object, client_address: object) -> None:
+        error_type, _error_value, _traceback = sys.exc_info()
+        if error_type is not None and issubclass(error_type, OSError):
+            return
+        super().handle_error(request, client_address)
 
 
 @asynccontextmanager
@@ -62,6 +94,44 @@ async def start_async_streaming_server() -> AsyncIterator[AsyncStreamingServer]:
         await server.wait_closed()
 
 
+@contextmanager
+def start_sync_streaming_server() -> Iterator[SyncStreamingServer]:
+    first_chunk_sent = threading.Event()
+    release_tail = threading.Event()
+
+    class SyncStreamingHandler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_GET(self) -> None:
+            path = urlsplit(self.path).path
+            with suppress(BrokenPipeError, ConnectionResetError, OSError):
+                _write_sync_stream_response(
+                    path=path,
+                    writer=self.wfile,
+                    first_chunk_sent=first_chunk_sent,
+                    release_tail=release_tail,
+                )
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            return
+
+    server = SyncStreamingHTTPServer(("127.0.0.1", 0), SyncStreamingHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    host, port = server.server_address
+    try:
+        yield SyncStreamingServer(
+            base_url=f"http://{host}:{port}",
+            first_chunk_sent=first_chunk_sent,
+            release_tail=release_tail,
+        )
+    finally:
+        release_tail.set()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=1)
+
+
 async def _write_stream_response(
     *,
     path: str,
@@ -79,9 +149,39 @@ async def _write_stream_response(
     if path == SLOW_TAIL_STREAM_PATH:
         await _write_slow_tail_stream(writer=writer, first_chunk_sent=first_chunk_sent)
         return
+    if path == EMPTY_STREAM_PATH:
+        writer.write(_raw_response(content_length=0))
+        await writer.drain()
+        return
 
     writer.write(_raw_response(content_length=0))
     await writer.drain()
+
+
+def _write_sync_stream_response(
+    *,
+    path: str,
+    writer: SyncStreamWriter,
+    first_chunk_sent: threading.Event,
+    release_tail: threading.Event,
+) -> None:
+    if path == GATED_STREAM_PATH:
+        _write_sync_gated_stream(
+            writer=writer,
+            first_chunk_sent=first_chunk_sent,
+            release_tail=release_tail,
+        )
+        return
+    if path == SLOW_TAIL_STREAM_PATH:
+        _write_sync_slow_tail_stream(writer=writer, first_chunk_sent=first_chunk_sent)
+        return
+    if path == EMPTY_STREAM_PATH:
+        writer.write(_raw_response(content_length=0))
+        writer.flush()
+        return
+
+    writer.write(_raw_response(content_length=0))
+    writer.flush()
 
 
 async def _write_gated_stream(
@@ -101,6 +201,22 @@ async def _write_gated_stream(
     await writer.drain()
 
 
+def _write_sync_gated_stream(
+    *,
+    writer: SyncStreamWriter,
+    first_chunk_sent: threading.Event,
+    release_tail: threading.Event,
+) -> None:
+    writer.write(_chunked_response_head())
+    writer.write(_chunk(FIRST_CHUNK))
+    writer.flush()
+    first_chunk_sent.set()
+    release_tail.wait(timeout=TAIL_WAIT_TIMEOUT)
+    writer.write(_chunk(SECOND_CHUNK))
+    writer.write(_last_chunk())
+    writer.flush()
+
+
 async def _write_slow_tail_stream(
     *,
     writer: asyncio.StreamWriter,
@@ -114,6 +230,21 @@ async def _write_slow_tail_stream(
     writer.write(_chunk(SECOND_CHUNK))
     writer.write(_last_chunk())
     await writer.drain()
+
+
+def _write_sync_slow_tail_stream(
+    *,
+    writer: SyncStreamWriter,
+    first_chunk_sent: threading.Event,
+) -> None:
+    writer.write(_chunked_response_head())
+    writer.write(_chunk(FIRST_CHUNK))
+    writer.flush()
+    first_chunk_sent.set()
+    time.sleep(SLOW_TAIL_DELAY)
+    writer.write(_chunk(SECOND_CHUNK))
+    writer.write(_last_chunk())
+    writer.flush()
 
 
 def _raw_response(*, content_length: int) -> bytes:

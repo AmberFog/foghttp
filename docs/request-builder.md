@@ -193,7 +193,8 @@ Current intentional gaps:
 - no cookie jar
 - no `auth=` helper
 - no proxy or `trust_env` behavior
-- no streaming request or response body API yet
+- no streaming request body API yet
+- no streaming text, line, or decompression helpers yet
 - no disabling TLS verification
 
 For these gaps, keep logic outside FogHTTP for now or wait for the planned
