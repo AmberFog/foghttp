@@ -5,6 +5,7 @@ __all__ = (
     "Limits",
     "Request",
     "Response",
+    "StreamResponse",
     "TLSConfig",
     "TimeoutDiagnostic",
     "TimeoutPhase",
@@ -15,7 +16,7 @@ from .headers import Headers
 from .limits import Limits
 from .request import Request
 from .response import Response
-from .stream_response import AsyncStreamResponse
+from .stream_response import AsyncStreamResponse, StreamResponse
 from .timeout_diagnostics import TimeoutDiagnostic, TimeoutPhase
 from .timeouts import Timeouts
 from .tls import TLSConfig

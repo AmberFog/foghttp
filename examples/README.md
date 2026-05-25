@@ -28,7 +28,8 @@ uv run examples/request_builder_compatibility.py
 - [async_json_fanout.py](./async_json_fanout.py): concurrent async GET requests
   with global/per-origin active request limits and stats.
 - [async_resource_limits.py](./async_resource_limits.py): explicit global and
-  per-origin request backpressure with pool timeout settings and diagnostics.
+  per-origin request backpressure with expected pool-timeout handling and
+  diagnostics.
 - [async_streaming.py](./async_streaming.py): async bytes-first response
   streaming with explicit context-managed cleanup.
 - [compressed_response.py](./compressed_response.py): manual

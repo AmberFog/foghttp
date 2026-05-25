@@ -23,7 +23,12 @@ URLS = [
 
 
 async def fetch(client: foghttp.AsyncClient, url: str) -> None:
-    response = await client.get(url)
+    try:
+        response = await client.get(url)
+    except foghttp.PoolTimeout as timeout_error:
+        print("pool timeout:", url, timeout_error.phase)
+        return
+
     response.raise_for_status()
     print(response.status_code, response.request.url)
 
