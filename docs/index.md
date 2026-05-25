@@ -4,7 +4,7 @@ layout: "home"
 hero:
   name: "FogHTTP"
   text: "Rust-powered HTTP client for Python"
-  tagline: "Buffered JSON and form requests, async byte streaming, transparent response decoding, base URL clients, default headers and params, sync and async APIs, redirects, custom CA certificates, cancellation, and observable request limits with pool diagnostics."
+  tagline: "Buffered JSON and form requests, sync and async byte streaming, transparent response decoding, base URL clients, default headers and params, sync and async APIs, redirects, custom CA certificates, cancellation, and observable request limits with pool diagnostics."
 
 features:
   - title: "Rust transport"
@@ -14,7 +14,7 @@ features:
     details: "Use Client in scripts and workers, or AsyncClient for high-concurrency asyncio workloads."
 
   - title: "Focused MVP"
-    details: "FogHTTP is intentionally small today: buffered responses with gzip/deflate/br decoding, async byte streaming, JSON, form-urlencoded data, base URL clients, default headers and params, redirects, prepared requests, async cancellation, global and per-origin request limits, and request metadata."
+    details: "FogHTTP is intentionally small today: buffered responses with gzip/deflate/br decoding, sync and async byte streaming, JSON, form-urlencoded data, base URL clients, default headers and params, redirects, prepared requests, async cancellation, global and per-origin request limits, and request metadata."
 ---
 
 # FogHTTP Documentation
@@ -46,7 +46,8 @@ FogHTTP is designed around a few engineering priorities:
 - Rust-backed HTTP/1.1 transport with explicit runtime ownership
 - buffered JSON, form, and bytes workflows that are simple to reason about
 - transparent `gzip`, `deflate`, and `br` decoding for buffered responses
-- async bytes-first response streaming with explicit context-managed lifecycle
+- sync and async bytes-first response streaming with explicit
+  context-managed lifecycle
 - graceful sync `close()` that waits for in-flight sync requests
 - async cancellation that aborts in-flight Rust requests
 - redirect history and final request metadata for debugging
@@ -64,7 +65,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - [Request builder compatibility](./request-builder.md)
 - [Client lifecycle](./lifecycle.md)
 - [Timeout model](./timeouts.md)
-- [Async streaming](./streaming.md)
+- [Response streaming](./streaming.md)
 - [TLS trust](./tls.md)
 - [Use cases](./use-cases.md)
 - [Redirects](./redirects.md)
@@ -78,7 +79,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - sync CLI scripts and background workers
 - redirect-aware requests with final URL and history
 - cancellable buffered async requests
-- bounded async response byte streaming
+- bounded sync and async response byte streaming
 - prepared requests that can be inspected before sending
 - simple benchmarks against other buffered HTTP clients
 
@@ -91,7 +92,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - query params with repeated keys, JSON, form-urlencoded data, and buffered
   bytes/text bodies
 - transparent `gzip`, `deflate`, and `br` decoding for buffered responses
-- async bytes-first response streaming with context-managed cleanup
+- sync and async bytes-first response streaming with context-managed cleanup
 - response status flags for success, redirects, and client/server errors
 - prepared `Request` objects with `build_request()` and `send()`
 - case-insensitive `Headers` with repeated value support
@@ -113,8 +114,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 
 ## Not Yet
 
-FogHTTP does not yet implement sync streaming, streaming uploads, cookies,
-multipart uploads, proxy support, `trust_env`, HTTP/2, automatic
-`Accept-Encoding` negotiation, streaming decompression, or advanced
-authentication helpers. Disabling TLS verification is intentionally not
-supported. See [Limitations](./limitations.md) for details.
+FogHTTP does not yet implement streaming uploads, cookies, multipart uploads,
+proxy support, `trust_env`, HTTP/2, automatic `Accept-Encoding` negotiation,
+streaming decompression, or advanced authentication helpers. Disabling TLS
+verification is intentionally not supported. See [Limitations](./limitations.md)
+for details.

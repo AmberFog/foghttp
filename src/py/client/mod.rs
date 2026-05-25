@@ -18,15 +18,15 @@ use crate::errors::FogHttpError;
 use crate::py::client::acquire::AcquireGate;
 use crate::py::client::async_requests::{
     spawn_async_request, spawn_async_stream_request, AsyncRequestRegistry, AsyncRequestSpawn,
-    AsyncStreamRequestSpawn,
+    AsyncStreamRequestSpawn, RequestCompletion,
 };
 use crate::py::client::options::{
     validate_numeric_client_options, validate_request_timeouts, validate_unsupported_options,
     NumericClientOptions,
 };
 use crate::py::client::runtime::build_runtime;
-use crate::py::client::streams::AsyncStreamRegistry;
-use crate::py::client::transport::{send_request, TransportRequest};
+use crate::py::client::streams::StreamRegistry;
+use crate::py::client::transport::{send_request, send_stream_request, TransportRequest};
 use crate::py::response::RawResponse;
 use crate::py::stats::RawStats;
 use crate::py::{RawPoolDiagnostics, RawTransportState};
@@ -44,7 +44,7 @@ pub struct RawClient {
     acquire_gate: AcquireGate,
     metrics: Arc<Metrics>,
     active_async_requests: AsyncRequestRegistry,
-    active_async_streams: AsyncStreamRegistry,
+    active_streams: StreamRegistry,
     max_response_body_size: Option<usize>,
     buffered_body_budget: BufferedBodyBudget,
     follow_redirects: bool,
@@ -113,7 +113,7 @@ impl RawClient {
             acquire_gate,
             metrics,
             active_async_requests: AsyncRequestRegistry::default(),
-            active_async_streams: AsyncStreamRegistry::default(),
+            active_streams: StreamRegistry::default(),
             max_response_body_size,
             buffered_body_budget,
             follow_redirects,
@@ -223,6 +223,69 @@ impl RawClient {
     }
 
     #[allow(clippy::too_many_arguments)]
+    fn request_stream(
+        &self,
+        py: Python<'_>,
+        method: String,
+        url: String,
+        headers: HeaderPairs,
+        body: Option<Vec<u8>>,
+        body_replayable: bool,
+        pool_timeout: f64,
+        read_timeout: f64,
+        total_timeout: f64,
+    ) -> PyResult<RawStreamResponse> {
+        validate_request_timeouts(pool_timeout, read_timeout, total_timeout)?;
+
+        let client = self.client()?.clone();
+        let runtime = self.runtime()?;
+        let acquire_gate = self.acquire_gate.clone();
+        let metrics = Arc::clone(&self.metrics);
+        let active_streams = self.active_streams.clone();
+        let runtime_handle = runtime.handle().clone();
+        let max_response_body_size = self.max_response_body_size;
+        let buffered_body_budget = self.buffered_body_budget.clone();
+        let follow_redirects = self.follow_redirects;
+        let max_redirects = self.max_redirects;
+        let completion = RequestCompletion::default();
+        let request_completion = completion.clone();
+        self.metrics.request_started();
+
+        let result = py.detach(|| {
+            runtime.block_on(async move {
+                send_stream_request(
+                    client,
+                    acquire_gate,
+                    Arc::clone(&metrics),
+                    active_streams,
+                    runtime_handle,
+                    pool_timeout,
+                    TransportRequest {
+                        method,
+                        url,
+                        headers,
+                        body,
+                        body_replayable,
+                        total_timeout,
+                        read_timeout,
+                        max_response_body_size,
+                        buffered_body_budget,
+                        follow_redirects,
+                        max_redirects,
+                    },
+                    request_completion,
+                )
+                .await
+            })
+        });
+
+        if result.is_err() && completion.finish() {
+            self.metrics.request_finished(true);
+        }
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn request_stream_async(
         &self,
         py: Python<'_>,
@@ -251,7 +314,7 @@ impl RawClient {
                 acquire_gate: self.acquire_gate.clone(),
                 client,
                 metrics: Arc::clone(&self.metrics),
-                active_streams: self.active_async_streams.clone(),
+                active_streams: self.active_streams.clone(),
                 pool_timeout,
                 request: TransportRequest {
                     method,
@@ -302,7 +365,7 @@ impl RawClient {
 
     fn close_resources(&mut self) {
         self.active_async_requests.abort_all();
-        self.active_async_streams.abort_all();
+        self.active_streams.abort_all();
         self.client.take();
         if let Some(runtime) = self.runtime.take() {
             runtime.shutdown_background();

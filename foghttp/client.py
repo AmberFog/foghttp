@@ -9,12 +9,14 @@ from ._client.constants import DEFAULT_MAX_REDIRECTS
 from ._client.core import ClientCore
 from ._client.raw import close_raw_client
 from ._client.request_builder.header_policy import validate_safe_request_headers
+from ._client.stream_context import StreamContext
 from ._client.transport import RawSyncTransport, SyncTransport
 from .headers import HeaderSource
 from .limits import Limits
 from .methods import DELETE, GET, HEAD, PATCH, POST, PUT
 from .request import Request
 from .response import Response
+from .stream_response import StreamResponse
 from .timeouts import Timeouts
 from .tls import TLSConfig
 from .types import HttpVersions, QueryParams, RequestData
@@ -134,6 +136,40 @@ class Client(ClientCore):
             validate_safe_request_headers(request.headers)
             timeouts = self._request_timeouts(timeout)
             return self._transport.send(request, timeouts=timeouts)
+        finally:
+            self._finish_sync_send(sync_send_token)
+
+    def stream(
+        self,
+        method: str,
+        url: str | URL,
+        *,
+        headers: HeaderSource = None,
+        params: QueryParams = None,
+        content: bytes | str | None = None,
+        data: RequestData = None,
+        json: Any = None,
+        timeout: Timeouts | None = None,
+    ) -> StreamContext:
+        self._ensure_open()
+        request = self.build_request(
+            method,
+            url,
+            headers=headers,
+            params=params,
+            content=content,
+            data=data,
+            json=json,
+        )
+        return StreamContext(lambda: self._send_stream(request, timeout=timeout))
+
+    def _send_stream(self, request: Request, *, timeout: Timeouts | None = None) -> StreamResponse:
+        sync_send_token = object()
+        try:
+            self._begin_sync_send(sync_send_token)
+            validate_safe_request_headers(request.headers)
+            timeouts = self._request_timeouts(timeout)
+            return self._transport.stream(request, timeouts=timeouts)
         finally:
             self._finish_sync_send(sync_send_token)
 

@@ -154,17 +154,20 @@ transport state.
 For `Client`, `close()` is a graceful lifecycle barrier:
 
 - new requests and transport stats calls are rejected immediately
-- sync sends already admitted by the client lifecycle are allowed to finish
-- `close()` waits until those admitted in-flight sync sends complete
-- the Rust transport is closed only after active sync sends finish
+- sync sends and stream entries already admitted by the client lifecycle are
+  allowed to finish creating their response objects
+- `close()` waits until those admitted in-flight sync transport entries complete
+- the Rust transport is closed only after active sync entries finish
+- active streamed response bodies are aborted by Rust transport shutdown
 - concurrent `close()` calls wait for the same shutdown and return safely
 
 This means `close()` can block while an already-admitted sync request is still
 running. Configure request timeouts so shutdown cannot be held indefinitely by a
 stalled upstream.
 
-An admitted sync send is one that passed the client lifecycle gate before
-shutdown started. Calls racing after shutdown starts are rejected as new work.
+An admitted sync transport entry is a `send()` or `stream()` context enter that
+passed the client lifecycle gate before shutdown started. Calls racing after
+shutdown starts are rejected as new work.
 
 ```python
 import foghttp
@@ -286,17 +289,17 @@ connection counters.
   `Limits.max_buffered_response_bytes`
 
 For buffered responses, the active request slot is released after the body has
-been collected or aborted. For async streamed responses, the active request slot
-is held until the streamed body reaches EOF, the stream context is closed, the
-body read is cancelled, or the client is closed.
+been collected or aborted. For streamed responses, the active request slot is
+held until the streamed body reaches EOF, the stream context is closed, the body
+read is cancelled or aborted, or the client is closed.
 
 The response body lifecycle counters describe FogHTTP's Rust-side body
-contract for buffered and async streamed response bodies. Socket lifecycle
+contract for buffered and streamed response bodies. Socket lifecycle
 counters describe tracked connector I/O lifecycle:
 opened/closed are physical connector events, while reused/idle/aborted are
 derived from responses observed on those tracked connections. `idle_connections`
-is diagnostic state for the current HTTP/1 buffered path, not a public promise
-about Hyper's private pool internals.
+is diagnostic state for the current HTTP/1 path, not a public promise about
+Hyper's private pool internals.
 
 Use `dump_transport_state()` for a small debug snapshot when active, pending,
 acquire pressure, per-origin pressure, and buffered response budget state are
@@ -332,9 +335,8 @@ if diagnostics["pending_requests"]:
 ## Current Boundaries
 
 The lifecycle contract currently applies to buffered requests/responses and
-async streamed response bodies. Sync streaming, streaming uploads, cookies,
-proxies, and advanced auth helpers are planned later and may extend the
-lifecycle model.
+sync/async streamed response bodies. Streaming uploads, cookies, proxies, and
+advanced auth helpers are planned later and may extend the lifecycle model.
 
 FogHTTP exposes socket lifecycle telemetry for the current HTTP/1 path, but
 resource limits still describe request backpressure rather than strict raw TCP

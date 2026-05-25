@@ -1,7 +1,7 @@
 use super::{ActiveStreamRead, StreamState, StreamStateFields, StreamStateInner};
 use crate::core::metrics::{Metrics, ResponseBodyLifecycleOutcome};
 use crate::py::client::async_requests::RequestCompletion;
-use crate::py::client::streams::AsyncStreamRegistry;
+use crate::py::client::streams::StreamRegistry;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 use std::sync::{Arc, Mutex, Once};
@@ -25,7 +25,7 @@ fn finished_read_state() -> StreamState {
     StreamState {
         inner: Arc::new(StreamStateInner {
             stream_id: TEST_STREAM_ID,
-            registry: AsyncStreamRegistry::default(),
+            registry: StreamRegistry::default(),
             fields: Mutex::new(StreamStateFields {
                 body: None,
                 permit: None,
@@ -73,7 +73,7 @@ fn rejected_read_task_cancels_python_future_instead_of_reporting_eof() {
 
     Python::attach(|py| -> PyResult<()> {
         let (event_loop, future) = new_future(py)?;
-        let accepted = state.register_read_task(ActiveStreamRead::new(
+        let accepted = state.register_read_task(ActiveStreamRead::new_async(
             handle.abort_handle(),
             event_loop.clone_ref(py),
             future.clone_ref(py),

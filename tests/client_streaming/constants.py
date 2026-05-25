@@ -1,7 +1,9 @@
 __all__ = (
+    "EMPTY_STREAM_PATH",
     "ENTER_STREAM_TIMEOUT",
     "FIRST_CHUNK",
     "GATED_STREAM_PATH",
+    "PENDING_READ_START_DELAY",
     "READ_TIMEOUT_SECONDS",
     "SECOND_CHUNK",
     "SLOW_TAIL_DELAY",
@@ -14,9 +16,11 @@ __all__ = (
 import foghttp
 
 
+EMPTY_STREAM_PATH = "/stream/empty"
 ENTER_STREAM_TIMEOUT = 1.0
 FIRST_CHUNK = b"first-stream-chunk"
 GATED_STREAM_PATH = "/stream/gated"
+PENDING_READ_START_DELAY = 0.02
 READ_TIMEOUT_SECONDS = 0.05
 SECOND_CHUNK = b"second-stream-chunk"
 SLOW_TAIL_DELAY = 0.25

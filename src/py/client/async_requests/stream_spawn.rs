@@ -3,20 +3,23 @@ use super::callback::PythonFutureCancellation;
 use super::registry::AsyncRequestRegistry;
 use crate::core::client::HyperClient;
 use crate::core::metrics::Metrics;
+use crate::errors::FogHttpError;
+use crate::messages::STREAM_REQUEST_TASK_START_FAILED;
 use crate::py::client::acquire::AcquireGate;
 use crate::py::client::future::complete_python_stream_future;
-use crate::py::client::streams::AsyncStreamRegistry;
+use crate::py::client::streams::StreamRegistry;
 use crate::py::client::transport::{send_stream_request, TransportRequest};
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
+use tokio::sync::oneshot;
 
 pub struct AsyncStreamRequestSpawn {
     pub acquire_gate: AcquireGate,
     pub client: HyperClient,
     pub metrics: Arc<Metrics>,
-    pub active_streams: AsyncStreamRegistry,
+    pub active_streams: StreamRegistry,
     pub pool_timeout: f64,
     pub request: TransportRequest,
 }
@@ -49,9 +52,13 @@ pub fn spawn_async_stream_request(
     let task_registry = registry.clone();
     let task_metrics = Arc::clone(&metrics);
     let task_completion = completion.clone();
+    let (start_sender, start_receiver) = oneshot::channel();
 
     metrics.request_started();
     let handle = runtime.spawn(async move {
+        if start_receiver.await.is_err() {
+            return;
+        }
         let result = send_stream_request(
             client,
             acquire_gate,
@@ -95,6 +102,10 @@ pub fn spawn_async_stream_request(
     {
         registry.abort_request(request_id);
         return Err(err);
+    }
+    if start_sender.send(()).is_err() {
+        registry.abort_request(request_id);
+        return Err(FogHttpError::new_err(STREAM_REQUEST_TASK_START_FAILED));
     }
 
     Ok(future)

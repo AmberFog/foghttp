@@ -1,5 +1,5 @@
 use super::read::next_stream_body_frame;
-use super::registry::AsyncStreamRegistry;
+use super::registry::StreamRegistry;
 use crate::core::client::ConnectionUseGuard;
 use crate::core::metrics::{Metrics, ResponseBodyLifecycleOutcome};
 use crate::errors::FogHttpError;
@@ -22,7 +22,7 @@ pub(super) struct StreamStateParts {
     pub(super) successful_body_outcome: ResponseBodyLifecycleOutcome,
     pub(super) metrics: Arc<Metrics>,
     pub(super) completion: RequestCompletion,
-    pub(super) registry: AsyncStreamRegistry,
+    pub(super) registry: StreamRegistry,
     pub(super) read_timeout: Duration,
     pub(super) read_timeout_secs: f64,
     pub(super) origin: String,
@@ -36,7 +36,7 @@ pub(super) struct StreamState {
 
 pub(super) struct StreamStateInner {
     stream_id: u64,
-    registry: AsyncStreamRegistry,
+    registry: StreamRegistry,
     fields: Mutex<StreamStateFields>,
 }
 
@@ -69,8 +69,12 @@ pub(super) struct StreamReadGuard {
 
 pub(super) struct ActiveStreamRead {
     abort_handle: AbortHandle,
-    loop_: Py<PyAny>,
-    future: Py<PyAny>,
+    notification: StreamReadNotification,
+}
+
+enum StreamReadNotification {
+    Async { loop_: Py<PyAny>, future: Py<PyAny> },
+    Sync,
 }
 
 impl StreamState {
@@ -132,7 +136,7 @@ impl StreamState {
         let mut fields = self.fields();
         if fields.finished || !fields.read_in_progress {
             drop(fields);
-            read_task.abort_and_cancel_python();
+            read_task.abort_and_notify();
             return false;
         }
         fields.read_task = Some(read_task);
@@ -198,7 +202,7 @@ impl StreamState {
         };
 
         if let Some(read_task) = read_task_to_cancel {
-            read_task.abort_and_cancel_python();
+            read_task.abort_and_notify();
         }
 
         if finished_request {
@@ -216,17 +220,29 @@ impl StreamState {
 }
 
 impl ActiveStreamRead {
-    pub(super) fn new(abort_handle: AbortHandle, loop_: Py<PyAny>, future: Py<PyAny>) -> Self {
+    pub(super) fn new_async(
+        abort_handle: AbortHandle,
+        loop_: Py<PyAny>,
+        future: Py<PyAny>,
+    ) -> Self {
         Self {
             abort_handle,
-            loop_,
-            future,
+            notification: StreamReadNotification::Async { loop_, future },
         }
     }
 
-    fn abort_and_cancel_python(self) {
+    pub(super) fn new_sync(abort_handle: AbortHandle) -> Self {
+        Self {
+            abort_handle,
+            notification: StreamReadNotification::Sync,
+        }
+    }
+
+    fn abort_and_notify(self) {
         self.abort_handle.abort();
-        cancel_python_future(&self.loop_, &self.future);
+        if let StreamReadNotification::Async { loop_, future } = self.notification {
+            cancel_python_future(&loop_, &future);
+        }
     }
 }
 

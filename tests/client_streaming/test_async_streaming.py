@@ -8,6 +8,7 @@ from foghttp.status_codes.client_error import NOT_FOUND
 from foghttp.status_codes.redirect import FOUND
 from foghttp.status_codes.success import OK
 from tests.client_streaming.constants import (
+    EMPTY_STREAM_PATH,
     ENTER_STREAM_TIMEOUT,
     FIRST_CHUNK,
     GATED_STREAM_PATH,
@@ -57,6 +58,29 @@ async def test_stream_enters_after_headers_without_buffering_tail(
 
         assert client.stats().failed_requests == 0
         assert client.stats().response_body_closed == 1
+
+
+async def test_stream_empty_body_reaches_clean_eof(
+    streaming_server: AsyncStreamingServer,
+) -> None:
+    async with foghttp.AsyncClient() as client:
+        async with client.stream(GET, f"{streaming_server.base_url}{EMPTY_STREAM_PATH}") as response:
+            assert await collect_stream_chunks(response.aiter_bytes()) == []
+
+        stats = client.stats()
+        assert stats.failed_requests == 0
+        assert stats.response_body_closed == 1
+        assert stats.response_body_aborted == 0
+
+
+async def test_stream_context_is_single_use(http_server: str) -> None:
+    async with foghttp.AsyncClient() as client:
+        context = client.stream(GET, f"{http_server}/status/{OK}")
+        async with context as response:
+            assert response.status_code == OK
+
+        with pytest.raises(foghttp.LifecycleError, match="stream context cannot be entered more than once"):
+            await context.__aenter__()
 
 
 async def test_stream_context_abort_releases_active_request_slot(

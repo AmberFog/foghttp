@@ -2,6 +2,8 @@ use super::callback::PythonStreamReadCallback;
 use super::parts::RawStreamResponseParts;
 use super::state::{ActiveStreamRead, StreamState, StreamStateParts};
 use crate::core::headers::HeaderPairs;
+use crate::errors::FogHttpError;
+use crate::messages::STREAM_RESPONSE_READ_ABORTED;
 use crate::py::client::future::complete_python_bytes_future;
 use crate::py::response::{RawRequestInfo, RawResponse};
 use pyo3::prelude::*;
@@ -96,6 +98,33 @@ impl RawStreamResponse {
         self.state.abort();
     }
 
+    fn next_chunk(&self, py: Python<'_>) -> PyResult<Option<Vec<u8>>> {
+        let state = self.state.clone();
+        let Some(read_guard) = state.start_read()? else {
+            return Ok(None);
+        };
+        let (result_sender, result_receiver) = oneshot::channel();
+        let (start_sender, start_receiver) = oneshot::channel();
+        let handle = self.runtime_handle.spawn(async move {
+            if start_receiver.await.is_err() {
+                return;
+            }
+            let _ = result_sender.send(read_guard.read_next_chunk().await);
+        });
+        let abort_handle = handle.abort_handle();
+        if !state.register_read_task(ActiveStreamRead::new_sync(abort_handle)) {
+            return Err(FogHttpError::new_err(STREAM_RESPONSE_READ_ABORTED));
+        }
+        if start_sender.send(()).is_err() {
+            state.abort();
+            return Err(FogHttpError::new_err(STREAM_RESPONSE_READ_ABORTED));
+        }
+
+        let result = py.detach(|| self.runtime_handle.block_on(result_receiver));
+        state.finish_read_delivery();
+        result.map_err(|_| FogHttpError::new_err(STREAM_RESPONSE_READ_ABORTED))?
+    }
+
     fn next_chunk_async(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let loop_ = py
             .import("asyncio")?
@@ -119,7 +148,7 @@ impl RawStreamResponse {
             complete_python_bytes_future(&task_loop, &task_future, result);
         });
         let abort_handle = handle.abort_handle();
-        if !state.register_read_task(ActiveStreamRead::new(
+        if !state.register_read_task(ActiveStreamRead::new_async(
             abort_handle.clone(),
             loop_.clone_ref(py),
             future.clone_ref(py),

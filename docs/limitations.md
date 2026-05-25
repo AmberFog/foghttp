@@ -25,6 +25,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - raw bytes/text bodies through `content=`
 - buffered responses
 - transparent `gzip`, `deflate`, and `br` decoding for buffered responses
+- sync bytes-first response streaming through `Client.stream()`
 - async bytes-first response streaming through `AsyncClient.stream()`
 - `response.text`, `response.json()`, response status flags, and
   `response.raise_for_status()`
@@ -55,8 +56,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 
 | Feature | Current behavior |
 |---|---|
-| Sync streaming responses | Not available; use async `AsyncClient.stream()` or buffered sync responses |
-| Streaming response text/lines | Not available; async streaming currently yields bytes |
+| Streaming response text/lines | Not available; streaming currently yields bytes |
 | Streaming response decompression | Not available; buffered responses support transparent decoding |
 | Streaming uploads | Not available; request bodies are buffered |
 | Multipart uploads | Not available |
@@ -72,8 +72,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | request body source conflicts | Only one body source can be passed today: `json=`, `data=`, or `content=` |
 | true active connection-level limits | `max_active_requests_per_origin` limits buffered request slots; socket lifecycle telemetry is observable, but FogHTTP does not yet expose separate physical connection limits |
 | per-request connect timeout changes | `Timeouts.connect` configures the Rust connector from client-level settings when transport state is created; per-request `timeout.connect` does not reconfigure the connector |
-| separate read/write timeout semantics | `Timeouts.read` is implemented as a buffered response body progress timeout; `Timeouts.write` is reserved for later streaming upload/body work |
-| socket lifecycle telemetry granularity | `TransportStats` and `dump_transport_state()["origins"]` expose opened, open-failed, closed, reused, aborted, active, and idle tracked connection counters for the current HTTP/1 buffered path; these are connector/lifecycle diagnostics, not a stable public view into Hyper's private pool internals |
+| separate read/write timeout semantics | `Timeouts.read` is implemented as a buffered and streamed response body progress timeout; `Timeouts.write` is reserved for later streaming upload/body work |
+| socket lifecycle telemetry granularity | `TransportStats` and `dump_transport_state()["origins"]` expose opened, open-failed, closed, reused, aborted, active, and idle tracked connection counters for the current HTTP/1 path; these are connector/lifecycle diagnostics, not a stable public view into Hyper's private pool internals |
 
 ## Practical Guidance
 
@@ -81,11 +81,11 @@ Use FogHTTP today when:
 
 - you control the API or know its behavior well
 - responses are small enough to buffer in memory or can be consumed through the
-  async bytes-first streaming API
+  bytes-first streaming API
 - requests are JSON-heavy or use small form-urlencoded bodies
 - redirects are simple and do not require cookie jar or auth helper integration
 - sync and async clients with explicit lifecycle are enough
-- async request cancellation and stream cleanup behavior are useful
+- async request cancellation and sync/async stream cleanup behavior are useful
 - global and per-origin request-slot backpressure is enough for your
   resource control needs
 - you can reuse clients instead of creating many short-lived runtime instances
@@ -93,7 +93,6 @@ Use FogHTTP today when:
 
 Wait before using FogHTTP when:
 
-- you download large files from sync code
 - you need streaming text, line iteration, or transparent streaming
   decompression
 - you upload large files
@@ -111,9 +110,9 @@ Wait before using FogHTTP when:
 
 Network and protocol failures map to `RequestError`. Pool acquire timeout and
 queue-full conditions map to `PoolTimeout`. Response body progress timeout maps
-to `ReadTimeout` for buffered responses and async streamed body chunks. The
-broader buffered transport deadline maps to the base `TimeoutError` with
-phase-aware diagnostics; for async streaming it covers acquire, redirects, and
-response headers before the stream is returned. Dedicated connect/write timeout
-exception mappings are reserved for later timeout work. See
+to `ReadTimeout` for buffered responses and streamed body chunks. The broader
+buffered transport deadline maps to the base `TimeoutError` with phase-aware
+diagnostics; for streaming it covers acquire, redirects, and response headers
+before the stream is returned. Dedicated connect/write timeout exception
+mappings are reserved for later timeout work. See
 [Timeout model](./timeouts.md) for the current behavior.

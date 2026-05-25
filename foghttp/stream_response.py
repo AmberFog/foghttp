@@ -1,6 +1,6 @@
-__all__ = ("AsyncStreamResponse",)
+__all__ = ("AsyncStreamResponse", "StreamResponse")
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
 from types import TracebackType
 
@@ -23,7 +23,7 @@ from .response import Response
 
 
 @dataclass(slots=True)
-class AsyncStreamResponse:
+class _StreamResponseBase:
     status_code: int
     headers: Headers
     url: str
@@ -46,17 +46,6 @@ class AsyncStreamResponse:
             f"history=<{len(self.history)} responses>)"
         )
 
-    async def __aenter__(self) -> "AsyncStreamResponse":
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        self.close()
-
     @property
     def is_success(self) -> bool:
         return is_success_status(self.status_code)
@@ -77,23 +66,6 @@ class AsyncStreamResponse:
     def is_error(self) -> bool:
         return is_error_status(self.status_code)
 
-    async def aiter_bytes(self) -> AsyncIterator[bytes]:
-        if self._closed:
-            return
-        try:
-            while True:
-                chunk = await self._next_chunk()
-                if chunk is None:
-                    self._closed = True
-                    return
-                yield chunk
-        finally:
-            if not self._closed:
-                self.close()
-
-    async def aclose(self) -> None:
-        self.close()
-
     def close(self) -> None:
         if self._closed:
             return
@@ -110,6 +82,74 @@ class AsyncStreamResponse:
                 ),
                 response=self,
             )
+
+
+class StreamResponse(_StreamResponseBase):
+    __slots__ = ()
+
+    def __enter__(self) -> "StreamResponse":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.close()
+
+    def iter_bytes(self) -> Iterator[bytes]:
+        if self._closed:
+            return
+        try:
+            while True:
+                chunk = self._next_chunk()
+                if chunk is None:
+                    self._closed = True
+                    return
+                yield chunk
+        finally:
+            if not self._closed:
+                self.close()
+
+    def _next_chunk(self) -> bytes | None:
+        try:
+            return self._raw.next_chunk()
+        except _foghttp.FogHttpError as exc:
+            self.close()
+            raise_public_raw_error(exc)
+
+
+class AsyncStreamResponse(_StreamResponseBase):
+    __slots__ = ()
+
+    async def __aenter__(self) -> "AsyncStreamResponse":
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.close()
+
+    async def aiter_bytes(self) -> AsyncIterator[bytes]:
+        if self._closed:
+            return
+        try:
+            while True:
+                chunk = await self._next_chunk()
+                if chunk is None:
+                    self._closed = True
+                    return
+                yield chunk
+        finally:
+            if not self._closed:
+                self.close()
+
+    async def aclose(self) -> None:
+        self.close()
 
     async def _next_chunk(self) -> bytes | None:
         try:
