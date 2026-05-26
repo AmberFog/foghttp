@@ -1,7 +1,8 @@
 # Response Streaming
 
-FogHTTP supports bytes-first response streaming through `Client.stream()` and
-`AsyncClient.stream()`.
+FogHTTP supports response streaming through `Client.stream()` and
+`AsyncClient.stream()`. Bytes are the source of truth, and text/line helpers are
+thin incremental layers over the same body stream.
 
 Use it when the response body should be consumed incrementally instead of being
 fully buffered into `Response.content`.
@@ -62,8 +63,14 @@ received:
 - `history`
 - status flags and `raise_for_status()`
 
-Sync body bytes are read with `response.iter_bytes()`. Async body bytes are
-read with `response.aiter_bytes()`.
+The body can be consumed once through one of these iterator families:
+
+- `iter_bytes()` / `aiter_bytes()`
+- `iter_text()` / `aiter_text()`
+- `iter_lines()` / `aiter_lines()`
+
+Calling another body iterator after consumption has started raises
+`LifecycleError`.
 
 ```python
 with client.stream(GET, url) as response:
@@ -77,6 +84,31 @@ async with client.stream(GET, url) as response:
     response.raise_for_status()
     async for chunk in response.aiter_bytes():
         process(chunk)
+```
+
+Text streaming uses an incremental decoder, so multibyte characters can span
+byte chunk boundaries. By default it uses a valid `charset` from
+`Content-Type`; otherwise it falls back to `utf-8`. Streaming text does not
+inspect a body BOM because the body is consumed incrementally. Override the
+decoder when needed:
+
+```python
+with client.stream(GET, url) as response:
+    for text in response.iter_text(encoding="utf-8", errors="replace"):
+        process_text(text)
+```
+
+Line streaming strips line endings and handles `LF`, `CRLF`, empty lines, and a
+final line without a trailing newline. Because a line iterator must buffer text
+until the next delimiter, FogHTTP limits one streamed line to `1048576`
+characters by default. Pass `max_line_chars=` to choose another limit, or
+`max_line_chars=None` only for trusted streams where unbounded lines are
+intentional:
+
+```python
+async with client.stream(GET, url) as response:
+    async for line in response.aiter_lines(max_line_chars=256 * 1024):
+        process_line(line)
 ```
 
 Clean EOF marks the response body as completed. Leaving the context before EOF,
@@ -132,8 +164,7 @@ except TimeoutError:
 
 The current streaming API is intentionally narrow:
 
-- bytes only
-- no text or line iterator yet
+- bytes, text, and line iteration only
 - no streaming response decompression yet
 - no streaming uploads yet
 

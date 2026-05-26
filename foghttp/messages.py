@@ -12,6 +12,8 @@ __all__ = (
     "RUNTIME_WORKERS_ENV_INVALID",
     "RUNTIME_WORKERS_INVALID",
     "STREAM_CONTEXT_REENTERED",
+    "STREAM_RESPONSE_BODY_CONSUMED",
+    "STREAM_RESPONSE_CLOSED",
     "TRUST_ENV_UNSUPPORTED",
     "UNCLOSED_CLIENT",
     "http_status_error",
@@ -37,6 +39,8 @@ POOL_ACQUIRE_TIMEOUT = "request acquire timeout expired"
 RUNTIME_WORKERS_ENV_INVALID = "FOGHTTP_RUNTIME_WORKERS must be an integer between 1 and 32"
 RUNTIME_WORKERS_INVALID = "runtime_workers must be an integer between 1 and 32"
 STREAM_CONTEXT_REENTERED = "stream context cannot be entered more than once"
+STREAM_RESPONSE_BODY_CONSUMED = "stream response body can be consumed only once"
+STREAM_RESPONSE_CLOSED = "stream response is closed"
 TRUST_ENV_UNSUPPORTED = "trust_env/proxy support is planned after the MVP"
 UNCLOSED_CLIENT = "FogHTTP client was not closed"
 

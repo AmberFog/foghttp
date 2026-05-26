@@ -27,6 +27,13 @@ def main() -> None:
         print("bytes:", total)
         print("stats:", client.stats())
 
+    with client.stream(GET, "https://httpbin.org/stream/3") as response:
+        response.raise_for_status()
+        lines = list(response.iter_lines())
+
+        print("line status:", response.status_code)
+        print("lines:", len(lines))
+
 
 if __name__ == "__main__":
     main()

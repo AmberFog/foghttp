@@ -23,10 +23,14 @@ from .constants import (
     EMPTY_STREAM_PATH,
     FIRST_CHUNK,
     GATED_STREAM_PATH,
+    LATIN1_TEXT_STREAM_PATH,
+    LATIN1_TEXT_VALUE,
     SECOND_CHUNK,
     SLOW_TAIL_DELAY,
     SLOW_TAIL_STREAM_PATH,
     TAIL_WAIT_TIMEOUT,
+    TEXT_LINES_STREAM_CHUNKS,
+    TEXT_LINES_STREAM_PATH,
 )
 
 
@@ -153,6 +157,16 @@ async def _write_stream_response(
     if path == BROKEN_READY_TAIL_STREAM_PATH:
         await _write_broken_ready_tail_stream(writer=writer, first_chunk_sent=first_chunk_sent)
         return
+    if path == TEXT_LINES_STREAM_PATH:
+        await _write_chunked_stream(writer=writer, chunks=TEXT_LINES_STREAM_CHUNKS)
+        return
+    if path == LATIN1_TEXT_STREAM_PATH:
+        await _write_chunked_stream(
+            writer=writer,
+            chunks=(LATIN1_TEXT_VALUE.encode("iso-8859-1"),),
+            content_type="text/plain; charset=iso-8859-1",
+        )
+        return
     if path == EMPTY_STREAM_PATH:
         writer.write(_raw_response(content_length=0))
         await writer.drain()
@@ -181,6 +195,16 @@ def _write_sync_stream_response(
         return
     if path == BROKEN_READY_TAIL_STREAM_PATH:
         _write_sync_broken_ready_tail_stream(writer=writer, first_chunk_sent=first_chunk_sent)
+        return
+    if path == TEXT_LINES_STREAM_PATH:
+        _write_sync_chunked_stream(writer=writer, chunks=TEXT_LINES_STREAM_CHUNKS)
+        return
+    if path == LATIN1_TEXT_STREAM_PATH:
+        _write_sync_chunked_stream(
+            writer=writer,
+            chunks=(LATIN1_TEXT_VALUE.encode("iso-8859-1"),),
+            content_type="text/plain; charset=iso-8859-1",
+        )
         return
     if path == EMPTY_STREAM_PATH:
         writer.write(_raw_response(content_length=0))
@@ -251,6 +275,19 @@ async def _write_broken_ready_tail_stream(
     first_chunk_sent.set()
 
 
+async def _write_chunked_stream(
+    *,
+    writer: asyncio.StreamWriter,
+    chunks: tuple[bytes, ...],
+    content_type: str = "text/plain; charset=utf-8",
+) -> None:
+    writer.write(_chunked_response_head(content_type=content_type))
+    for chunk in chunks:
+        writer.write(_chunk(chunk))
+    writer.write(_last_chunk())
+    await writer.drain()
+
+
 def _write_sync_slow_tail_stream(
     *,
     writer: SyncStreamWriter,
@@ -278,17 +315,26 @@ def _write_sync_broken_ready_tail_stream(
     first_chunk_sent.set()
 
 
+def _write_sync_chunked_stream(
+    *,
+    writer: SyncStreamWriter,
+    chunks: tuple[bytes, ...],
+    content_type: str = "text/plain; charset=utf-8",
+) -> None:
+    writer.write(_chunked_response_head(content_type=content_type))
+    for chunk in chunks:
+        writer.write(_chunk(chunk))
+    writer.write(_last_chunk())
+    writer.flush()
+
+
 def _raw_response(*, content_length: int) -> bytes:
     return (f"HTTP/1.1 {OK} OK\r\ncontent-length: {content_length}\r\nconnection: close\r\n\r\n").encode()
 
 
-def _chunked_response_head() -> bytes:
+def _chunked_response_head(*, content_type: str = "application/octet-stream") -> bytes:
     return (
-        f"HTTP/1.1 {OK} OK\r\n"
-        "content-type: application/octet-stream\r\n"
-        "transfer-encoding: chunked\r\n"
-        "connection: close\r\n"
-        "\r\n"
+        f"HTTP/1.1 {OK} OK\r\ncontent-type: {content_type}\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n"
     ).encode()
 
 

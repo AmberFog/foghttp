@@ -23,14 +23,14 @@ uv run examples/request_builder_compatibility.py
 ## Good Examples
 
 - [sync_json_api.py](./sync_json_api.py): sync JSON request/response flow.
-- [sync_streaming.py](./sync_streaming.py): sync bytes-first response streaming
-  with explicit context-managed cleanup.
+- [sync_streaming.py](./sync_streaming.py): sync bytes and line response
+  streaming with explicit context-managed cleanup.
 - [async_json_fanout.py](./async_json_fanout.py): concurrent async GET requests
   with global/per-origin active request limits and stats.
 - [async_resource_limits.py](./async_resource_limits.py): explicit global and
   per-origin request backpressure with expected pool-timeout handling and
   diagnostics.
-- [async_streaming.py](./async_streaming.py): async bytes-first response
+- [async_streaming.py](./async_streaming.py): async bytes and line response
   streaming with explicit context-managed cleanup.
 - [compressed_response.py](./compressed_response.py): manual
   `Accept-Encoding` negotiation with transparent buffered response decoding.
@@ -44,6 +44,7 @@ uv run examples/request_builder_compatibility.py
 
 ## Limitations To Keep In Mind
 
-FogHTTP supports sync and async response byte streaming, but uploads are still
-buffered. Do not use these examples as templates for large uploads, multipart
-forms, cookie sessions, proxy-heavy clients, or text/line streaming APIs yet.
+FogHTTP supports sync and async response streaming for bytes, text, and lines,
+but uploads are still buffered. Do not use these examples as templates for large
+uploads, multipart forms, cookie sessions, proxy-heavy clients, or streaming
+decompression yet.

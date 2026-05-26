@@ -1,7 +1,7 @@
 # Timeout Model
 
 FogHTTP timeout settings are seconds as `float` values. The current timeout
-model covers buffered responses and sync/async response byte streaming. Streaming
+model covers buffered responses and sync/async response streaming. Streaming
 uploads, request-body write deadlines, and more specific connect/write timeout
 exception classes are planned later.
 
