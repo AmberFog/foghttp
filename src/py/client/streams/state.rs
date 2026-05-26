@@ -1,3 +1,4 @@
+use super::constants::{MAX_READY_FRAME_COALESCE_COUNT, READY_FRAME_COALESCE_TARGET_BYTES};
 use super::read::next_stream_body_frame;
 use super::registry::StreamRegistry;
 use crate::core::client::ConnectionUseGuard;
@@ -7,10 +8,14 @@ use crate::py::client::acquire::AcquirePermit;
 use crate::py::client::async_requests::RequestCompletion;
 use crate::py::client::future::cancel_python_future;
 use crate::py::client::lifecycle::ResponseBodyLifecycle;
+use bytes::Bytes;
+use hyper::body::Body;
 use hyper::body::Incoming;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 use tokio::task::AbortHandle;
 
@@ -64,12 +69,19 @@ pub(super) struct StreamReadGuard {
     read_timeout_secs: f64,
     origin: String,
     redirect_hop: usize,
+    coalesce_ready_frames: bool,
     disarmed: bool,
 }
 
 pub(super) struct ActiveStreamRead {
     abort_handle: AbortHandle,
     notification: StreamReadNotification,
+}
+
+enum ReadyBodyFrame {
+    Data(Bytes),
+    Eof,
+    Pending,
 }
 
 enum StreamReadNotification {
@@ -105,7 +117,10 @@ impl StreamState {
         Self { inner }
     }
 
-    pub(super) fn start_read(&self) -> PyResult<Option<StreamReadGuard>> {
+    pub(super) fn start_read(
+        &self,
+        coalesce_ready_frames: bool,
+    ) -> PyResult<Option<StreamReadGuard>> {
         let mut fields = self.fields();
         if fields.finished {
             return Ok(None);
@@ -128,6 +143,7 @@ impl StreamState {
             read_timeout_secs: fields.read_timeout_secs,
             origin: fields.origin.clone(),
             redirect_hop: fields.redirect_hop,
+            coalesce_ready_frames,
             disarmed: false,
         }))
     }
@@ -295,9 +311,51 @@ impl StreamReadGuard {
                 continue;
             };
 
-            let chunk = data.to_vec();
-            self.finish_chunk();
+            let mut chunk = data.to_vec();
+            let reached_eof =
+                self.coalesce_ready_frames && self.drain_ready_data_frames(&mut chunk)?;
+            if reached_eof {
+                self.finish_success_from_read();
+            } else {
+                self.finish_chunk();
+            }
             return Ok(Some(chunk));
+        }
+    }
+
+    fn drain_ready_data_frames(&mut self, chunk: &mut Vec<u8>) -> PyResult<bool> {
+        let mut coalesced_frames = 1;
+        while chunk.len() < READY_FRAME_COALESCE_TARGET_BYTES
+            && coalesced_frames < MAX_READY_FRAME_COALESCE_COUNT
+        {
+            match self.poll_ready_body_frame()? {
+                ReadyBodyFrame::Data(data) => {
+                    chunk.extend_from_slice(&data);
+                    coalesced_frames += 1;
+                }
+                ReadyBodyFrame::Eof => return Ok(true),
+                ReadyBodyFrame::Pending => return Ok(false),
+            }
+        }
+        Ok(false)
+    }
+
+    fn poll_ready_body_frame(&mut self) -> PyResult<ReadyBodyFrame> {
+        let waker = Waker::noop();
+        let mut context = Context::from_waker(waker);
+        loop {
+            let frame = match Pin::new(self.body_mut()).poll_frame(&mut context) {
+                Poll::Ready(frame) => frame,
+                Poll::Pending => return Ok(ReadyBodyFrame::Pending),
+            };
+            let Some(frame) = frame else {
+                return Ok(ReadyBodyFrame::Eof);
+            };
+            let frame = frame.map_err(|err| FogHttpError::new_err(err.to_string()))?;
+            let Ok(data) = frame.into_data() else {
+                continue;
+            };
+            return Ok(ReadyBodyFrame::Data(data));
         }
     }
 

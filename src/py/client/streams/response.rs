@@ -4,10 +4,11 @@ use super::state::{ActiveStreamRead, StreamState, StreamStateParts};
 use crate::core::headers::HeaderPairs;
 use crate::errors::FogHttpError;
 use crate::messages::STREAM_RESPONSE_READ_ABORTED;
-use crate::py::client::future::complete_python_bytes_future;
+use crate::py::client::future::{complete_python_bytes_future, PythonFutureSetters};
 use crate::py::response::{RawRequestInfo, RawResponse};
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
+use std::sync::{Mutex, MutexGuard};
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 
@@ -28,6 +29,7 @@ pub struct RawStreamResponse {
     history: Vec<RawResponse>,
     state: StreamState,
     runtime_handle: Handle,
+    future_setters: Mutex<Option<PythonFutureSetters>>,
 }
 
 impl RawStreamResponse {
@@ -77,6 +79,7 @@ impl RawStreamResponse {
                 redirect_hop,
             }),
             runtime_handle,
+            future_setters: Mutex::new(None),
         }
     }
 
@@ -84,6 +87,29 @@ impl RawStreamResponse {
         for response in &mut self.history {
             response.release_body_reservations();
         }
+    }
+
+    fn future_setters(&self, py: Python<'_>) -> PyResult<PythonFutureSetters> {
+        {
+            let guard = self.future_setters_guard();
+            if let Some(setters) = guard.as_ref() {
+                return Ok(setters.clone_ref(py));
+            }
+        }
+
+        let setters = PythonFutureSetters::new(py)?;
+        let mut guard = self.future_setters_guard();
+        if let Some(cached_setters) = guard.as_ref() {
+            return Ok(cached_setters.clone_ref(py));
+        }
+        *guard = Some(setters.clone_ref(py));
+        Ok(setters)
+    }
+
+    fn future_setters_guard(&self) -> MutexGuard<'_, Option<PythonFutureSetters>> {
+        self.future_setters
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
@@ -100,7 +126,7 @@ impl RawStreamResponse {
 
     fn next_chunk(&self, py: Python<'_>) -> PyResult<Option<Vec<u8>>> {
         let state = self.state.clone();
-        let Some(read_guard) = state.start_read()? else {
+        let Some(read_guard) = state.start_read(false)? else {
             return Ok(None);
         };
         let (result_sender, result_receiver) = oneshot::channel();
@@ -132,12 +158,13 @@ impl RawStreamResponse {
             .unbind();
         let future = loop_.bind(py).call_method0("create_future")?.unbind();
         let state = self.state.clone();
-        let Some(read_guard) = state.start_read()? else {
+        let Some(read_guard) = state.start_read(true)? else {
             future.bind(py).call_method1("set_result", (py.None(),))?;
             return Ok(future);
         };
         let task_loop = loop_.clone_ref(py);
         let task_future = future.clone_ref(py);
+        let task_future_setters = self.future_setters(py)?;
         let (start_sender, start_receiver) = oneshot::channel();
 
         let handle = self.runtime_handle.spawn(async move {
@@ -145,7 +172,7 @@ impl RawStreamResponse {
                 return;
             }
             let result = read_guard.read_next_chunk().await;
-            complete_python_bytes_future(&task_loop, &task_future, result);
+            complete_python_bytes_future(&task_loop, &task_future, &task_future_setters, result);
         });
         let abort_handle = handle.abort_handle();
         if !state.register_read_task(ActiveStreamRead::new_async(
