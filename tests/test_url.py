@@ -101,15 +101,15 @@ def test_url_merge_params_preserves_existing_query_and_fragment() -> None:
 
 
 @pytest.mark.parametrize(
-    "raw_url",
+    ("raw_url", "error_pattern"),
     [
-        "example.com/path",
-        "ftp://example.com",
-        "https://example.com:bad-port",
+        pytest.param("example.com/path", "URL is invalid", id="relative-url"),
+        pytest.param("ftp://example.com", "URL scheme must be http or https", id="unsupported-scheme"),
+        pytest.param("https://example.com:bad-port", "URL is invalid", id="bad-port"),
     ],
 )
-def test_url_rejects_invalid_urls(raw_url: str) -> None:
-    with pytest.raises(ValueError):
+def test_url_rejects_invalid_urls(raw_url: str, error_pattern: str) -> None:
+    with pytest.raises(ValueError, match=error_pattern):
         foghttp.URL(raw_url)
 
 

@@ -28,12 +28,12 @@ async def test_async_invalid_url_is_rejected_before_transport() -> None:
 
 
 async def test_async_connection_refused_maps_to_request_error_and_client_recovers(
-    connection_refused_url: str,
+    async_connection_refused_url: str,
     http_server: str,
 ) -> None:
     async with foghttp.AsyncClient(timeouts=NETWORK_ERROR_TIMEOUTS) as client:
         with pytest.raises(foghttp.RequestError) as exc_info:
-            await client.get(connection_refused_url)
+            await client.get(async_connection_refused_url)
 
         stats_after_error = client.stats()
         response = await client.get(http_server)

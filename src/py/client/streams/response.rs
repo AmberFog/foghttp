@@ -90,20 +90,32 @@ impl RawStreamResponse {
     }
 
     fn future_setters(&self, py: Python<'_>) -> PyResult<PythonFutureSetters> {
-        {
-            let guard = self.future_setters_guard();
-            if let Some(setters) = guard.as_ref() {
-                return Ok(setters.clone_ref(py));
-            }
+        // PyO3 handle clones touch Python refcounts, so keep them outside the
+        // Rust mutex protecting the cached setters.
+        if let Some(cached_setters) = self.take_future_setters() {
+            let setters = cached_setters.clone_ref(py);
+            self.store_future_setters_if_empty(cached_setters);
+            return Ok(setters);
         }
 
         let setters = PythonFutureSetters::new(py)?;
-        let mut guard = self.future_setters_guard();
-        if let Some(cached_setters) = guard.as_ref() {
-            return Ok(cached_setters.clone_ref(py));
-        }
-        *guard = Some(setters.clone_ref(py));
+        let cached_setters = setters.clone_ref(py);
+        self.store_future_setters_if_empty(cached_setters);
         Ok(setters)
+    }
+
+    fn take_future_setters(&self) -> Option<PythonFutureSetters> {
+        self.future_setters_guard().take()
+    }
+
+    fn store_future_setters_if_empty(&self, setters: PythonFutureSetters) {
+        let mut setters_to_store = Some(setters);
+        {
+            let mut guard = self.future_setters_guard();
+            if guard.is_none() {
+                *guard = setters_to_store.take();
+            }
+        }
     }
 
     fn future_setters_guard(&self) -> MutexGuard<'_, Option<PythonFutureSetters>> {

@@ -1,4 +1,3 @@
-import gc
 from urllib.parse import urlencode
 
 from faker import Faker
@@ -9,6 +8,7 @@ import foghttp
 from foghttp.messages import BODY_PARAMETER_CONFLICT
 from foghttp.methods import GET, HEAD, POST
 from foghttp.status_codes.success import OK
+from tests.client_warning_actions import collect_unclosed_client
 
 
 async def test_get_with_params_and_json_response(http_server: str) -> None:
@@ -149,11 +149,8 @@ async def test_close_is_idempotent() -> None:
 
 
 async def test_unclosed_client_warns() -> None:
-    client = foghttp.AsyncClient()
-
     with pytest.warns(foghttp.UnclosedClientError, match="FogHTTP client was not closed"):
-        del client
-        gc.collect()
+        collect_unclosed_client(foghttp.AsyncClient)
 
 
 async def test_stats_track_requests(http_server: str) -> None:

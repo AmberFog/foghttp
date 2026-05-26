@@ -9,7 +9,7 @@ from .certificates import TLSCertificateBundle
 from .models import TLSServer
 
 
-@pytest.mark.parametrize("status_code", (TEMPORARY_REDIRECT, PERMANENT_REDIRECT))
+@pytest.mark.parametrize("status_code", [TEMPORARY_REDIRECT, PERMANENT_REDIRECT])
 def test_sync_https_to_http_redirect_with_body_is_blocked(
     tls_certificates: TLSCertificateBundle,
     tls_http_server: TLSServer,
