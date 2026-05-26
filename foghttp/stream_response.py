@@ -8,6 +8,7 @@ import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
 from ._client.raw import raise_public_raw_error
 from ._redaction import redact_url
+from ._response.encoding import response_encoding
 from ._response.status import (
     is_client_error_status,
     is_error_status,
@@ -15,9 +16,21 @@ from ._response.status import (
     is_server_error_status,
     is_success_status,
 )
-from .errors import HTTPStatusError
+from ._streaming.text import (
+    DEFAULT_MAX_STREAM_LINE_CHARS,
+    aiter_lines,
+    aiter_text_chunks,
+    iter_lines,
+    iter_text_chunks,
+    validate_max_line_chars,
+)
+from .errors import HTTPStatusError, LifecycleError
 from .headers import Headers
-from .messages import http_status_error
+from .messages import (
+    STREAM_RESPONSE_BODY_CONSUMED,
+    STREAM_RESPONSE_CLOSED,
+    http_status_error,
+)
 from .request_info import RequestInfo
 from .response import Response
 
@@ -33,6 +46,7 @@ class _StreamResponseBase:
     _raw: _foghttp.RawStreamResponse = field(repr=False)
     history: tuple[Response, ...] = ()
     _closed: bool = field(default=False, init=False, repr=False)
+    _body_started: bool = field(default=False, init=False, repr=False)
 
     def __repr__(self) -> str:
         return (
@@ -72,6 +86,10 @@ class _StreamResponseBase:
         self._closed = True
         self._raw.close()
 
+    @property
+    def encoding(self) -> str:
+        return response_encoding(self.headers, b"")
+
     def raise_for_status(self) -> None:
         if self.is_error:
             raise HTTPStatusError(
@@ -82,6 +100,16 @@ class _StreamResponseBase:
                 ),
                 response=self,
             )
+
+    def _start_body_iteration(self) -> None:
+        if self._body_started:
+            raise LifecycleError(STREAM_RESPONSE_BODY_CONSUMED)
+        if self._closed:
+            raise LifecycleError(STREAM_RESPONSE_CLOSED)
+        self._body_started = True
+
+    def _text_encoding(self, encoding: str | None) -> str:
+        return self.encoding if encoding is None else encoding
 
 
 class StreamResponse(_StreamResponseBase):
@@ -99,8 +127,43 @@ class StreamResponse(_StreamResponseBase):
         self.close()
 
     def iter_bytes(self) -> Iterator[bytes]:
-        if self._closed:
-            return
+        self._start_body_iteration()
+        return self._iter_bytes()
+
+    def iter_text(
+        self,
+        *,
+        encoding: str | None = None,
+        errors: str = "replace",
+    ) -> Iterator[str]:
+        self._start_body_iteration()
+        return iter_text_chunks(
+            self._iter_bytes(),
+            encoding=self._text_encoding(encoding),
+            errors=errors,
+            close=self.close,
+        )
+
+    def iter_lines(
+        self,
+        *,
+        encoding: str | None = None,
+        errors: str = "replace",
+        max_line_chars: int | None = DEFAULT_MAX_STREAM_LINE_CHARS,
+    ) -> Iterator[str]:
+        max_line_chars = validate_max_line_chars(max_line_chars)
+        self._start_body_iteration()
+        return iter_lines(
+            iter_text_chunks(
+                self._iter_bytes(),
+                encoding=self._text_encoding(encoding),
+                errors=errors,
+                close=self.close,
+            ),
+            max_line_chars=max_line_chars,
+        )
+
+    def _iter_bytes(self) -> Iterator[bytes]:
         try:
             while True:
                 chunk = self._next_chunk()
@@ -134,9 +197,44 @@ class AsyncStreamResponse(_StreamResponseBase):
     ) -> None:
         self.close()
 
-    async def aiter_bytes(self) -> AsyncIterator[bytes]:
-        if self._closed:
-            return
+    def aiter_bytes(self) -> AsyncIterator[bytes]:
+        self._start_body_iteration()
+        return self._aiter_bytes()
+
+    def aiter_text(
+        self,
+        *,
+        encoding: str | None = None,
+        errors: str = "replace",
+    ) -> AsyncIterator[str]:
+        self._start_body_iteration()
+        return aiter_text_chunks(
+            self._aiter_bytes(),
+            encoding=self._text_encoding(encoding),
+            errors=errors,
+            close=self.close,
+        )
+
+    def aiter_lines(
+        self,
+        *,
+        encoding: str | None = None,
+        errors: str = "replace",
+        max_line_chars: int | None = DEFAULT_MAX_STREAM_LINE_CHARS,
+    ) -> AsyncIterator[str]:
+        max_line_chars = validate_max_line_chars(max_line_chars)
+        self._start_body_iteration()
+        return aiter_lines(
+            aiter_text_chunks(
+                self._aiter_bytes(),
+                encoding=self._text_encoding(encoding),
+                errors=errors,
+                close=self.close,
+            ),
+            max_line_chars=max_line_chars,
+        )
+
+    async def _aiter_bytes(self) -> AsyncIterator[bytes]:
         try:
             while True:
                 chunk = await self._next_chunk()

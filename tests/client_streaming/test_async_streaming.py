@@ -99,7 +99,8 @@ async def test_stream_context_abort_releases_active_request_slot(
             await byte_stream.aclose()
 
         streaming_server.release_tail.set()
-        assert await collect_stream_chunks(response.aiter_bytes()) == []
+        with pytest.raises(foghttp.LifecycleError, match="consumed only once"):
+            response.aiter_bytes()
         await wait_for_async_transport_stats(
             client,
             lambda stats: stats.active_requests == 0 and stats.response_body_aborted == 1,
@@ -251,7 +252,8 @@ async def test_stream_response_metadata_and_status_helpers(http_server: str) -> 
             assert same_response is response
 
         await response.aclose()
-        assert await collect_stream_chunks(response.aiter_bytes()) == []
+        with pytest.raises(foghttp.LifecycleError, match="stream response is closed"):
+            response.aiter_bytes()
 
 
 async def test_stream_request_errors_are_mapped(unused_tcp_port: int) -> None:

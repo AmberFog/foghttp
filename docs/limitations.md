@@ -25,8 +25,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - raw bytes/text bodies through `content=`
 - buffered responses
 - transparent `gzip`, `deflate`, and `br` decoding for buffered responses
-- sync bytes-first response streaming through `Client.stream()`
-- async bytes-first response streaming through `AsyncClient.stream()`
+- sync response streaming through `Client.stream()`
+- async response streaming through `AsyncClient.stream()`
 - `response.text`, `response.json()`, response status flags, and
   `response.raise_for_status()`
 - lightweight `response.request`
@@ -56,7 +56,6 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 
 | Feature | Current behavior |
 |---|---|
-| Streaming response text/lines | Not available; streaming currently yields bytes |
 | Streaming response decompression | Not available; buffered responses support transparent decoding |
 | Streaming uploads | Not available; request bodies are buffered |
 | Multipart uploads | Not available |
@@ -81,7 +80,8 @@ Use FogHTTP today when:
 
 - you control the API or know its behavior well
 - responses are small enough to buffer in memory or can be consumed through the
-  bytes-first streaming API
+  bytes/text/line streaming API; line streaming has a bounded per-line buffer by
+  default
 - requests are JSON-heavy or use small form-urlencoded bodies
 - redirects are simple and do not require cookie jar or auth helper integration
 - sync and async clients with explicit lifecycle are enough
@@ -93,8 +93,7 @@ Use FogHTTP today when:
 
 Wait before using FogHTTP when:
 
-- you need streaming text, line iteration, or transparent streaming
-  decompression
+- you need transparent streaming decompression
 - you upload large files
 - you need proxy behavior from environment variables
 - you rely on cookies across requests

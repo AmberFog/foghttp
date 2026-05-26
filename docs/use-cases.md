@@ -1,11 +1,11 @@
 # Use Cases
 
 FogHTTP is useful today when the workload is simple, explicit, and controlled.
-Think service-to-service calls, bounded buffered bodies, and byte streaming
-rather than browser-like sessions. Its strongest current fit is Python service
-code that wants a small API, Rust-backed transport execution, predictable
-cancellation, redirect/debug metadata, and observable request backpressure
-without adopting a large client surface.
+Think service-to-service calls, bounded buffered bodies, and context-managed
+response streaming rather than browser-like sessions. Its strongest current fit
+is Python service code that wants a small API, Rust-backed transport execution,
+predictable cancellation, redirect/debug metadata, and observable request
+backpressure without adopting a large client surface.
 
 ## Works Well Today
 
@@ -113,7 +113,7 @@ def send_event(payload: dict) -> None:
         response.raise_for_status()
 ```
 
-### Byte Streaming Downloads
+### Streaming Downloads
 
 Use `stream()` when a response should be consumed incrementally instead of
 collected into `Response.content`.
@@ -138,8 +138,18 @@ with foghttp.Client() as client:
 
 :::
 
-The current streaming API is bytes-first. Text, line iteration, streaming
-decompression, and streaming uploads are planned separately.
+Bytes are the source of truth. Text and line iterators are available as
+incremental helpers over the same stream:
+
+```python
+with foghttp.Client() as client:
+    with client.stream("GET", "https://api.example.com/events") as response:
+        response.raise_for_status()
+        for line in response.iter_lines():
+            process_event(line)
+```
+
+Streaming decompression and streaming uploads are planned separately.
 
 ### Redirect-Aware APIs
 
@@ -269,7 +279,7 @@ except foghttp.HTTPStatusError as exc:
 
 | Need | Status |
 |---|---|
-| Streaming text/line helpers | Not implemented; byte streaming is available |
+| Streaming text/line helpers | Available for sync and async response streams |
 | Streaming decompression | Not implemented; buffered responses support transparent decoding |
 | Streaming uploads | Not implemented |
 | Multipart files | Not implemented |
@@ -282,7 +292,7 @@ except foghttp.HTTPStatusError as exc:
 
 FogHTTP is best today in controlled environments where request bodies are small
 and response bodies either fit in memory or can be consumed through
-context-managed byte streaming. `gzip`, `deflate`, and `br` response bodies are
-decoded for buffered responses, and body limits still apply to the decoded
-bytes. Keep `max_response_body_size` and `max_buffered_response_bytes` finite
-unless unbounded buffering is a deliberate opt-in for a trusted endpoint.
+context-managed bytes/text/line streaming. `gzip`, `deflate`, and `br` response
+bodies are decoded for buffered responses, and body limits still apply to the
+decoded bytes. Keep `max_response_body_size` and `max_buffered_response_bytes`
+finite unless unbounded buffering is a deliberate opt-in for a trusted endpoint.

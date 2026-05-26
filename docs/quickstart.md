@@ -60,9 +60,8 @@ with foghttp.Client() as client:
 ## Streaming Response
 
 Use `Client.stream()` or `AsyncClient.stream()` when the final response body
-should be read incrementally as bytes. The stream is a context-managed response;
-leaving the context before EOF aborts the body and releases the active request
-slot.
+should be read incrementally. The stream is a context-managed response; leaving
+the context before EOF aborts the body and releases the active request slot.
 
 ```python
 import foghttp
@@ -102,8 +101,19 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-See [Response streaming](./streaming.md) for lifecycle, timeout, redirect, and
-current boundary details.
+Streaming responses can be consumed once as bytes, text, or lines:
+
+```python
+with foghttp.Client() as client:
+    with client.stream(GET, "https://httpbin.org/stream/3") as response:
+        response.raise_for_status()
+
+        for line in response.iter_lines(max_line_chars=256 * 1024):
+            print(line)
+```
+
+See [Response streaming](./streaming.md) for lifecycle, timeout, redirect,
+encoding, and current boundary details.
 
 ## Base URL
 

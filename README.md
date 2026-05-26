@@ -89,7 +89,7 @@ async with foghttp.AsyncClient() as client:
 - buffered `Response` with status flags, charset-aware `text`, `json()`,
   `raise_for_status()`, and request metadata
 - transparent `gzip`, `deflate`, and `br` decoding for buffered responses
-- sync and async bytes-first response streaming with explicit
+- sync and async bytes/text/line response streaming with explicit
   context-managed lifecycle
 - prepared `Request` objects with `build_request()` and `send()`
 - case-insensitive `Headers` with repeated values
@@ -128,7 +128,7 @@ async with foghttp.AsyncClient() as client:
 
 FogHTTP is currently focused on controlled HTTP workloads. Buffered responses
 are the broadest supported path; sync and async response streaming are available
-as bytes-first context-managed APIs. Streaming uploads, cookies, auth helpers,
+as bytes/text/line context-managed APIs. Streaming uploads, cookies, auth helpers,
 proxy support, multipart uploads, HTTP/2, automatic `Accept-Encoding`
 negotiation, streaming decompression, strict connection-level pool limits,
 per-request connect timeout reconfiguration, and request-body write timeout
