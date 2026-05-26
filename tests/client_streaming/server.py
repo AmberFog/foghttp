@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 from foghttp.status_codes.success import OK
 
 from .constants import (
+    BROKEN_READY_TAIL_STREAM_PATH,
     EMPTY_STREAM_PATH,
     FIRST_CHUNK,
     GATED_STREAM_PATH,
@@ -149,6 +150,9 @@ async def _write_stream_response(
     if path == SLOW_TAIL_STREAM_PATH:
         await _write_slow_tail_stream(writer=writer, first_chunk_sent=first_chunk_sent)
         return
+    if path == BROKEN_READY_TAIL_STREAM_PATH:
+        await _write_broken_ready_tail_stream(writer=writer, first_chunk_sent=first_chunk_sent)
+        return
     if path == EMPTY_STREAM_PATH:
         writer.write(_raw_response(content_length=0))
         await writer.drain()
@@ -174,6 +178,9 @@ def _write_sync_stream_response(
         return
     if path == SLOW_TAIL_STREAM_PATH:
         _write_sync_slow_tail_stream(writer=writer, first_chunk_sent=first_chunk_sent)
+        return
+    if path == BROKEN_READY_TAIL_STREAM_PATH:
+        _write_sync_broken_ready_tail_stream(writer=writer, first_chunk_sent=first_chunk_sent)
         return
     if path == EMPTY_STREAM_PATH:
         writer.write(_raw_response(content_length=0))
@@ -232,6 +239,18 @@ async def _write_slow_tail_stream(
     await writer.drain()
 
 
+async def _write_broken_ready_tail_stream(
+    *,
+    writer: asyncio.StreamWriter,
+    first_chunk_sent: asyncio.Event,
+) -> None:
+    writer.write(_chunked_response_head())
+    writer.write(_chunk(FIRST_CHUNK))
+    writer.write(_chunk(SECOND_CHUNK))
+    await writer.drain()
+    first_chunk_sent.set()
+
+
 def _write_sync_slow_tail_stream(
     *,
     writer: SyncStreamWriter,
@@ -245,6 +264,18 @@ def _write_sync_slow_tail_stream(
     writer.write(_chunk(SECOND_CHUNK))
     writer.write(_last_chunk())
     writer.flush()
+
+
+def _write_sync_broken_ready_tail_stream(
+    *,
+    writer: SyncStreamWriter,
+    first_chunk_sent: threading.Event,
+) -> None:
+    writer.write(_chunked_response_head())
+    writer.write(_chunk(FIRST_CHUNK))
+    writer.write(_chunk(SECOND_CHUNK))
+    writer.flush()
+    first_chunk_sent.set()
 
 
 def _raw_response(*, content_length: int) -> bytes:

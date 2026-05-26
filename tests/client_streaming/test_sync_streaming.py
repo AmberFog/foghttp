@@ -8,6 +8,7 @@ from foghttp.status_codes.client_error import NOT_FOUND
 from foghttp.status_codes.redirect import FOUND
 from foghttp.status_codes.success import OK
 from tests.client_streaming.constants import (
+    BROKEN_READY_TAIL_STREAM_PATH,
     EMPTY_STREAM_PATH,
     FIRST_CHUNK,
     GATED_STREAM_PATH,
@@ -115,6 +116,27 @@ def test_sync_stream_read_timeout_aborts_body(
             client,
             lambda stats: stats.active_requests == 0 and stats.response_body_aborted == 1,
             message="read timeout should abort the streamed body",
+        )
+
+
+def test_sync_stream_does_not_use_async_ready_frame_coalescing(
+    sync_streaming_server: SyncStreamingServer,
+) -> None:
+    with foghttp.Client() as client:
+        with client.stream(
+            GET,
+            f"{sync_streaming_server.base_url}{BROKEN_READY_TAIL_STREAM_PATH}",
+        ) as response:
+            byte_stream = response.iter_bytes()
+            assert next_sync_stream_chunk(byte_stream) == FIRST_CHUNK
+            assert next_sync_stream_chunk(byte_stream) == SECOND_CHUNK
+            with pytest.raises(foghttp.RequestError):
+                next_sync_stream_chunk(byte_stream)
+
+        wait_for_sync_transport_stats(
+            client,
+            lambda stats: stats.active_requests == 0 and stats.response_body_aborted == 1,
+            message="tail errors after sync stream reads should abort the streamed body",
         )
 
 

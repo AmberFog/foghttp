@@ -8,6 +8,7 @@ from foghttp.status_codes.client_error import NOT_FOUND
 from foghttp.status_codes.redirect import FOUND
 from foghttp.status_codes.success import OK
 from tests.client_streaming.constants import (
+    BROKEN_READY_TAIL_STREAM_PATH,
     EMPTY_STREAM_PATH,
     ENTER_STREAM_TIMEOUT,
     FIRST_CHUNK,
@@ -127,6 +128,28 @@ async def test_stream_read_timeout_aborts_body(
             client,
             lambda stats: stats.active_requests == 0 and stats.response_body_aborted == 1,
             message="read timeout should abort the streamed body",
+        )
+
+
+async def test_stream_coalescing_returns_ready_bytes_before_tail_error(
+    streaming_server: AsyncStreamingServer,
+) -> None:
+    async with foghttp.AsyncClient() as client:
+        async with client.stream(
+            GET,
+            f"{streaming_server.base_url}{BROKEN_READY_TAIL_STREAM_PATH}",
+        ) as response:
+            body = bytearray()
+            with pytest.raises(foghttp.RequestError):
+                async for chunk in response.aiter_bytes():
+                    body.extend(chunk)
+
+            assert bytes(body) == FIRST_CHUNK + SECOND_CHUNK
+
+        await wait_for_async_transport_stats(
+            client,
+            lambda stats: stats.active_requests == 0 and stats.response_body_aborted == 1,
+            message="tail errors after async ready-frame coalescing should abort the streamed body",
         )
 
 
