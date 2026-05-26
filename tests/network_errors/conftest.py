@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from socketserver import BaseRequestHandler, ThreadingTCPServer
 import threading
 from urllib.parse import urlsplit
@@ -55,5 +55,27 @@ def broken_http_server() -> Iterator[str]:
 
 
 @pytest.fixture
-def connection_refused_url(unused_tcp_port: int) -> str:
-    return f"http://127.0.0.1:{unused_tcp_port}"
+def async_connection_refused_url(
+    http_server: str,
+    unused_tcp_port_factory: Callable[[], int],
+) -> str:
+    return _connection_refused_url(unused_tcp_port_factory, http_server)
+
+
+@pytest.fixture
+def sync_connection_refused_url(
+    sync_http_server: str,
+    unused_tcp_port_factory: Callable[[], int],
+) -> str:
+    return _connection_refused_url(unused_tcp_port_factory, sync_http_server)
+
+
+def _connection_refused_url(
+    unused_tcp_port_factory: Callable[[], int],
+    recovery_server: str,
+) -> str:
+    recovery_port = urlsplit(recovery_server).port
+    refused_port = unused_tcp_port_factory()
+    while refused_port == recovery_port:
+        refused_port = unused_tcp_port_factory()
+    return f"http://127.0.0.1:{refused_port}"

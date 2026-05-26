@@ -28,12 +28,12 @@ def test_sync_invalid_url_is_rejected_before_transport() -> None:
 
 
 def test_sync_connection_refused_maps_to_request_error_and_client_recovers(
-    connection_refused_url: str,
+    sync_connection_refused_url: str,
     sync_http_server: str,
 ) -> None:
     with foghttp.Client(timeouts=NETWORK_ERROR_TIMEOUTS) as client:
         with pytest.raises(foghttp.RequestError) as exc_info:
-            client.get(connection_refused_url)
+            client.get(sync_connection_refused_url)
 
         stats_after_error = client.stats()
         response = client.get(sync_http_server)
