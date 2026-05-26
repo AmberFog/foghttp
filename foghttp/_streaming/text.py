@@ -102,52 +102,65 @@ async def aiter_lines(
 @dataclass(slots=True)
 class _LineSplitter:
     max_line_chars: int | None
-    _pending: str = field(default="", init=False)
+    _pending_parts: list[str] = field(default_factory=list, init=False)
+    _pending_chars: int = field(default=0, init=False)
+    _deferred_cr: bool = field(default=False, init=False)
 
     def feed(self, text: str) -> Iterator[str]:
-        if text:
-            self._pending += text
-            yield from self._complete_lines()
+        if not text:
+            return
+
+        text_start = 0
+        if self._deferred_cr:
+            self._deferred_cr = False
+            yield self._take_line()
+            if text.startswith("\n"):
+                text_start = 1
+
+        segment_start = text_start
+        char_index = text_start
+        while char_index < len(text):
+            char = text[char_index]
+            if char == "\n":
+                self._append_segment(text[segment_start:char_index])
+                yield self._take_line()
+                char_index += 1
+                segment_start = char_index
+                continue
+            if char == "\r":
+                self._append_segment(text[segment_start:char_index])
+                next_index = char_index + 1
+                if next_index == len(text):
+                    self._deferred_cr = True
+                    return
+                yield self._take_line()
+                char_index = next_index + 1 if text[next_index] == "\n" else next_index
+                segment_start = char_index
+                continue
+            char_index += 1
+
+        self._append_segment(text[segment_start:])
 
     def flush(self) -> Iterator[str]:
-        yield from self._complete_lines(final=True)
-        if self._pending:
-            yield self._pending
-            self._pending = ""
+        if self._deferred_cr:
+            self._deferred_cr = False
+            yield self._take_line()
+        if self._pending_parts:
+            yield self._take_line()
 
-    def _complete_lines(self, *, final: bool = False) -> Iterator[str]:
-        while self._pending:
-            line_end = _first_line_end(self._pending)
-            if line_end is None:
-                _ensure_max_line_chars(len(self._pending), self.max_line_chars)
-                return
-            _ensure_max_line_chars(line_end, self.max_line_chars)
-            if _line_end_is_deferred_cr(self._pending, line_end, final=final):
-                return
+    def _append_segment(self, segment: str) -> None:
+        if not segment:
+            return
+        next_line_chars = self._pending_chars + len(segment)
+        _ensure_max_line_chars(next_line_chars, self.max_line_chars)
+        self._pending_parts.append(segment)
+        self._pending_chars = next_line_chars
 
-            delimiter_size = _line_delimiter_size(self._pending, line_end)
-            yield self._pending[:line_end]
-            self._pending = self._pending[line_end + delimiter_size :]
-
-
-def _first_line_end(text: str) -> int | None:
-    newline_index = text.find("\n")
-    carriage_return_index = text.find("\r")
-    if newline_index == -1:
-        return None if carriage_return_index == -1 else carriage_return_index
-    if carriage_return_index == -1:
-        return newline_index
-    return min(newline_index, carriage_return_index)
-
-
-def _line_end_is_deferred_cr(text: str, line_end: int, *, final: bool) -> bool:
-    return not final and text[line_end] == "\r" and line_end == len(text) - 1
-
-
-def _line_delimiter_size(text: str, line_end: int) -> int:
-    if text[line_end : line_end + 2] == "\r\n":
-        return 2
-    return 1
+    def _take_line(self) -> str:
+        line = "".join(self._pending_parts)
+        self._pending_parts.clear()
+        self._pending_chars = 0
+        return line
 
 
 def validate_max_line_chars(max_line_chars: int | None) -> int | None:
