@@ -60,6 +60,7 @@ struct StreamStateFields {
     read_timeout_secs: f64,
     origin: String,
     redirect_hop: usize,
+    deferred_body_error: Option<String>,
 }
 
 pub(super) struct StreamReadGuard {
@@ -69,7 +70,8 @@ pub(super) struct StreamReadGuard {
     read_timeout_secs: f64,
     origin: String,
     redirect_hop: usize,
-    coalesce_ready_frames: bool,
+    deferred_body_error: Option<String>,
+    ready_frame_coalescing: ReadyFrameCoalescing,
     disarmed: bool,
 }
 
@@ -82,6 +84,19 @@ enum ReadyBodyFrame {
     Data(Bytes),
     Eof,
     Pending,
+    Error(String),
+}
+
+enum ReadyFrameDrain {
+    Eof,
+    Error(String),
+    Stopped,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum ReadyFrameCoalescing {
+    Disabled,
+    Enabled,
 }
 
 enum StreamReadNotification {
@@ -111,6 +126,7 @@ impl StreamState {
                 read_timeout_secs: parts.read_timeout_secs,
                 origin: parts.origin,
                 redirect_hop: parts.redirect_hop,
+                deferred_body_error: None,
             }),
         });
         parts.registry.insert(stream_id, &inner);
@@ -119,7 +135,7 @@ impl StreamState {
 
     pub(super) fn start_read(
         &self,
-        coalesce_ready_frames: bool,
+        ready_frame_coalescing: ReadyFrameCoalescing,
     ) -> PyResult<Option<StreamReadGuard>> {
         let mut fields = self.fields();
         if fields.finished {
@@ -129,6 +145,20 @@ impl StreamState {
             return Err(FogHttpError::new_err(
                 "stream response body read is already in progress",
             ));
+        }
+        if let Some(deferred_body_error) = fields.deferred_body_error.take() {
+            fields.read_in_progress = true;
+            return Ok(Some(StreamReadGuard {
+                state: self.clone(),
+                body: None,
+                read_timeout: fields.read_timeout,
+                read_timeout_secs: fields.read_timeout_secs,
+                origin: fields.origin.clone(),
+                redirect_hop: fields.redirect_hop,
+                deferred_body_error: Some(deferred_body_error),
+                ready_frame_coalescing,
+                disarmed: false,
+            }));
         }
 
         let Some(body) = fields.body.take() else {
@@ -143,7 +173,8 @@ impl StreamState {
             read_timeout_secs: fields.read_timeout_secs,
             origin: fields.origin.clone(),
             redirect_hop: fields.redirect_hop,
-            coalesce_ready_frames,
+            deferred_body_error: None,
+            ready_frame_coalescing,
             disarmed: false,
         }))
     }
@@ -176,12 +207,13 @@ impl StreamState {
         fields.read_in_progress = false;
     }
 
-    fn complete_read(&self, body: Incoming) {
+    fn complete_read(&self, body: Incoming, deferred_body_error: Option<String>) {
         let mut fields = self.fields();
         if fields.finished {
             return;
         }
         fields.body = Some(body);
+        fields.deferred_body_error = deferred_body_error;
     }
 
     fn finish_success_from_read(&self) {
@@ -286,6 +318,10 @@ impl StreamStateFields {
 
 impl StreamReadGuard {
     pub(super) async fn read_next_chunk(mut self) -> PyResult<Option<Vec<u8>>> {
+        if let Some(error) = self.deferred_body_error.take() {
+            return Err(FogHttpError::new_err(error));
+        }
+
         loop {
             let read_timeout = self.read_timeout;
             let read_timeout_secs = self.read_timeout_secs;
@@ -312,50 +348,47 @@ impl StreamReadGuard {
             };
 
             let mut chunk = data.to_vec();
-            let reached_eof =
-                self.coalesce_ready_frames && self.drain_ready_data_frames(&mut chunk)?;
-            if reached_eof {
-                self.finish_success_from_read();
-            } else {
-                self.finish_chunk();
+            if self.ready_frame_coalescing.is_enabled() {
+                match self.drain_ready_data_frames(&mut chunk) {
+                    ReadyFrameDrain::Eof => {
+                        self.finish_success_from_read();
+                        return Ok(Some(chunk));
+                    }
+                    ReadyFrameDrain::Error(error) => {
+                        self.finish_chunk_with_pending_error(error);
+                        return Ok(Some(chunk));
+                    }
+                    ReadyFrameDrain::Stopped => {}
+                }
             }
+            self.finish_chunk();
             return Ok(Some(chunk));
         }
     }
 
-    fn drain_ready_data_frames(&mut self, chunk: &mut Vec<u8>) -> PyResult<bool> {
-        let mut coalesced_frames = 1;
-        while chunk.len() < READY_FRAME_COALESCE_TARGET_BYTES
-            && coalesced_frames < MAX_READY_FRAME_COALESCE_COUNT
-        {
-            match self.poll_ready_body_frame()? {
-                ReadyBodyFrame::Data(data) => {
-                    chunk.extend_from_slice(&data);
-                    coalesced_frames += 1;
-                }
-                ReadyBodyFrame::Eof => return Ok(true),
-                ReadyBodyFrame::Pending => return Ok(false),
-            }
-        }
-        Ok(false)
+    fn drain_ready_data_frames(&mut self, chunk: &mut Vec<u8>) -> ReadyFrameDrain {
+        drain_ready_data_frames_with(chunk, || self.poll_ready_body_frame())
     }
 
-    fn poll_ready_body_frame(&mut self) -> PyResult<ReadyBodyFrame> {
+    fn poll_ready_body_frame(&mut self) -> ReadyBodyFrame {
         let waker = Waker::noop();
         let mut context = Context::from_waker(waker);
         loop {
             let frame = match Pin::new(self.body_mut()).poll_frame(&mut context) {
                 Poll::Ready(frame) => frame,
-                Poll::Pending => return Ok(ReadyBodyFrame::Pending),
+                Poll::Pending => return ReadyBodyFrame::Pending,
             };
             let Some(frame) = frame else {
-                return Ok(ReadyBodyFrame::Eof);
+                return ReadyBodyFrame::Eof;
             };
-            let frame = frame.map_err(|err| FogHttpError::new_err(err.to_string()))?;
+            let frame = match frame {
+                Ok(frame) => frame,
+                Err(err) => return ReadyBodyFrame::Error(err.to_string()),
+            };
             let Ok(data) = frame.into_data() else {
                 continue;
             };
-            return Ok(ReadyBodyFrame::Data(data));
+            return ReadyBodyFrame::Data(data);
         }
     }
 
@@ -370,7 +403,16 @@ impl StreamReadGuard {
             .body
             .take()
             .expect("stream read guard always owns a response body");
-        self.state.complete_read(body);
+        self.state.complete_read(body, None);
+        self.disarmed = true;
+    }
+
+    fn finish_chunk_with_pending_error(mut self, error: String) {
+        let body = self
+            .body
+            .take()
+            .expect("stream read guard always owns a response body");
+        self.state.complete_read(body, Some(error));
         self.disarmed = true;
     }
 
@@ -381,6 +423,12 @@ impl StreamReadGuard {
     }
 }
 
+impl ReadyFrameCoalescing {
+    fn is_enabled(self) -> bool {
+        matches!(self, Self::Enabled)
+    }
+}
+
 impl Drop for StreamReadGuard {
     fn drop(&mut self) {
         if !self.disarmed {
@@ -388,6 +436,27 @@ impl Drop for StreamReadGuard {
             self.state.abort_from_read();
         }
     }
+}
+
+fn drain_ready_data_frames_with(
+    chunk: &mut Vec<u8>,
+    mut poll_ready_body_frame: impl FnMut() -> ReadyBodyFrame,
+) -> ReadyFrameDrain {
+    let mut coalesced_frames = 1;
+    while chunk.len() < READY_FRAME_COALESCE_TARGET_BYTES
+        && coalesced_frames < MAX_READY_FRAME_COALESCE_COUNT
+    {
+        match poll_ready_body_frame() {
+            ReadyBodyFrame::Data(data) => {
+                chunk.extend_from_slice(&data);
+                coalesced_frames += 1;
+            }
+            ReadyBodyFrame::Eof => return ReadyFrameDrain::Eof,
+            ReadyBodyFrame::Error(error) => return ReadyFrameDrain::Error(error),
+            ReadyBodyFrame::Pending => return ReadyFrameDrain::Stopped,
+        }
+    }
+    ReadyFrameDrain::Stopped
 }
 
 #[derive(Clone, Copy)]

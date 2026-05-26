@@ -1,4 +1,5 @@
 __all__ = (
+    "BROKEN_READY_TAIL_STREAM_PATH",
     "EMPTY_STREAM_PATH",
     "ENTER_STREAM_TIMEOUT",
     "FIRST_CHUNK",
@@ -16,6 +17,7 @@ __all__ = (
 import foghttp
 
 
+BROKEN_READY_TAIL_STREAM_PATH = "/stream/broken-ready-tail"
 EMPTY_STREAM_PATH = "/stream/empty"
 ENTER_STREAM_TIMEOUT = 1.0
 FIRST_CHUNK = b"first-stream-chunk"

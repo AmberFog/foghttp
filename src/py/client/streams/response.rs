@@ -1,6 +1,6 @@
 use super::callback::PythonStreamReadCallback;
 use super::parts::RawStreamResponseParts;
-use super::state::{ActiveStreamRead, StreamState, StreamStateParts};
+use super::state::{ActiveStreamRead, ReadyFrameCoalescing, StreamState, StreamStateParts};
 use crate::core::headers::HeaderPairs;
 use crate::errors::FogHttpError;
 use crate::messages::STREAM_RESPONSE_READ_ABORTED;
@@ -126,7 +126,7 @@ impl RawStreamResponse {
 
     fn next_chunk(&self, py: Python<'_>) -> PyResult<Option<Vec<u8>>> {
         let state = self.state.clone();
-        let Some(read_guard) = state.start_read(false)? else {
+        let Some(read_guard) = state.start_read(ReadyFrameCoalescing::Disabled)? else {
             return Ok(None);
         };
         let (result_sender, result_receiver) = oneshot::channel();
@@ -158,7 +158,7 @@ impl RawStreamResponse {
             .unbind();
         let future = loop_.bind(py).call_method0("create_future")?.unbind();
         let state = self.state.clone();
-        let Some(read_guard) = state.start_read(true)? else {
+        let Some(read_guard) = state.start_read(ReadyFrameCoalescing::Enabled)? else {
             future.bind(py).call_method1("set_result", (py.None(),))?;
             return Ok(future);
         };

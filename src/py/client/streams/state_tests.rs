@@ -1,9 +1,17 @@
-use super::{ActiveStreamRead, StreamState, StreamStateFields, StreamStateInner};
+use super::{
+    drain_ready_data_frames_with, ActiveStreamRead, ReadyBodyFrame, ReadyFrameDrain, StreamState,
+    StreamStateFields, StreamStateInner,
+};
 use crate::core::metrics::{Metrics, ResponseBodyLifecycleOutcome};
 use crate::py::client::async_requests::RequestCompletion;
+use crate::py::client::streams::constants::{
+    MAX_READY_FRAME_COALESCE_COUNT, READY_FRAME_COALESCE_TARGET_BYTES,
+};
 use crate::py::client::streams::StreamRegistry;
+use bytes::Bytes;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, Once};
 use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
@@ -41,6 +49,7 @@ fn finished_read_state() -> StreamState {
                 read_timeout_secs: TEST_READ_TIMEOUT_SECS,
                 origin: TEST_ORIGIN.to_string(),
                 redirect_hop: 0,
+                deferred_body_error: None,
             }),
         }),
     }
@@ -94,4 +103,74 @@ fn rejected_read_task_cancels_python_future_instead_of_reporting_eof() {
         .block_on(handle)
         .expect_err("rejected stream read task should be aborted");
     assert!(join_error.is_cancelled());
+}
+
+#[test]
+fn ready_frame_coalescing_merges_ready_data_until_eof() {
+    let mut chunk = b"first".to_vec();
+    let mut frames = VecDeque::from([
+        ReadyBodyFrame::Data(Bytes::from_static(b"second")),
+        ReadyBodyFrame::Data(Bytes::from_static(b"third")),
+        ReadyBodyFrame::Eof,
+    ]);
+
+    let outcome = drain_ready_data_frames_with(&mut chunk, || frames.pop_front().unwrap());
+
+    assert!(matches!(outcome, ReadyFrameDrain::Eof));
+    assert_eq!(chunk, b"firstsecondthird");
+}
+
+#[test]
+fn ready_frame_coalescing_stops_on_pending_without_consuming_later_frames() {
+    let mut chunk = b"first".to_vec();
+    let mut frames = VecDeque::from([
+        ReadyBodyFrame::Data(Bytes::from_static(b"second")),
+        ReadyBodyFrame::Pending,
+        ReadyBodyFrame::Data(Bytes::from_static(b"third")),
+    ]);
+
+    let outcome = drain_ready_data_frames_with(&mut chunk, || frames.pop_front().unwrap());
+
+    assert!(matches!(outcome, ReadyFrameDrain::Stopped));
+    assert_eq!(chunk, b"firstsecond");
+    assert!(matches!(frames.pop_front(), Some(ReadyBodyFrame::Data(_))));
+}
+
+#[test]
+fn ready_frame_coalescing_returns_collected_data_before_deferred_error() {
+    let mut chunk = b"first".to_vec();
+    let mut frames = VecDeque::from([
+        ReadyBodyFrame::Data(Bytes::from_static(b"second")),
+        ReadyBodyFrame::Error("broken body".to_string()),
+    ]);
+
+    let outcome = drain_ready_data_frames_with(&mut chunk, || frames.pop_front().unwrap());
+
+    assert!(matches!(outcome, ReadyFrameDrain::Error(error) if error == "broken body"));
+    assert_eq!(chunk, b"firstsecond");
+}
+
+#[test]
+fn ready_frame_coalescing_respects_count_and_byte_targets() {
+    let mut chunk = Vec::new();
+    let mut poll_count = 0;
+    let outcome = drain_ready_data_frames_with(&mut chunk, || {
+        poll_count += 1;
+        ReadyBodyFrame::Data(Bytes::from_static(b"x"))
+    });
+
+    assert!(matches!(outcome, ReadyFrameDrain::Stopped));
+    assert_eq!(poll_count, MAX_READY_FRAME_COALESCE_COUNT - 1);
+    assert_eq!(chunk.len(), MAX_READY_FRAME_COALESCE_COUNT - 1);
+
+    let mut chunk = vec![b'a'; READY_FRAME_COALESCE_TARGET_BYTES - 1];
+    let mut poll_count = 0;
+    let outcome = drain_ready_data_frames_with(&mut chunk, || {
+        poll_count += 1;
+        ReadyBodyFrame::Data(Bytes::from_static(b"xy"))
+    });
+
+    assert!(matches!(outcome, ReadyFrameDrain::Stopped));
+    assert_eq!(poll_count, 1);
+    assert_eq!(chunk.len(), READY_FRAME_COALESCE_TARGET_BYTES + 1);
 }
