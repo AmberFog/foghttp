@@ -79,20 +79,20 @@ def sync_blocking_http_server() -> Iterator[BlockingSyncHTTPServer]:
 def sync_client_factory(
     monkeypatch: pytest.MonkeyPatch,
     raw_client_factory: RawClientFactory,
-) -> Iterator[type[foghttp.Client]]:
+) -> type[foghttp.Client]:
     client_core_module = importlib.import_module("foghttp._client.core")
     monkeypatch.setattr(client_core_module, "create_raw_client", raw_client_factory.create)
-    yield foghttp.Client
+    return foghttp.Client
 
 
 @pytest.fixture
 def async_client_factory(
     monkeypatch: pytest.MonkeyPatch,
     raw_client_factory: RawClientFactory,
-) -> Iterator[type[foghttp.AsyncClient]]:
+) -> type[foghttp.AsyncClient]:
     client_core_module = importlib.import_module("foghttp._client.core")
     monkeypatch.setattr(client_core_module, "create_raw_client", raw_client_factory.create)
-    yield foghttp.AsyncClient
+    return foghttp.AsyncClient
 
 
 @pytest.fixture

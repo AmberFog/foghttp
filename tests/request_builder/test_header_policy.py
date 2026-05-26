@@ -23,7 +23,7 @@ def test_build_request_rejects_transport_managed_headers(
     faker: Faker,
     header_name: str,
 ) -> None:
-    with foghttp.Client() as client, pytest.raises(ValueError) as exc_info:
+    with foghttp.Client() as client, pytest.raises(ValueError, match="managed by FogHTTP transport") as exc_info:
         client.build_request(
             GET,
             faker.url(),
@@ -42,7 +42,7 @@ def test_build_request_rejects_transport_managed_repeated_header(faker: Faker) -
         ],
     )
 
-    with foghttp.Client() as client, pytest.raises(ValueError) as exc_info:
+    with foghttp.Client() as client, pytest.raises(ValueError, match="managed by FogHTTP transport") as exc_info:
         client.build_request(GET, faker.url(), headers=headers)
 
     assert "content-length" in str(exc_info.value)

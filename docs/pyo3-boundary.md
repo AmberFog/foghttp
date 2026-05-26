@@ -61,7 +61,7 @@ transport state, check:
 
 ## Current Audit Scope
 
-The 0.4.0 boundary audit checked these paths:
+The current boundary audit checked these paths:
 
 - `RawClient.request()` and `RawClient.request_stream()` release the GIL around
   synchronous `runtime.block_on(...)` waits.

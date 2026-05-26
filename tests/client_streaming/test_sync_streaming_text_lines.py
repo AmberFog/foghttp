@@ -13,6 +13,7 @@ from tests.client_streaming.constants import (
     TEXT_LINES_STREAM_PATH,
 )
 from tests.client_streaming.server import SyncStreamingServer
+from tests.client_streaming.stream_readers import append_sync_stream_items, fail_on_sync_stream_items
 from tests.support.transport_stats import wait_for_sync_transport_stats
 
 
@@ -119,8 +120,7 @@ def test_sync_stream_iter_text_preserves_text_before_tail_error(
         ) as response,
         pytest.raises(foghttp.RequestError),
     ):
-        for text in response.iter_text():
-            collected_text.append(text)  # noqa: PERF402 - preserve partial text before error
+        append_sync_stream_items(response.iter_text(), collected_text)
 
     assert "".join(collected_text) == (FIRST_CHUNK + SECOND_CHUNK).decode()
 
@@ -136,5 +136,7 @@ def test_sync_stream_iter_lines_does_not_flush_partial_line_after_error(
         ) as response,
         pytest.raises(foghttp.RequestError),
     ):
-        for line in response.iter_lines():
-            pytest.fail(f"partial line should not be flushed before stream error: {line!r}")
+        fail_on_sync_stream_items(
+            response.iter_lines(),
+            "partial line should not be flushed before stream error: {item!r}",
+        )

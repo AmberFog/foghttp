@@ -171,11 +171,11 @@ async def test_async_slow_body_total_timeout_recovers(
 
 @pytest.mark.parametrize(
     "fault_path",
-    (
+    [
         pytest.param(ABRUPT_BEFORE_HEADERS_PATH, id="abrupt-before-headers"),
         pytest.param(ABRUPT_DURING_BODY_PATH, id="abrupt-during-body"),
         pytest.param(INCOMPLETE_BODY_PATH, id="incomplete-body"),
-    ),
+    ],
 )
 async def test_async_network_fault_recovers_next_request(
     fault_injection_server: FaultInjectionServer,
@@ -275,10 +275,10 @@ async def test_async_partial_body_connection_is_not_reused(
 
 @pytest.mark.parametrize(
     "size_segment",
-    (
+    [
         pytest.param(INVALID_SIZE_SEGMENT, id="not-an-int-size"),
         pytest.param(NEGATIVE_SIZE_SEGMENT, id="negative-size"),
-    ),
+    ],
 )
 async def test_async_invalid_delayed_eof_size_returns_not_found(
     fault_injection_server: FaultInjectionServer,

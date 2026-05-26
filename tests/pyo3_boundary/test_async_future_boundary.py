@@ -2,7 +2,6 @@ import asyncio
 from typing import Any
 
 import foghttp
-from foghttp.methods import GET
 from foghttp.status_codes.success import OK
 from tests.client_streaming.constants import GATED_STREAM_PATH
 from tests.client_streaming.server import start_async_streaming_server
@@ -45,7 +44,13 @@ async def test_async_completion_and_cancellation_race_has_single_future_winner()
 
     responses = [result for result in results if isinstance(result, foghttp.Response)]
     cancellations = [result for result in results if isinstance(result, asyncio.CancelledError)]
+    unexpected_results = [
+        result for result in results if not isinstance(result, (asyncio.CancelledError, foghttp.Response))
+    ]
 
+    if unexpected_results:
+        msg = f"unexpected async boundary results: {unexpected_results!r}"
+        raise AssertionError(msg)
     assert responses
     assert cancellations
     assert all(response.status_code == OK for response in responses)

@@ -28,11 +28,11 @@ from .constants import (
 
 @pytest.mark.parametrize(
     ("body_size", "body_limit"),
-    (
+    [
         pytest.param(EMPTY_BODY_SIZE, EMPTY_BODY_SIZE, id="empty-body"),
         pytest.param(BODY_BELOW_LIMIT_SIZE, BODY_LIMIT, id="below-limit"),
         pytest.param(BODY_LIMIT, BODY_LIMIT, id="at-limit"),
-    ),
+    ],
 )
 def test_sync_buffered_response_body_within_limit(
     sync_http_server: str,
@@ -124,10 +124,10 @@ def test_sync_total_timeout_applies_to_slow_response_body(
 
 @pytest.mark.parametrize(
     "body_path",
-    (
+    [
         pytest.param(SLOW_BODY_PATH, id="slow-first-body-frame"),
         pytest.param(INCOMPLETE_CHUNKED_BODY_PATH, id="stalled-chunked-body"),
-    ),
+    ],
 )
 def test_sync_read_timeout_applies_to_stalled_response_body(
     sync_http_server: str,
@@ -200,10 +200,10 @@ def test_sync_buffered_response_body_limit_error_without_known_size_releases_req
 
 @pytest.mark.parametrize(
     "size_segment",
-    (
+    [
         pytest.param(INVALID_BODY_SIZE_SEGMENT, id="not-an-int-size"),
         pytest.param(NEGATIVE_BODY_SIZE_SEGMENT, id="negative-size"),
-    ),
+    ],
 )
 def test_sync_invalid_delayed_eof_size_falls_through_without_crashing_server(
     sync_http_server: str,

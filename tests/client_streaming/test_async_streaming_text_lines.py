@@ -13,6 +13,7 @@ from tests.client_streaming.constants import (
     TEXT_LINES_STREAM_PATH,
 )
 from tests.client_streaming.server import AsyncStreamingServer
+from tests.client_streaming.stream_readers import append_stream_items, fail_on_stream_items
 from tests.support.transport_stats import wait_for_async_transport_stats
 
 
@@ -119,8 +120,7 @@ async def test_stream_aiter_text_preserves_text_before_tail_error(
         ) as response,
     ):
         with pytest.raises(foghttp.RequestError):
-            async for text in response.aiter_text():
-                collected_text.append(text)  # noqa: PERF401 - preserve partial text before error
+            await append_stream_items(response.aiter_text(), collected_text)
 
     assert "".join(collected_text) == (FIRST_CHUNK + SECOND_CHUNK).decode()
 
@@ -136,5 +136,7 @@ async def test_stream_aiter_lines_does_not_flush_partial_line_after_error(
         ) as response,
     ):
         with pytest.raises(foghttp.RequestError):
-            async for line in response.aiter_lines():
-                pytest.fail(f"partial line should not be flushed before stream error: {line!r}")
+            await fail_on_stream_items(
+                response.aiter_lines(),
+                "partial line should not be flushed before stream error: {item!r}",
+            )

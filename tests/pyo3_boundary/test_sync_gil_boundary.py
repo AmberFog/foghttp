@@ -1,4 +1,3 @@
-from concurrent.futures import ThreadPoolExecutor
 import threading
 import time
 
@@ -14,6 +13,7 @@ from .constants import (
     WAIT_TIMEOUT,
 )
 from .gil_progress import assert_python_thread_progresses
+from .thread_worker import run_in_daemon_thread
 
 
 def test_sync_buffered_request_releases_gil_while_waiting_for_body(
@@ -24,8 +24,7 @@ def test_sync_buffered_request_releases_gil_while_waiting_for_body(
             response = client.get(f"{sync_streaming_server.base_url}{GATED_STREAM_PATH}")
         return response.content
 
-    executor = ThreadPoolExecutor(max_workers=1)
-    request_future = executor.submit(send_buffered_request)
+    request_result = run_in_daemon_thread(send_buffered_request)
     try:
         if not sync_streaming_server.first_chunk_sent.wait(timeout=WAIT_TIMEOUT):
             msg = "sync server did not send the first chunk"
@@ -33,15 +32,14 @@ def test_sync_buffered_request_releases_gil_while_waiting_for_body(
 
         time.sleep(GIL_BOUNDARY_SETTLE_DELAY)
         assert_python_thread_progresses(duration=GIL_PROGRESS_WINDOW)
-        if request_future.done():
+        if request_result.done():
             msg = "buffered request finished before the gated response tail was released"
             raise AssertionError(msg)
 
         sync_streaming_server.release_tail.set()
-        response_body = request_future.result(timeout=THREAD_JOIN_TIMEOUT)
+        response_body = request_result.result(timeout=THREAD_JOIN_TIMEOUT)
     finally:
         sync_streaming_server.release_tail.set()
-        executor.shutdown(wait=False, cancel_futures=True)
 
     assert response_body == FIRST_CHUNK + SECOND_CHUNK
 
@@ -62,8 +60,7 @@ def test_sync_stream_body_read_releases_gil_while_waiting_for_chunk(
             second_chunk = next(byte_stream)
             return [first_chunk, second_chunk]
 
-    executor = ThreadPoolExecutor(max_workers=1)
-    stream_future = executor.submit(read_stream_body)
+    stream_result = run_in_daemon_thread(read_stream_body)
     try:
         if not sync_streaming_server.first_chunk_sent.wait(timeout=WAIT_TIMEOUT):
             msg = "sync server did not send the first chunk"
@@ -74,14 +71,13 @@ def test_sync_stream_body_read_releases_gil_while_waiting_for_chunk(
 
         time.sleep(GIL_BOUNDARY_SETTLE_DELAY)
         assert_python_thread_progresses(duration=GIL_PROGRESS_WINDOW)
-        if stream_future.done():
+        if stream_result.done():
             msg = "stream reader finished before the gated response tail was released"
             raise AssertionError(msg)
 
         sync_streaming_server.release_tail.set()
-        stream_chunks = stream_future.result(timeout=THREAD_JOIN_TIMEOUT)
+        stream_chunks = stream_result.result(timeout=THREAD_JOIN_TIMEOUT)
     finally:
         sync_streaming_server.release_tail.set()
-        executor.shutdown(wait=False, cancel_futures=True)
 
     assert stream_chunks == [FIRST_CHUNK, SECOND_CHUNK]

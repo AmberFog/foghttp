@@ -165,11 +165,11 @@ def test_sync_slow_body_total_timeout_recovers(
 
 @pytest.mark.parametrize(
     "fault_path",
-    (
+    [
         pytest.param(ABRUPT_BEFORE_HEADERS_PATH, id="abrupt-before-headers"),
         pytest.param(ABRUPT_DURING_BODY_PATH, id="abrupt-during-body"),
         pytest.param(INCOMPLETE_BODY_PATH, id="incomplete-body"),
-    ),
+    ],
 )
 def test_sync_network_fault_recovers_next_request(
     fault_injection_server: FaultInjectionServer,
@@ -243,10 +243,10 @@ def test_sync_delayed_eof_body_limit_failure_releases_resources(
 
 @pytest.mark.parametrize(
     "size_segment",
-    (
+    [
         pytest.param(INVALID_SIZE_SEGMENT, id="not-an-int-size"),
         pytest.param(NEGATIVE_SIZE_SEGMENT, id="negative-size"),
-    ),
+    ],
 )
 def test_sync_invalid_delayed_eof_size_returns_not_found(
     fault_injection_server: FaultInjectionServer,

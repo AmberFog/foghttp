@@ -22,6 +22,7 @@ from tests.client_streaming.constants import (
 from tests.client_streaming.server import AsyncStreamingServer
 from tests.client_streaming.stream_readers import (
     collect_stream_chunks,
+    extend_stream_bytes,
     next_stream_chunk,
     wait_for_pending_chunk_task,
 )
@@ -142,8 +143,7 @@ async def test_stream_coalescing_returns_ready_bytes_before_tail_error(
         ) as response:
             body = bytearray()
             with pytest.raises(foghttp.RequestError):
-                async for chunk in response.aiter_bytes():
-                    body.extend(chunk)
+                await extend_stream_bytes(response.aiter_bytes(), body)
 
             assert bytes(body) == FIRST_CHUNK + SECOND_CHUNK
 
