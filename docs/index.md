@@ -71,6 +71,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - [Redirects](./redirects.md)
 - [Limitations](./limitations.md)
 - [Benchmarks](./benchmarks.md)
+- [PyO3 boundary notes](./pyo3-boundary.md)
 
 ## Good Fit Today
 
