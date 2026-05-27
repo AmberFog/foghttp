@@ -5,7 +5,7 @@ from ...messages import transport_managed_header_error
 
 
 TRANSPORT_MANAGED_REQUEST_HEADERS = frozenset(
-    {
+    (
         "connection",
         "content-length",
         "host",
@@ -15,7 +15,7 @@ TRANSPORT_MANAGED_REQUEST_HEADERS = frozenset(
         "trailer",
         "transfer-encoding",
         "upgrade",
-    },
+    ),
 )
 
 

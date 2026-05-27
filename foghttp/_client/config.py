@@ -31,8 +31,8 @@ class ClientConfig:
     ) -> "ClientConfig":
         validate_client_options(options)
         return cls(
-            limits=options.limits if options.limits is not None else _DEFAULT_LIMITS,
-            timeouts=options.timeouts if options.timeouts is not None else _DEFAULT_TIMEOUTS,
+            limits=_DEFAULT_LIMITS if options.limits is None else options.limits,
+            timeouts=_DEFAULT_TIMEOUTS if options.timeouts is None else options.timeouts,
             follow_redirects=options.follow_redirects,
             max_redirects=options.max_redirects,
             trust_env=options.trust_env,

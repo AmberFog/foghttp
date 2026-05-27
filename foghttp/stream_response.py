@@ -35,6 +35,9 @@ from .request_info import RequestInfo
 from .response import Response
 
 
+_DEFAULT_STREAM_TEXT_ERRORS = "replace"
+
+
 @dataclass(slots=True)
 class _StreamResponseBase:
     status_code: int
@@ -134,7 +137,7 @@ class StreamResponse(_StreamResponseBase):
         self,
         *,
         encoding: str | None = None,
-        errors: str = "replace",
+        errors: str = _DEFAULT_STREAM_TEXT_ERRORS,
     ) -> Iterator[str]:
         self._start_body_iteration()
         return iter_text_chunks(
@@ -148,7 +151,7 @@ class StreamResponse(_StreamResponseBase):
         self,
         *,
         encoding: str | None = None,
-        errors: str = "replace",
+        errors: str = _DEFAULT_STREAM_TEXT_ERRORS,
         max_line_chars: int | None = DEFAULT_MAX_STREAM_LINE_CHARS,
     ) -> Iterator[str]:
         max_line_chars = validate_max_line_chars(max_line_chars)
@@ -205,7 +208,7 @@ class AsyncStreamResponse(_StreamResponseBase):
         self,
         *,
         encoding: str | None = None,
-        errors: str = "replace",
+        errors: str = _DEFAULT_STREAM_TEXT_ERRORS,
     ) -> AsyncIterator[str]:
         self._start_body_iteration()
         return aiter_text_chunks(
@@ -219,7 +222,7 @@ class AsyncStreamResponse(_StreamResponseBase):
         self,
         *,
         encoding: str | None = None,
-        errors: str = "replace",
+        errors: str = _DEFAULT_STREAM_TEXT_ERRORS,
         max_line_chars: int | None = DEFAULT_MAX_STREAM_LINE_CHARS,
     ) -> AsyncIterator[str]:
         max_line_chars = validate_max_line_chars(max_line_chars)

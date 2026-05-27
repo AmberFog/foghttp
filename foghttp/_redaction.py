@@ -10,7 +10,7 @@ from urllib.parse import unquote_plus, urlsplit, urlunsplit
 REDACTED_VALUE = "<redacted>"
 
 SENSITIVE_HEADER_NAMES = frozenset(
-    {
+    (
         "authorization",
         "cookie",
         "proxy_authorization",
@@ -18,11 +18,11 @@ SENSITIVE_HEADER_NAMES = frozenset(
         "x_api_key",
         "x_auth_token",
         "x_csrf_token",
-    },
+    ),
 )
 
 SENSITIVE_QUERY_PARAM_NAMES = frozenset(
-    {
+    (
         "access_token",
         "api_key",
         "apikey",
@@ -40,7 +40,7 @@ SENSITIVE_QUERY_PARAM_NAMES = frozenset(
         "session_id",
         "sessionid",
         "token",
-    },
+    ),
 )
 
 
