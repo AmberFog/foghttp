@@ -98,6 +98,11 @@ with client.stream(GET, url) as response:
         process_text(text)
 ```
 
+Text and line iterators decode the streamed bytes as delivered after HTTP
+transfer framing. They do not transparently decompress `gzip`, `deflate`, or
+`br` response bodies yet. Use buffered responses for transparent decompression,
+or request an uncompressed response when streaming text or lines.
+
 Line streaming strips line endings and handles `LF`, `CRLF`, empty lines, and a
 final line without a trailing newline. Because a line iterator must buffer text
 until the next delimiter, FogHTTP limits one streamed line to `1048576`
