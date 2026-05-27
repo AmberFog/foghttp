@@ -10,6 +10,7 @@ __all__ = (
 import codecs
 from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass, field
+import re
 from typing import Protocol, runtime_checkable
 
 from ..errors import ResponseError
@@ -17,6 +18,7 @@ from ..errors import ResponseError
 
 DEFAULT_MAX_STREAM_LINE_CHARS = 1024 * 1024
 MAX_LINE_CHARS_INVALID = "max_line_chars must be greater than 0 or None"
+_LINE_BREAK_PATTERN = re.compile(r"\r\n|\r|\n")
 
 
 @runtime_checkable
@@ -118,28 +120,14 @@ class _LineSplitter:
                 text_start = 1
 
         segment_start = text_start
-        char_index = text_start
-        while char_index < len(text):
-            char = text[char_index]
-            if char == "\n":
-                self._append_segment(text[segment_start:char_index])
-                yield self._take_line()
-                char_index += 1
-                segment_start = char_index
-                continue
-            if char == "\r":
-                self._append_segment(text[segment_start:char_index])
-                next_index = char_index + 1
-                if next_index == len(text):
-                    self._deferred_cr = True
-                    return
-                yield self._take_line()
-                char_index = next_index + 1 if text[next_index] == "\n" else next_index
-                segment_start = char_index
-                continue
-            char_index += 1
-
-        self._append_segment(text[segment_start:])
+        scan_end = len(text) - 1 if text.endswith("\r") else len(text)
+        for line_break in _LINE_BREAK_PATTERN.finditer(text, text_start, scan_end):
+            self._append_segment(text[segment_start : line_break.start()])
+            yield self._take_line()
+            segment_start = line_break.end()
+        self._append_segment(text[segment_start:scan_end])
+        if scan_end < len(text):
+            self._deferred_cr = True
 
     def flush(self) -> Iterator[str]:
         if self._deferred_cr:
