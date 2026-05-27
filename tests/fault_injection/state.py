@@ -9,6 +9,7 @@ from .models import FaultInjectionSnapshot
 class FaultInjectionState:
     def __init__(self) -> None:
         self._condition = threading.Condition()
+        self._delayed_peer_close_released = threading.Event()
         self._next_connection_id = 0
         self._requests_by_connection: dict[int, int] = {}
         self._requests_by_path: dict[str, int] = {}
@@ -42,6 +43,12 @@ class FaultInjectionState:
                     msg = f"{path}: expected at least {expected} requests, got {actual}"
                     raise AssertionError(msg)
                 self._condition.wait(timeout=remaining)
+
+    def wait_for_delayed_peer_close_release(self) -> None:
+        self._delayed_peer_close_released.wait()
+
+    def release_delayed_peer_close(self) -> None:
+        self._delayed_peer_close_released.set()
 
     def snapshot(self) -> FaultInjectionSnapshot:
         with self._condition:

@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 from foghttp.status_codes.client_error import BAD_REQUEST, NOT_FOUND
 
+from .constants import DELAYED_PEER_CLOSE_BEFORE_HEADERS_PATH
 from .models import FaultInjectionSnapshot
 from .protocol import parse_request, read_request_head, request_closes_connection
 from .responses import write_empty_response, write_fault_response
@@ -34,7 +35,7 @@ class FaultInjectionServer:
 
     @property
     def url(self) -> str:
-        host, port = self.server.server_address
+        host, port = cast("tuple[str, int]", self.server.server_address)
         return f"http://{host}:{port}"
 
     def snapshot(self) -> FaultInjectionSnapshot:
@@ -49,7 +50,11 @@ class FaultInjectionServer:
     ) -> None:
         self.server.state.wait_for_path_hits(path, expected, timeout=timeout)
 
+    def release_delayed_peer_close(self) -> None:
+        self.server.state.release_delayed_peer_close()
+
     def close(self) -> None:
+        self.release_delayed_peer_close()
         self.server.shutdown()
         self.server.server_close()
         self.thread.join(timeout=SERVER_JOIN_TIMEOUT)
@@ -97,6 +102,10 @@ class FaultInjectionHTTPHandler(BaseRequestHandler):
             path = urlsplit(request.target).path
             request_index = server.state.record_request(connection_id, path)
             close_after_response = request_closes_connection(request.headers)
+            if path == DELAYED_PEER_CLOSE_BEFORE_HEADERS_PATH:
+                server.state.wait_for_delayed_peer_close_release()
+                return
+
             try:
                 result = write_fault_response(
                     connection,
