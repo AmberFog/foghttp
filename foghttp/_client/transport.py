@@ -9,12 +9,13 @@ from collections.abc import Callable
 import time
 from typing import TYPE_CHECKING, Protocol, TypeAlias
 
-from .._request_body import request_body
+from .._request_body import RequestBody, request_body
 from ..request import Request
 from ..response import Response
 from ..stream_response import AsyncStreamResponse, StreamResponse
 from ..timeouts import Timeouts
-from .raw import (
+from .raw.requests import (
+    RawRequestOptions,
     send_raw_request,
     send_raw_request_async,
     send_raw_stream_request,
@@ -49,12 +50,7 @@ class RawSyncTransport:
         body = request_body(request)
         raw = send_raw_request(
             raw_client=self._raw_client_provider(),
-            method=request.method,
-            url=request.url,
-            headers=request.headers.multi_items(),
-            body=body.content,
-            body_replayable=body.replayable,
-            timeouts=timeouts,
+            request=_raw_request_options(request, body, timeouts),
         )
         return response_from_raw(raw=raw, started=started)
 
@@ -63,12 +59,7 @@ class RawSyncTransport:
         body = request_body(request)
         raw = send_raw_stream_request(
             raw_client=self._raw_client_provider(),
-            method=request.method,
-            url=request.url,
-            headers=request.headers.multi_items(),
-            body=body.content,
-            body_replayable=body.replayable,
-            timeouts=timeouts,
+            request=_raw_request_options(request, body, timeouts),
         )
         return stream_response_from_raw(raw=raw, started=started)
 
@@ -82,12 +73,7 @@ class RawAsyncTransport:
         body = request_body(request)
         raw = await send_raw_request_async(
             raw_client=self._raw_client_provider(),
-            method=request.method,
-            url=request.url,
-            headers=request.headers.multi_items(),
-            body=body.content,
-            body_replayable=body.replayable,
-            timeouts=timeouts,
+            request=_raw_request_options(request, body, timeouts),
         )
         return response_from_raw(raw=raw, started=started)
 
@@ -96,11 +82,21 @@ class RawAsyncTransport:
         body = request_body(request)
         raw = await send_raw_stream_request_async(
             raw_client=self._raw_client_provider(),
-            method=request.method,
-            url=request.url,
-            headers=request.headers.multi_items(),
-            body=body.content,
-            body_replayable=body.replayable,
-            timeouts=timeouts,
+            request=_raw_request_options(request, body, timeouts),
         )
         return async_stream_response_from_raw(raw=raw, started=started)
+
+
+def _raw_request_options(
+    request: Request,
+    body: RequestBody,
+    timeouts: Timeouts,
+) -> RawRequestOptions:
+    return RawRequestOptions(
+        method=request.method,
+        url=request.url,
+        headers=request.headers.multi_items(),
+        body=body.content,
+        body_replayable=body.replayable,
+        timeouts=timeouts,
+    )

@@ -6,7 +6,7 @@ from types import TracebackType
 
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
-from ._client.raw import raise_public_raw_error
+from ._client.raw.errors import raise_public_raw_error
 from ._redaction import redact_url
 from ._response.encoding import response_encoding
 from ._response.status import (
@@ -16,14 +16,14 @@ from ._response.status import (
     is_server_error_status,
     is_success_status,
 )
-from ._streaming.text import (
+from ._streaming.text.async_chunks import aiter_text_chunks
+from ._streaming.text.lines import (
     DEFAULT_MAX_STREAM_LINE_CHARS,
     aiter_lines,
-    aiter_text_chunks,
     iter_lines,
-    iter_text_chunks,
     validate_max_line_chars,
 )
+from ._streaming.text.sync_chunks import iter_text_chunks
 from .errors import HTTPStatusError, LifecycleError
 from .headers import Headers
 from .messages import (

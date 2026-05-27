@@ -3,6 +3,7 @@ from typing import NoReturn
 from faker import Faker
 import pytest
 
+from foghttp._client.raw.requests import RawRequestOptions
 from foghttp._client.transport import RawAsyncTransport, RawSyncTransport
 from foghttp._request_body import request_body
 from foghttp.methods import GET, POST
@@ -86,15 +87,16 @@ def test_raw_sync_transport_sends_prepared_request_through_raw_client(
     result = RawSyncTransport(lambda: raw_client).send(request, timeouts=timeouts)
 
     assert result is response
-    assert captured_request == {
-        "raw_client": raw_client,
-        "method": request.method,
-        "url": request.url,
-        "headers": request.headers.multi_items(),
-        "body": body.content,
-        "body_replayable": body.replayable,
-        "timeouts": timeouts,
-    }
+    assert captured_request["raw_client"] is raw_client
+    raw_request = captured_request["request"]
+    assert raw_request == RawRequestOptions(
+        method=request.method,
+        url=request.url,
+        headers=request.headers.multi_items(),
+        body=body.content,
+        body_replayable=body.replayable,
+        timeouts=timeouts,
+    )
 
 
 async def test_raw_async_transport_sends_prepared_request_through_raw_client(
@@ -124,15 +126,16 @@ async def test_raw_async_transport_sends_prepared_request_through_raw_client(
     result = await RawAsyncTransport(lambda: raw_client).send(request, timeouts=timeouts)
 
     assert result is response
-    assert captured_request == {
-        "raw_client": raw_client,
-        "method": request.method,
-        "url": request.url,
-        "headers": request.headers.multi_items(),
-        "body": body.content,
-        "body_replayable": body.replayable,
-        "timeouts": timeouts,
-    }
+    assert captured_request["raw_client"] is raw_client
+    raw_request = captured_request["request"]
+    assert raw_request == RawRequestOptions(
+        method=request.method,
+        url=request.url,
+        headers=request.headers.multi_items(),
+        body=body.content,
+        body_replayable=body.replayable,
+        timeouts=timeouts,
+    )
 
 
 def _fail_create_raw_client(**_kwargs: object) -> NoReturn:

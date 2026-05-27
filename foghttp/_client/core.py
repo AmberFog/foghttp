@@ -16,7 +16,7 @@ from ..transport_stats import TransportStats
 from ..types import QueryParams, RequestData
 from ..url import URL
 from .config import ClientConfig
-from .raw import create_raw_client
+from .raw.lifecycle import create_raw_client
 from .request_builder.builder import RequestBuilder
 from .request_builder.defaults import DEFAULT_REQUEST_BUILD_DEFAULTS
 from .request_builder.merge import RequestMergeContract
@@ -151,15 +151,7 @@ class ClientCore:
         return raw_client
 
     def _create_raw_client(self) -> "_foghttp.RawClient":
-        return create_raw_client(
-            limits=self._config.limits,
-            timeouts=self._config.timeouts,
-            follow_redirects=self._config.follow_redirects,
-            max_redirects=self._config.max_redirects,
-            runtime_workers=self._config.runtime_workers,
-            trust_env=self._config.trust_env,
-            tls=self._config.tls,
-        )
+        return create_raw_client(config=self._config)
 
     def _request_timeouts(self, timeout: Timeouts | None) -> Timeouts:
         return timeout or self._config.timeouts

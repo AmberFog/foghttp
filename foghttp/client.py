@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING, Any
 from ._client.config import ClientConfig
 from ._client.constants import DEFAULT_MAX_REDIRECTS
 from ._client.core import ClientCore
-from ._client.raw import close_raw_client
+from ._client.options import ClientOptions
+from ._client.raw.lifecycle import close_raw_client
 from ._client.request_builder.header_policy import validate_safe_request_headers
 from ._client.stream_context import StreamContext
 from ._client.transport import RawSyncTransport, SyncTransport
@@ -48,18 +49,20 @@ class Client(ClientCore):
     ) -> None:
         super().__init__(
             config=ClientConfig.from_options(
-                base_url=base_url,
-                headers=headers,
-                params=params,
-                limits=limits,
-                timeouts=timeouts,
-                http_versions=http_versions,
-                follow_redirects=follow_redirects,
-                max_redirects=max_redirects,
-                cookies=cookies,
-                trust_env=trust_env,
-                tls=tls,
-                runtime_workers=runtime_workers,
+                ClientOptions(
+                    base_url=base_url,
+                    headers=headers,
+                    params=params,
+                    limits=limits,
+                    timeouts=timeouts,
+                    http_versions=http_versions,
+                    follow_redirects=follow_redirects,
+                    max_redirects=max_redirects,
+                    cookies=cookies,
+                    trust_env=trust_env,
+                    tls=tls,
+                    runtime_workers=runtime_workers,
+                ),
             ),
         )
         self._lifecycle_condition = threading.Condition(self._client_lock)

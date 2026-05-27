@@ -2,8 +2,11 @@ from faker import Faker
 import pytest
 
 from foghttp import _foghttp
+from foghttp._client.config import ClientConfig
 from foghttp._client.constants import DEFAULT_MAX_REDIRECTS
-from foghttp._client.raw import create_raw_client, send_raw_request, send_raw_request_async
+from foghttp._client.options import ClientOptions
+from foghttp._client.raw.lifecycle import create_raw_client
+from foghttp._client.raw.requests import RawRequestOptions, send_raw_request, send_raw_request_async
 from foghttp.errors import (
     PoolTimeout,
     ReadTimeout,
@@ -24,6 +27,36 @@ READ_TIMEOUT_RAW_ARGS = (
     "https://example.com",
     0,
 )
+
+
+def _default_client_config() -> ClientConfig:
+    return ClientConfig.from_options(
+        ClientOptions(
+            base_url=None,
+            headers=None,
+            params=None,
+            limits=Limits(),
+            timeouts=Timeouts(),
+            http_versions=None,
+            follow_redirects=False,
+            max_redirects=DEFAULT_MAX_REDIRECTS,
+            cookies=False,
+            trust_env=False,
+            tls=None,
+            runtime_workers=1,
+        ),
+    )
+
+
+def _raw_request(url: str) -> RawRequestOptions:
+    return RawRequestOptions(
+        method=GET,
+        url=url,
+        headers=[],
+        body=None,
+        body_replayable=True,
+        timeouts=Timeouts(),
+    )
 
 
 class TimeoutRawClient:
@@ -84,27 +117,14 @@ def test_raw_client_constructor_error_maps_to_value_error(
     monkeypatch.setattr(_foghttp, "RawClient", fail_raw_client)
 
     with pytest.raises(ValueError, match="runtime failed"):
-        create_raw_client(
-            limits=Limits(),
-            timeouts=Timeouts(),
-            follow_redirects=False,
-            max_redirects=DEFAULT_MAX_REDIRECTS,
-            runtime_workers=1,
-            trust_env=False,
-            tls=None,
-        )
+        create_raw_client(config=_default_client_config())
 
 
 def test_sync_raw_timeout_maps_to_public_timeout(faker: Faker) -> None:
     with pytest.raises(TimeoutError, match="request timed out"):
         send_raw_request(
             raw_client=TimeoutRawClient(),
-            method=GET,
-            url=faker.url(),
-            headers=[],
-            body=None,
-            body_replayable=True,
-            timeouts=Timeouts(),
+            request=_raw_request(faker.url()),
         )
 
 
@@ -112,12 +132,7 @@ async def test_async_raw_timeout_maps_to_public_timeout(faker: Faker) -> None:
     with pytest.raises(TimeoutError, match="request timed out"):
         await send_raw_request_async(
             raw_client=TimeoutRawClient(),
-            method=GET,
-            url=faker.url(),
-            headers=[],
-            body=None,
-            body_replayable=True,
-            timeouts=Timeouts(),
+            request=_raw_request(faker.url()),
         )
 
 
@@ -125,12 +140,7 @@ def test_sync_raw_read_timeout_maps_to_public_read_timeout(faker: Faker) -> None
     with pytest.raises(ReadTimeout, match="response body read timeout expired"):
         send_raw_request(
             raw_client=ReadTimeoutRawClient(),
-            method=GET,
-            url=faker.url(),
-            headers=[],
-            body=None,
-            body_replayable=True,
-            timeouts=Timeouts(),
+            request=_raw_request(faker.url()),
         )
 
 
@@ -138,12 +148,7 @@ async def test_async_raw_read_timeout_maps_to_public_read_timeout(faker: Faker) 
     with pytest.raises(ReadTimeout, match="response body read timeout expired"):
         await send_raw_request_async(
             raw_client=ReadTimeoutRawClient(),
-            method=GET,
-            url=faker.url(),
-            headers=[],
-            body=None,
-            body_replayable=True,
-            timeouts=Timeouts(),
+            request=_raw_request(faker.url()),
         )
 
 
@@ -151,12 +156,7 @@ def test_sync_raw_pool_timeout_maps_to_public_pool_timeout(faker: Faker) -> None
     with pytest.raises(PoolTimeout, match="request acquire timeout expired"):
         send_raw_request(
             raw_client=PoolTimeoutRawClient(),
-            method=GET,
-            url=faker.url(),
-            headers=[],
-            body=None,
-            body_replayable=True,
-            timeouts=Timeouts(),
+            request=_raw_request(faker.url()),
         )
 
 
@@ -164,12 +164,7 @@ async def test_async_raw_pool_timeout_maps_to_public_pool_timeout(faker: Faker) 
     with pytest.raises(PoolTimeout, match="request acquire timeout expired"):
         await send_raw_request_async(
             raw_client=PoolTimeoutRawClient(),
-            method=GET,
-            url=faker.url(),
-            headers=[],
-            body=None,
-            body_replayable=True,
-            timeouts=Timeouts(),
+            request=_raw_request(faker.url()),
         )
 
 
@@ -177,12 +172,7 @@ def test_sync_raw_body_limit_error_maps_to_public_response_error(faker: Faker) -
     with pytest.raises(ResponseBodyTooLargeError, match="max_response_body_size"):
         send_raw_request(
             raw_client=BodyTooLargeRawClient(),
-            method=GET,
-            url=faker.url(),
-            headers=[],
-            body=None,
-            body_replayable=True,
-            timeouts=Timeouts(),
+            request=_raw_request(faker.url()),
         )
 
 
@@ -190,12 +180,7 @@ async def test_async_raw_body_limit_error_maps_to_public_response_error(faker: F
     with pytest.raises(ResponseBodyTooLargeError, match="max_response_body_size"):
         await send_raw_request_async(
             raw_client=BodyTooLargeRawClient(),
-            method=GET,
-            url=faker.url(),
-            headers=[],
-            body=None,
-            body_replayable=True,
-            timeouts=Timeouts(),
+            request=_raw_request(faker.url()),
         )
 
 
@@ -203,12 +188,7 @@ def test_sync_raw_body_budget_error_maps_to_public_response_error(faker: Faker) 
     with pytest.raises(ResponseBodyBudgetExceededError, match="max_buffered_response_bytes"):
         send_raw_request(
             raw_client=BodyBudgetExceededRawClient(),
-            method=GET,
-            url=faker.url(),
-            headers=[],
-            body=None,
-            body_replayable=True,
-            timeouts=Timeouts(),
+            request=_raw_request(faker.url()),
         )
 
 
@@ -216,10 +196,5 @@ async def test_async_raw_body_budget_error_maps_to_public_response_error(faker: 
     with pytest.raises(ResponseBodyBudgetExceededError, match="max_buffered_response_bytes"):
         await send_raw_request_async(
             raw_client=BodyBudgetExceededRawClient(),
-            method=GET,
-            url=faker.url(),
-            headers=[],
-            body=None,
-            body_replayable=True,
-            timeouts=Timeouts(),
+            request=_raw_request(faker.url()),
         )
