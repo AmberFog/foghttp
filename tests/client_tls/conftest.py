@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from .certificates import TLSCertificateBundle, create_tls_certificate_bundle
+from .handshake_server import TLSHandshakeStallServer, start_tls_handshake_stall_server
 from .models import TLSServer
 from .server import start_tls_server
 
@@ -23,4 +24,10 @@ def unrelated_tls_certificates(tmp_path: Path) -> TLSCertificateBundle:
 @pytest.fixture
 def tls_http_server(tls_certificates: TLSCertificateBundle) -> Iterator[TLSServer]:
     with start_tls_server(tls_certificates) as server:
+        yield server
+
+
+@pytest.fixture
+def tls_handshake_stall_server() -> Iterator[TLSHandshakeStallServer]:
+    with start_tls_handshake_stall_server() as server:
         yield server
