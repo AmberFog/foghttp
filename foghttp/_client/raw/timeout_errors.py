@@ -1,14 +1,10 @@
 __all__ = ("timeout_error_from_raw",)
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Self, cast
+from typing import Self
 
 from ...errors import TimeoutError
-from ...timeout_diagnostics import TimeoutDiagnostic
-
-
-if TYPE_CHECKING:
-    from ...timeout_diagnostics import TimeoutPhase
+from ...timeout_diagnostics import TimeoutDiagnostic, TimeoutPhase
 
 
 _TIMEOUT_DIAGNOSTIC_ARG_COUNT = 6
@@ -31,14 +27,15 @@ class _RawTimeoutDiagnostic:
         return cls(*args)
 
     def public_diagnostic(self) -> TimeoutDiagnostic | None:
+        phase = _coerce_timeout_phase(self.phase)
         elapsed = _coerce_timeout_float(self.elapsed)
         timeout = _coerce_timeout_float(self.timeout)
         redirect_hop = _coerce_timeout_int(self.redirect_hop)
-        if elapsed is None or timeout is None or redirect_hop is None:
+        if phase is None or elapsed is None or timeout is None or redirect_hop is None:
             return None
 
         return TimeoutDiagnostic(
-            phase=cast("TimeoutPhase", str(self.phase)),
+            phase=phase,
             elapsed=elapsed,
             timeout=timeout,
             origin=str(self.origin),
@@ -71,13 +68,24 @@ def _raw_exception_message(exc: BaseException) -> str:
     return str(exc.args[0])
 
 
+def _coerce_timeout_phase(value: object) -> TimeoutPhase | None:
+    match str(value):
+        case "pool_acquire":
+            return "pool_acquire"
+        case "response_headers":
+            return "response_headers"
+        case "response_body":
+            return "response_body"
+    return None
+
+
 def _coerce_timeout_float(value: object) -> float | None:
     if not isinstance(value, str | bytes | bytearray | int | float):
         return None
 
     try:
         return float(value)
-    except ValueError:
+    except (TypeError, ValueError):
         return None
 
 
@@ -87,5 +95,5 @@ def _coerce_timeout_int(value: object) -> int | None:
 
     try:
         return int(value)
-    except ValueError:
+    except (TypeError, ValueError):
         return None

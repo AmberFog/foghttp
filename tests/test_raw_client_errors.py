@@ -29,6 +29,32 @@ READ_TIMEOUT_RAW_ARGS = (
 )
 
 
+INVALID_PHASE_RAW_ARGS = (
+    "response body read timeout expired",
+    "unknown",
+    0.1,
+    0.1,
+    "https://example.com",
+    0,
+)
+BYTEARRAY_ELAPSED_RAW_ARGS = (
+    "response body read timeout expired",
+    "response_body",
+    bytearray(b"not-a-float"),
+    0.1,
+    "https://example.com",
+    0,
+)
+BYTEARRAY_REDIRECT_HOP_RAW_ARGS = (
+    "response body read timeout expired",
+    "response_body",
+    0.1,
+    0.1,
+    "https://example.com",
+    bytearray(b"not-an-int"),
+)
+
+
 def _default_client_config() -> ClientConfig:
     return ClientConfig.from_options(
         ClientOptions(
@@ -75,6 +101,14 @@ class ReadTimeoutRawClient:
 
     async def request_async(self, *_args: object) -> object:
         raise _foghttp.FogHttpReadTimeoutError(READ_TIMEOUT_RAW_ARGS)
+
+
+class MalformedReadTimeoutRawClient:
+    def __init__(self, raw_args: tuple[object, ...]) -> None:
+        self._raw_args = raw_args
+
+    def request(self, *_args: object) -> object:
+        raise _foghttp.FogHttpReadTimeoutError(self._raw_args)
 
 
 class PoolTimeoutRawClient:
@@ -150,6 +184,27 @@ async def test_async_raw_read_timeout_maps_to_public_read_timeout(faker: Faker) 
             raw_client=ReadTimeoutRawClient(),
             request=_raw_request(faker.url()),
         )
+
+
+@pytest.mark.parametrize(
+    "raw_args",
+    [
+        INVALID_PHASE_RAW_ARGS,
+        BYTEARRAY_ELAPSED_RAW_ARGS,
+        BYTEARRAY_REDIRECT_HOP_RAW_ARGS,
+    ],
+)
+def test_malformed_raw_timeout_diagnostic_does_not_escape_mapping(
+    faker: Faker,
+    raw_args: tuple[object, ...],
+) -> None:
+    with pytest.raises(ReadTimeout, match="response body read timeout expired") as exc_info:
+        send_raw_request(
+            raw_client=MalformedReadTimeoutRawClient(raw_args),
+            request=_raw_request(faker.url()),
+        )
+
+    assert exc_info.value.diagnostic is None
 
 
 def test_sync_raw_pool_timeout_maps_to_public_pool_timeout(faker: Faker) -> None:
