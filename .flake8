@@ -1,5 +1,8 @@
 [flake8]
 max-line-length = 120
+max-line-complexity = 16
+max-cognitive-score = 14
+max-try-body-length = 4
 format = wemake
 select = WPS
 
@@ -8,55 +11,21 @@ select = WPS
 # architecture and complexity smell-check layer.
 ignore =
     WPS110,
-    WPS115,
-    WPS123,
-    WPS201,
-    WPS204,
-    WPS213,
     WPS214,
-    WPS217,
-    WPS221,
     WPS226,
-    WPS229,
-    WPS231,
-    WPS235,
-    WPS236,
     WPS237,
     WPS300,
     WPS301,
-    WPS305,
-    WPS306,
     WPS332,
-    WPS337,
     WPS338,
-    WPS347,
     WPS358,
-    WPS404,
     WPS410,
-    WPS421,
-    WPS430,
     WPS432,
-    WPS433,
-    WPS440,
-    WPS441,
-    WPS442,
-    WPS450,
-    WPS458,
     WPS459,
-    WPS462,
-    WPS463,
-    WPS472,
-    WPS476,
     WPS501,
     WPS504,
     WPS527,
-    WPS529,
-    WPS600,
-    WPS602,
     WPS603,
-    WPS604,
-    WPS605,
-    WPS609
 
 exclude =
     .git,
@@ -71,10 +40,12 @@ exclude =
 per-file-ignores =
     # FogHTTP uses public __init__.py modules as explicit import/__all__ API vitrines.
     **/__init__.py: WPS412
-    # Public Python-first API intentionally exposes ergonomic keyword parameters.
-    foghttp/client.py: WPS211
-    foghttp/async_client.py: WPS211
-    foghttp/_client/core.py: WPS211
+    # Public/API orchestration modules naturally collect more dependencies and ergonomic kwargs.
+    foghttp/__init__.py: WPS201, WPS412
+    foghttp/client.py: WPS201, WPS211
+    foghttp/async_client.py: WPS201, WPS211
+    foghttp/_client/core.py: WPS201, WPS211
+    foghttp/stream_response.py: WPS201
     # Explicit guard/mapping functions are clearer as direct raises than as indirection tables.
     foghttp/_client/options.py: WPS238
     foghttp/_client/raw/errors.py: WPS238

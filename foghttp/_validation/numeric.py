@@ -6,13 +6,14 @@ __all__ = (
 )
 
 import math
+from typing import TypeGuard
 
 
 MAX_NUMERIC_OPTION = 2**31 - 1
 
 
 def validate_non_negative_int(name: str, value: int) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0 or value > MAX_NUMERIC_OPTION:
+    if not _is_valid_int_option(value):
         msg = f"{name} must be an integer between 0 and {MAX_NUMERIC_OPTION}"
         raise ValueError(msg)
     return value
@@ -36,3 +37,11 @@ def validate_non_negative_seconds(name: str, value: float) -> float:
 
 def _seconds_error(name: str) -> str:
     return f"{name} must be a finite number between 0 and {MAX_NUMERIC_OPTION}"
+
+
+def _is_valid_int_option(value: object) -> bool:
+    return _is_int_option(value) and 0 <= value <= MAX_NUMERIC_OPTION
+
+
+def _is_int_option(value: object) -> TypeGuard[int]:
+    return not isinstance(value, bool) and isinstance(value, int)

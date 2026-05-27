@@ -38,20 +38,26 @@ __all__ = (
 
 from .async_client import AsyncClient
 from .client import Client
-from .errors import (
-    ClientClosedError,
-    ConnectTimeout,
+from .errors.base import (
     FogHTTPError,
-    HTTPStatusError,
-    LifecycleError,
-    PoolTimeout,
-    ReadTimeout,
     RequestError,
+)
+from .errors.lifecycle import (
+    ClientClosedError,
+    LifecycleError,
+    UnclosedClientError,
+)
+from .errors.response import (
+    HTTPStatusError,
     ResponseBodyBudgetExceededError,
     ResponseBodyTooLargeError,
     ResponseError,
+)
+from .errors.timeout import (
+    ConnectTimeout,
+    PoolTimeout,
+    ReadTimeout,
     TimeoutError,
-    UnclosedClientError,
 )
 from .headers import Headers
 from .limits import Limits
