@@ -26,26 +26,32 @@ class RequestMergeContract:
         return str(request_url.with_params(params))
 
     def headers(self, headers: HeaderSource) -> Headers:
-        default_headers = Headers(self.defaults.headers)
         request_headers = Headers(headers)
-        override_names = {name.lower() for name, _value in request_headers.multi_items()}
         merged = Headers(
-            self._default_headers_without_overrides(default_headers, override_names),
+            self._default_headers_without_overrides(
+                override_names=self._header_names(request_headers),
+            ),
         )
-        for name, value in request_headers.multi_items():
-            merged.add(name, value)
+        self._add_request_headers(merged, request_headers)
         return merged
+
+    def _header_names(self, headers: Headers) -> set[str]:
+        return {name.lower() for name, _value in headers.multi_items()}
 
     def _default_headers_without_overrides(
         self,
-        headers: Headers,
+        *,
         override_names: set[str],
     ) -> HeaderPairs:
         items = []
-        for name, value in headers.multi_items():
+        for name, value in Headers(self.defaults.headers).multi_items():
             if name.lower() not in override_names:
                 items.append((name, value))
         return items
+
+    def _add_request_headers(self, target: Headers, source: Headers) -> None:
+        for name, value in source.multi_items():
+            target.add(name, value)
 
     def _request_url(self, url: str | URL) -> URL:
         if self.defaults.base_url is None:

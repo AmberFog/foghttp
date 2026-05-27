@@ -12,8 +12,10 @@ import time
 from typing import TYPE_CHECKING
 
 import foghttp
+from foghttp._client.config import ClientConfig
 from foghttp._client.constants import DEFAULT_MAX_REDIRECTS
-from foghttp._client.raw import create_raw_client
+from foghttp._client.options import ClientOptions
+from foghttp._client.raw.lifecycle import create_raw_client
 from foghttp.limits import Limits
 from foghttp.timeouts import Timeouts
 
@@ -57,15 +59,23 @@ class RawClientFactory:
 
 
 def create_test_raw_client() -> "_foghttp.RawClient":
-    return create_raw_client(
-        limits=Limits(),
-        timeouts=Timeouts(),
-        follow_redirects=False,
-        max_redirects=DEFAULT_MAX_REDIRECTS,
-        runtime_workers=1,
-        trust_env=False,
-        tls=None,
+    config = ClientConfig.from_options(
+        ClientOptions(
+            base_url=None,
+            headers=None,
+            params=None,
+            limits=Limits(),
+            timeouts=Timeouts(),
+            http_versions=None,
+            follow_redirects=False,
+            max_redirects=DEFAULT_MAX_REDIRECTS,
+            cookies=False,
+            trust_env=False,
+            tls=None,
+            runtime_workers=1,
+        ),
     )
+    return create_raw_client(config=config)
 
 
 def wait_until_sync_client_closed(client: foghttp.Client) -> None:

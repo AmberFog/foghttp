@@ -6,7 +6,8 @@ from typing import Any
 from ._client.config import ClientConfig
 from ._client.constants import DEFAULT_MAX_REDIRECTS
 from ._client.core import ClientCore
-from ._client.raw import close_raw_client
+from ._client.options import ClientOptions
+from ._client.raw.lifecycle import close_raw_client
 from ._client.request_builder.header_policy import validate_safe_request_headers
 from ._client.stream_context import AsyncStreamContext
 from ._client.transport import AsyncTransport, RawAsyncTransport
@@ -43,18 +44,20 @@ class AsyncClient(ClientCore):
     ) -> None:
         super().__init__(
             config=ClientConfig.from_options(
-                base_url=base_url,
-                headers=headers,
-                params=params,
-                limits=limits,
-                timeouts=timeouts,
-                http_versions=http_versions,
-                follow_redirects=follow_redirects,
-                max_redirects=max_redirects,
-                cookies=cookies,
-                trust_env=trust_env,
-                tls=tls,
-                runtime_workers=runtime_workers,
+                ClientOptions(
+                    base_url=base_url,
+                    headers=headers,
+                    params=params,
+                    limits=limits,
+                    timeouts=timeouts,
+                    http_versions=http_versions,
+                    follow_redirects=follow_redirects,
+                    max_redirects=max_redirects,
+                    cookies=cookies,
+                    trust_env=trust_env,
+                    tls=tls,
+                    runtime_workers=runtime_workers,
+                ),
             ),
         )
         self._transport = self._create_transport()
@@ -80,9 +83,6 @@ class AsyncClient(ClientCore):
                 self._client = None
         if raw_client is not None:
             close_raw_client(raw_client)
-
-    def _create_transport(self) -> AsyncTransport:
-        return RawAsyncTransport(self._raw_client)
 
     async def request(
         self,
@@ -137,17 +137,6 @@ class AsyncClient(ClientCore):
             json=json,
         )
         return AsyncStreamContext(self._send_stream(request, timeout=timeout))
-
-    async def _send_stream(
-        self,
-        request: Request,
-        *,
-        timeout: Timeouts | None = None,
-    ) -> AsyncStreamResponse:
-        self._ensure_open()
-        validate_safe_request_headers(request.headers)
-        timeouts = self._request_timeouts(timeout)
-        return await self._transport.stream(request, timeouts=timeouts)
 
     async def get(
         self,
@@ -280,3 +269,17 @@ class AsyncClient(ClientCore):
             json=json,
             timeout=timeout,
         )
+
+    def _create_transport(self) -> AsyncTransport:
+        return RawAsyncTransport(self._raw_client)
+
+    async def _send_stream(
+        self,
+        request: Request,
+        *,
+        timeout: Timeouts | None = None,
+    ) -> AsyncStreamResponse:
+        self._ensure_open()
+        validate_safe_request_headers(request.headers)
+        timeouts = self._request_timeouts(timeout)
+        return await self._transport.stream(request, timeouts=timeouts)

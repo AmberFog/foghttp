@@ -16,18 +16,12 @@ __all__ = (
     "UnclosedClientError",
 )
 
-from .types import (
-    ClientClosedError,
-    ConnectTimeout,
-    FogHTTPError,
+from .base import FogHTTPError, RequestError
+from .lifecycle import ClientClosedError, LifecycleError, UnclosedClientError
+from .response import (
     HTTPStatusError,
-    LifecycleError,
-    PoolTimeout,
-    ReadTimeout,
-    RequestError,
     ResponseBodyBudgetExceededError,
     ResponseBodyTooLargeError,
     ResponseError,
-    TimeoutError,
-    UnclosedClientError,
 )
+from .timeout import ConnectTimeout, PoolTimeout, ReadTimeout, TimeoutError

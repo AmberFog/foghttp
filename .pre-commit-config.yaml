@@ -49,6 +49,14 @@ repos:
       - id: ruff-check
         args: [--fix, --unsafe-fixes]
 
+  - repo: https://github.com/pycqa/flake8
+    rev: "7.3.0"
+    hooks:
+      - id: flake8
+        additional_dependencies:
+          - wemake-python-styleguide==1.6.2
+        files: ^foghttp/.*\.py$
+
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v2.1.0
     hooks:

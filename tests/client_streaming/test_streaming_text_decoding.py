@@ -3,7 +3,9 @@ from collections.abc import AsyncIterator
 import pytest
 
 import foghttp
-from foghttp._streaming.text import aiter_lines, aiter_text_chunks, iter_lines, iter_text_chunks
+from foghttp._streaming.text.async_chunks import aiter_text_chunks
+from foghttp._streaming.text.lines import aiter_lines, iter_lines
+from foghttp._streaming.text.sync_chunks import iter_text_chunks
 from tests.client_streaming.text_decoding_sources import (
     AsyncClosableByteIterator,
     ClosableByteIterator,

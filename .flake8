@@ -1,0 +1,52 @@
+[flake8]
+max-line-length = 120
+max-line-complexity = 16
+max-cognitive-score = 14
+max-try-body-length = 4
+format = wemake
+select = WPS
+
+# Ruff owns formatting, imports, pyflakes/pycodestyle, pydocstyle, security,
+# pytest rules and docs/examples print policy. Wemake is used as an additional
+# architecture and complexity smell-check layer.
+ignore =
+    WPS110,
+    WPS300,
+    WPS301,
+    WPS332,
+    WPS410,
+
+exclude =
+    .git,
+    .mypy_cache,
+    .pytest_cache,
+    .ruff_cache,
+    .venv,
+    build,
+    dist,
+    target,
+
+per-file-ignores =
+    # FogHTTP uses public __init__.py modules as explicit import/__all__ API vitrines.
+    **/__init__.py: WPS412
+    # Public/API orchestration modules naturally collect more dependencies and ergonomic kwargs.
+    foghttp/__init__.py: WPS201, WPS412
+    foghttp/client.py: WPS201, WPS211, WPS214, WPS501
+    foghttp/async_client.py: WPS201, WPS211, WPS214
+    # ClientCore maps Rust snapshots to TypedDict literal keys and owns the unclosed-client warning.
+    foghttp/_client/core.py: WPS201, WPS211, WPS214, WPS226, WPS603
+    # Public domain objects intentionally expose mapping/response/url-style APIs.
+    foghttp/headers.py: WPS214, WPS237, WPS603
+    foghttp/request.py: WPS237
+    foghttp/request_info.py: WPS237
+    foghttp/response.py: WPS214, WPS237
+    foghttp/stream_response.py: WPS201, WPS214, WPS237, WPS501
+    foghttp/url.py: WPS214, WPS237
+    # Native resource adapters intentionally use try/finally-only cleanup paths.
+    foghttp/_client/response.py: WPS501
+    foghttp/_streaming/text/async_chunks.py: WPS501
+    foghttp/_streaming/text/lines.py: WPS501
+    foghttp/_streaming/text/sync_chunks.py: WPS501
+    # Explicit guard/mapping functions are clearer as direct raises than as indirection tables.
+    foghttp/_client/options.py: WPS238
+    foghttp/_client/raw/errors.py: WPS238

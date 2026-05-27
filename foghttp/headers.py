@@ -7,7 +7,9 @@ from ._redaction import redact_header_value
 
 
 HeaderPairs: TypeAlias = list[tuple[str, str]]
-HeaderSource: TypeAlias = Mapping[str, str] | Iterable[tuple[str, str]] | None
+HeaderMappingSource: TypeAlias = Mapping[str, str]
+HeaderIterableSource: TypeAlias = Iterable[tuple[str, str]]
+HeaderSource: TypeAlias = HeaderMappingSource | HeaderIterableSource | None
 
 
 class Headers(MutableMapping[str, str]):

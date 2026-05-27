@@ -6,7 +6,7 @@ from types import TracebackType
 
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
-from ._client.raw import raise_public_raw_error
+from ._client.raw.errors import raise_public_raw_error
 from ._redaction import redact_url
 from ._response.encoding import response_encoding
 from ._response.status import (
@@ -16,14 +16,14 @@ from ._response.status import (
     is_server_error_status,
     is_success_status,
 )
-from ._streaming.text import (
+from ._streaming.text.async_chunks import aiter_text_chunks
+from ._streaming.text.lines import (
     DEFAULT_MAX_STREAM_LINE_CHARS,
     aiter_lines,
-    aiter_text_chunks,
     iter_lines,
-    iter_text_chunks,
     validate_max_line_chars,
 )
+from ._streaming.text.sync_chunks import iter_text_chunks
 from .errors import HTTPStatusError, LifecycleError
 from .headers import Headers
 from .messages import (
@@ -33,6 +33,9 @@ from .messages import (
 )
 from .request_info import RequestInfo
 from .response import Response
+
+
+_DEFAULT_STREAM_TEXT_ERRORS = "replace"
 
 
 @dataclass(slots=True)
@@ -134,7 +137,7 @@ class StreamResponse(_StreamResponseBase):
         self,
         *,
         encoding: str | None = None,
-        errors: str = "replace",
+        errors: str = _DEFAULT_STREAM_TEXT_ERRORS,
     ) -> Iterator[str]:
         self._start_body_iteration()
         return iter_text_chunks(
@@ -148,7 +151,7 @@ class StreamResponse(_StreamResponseBase):
         self,
         *,
         encoding: str | None = None,
-        errors: str = "replace",
+        errors: str = _DEFAULT_STREAM_TEXT_ERRORS,
         max_line_chars: int | None = DEFAULT_MAX_STREAM_LINE_CHARS,
     ) -> Iterator[str]:
         max_line_chars = validate_max_line_chars(max_line_chars)
@@ -205,7 +208,7 @@ class AsyncStreamResponse(_StreamResponseBase):
         self,
         *,
         encoding: str | None = None,
-        errors: str = "replace",
+        errors: str = _DEFAULT_STREAM_TEXT_ERRORS,
     ) -> AsyncIterator[str]:
         self._start_body_iteration()
         return aiter_text_chunks(
@@ -219,7 +222,7 @@ class AsyncStreamResponse(_StreamResponseBase):
         self,
         *,
         encoding: str | None = None,
-        errors: str = "replace",
+        errors: str = _DEFAULT_STREAM_TEXT_ERRORS,
         max_line_chars: int | None = DEFAULT_MAX_STREAM_LINE_CHARS,
     ) -> AsyncIterator[str]:
         max_line_chars = validate_max_line_chars(max_line_chars)
@@ -234,6 +237,9 @@ class AsyncStreamResponse(_StreamResponseBase):
             max_line_chars=max_line_chars,
         )
 
+    async def aclose(self) -> None:
+        self.close()
+
     async def _aiter_bytes(self) -> AsyncIterator[bytes]:
         try:
             while True:
@@ -245,9 +251,6 @@ class AsyncStreamResponse(_StreamResponseBase):
         finally:
             if not self._closed:
                 self.close()
-
-    async def aclose(self) -> None:
-        self.close()
 
     async def _next_chunk(self) -> bytes | None:
         try:

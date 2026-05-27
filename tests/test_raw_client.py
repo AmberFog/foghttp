@@ -4,8 +4,11 @@ from faker import Faker
 import pytest
 
 from foghttp import _foghttp
+from foghttp._client.config import ClientConfig
 from foghttp._client.constants import DEFAULT_MAX_REDIRECTS
-from foghttp._client.raw import create_raw_client, send_raw_request, send_raw_request_async
+from foghttp._client.options import ClientOptions
+from foghttp._client.raw.lifecycle import create_raw_client
+from foghttp._client.raw.requests import RawRequestOptions, send_raw_request, send_raw_request_async
 from foghttp.limits import Limits
 from foghttp.methods import GET
 from foghttp.timeouts import Timeouts
@@ -42,6 +45,51 @@ RAW_REQUEST_ARGUMENTS = (
 )
 
 
+def _client_config(
+    *,
+    limits: Limits | None = None,
+    timeouts: Timeouts | None = None,
+    follow_redirects: bool = False,
+    max_redirects: int = DEFAULT_MAX_REDIRECTS,
+    runtime_workers: int | None = None,
+    trust_env: bool = False,
+    tls: TLSConfig | None = None,
+) -> ClientConfig:
+    return ClientConfig.from_options(
+        ClientOptions(
+            base_url=None,
+            headers=None,
+            params=None,
+            limits=limits,
+            timeouts=timeouts,
+            http_versions=None,
+            follow_redirects=follow_redirects,
+            max_redirects=max_redirects,
+            cookies=False,
+            trust_env=trust_env,
+            tls=tls,
+            runtime_workers=runtime_workers,
+        ),
+    )
+
+
+def _raw_request(
+    *,
+    url: str,
+    timeouts: Timeouts,
+    body: bytes | None = None,
+    body_replayable: bool = True,
+) -> RawRequestOptions:
+    return RawRequestOptions(
+        method=GET,
+        url=url,
+        headers=[],
+        body=body,
+        body_replayable=body_replayable,
+        timeouts=timeouts,
+    )
+
+
 def test_create_raw_client_passes_transport_limits_to_rust_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -69,13 +117,14 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
     trust_env = False
 
     raw_client = create_raw_client(
-        limits=limits,
-        timeouts=timeouts,
-        follow_redirects=follow_redirects,
-        max_redirects=max_redirects,
-        runtime_workers=runtime_workers,
-        trust_env=trust_env,
-        tls=None,
+        config=_client_config(
+            limits=limits,
+            timeouts=timeouts,
+            follow_redirects=follow_redirects,
+            max_redirects=max_redirects,
+            runtime_workers=runtime_workers,
+            trust_env=trust_env,
+        ),
     )
 
     assert isinstance(raw_client, RawClientProbe)
@@ -116,13 +165,7 @@ def test_create_raw_client_passes_tls_trust_boundary_to_rust_client(
     monkeypatch.setattr(_foghttp, "RawClient", RawClientProbe)
 
     raw_client = create_raw_client(
-        limits=Limits(),
-        timeouts=Timeouts(),
-        follow_redirects=False,
-        max_redirects=DEFAULT_MAX_REDIRECTS,
-        runtime_workers=None,
-        trust_env=False,
-        tls=tls,
+        config=_client_config(tls=tls),
     )
 
     assert isinstance(raw_client, RawClientProbe)
@@ -146,12 +189,12 @@ def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker:
 
     response = send_raw_request(
         raw_client=RawClientProbe(),
-        method=GET,
-        url=url,
-        headers=[],
-        body=body,
-        body_replayable=body_replayable,
-        timeouts=timeouts,
+        request=_raw_request(
+            url=url,
+            body=body,
+            body_replayable=body_replayable,
+            timeouts=timeouts,
+        ),
     )
 
     assert response is raw_response
@@ -181,12 +224,7 @@ async def test_send_raw_request_async_passes_request_timeouts_without_connect_ti
 
     response = await send_raw_request_async(
         raw_client=RawClientProbe(),
-        method=GET,
-        url=url,
-        headers=[],
-        body=None,
-        body_replayable=True,
-        timeouts=timeouts,
+        request=_raw_request(url=url, timeouts=timeouts),
     )
 
     assert response is raw_response
