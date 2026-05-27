@@ -15,8 +15,15 @@ benchmarks, not a universal prediction for real network latency.
 - Shuffle seed: `20260507`.
 - `sync:aiohttp` is skipped because aiohttp is async-only.
 - Some suites skip clients that do not expose comparable APIs.
-- Higher `ok/s` or `ops/s` is better.
+- Higher `ok/s`, `ops/s`, or successful `streams/s` is better.
 - Lower `p95 ms`, threads, fds, and errors are better.
+- Throughput and latency rows are only release-comparable when the row has
+  `0` measured errors and `0` warmup errors. Rows with failures are treated as
+  compatibility or reliability signals, not as successful wins.
+- Streaming benchmark reports expose successful stream counts separately from
+  total errors. Unsupported client rows, line-limit failures, and failed
+  warmups must stay visible near the throughput numbers instead of being folded
+  into aggregate wins.
 
 ## Snapshots
 
@@ -54,6 +61,18 @@ suite.
 | one upstream | `48` | `-0.2%` geomean | `+1.0%` | `base_url`, defaults, prepared requests, JSON, and form bodies remain close to direct requests. |
 | resource/backpressure | `30` common rows | n/a | `-5.3%` | Existing resource scenarios improved slightly; `0.3.1` adds aggregate buffered budget checks. |
 | compressed response | new | n/a | n/a | New suite for transparent gzip, deflate, br, and stacked encodings. |
+
+## Release Readiness Checks
+
+Before copying benchmark numbers into release documentation:
+
+- refresh summaries from the benchmark repository for the exact release commit
+- verify `errors_total`, `warmup_errors_total`, and successful operation counts
+  before writing throughput conclusions
+- keep failed or unsupported competitor rows visible as compatibility rows
+- run or at least syntax-check the examples against the current branch
+- check README, quickstart, limitations, streaming docs, and raw GitHub
+  rendering for stale streaming boundaries
 
 ### Visual Summary
 
@@ -269,18 +288,28 @@ Scenarios: `gzip-json-small`, `gzip-64k`, `deflate-64k`, `br-64k`,
 | sync | zapros | `0/18` | `4073.8` | `3.25` | `52` | `157` | `9000` |
 | sync | httpx | `0/18` | `1982.9` | `6.83` | `52` | `107` | `0` |
 
+Compatibility failures are reported separately from successful throughput:
+
+| Mode | Client | Failed scenario family | Errors |
+|---|---|---|---:|
+| async | aiohttp | stacked `Content-Encoding` | `9000` |
+| async | zapros | stacked `Content-Encoding` | `9000` |
+| sync | zapros | stacked `Content-Encoding` | `9000` |
+
 ```mermaid
 xychart-beta
-    title "Compressed response median ok/s"
-    x-axis [FogHTTP_async, aiohttp_async, zapros_async, httpx_async, FogHTTP_sync, zapros_sync, httpx_sync]
+    title "Compressed response median ok/s with zero errors"
+    x-axis [FogHTTP_async, httpx_async, FogHTTP_sync, httpx_sync]
     y-axis "ok/s" 0 --> 15000
-    bar [12109.4, 6073.2, 3521.2, 1531.1, 14783.6, 4073.8, 1982.9]
+    bar [12109.4, 1531.1, 14783.6, 1982.9]
 ```
 
 In this local compressed-response suite, FogHTTP has the highest observed
-median throughput for concurrent buffered responses and stacked
-`Content-Encoding` decoding. The error totals for aiohttp and zapros come from
-the stacked encoding scenario in this suite.
+median throughput for successful concurrent buffered responses and stacked
+`Content-Encoding` decoding. The aiohttp and zapros rows are still shown in the
+table for transparency, but their non-zero error totals mean they should be
+read as partial compatibility results for this suite rather than clean
+throughput comparisons.
 
 ## Resource And Backpressure Workloads
 

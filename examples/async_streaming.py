@@ -15,26 +15,33 @@ from foghttp.methods import GET
 
 
 async def main() -> None:
-    async with (
-        foghttp.AsyncClient() as client,
-        client.stream(GET, "https://httpbin.org/stream-bytes/65536") as response,
-    ):
-        response.raise_for_status()
+    async with foghttp.AsyncClient() as client:
+        async with client.stream(GET, "https://httpbin.org/stream-bytes/65536") as response:
+            response.raise_for_status()
 
-        total = 0
-        async for chunk in response.aiter_bytes():
-            total += len(chunk)
+            total = 0
+            async for chunk in response.aiter_bytes():
+                total += len(chunk)
 
-        print("status:", response.status_code)
-        print("bytes:", total)
-        print("stats:", client.stats())
+            print("status:", response.status_code)
+            print("bytes:", total)
+            print("stats:", client.stats())
 
-    async with client.stream(GET, "https://httpbin.org/stream/3") as response:
-        response.raise_for_status()
-        lines = [line async for line in response.aiter_lines()]
+        async with client.stream(GET, "https://httpbin.org/stream/3") as response:
+            response.raise_for_status()
+            lines = [line async for line in response.aiter_lines()]
 
-        print("line status:", response.status_code)
-        print("lines:", len(lines))
+            print("line status:", response.status_code)
+            print("lines:", len(lines))
+
+        async with client.stream(GET, "https://httpbin.org/encoding/utf8") as response:
+            response.raise_for_status()
+            char_count = 0
+            async for chunk in response.aiter_text():
+                char_count += len(chunk)
+
+            print("text status:", response.status_code)
+            print("text chars:", char_count)
 
 
 if __name__ == "__main__":

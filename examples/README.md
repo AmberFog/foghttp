@@ -5,7 +5,9 @@ reusable `base_url` clients, default headers, and default query params for
 one-upstream APIs. They also show the current request builder contract and
 prepared request flow.
 
-Run them from the repository root after building the local extension:
+The examples use public `httpbin.org` endpoints, so they require outbound
+network access. Run them from the repository root after building the local
+extension:
 
 ```bash
 uv run --with "maturin>=1.7,<2" maturin develop
@@ -23,14 +25,14 @@ uv run examples/request_builder_compatibility.py
 ## Good Examples
 
 - [sync_json_api.py](./sync_json_api.py): sync JSON request/response flow.
-- [sync_streaming.py](./sync_streaming.py): sync bytes and line response
+- [sync_streaming.py](./sync_streaming.py): sync bytes, text, and line response
   streaming with explicit context-managed cleanup.
 - [async_json_fanout.py](./async_json_fanout.py): concurrent async GET requests
   with global/per-origin active request limits and stats.
 - [async_resource_limits.py](./async_resource_limits.py): explicit global and
   per-origin request backpressure with expected pool-timeout handling and
   diagnostics.
-- [async_streaming.py](./async_streaming.py): async bytes and line response
+- [async_streaming.py](./async_streaming.py): async bytes, text, and line response
   streaming with explicit context-managed cleanup.
 - [compressed_response.py](./compressed_response.py): manual
   `Accept-Encoding` negotiation with transparent buffered response decoding.
