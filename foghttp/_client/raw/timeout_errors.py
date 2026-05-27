@@ -1,10 +1,14 @@
 __all__ = ("timeout_error_from_raw",)
 
 from dataclasses import dataclass
-from typing import Self, cast
+from typing import TYPE_CHECKING, Self, cast
 
 from ...errors import TimeoutError
-from ...timeout_diagnostics import TimeoutDiagnostic, TimeoutPhase
+from ...timeout_diagnostics import TimeoutDiagnostic
+
+
+if TYPE_CHECKING:
+    from ...timeout_diagnostics import TimeoutPhase
 
 
 _TIMEOUT_DIAGNOSTIC_ARG_COUNT = 6
