@@ -26,6 +26,17 @@ class Request:
         self.headers = Headers(headers)
         self._body = RequestBody.replayable_body(content)
 
+    @property
+    def content(self) -> bytes | None:
+        return self._body.content
+
+    @content.setter
+    def content(self, value: bytes | None) -> None:
+        self._body = RequestBody.replayable_body(value)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self.method!r}, {redact_url(self.url)!r})"
+
     @classmethod
     def _from_body(
         cls,
@@ -38,14 +49,3 @@ class Request:
         request = cls(method, url, headers=headers)
         request._body = body
         return request
-
-    @property
-    def content(self) -> bytes | None:
-        return self._body.content
-
-    @content.setter
-    def content(self, value: bytes | None) -> None:
-        self._body = RequestBody.replayable_body(value)
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.method!r}, {redact_url(self.url)!r})"

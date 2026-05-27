@@ -166,16 +166,6 @@ class Client(ClientCore):
         )
         return StreamContext(lambda: self._send_stream(request, timeout=timeout))
 
-    def _send_stream(self, request: Request, *, timeout: Timeouts | None = None) -> StreamResponse:
-        sync_send_token = object()
-        try:
-            self._begin_sync_send(sync_send_token)
-            validate_safe_request_headers(request.headers)
-            timeouts = self._request_timeouts(timeout)
-            return self._transport.stream(request, timeouts=timeouts)
-        finally:
-            self._finish_sync_send(sync_send_token)
-
     def get(
         self,
         url: str | URL,
@@ -307,6 +297,16 @@ class Client(ClientCore):
             json=json,
             timeout=timeout,
         )
+
+    def _send_stream(self, request: Request, *, timeout: Timeouts | None = None) -> StreamResponse:
+        sync_send_token = object()
+        try:
+            self._begin_sync_send(sync_send_token)
+            validate_safe_request_headers(request.headers)
+            timeouts = self._request_timeouts(timeout)
+            return self._transport.stream(request, timeouts=timeouts)
+        finally:
+            self._finish_sync_send(sync_send_token)
 
     def _begin_sync_send(self, token: object) -> None:
         with self._lifecycle_condition:

@@ -84,9 +84,6 @@ class AsyncClient(ClientCore):
         if raw_client is not None:
             close_raw_client(raw_client)
 
-    def _create_transport(self) -> AsyncTransport:
-        return RawAsyncTransport(self._raw_client)
-
     async def request(
         self,
         method: str,
@@ -140,17 +137,6 @@ class AsyncClient(ClientCore):
             json=json,
         )
         return AsyncStreamContext(self._send_stream(request, timeout=timeout))
-
-    async def _send_stream(
-        self,
-        request: Request,
-        *,
-        timeout: Timeouts | None = None,
-    ) -> AsyncStreamResponse:
-        self._ensure_open()
-        validate_safe_request_headers(request.headers)
-        timeouts = self._request_timeouts(timeout)
-        return await self._transport.stream(request, timeouts=timeouts)
 
     async def get(
         self,
@@ -283,3 +269,17 @@ class AsyncClient(ClientCore):
             json=json,
             timeout=timeout,
         )
+
+    def _create_transport(self) -> AsyncTransport:
+        return RawAsyncTransport(self._raw_client)
+
+    async def _send_stream(
+        self,
+        request: Request,
+        *,
+        timeout: Timeouts | None = None,
+    ) -> AsyncStreamResponse:
+        self._ensure_open()
+        validate_safe_request_headers(request.headers)
+        timeouts = self._request_timeouts(timeout)
+        return await self._transport.stream(request, timeouts=timeouts)

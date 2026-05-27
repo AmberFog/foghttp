@@ -234,6 +234,9 @@ class AsyncStreamResponse(_StreamResponseBase):
             max_line_chars=max_line_chars,
         )
 
+    async def aclose(self) -> None:
+        self.close()
+
     async def _aiter_bytes(self) -> AsyncIterator[bytes]:
         try:
             while True:
@@ -245,9 +248,6 @@ class AsyncStreamResponse(_StreamResponseBase):
         finally:
             if not self._closed:
                 self.close()
-
-    async def aclose(self) -> None:
-        self.close()
 
     async def _next_chunk(self) -> bytes | None:
         try:
