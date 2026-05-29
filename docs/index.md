@@ -55,6 +55,8 @@ FogHTTP is designed around a few engineering priorities:
   custom-only CA trust
 - global and per-origin request backpressure with per-origin acquire pressure
   snapshots and stuck request diagnostics for operational visibility
+- opt-in async lifecycle debug snapshots for tests, staging, and incident
+  diagnostics
 
 Until version `0.5.0`, backward compatibility is not guaranteed. I will still
 try to keep public interfaces stable and avoid unnecessary breaking changes.
@@ -111,6 +113,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - global active request limits, per-origin active request limits, pending
   acquire limits, per-origin acquire pressure snapshots, and stuck request
   diagnostics
+- opt-in async lifecycle debug mode for active request snapshots and strict
+  leak checks
 - default per-response and aggregate buffered response body limits
 - grouped HTTP status constants and reusable HTTP method constants
 

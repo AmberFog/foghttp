@@ -5,6 +5,10 @@ import foghttp.stats
 
 def test_top_level_exports() -> None:
     assert foghttp.Client is not None
+    assert foghttp.AsyncLifecycleDebugConfig is not None
+    assert foghttp.AsyncLifecycleDebugRequest is not None
+    assert foghttp.AsyncLifecycleDebugRequestMode is not None
+    assert foghttp.AsyncLifecycleDebugSnapshot is not None
     assert foghttp.AsyncClient is not None
     assert foghttp.AsyncStreamResponse is not None
     assert foghttp.Headers is not None
@@ -23,6 +27,10 @@ def test_top_level_exports() -> None:
 
 def test_compatibility_modules_reexport_models() -> None:
     assert foghttp.models.Limits is foghttp.Limits
+    assert foghttp.models.AsyncLifecycleDebugConfig is foghttp.AsyncLifecycleDebugConfig
+    assert foghttp.models.AsyncLifecycleDebugRequest is foghttp.AsyncLifecycleDebugRequest
+    assert foghttp.models.AsyncLifecycleDebugRequestMode is foghttp.AsyncLifecycleDebugRequestMode
+    assert foghttp.models.AsyncLifecycleDebugSnapshot is foghttp.AsyncLifecycleDebugSnapshot
     assert foghttp.models.Headers is foghttp.Headers
     assert foghttp.models.Request is foghttp.Request
     assert foghttp.models.Response is foghttp.Response

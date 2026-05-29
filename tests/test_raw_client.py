@@ -70,6 +70,7 @@ def _client_config(
             tls=tls,
             runtime_workers=runtime_workers,
             telemetry=None,
+            lifecycle_debug=None,
         ),
     )
 

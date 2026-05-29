@@ -229,6 +229,67 @@ Coordinate `aclose()` from the application owner of the client. Do not close a
 shared async client from a request handler or worker task unless that task owns
 the whole client lifecycle.
 
+## Async Lifecycle Debug Mode
+
+`AsyncClient` can enable opt-in lifecycle diagnostics for staging, tests, and
+incident debugging:
+
+```python
+import foghttp
+
+
+client = foghttp.AsyncClient(
+    lifecycle_debug=foghttp.AsyncLifecycleDebugConfig(),
+)
+try:
+    response = await client.get("https://api.example.com/users")
+    response.raise_for_status()
+
+    snapshot = client.dump_lifecycle_debug()
+    assert snapshot.active_request_count == 0
+finally:
+    await client.aclose()
+```
+
+The default client path does not track Python-level debug request handles.
+When `lifecycle_debug` is enabled, `dump_lifecycle_debug()` returns:
+
+- active async request handles with method, mode, normalized origin, redacted
+  URL, monotonic start time in nanoseconds, and age
+- current Rust transport active and pending request-slot counts
+- current pool acquire timeout count
+- whether the client is already closed
+
+Debug request URLs are redacted before they reach the snapshot. They never
+include raw request bodies, response bodies, headers, userinfo, or unredacted
+sensitive query values.
+
+Buffered async requests stay visible until the response is returned or the
+request fails. Streamed async requests stay visible until the streamed body
+reaches EOF, the stream is closed, or the stream fails.
+
+For pytest or staging checks, use strict mode or the explicit assertion helper:
+
+```python
+client = foghttp.AsyncClient(
+    lifecycle_debug=foghttp.AsyncLifecycleDebugConfig(strict=True),
+)
+
+# Raises LifecycleError if active async handles or transport pressure remain.
+client.assert_no_lifecycle_leaks()
+```
+
+With `strict=True`, `aclose()` still closes the Rust transport first, then raises
+`LifecycleError` if shutdown started while debug-visible async work was active.
+This is intended for tests and controlled diagnostics, not as normal production
+shutdown behavior.
+
+If a debug-enabled async client is garbage collected while still open, the
+`UnclosedClientError` warning includes lifecycle debug context such as active
+debug request count and redacted active request descriptions. Treat this as a
+last-resort diagnostic; the application owner should still use `async with` or
+`await client.aclose()`.
+
 ## Sharing Clients
 
 Reuse clients. Creating a client for every request prevents connection reuse and

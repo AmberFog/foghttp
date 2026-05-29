@@ -72,6 +72,7 @@ class Client(ClientCore):
                     tls=tls,
                     runtime_workers=runtime_workers,
                     telemetry=telemetry,
+                    lifecycle_debug=None,
                 ),
             ),
         )

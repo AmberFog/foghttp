@@ -15,6 +15,7 @@ uv run examples/sync_json_api.py
 uv run examples/sync_streaming.py
 uv run examples/async_json_fanout.py
 uv run examples/async_resource_limits.py
+uv run examples/async_lifecycle_debug.py
 uv run examples/async_streaming.py
 uv run examples/compressed_response.py
 uv run examples/redirects.py
@@ -33,6 +34,8 @@ uv run examples/telemetry_hooks.py
 - [async_resource_limits.py](./async_resource_limits.py): explicit global and
   per-origin request backpressure with expected pool-timeout handling and
   diagnostics.
+- [async_lifecycle_debug.py](./async_lifecycle_debug.py): opt-in async lifecycle
+  debug snapshots and strict no-leak assertion pattern.
 - [async_streaming.py](./async_streaming.py): async bytes, text, and line response
   streaming with explicit context-managed cleanup.
 - [compressed_response.py](./compressed_response.py): manual

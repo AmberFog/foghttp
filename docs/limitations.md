@@ -43,6 +43,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
   limit, request stats, and stuck request pool diagnostics
 - opt-in typed telemetry event hooks for request, redirect, response headers,
   response body, and request completion lifecycle
+- opt-in async lifecycle debug snapshots for active async request handles,
+  pending transport pressure, strict test checks, and unclosed-client context
 - default per-response and aggregate buffered response memory limits
 - explicit `close()`/`aclose()` lifecycle for Rust runtime and pool resources;
   sync `close()` waits for in-flight sync requests, while async `aclose()`

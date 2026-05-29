@@ -1,7 +1,7 @@
 __all__ = ("AsyncStreamResponse", "StreamResponse")
 
 import asyncio
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass, field
 from types import TracebackType
 
@@ -60,6 +60,8 @@ class _StreamResponseBase:
     _body_started: bool = field(default=False, init=False, repr=False)
     _telemetry_context: TelemetryRequestContext | None = field(default=None, init=False, repr=False)
     _telemetry_finished: bool = field(default=False, init=False, repr=False)
+    _lifecycle_debug_finish: Callable[[], None] | None = field(default=None, init=False, repr=False)
+    _lifecycle_debug_finished: bool = field(default=False, init=False, repr=False)
 
     def __repr__(self) -> str:
         return (
@@ -125,6 +127,7 @@ class _StreamResponseBase:
             return
         self._closed = True
         self._raw.close()
+        self._finish_lifecycle_debug()
         self._finish_telemetry(
             outcome=outcome,
             error=error,
@@ -160,6 +163,12 @@ class _StreamResponseBase:
         )
         self._telemetry_context.response_body_finished(completion)
         self._telemetry_context.request_finished(completion)
+
+    def _finish_lifecycle_debug(self) -> None:
+        if self._lifecycle_debug_finish is None or self._lifecycle_debug_finished:
+            return
+        self._lifecycle_debug_finished = True
+        self._lifecycle_debug_finish()
 
     def _telemetry_completion_metadata(self) -> TelemetryResponseMetadata:
         return TelemetryResponseMetadata(
@@ -230,6 +239,7 @@ class StreamResponse(_StreamResponseBase):
                 chunk = self._next_chunk()
                 if chunk is None:
                     self._closed = True
+                    self._finish_lifecycle_debug()
                     self._finish_telemetry(outcome=TelemetryRequestOutcome.SUCCESS)
                     return
                 yield chunk
@@ -318,6 +328,7 @@ class AsyncStreamResponse(_StreamResponseBase):
                 chunk = await self._next_chunk()
                 if chunk is None:
                     self._closed = True
+                    self._finish_lifecycle_debug()
                     self._finish_telemetry(outcome=TelemetryRequestOutcome.SUCCESS)
                     return
                 yield chunk
@@ -353,6 +364,13 @@ def bind_stream_telemetry(
     telemetry_context: TelemetryRequestContext,
 ) -> None:
     object.__setattr__(response, "_telemetry_context", telemetry_context)
+
+
+def bind_stream_lifecycle_debug(
+    response: _StreamResponseBase,
+    finish_lifecycle_debug: Callable[[], None],
+) -> None:
+    object.__setattr__(response, "_lifecycle_debug_finish", finish_lifecycle_debug)
 
 
 def _async_exit_outcome(exc_type: type[BaseException] | None) -> TelemetryRequestOutcome:

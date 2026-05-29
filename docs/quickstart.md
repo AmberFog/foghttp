@@ -296,7 +296,8 @@ async with foghttp.AsyncClient() as client:
 ```
 
 See [Client lifecycle](./lifecycle.md) for the full shutdown, cancellation,
-lazy initialization, and thread/task sharing contract.
+lazy initialization, thread/task sharing contract, and opt-in async lifecycle
+debug mode.
 
 ## JSON Body
 
