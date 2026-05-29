@@ -662,6 +662,10 @@ capacity: it reports current active holders, pending waiters, the oldest pending
 wait age, whether another pending waiter can be admitted, and whether requests
 are waiting on the global active request limit, per-origin active request limit,
 or both.
+`TransportStats` and the `dump_*` APIs include `schema_version` plus a
+monotonic `snapshot_sequence` within one Rust transport lifetime. Use
+`TransportStats` for dashboards and alert-oriented metrics; see
+[Telemetry contract](./telemetry.md) for the current guarantees.
 
 `Timeouts.connect` is client-level connector configuration. Per-request
 `timeout=` currently affects `pool`, `read`, and `total`, not `connect` or

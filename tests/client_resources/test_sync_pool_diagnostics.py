@@ -30,6 +30,8 @@ def test_dump_pool_diagnostics_reports_empty_state_before_transport_creation() -
         "pending_queue_full": True,
         "oldest_pending_request_wait_ns": 0,
         "blocked_by": NO_POOL_BLOCK,
+        "schema_version": 1,
+        "snapshot_sequence": 0,
         "origins": {},
     }
 

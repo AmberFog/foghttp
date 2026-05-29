@@ -1,6 +1,11 @@
 __all__ = ("TransportStats",)
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from ._telemetry import (
+    SYNTHETIC_TELEMETRY_SNAPSHOT_SEQUENCE,
+    TELEMETRY_SNAPSHOT_SCHEMA_VERSION,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,3 +34,5 @@ class TransportStats:
     connections_aborted: int = 0
     buffered_response_bytes: int = 0
     buffered_response_budget_rejections: int = 0
+    schema_version: int = field(default=TELEMETRY_SNAPSHOT_SCHEMA_VERSION, compare=False)
+    snapshot_sequence: int = field(default=SYNTHETIC_TELEMETRY_SNAPSHOT_SEQUENCE, compare=False)

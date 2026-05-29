@@ -1,8 +1,10 @@
 use crate::core::metrics::{
     MetricsSnapshot, OriginPoolDiagnosticsSnapshot, PendingRequestBlockingReason,
+    TelemetrySnapshotMetadata,
 };
 
 pub struct PoolDiagnosticsSnapshot {
+    pub metadata: TelemetrySnapshotMetadata,
     pub active_requests: usize,
     pub pending_requests: usize,
     pub pool_acquire_timeouts: usize,
@@ -17,6 +19,7 @@ pub struct PoolDiagnosticsSnapshot {
 
 impl PoolDiagnosticsSnapshot {
     pub fn new(
+        metadata: TelemetrySnapshotMetadata,
         metrics: &MetricsSnapshot,
         origins: Vec<OriginPoolDiagnosticsSnapshot>,
         max_active_requests: usize,
@@ -38,6 +41,7 @@ impl PoolDiagnosticsSnapshot {
         }
 
         Self {
+            metadata,
             active_requests: metrics.active_requests,
             pending_requests,
             pool_acquire_timeouts: metrics.pool_acquire_timeouts,

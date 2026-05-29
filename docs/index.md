@@ -65,6 +65,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - [Request builder compatibility](./request-builder.md)
 - [Client lifecycle](./lifecycle.md)
 - [Timeout model](./timeouts.md)
+- [Telemetry contract](./telemetry.md)
 - [Response streaming](./streaming.md)
 - [TLS trust](./tls.md)
 - [Use cases](./use-cases.md)

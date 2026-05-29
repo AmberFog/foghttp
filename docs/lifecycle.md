@@ -80,6 +80,8 @@ assert client.dump_transport_state() == {
     "response_body_reuse_eligible": 0,
     "response_body_closed": 0,
     "response_body_aborted": 0,
+    "schema_version": 1,
+    "snapshot_sequence": 0,
 }
 assert client.dump_pool_diagnostics()["origins"] == {}
 
@@ -247,6 +249,9 @@ owner, worker, application lifespan, or other clear lifecycle boundary.
 inside the current transport resource model. They are not physical TCP
 connection counters.
 
+- `schema_version` means the telemetry snapshot shape version
+- `snapshot_sequence` is a monotonic sequence within the current Rust transport
+  metrics lifetime; synthetic pre-transport stats use `0`
 - `active_requests` means requests that acquired an active transport slot
 - `pending_requests` means requests waiting for an active transport slot
 - `peak_pending_requests` means the highest observed pending queue depth
@@ -308,6 +313,10 @@ needed. The `origins` entry is keyed by normalized origin (`scheme://host`, with
 headers, or body data.
 The snapshot is collected by the Rust transport state layer in one raw boundary
 call; Python only formats the already collected aggregate and per-origin data.
+It includes `schema_version` and `snapshot_sequence`; the sequence is monotonic
+within the current Rust transport lifetime and starts at `1` after transport
+creation. Before the first request, FogHTTP returns a synthetic lazy snapshot
+with `snapshot_sequence == 0`.
 Rust also retries briefly when current active/pending request-slot counters or
 historical acquire-pressure counters are caught between matching per-origin
 updates. Historical acquire counters are compared with per-origin sums only
@@ -325,6 +334,9 @@ waiting for capacity. It reports the current pending queue, the oldest pending
 wait age in nanoseconds, whether another pending waiter can be admitted, and
 whether current waiters are blocked by the global active request limit, the
 per-origin active request limit, or both.
+Like transport state, this is a diagnostic snapshot with `schema_version` and a
+Rust-side `snapshot_sequence`; it is useful for ordering incident observations,
+not as a lock-protected SLA transaction.
 
 ```python
 diagnostics = client.dump_pool_diagnostics()

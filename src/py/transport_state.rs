@@ -6,6 +6,10 @@ use pyo3::prelude::*;
 #[pyclass(skip_from_py_object)]
 pub struct RawTransportState {
     #[pyo3(get)]
+    schema_version: u64,
+    #[pyo3(get)]
+    snapshot_sequence: u64,
+    #[pyo3(get)]
     active_requests: usize,
     #[pyo3(get)]
     pending_requests: usize,
@@ -55,8 +59,11 @@ pub struct RawTransportState {
 
 impl From<TransportStateSnapshot> for RawTransportState {
     fn from(snapshot: TransportStateSnapshot) -> Self {
+        let metadata = snapshot.metadata;
         let metrics = snapshot.metrics;
         Self {
+            schema_version: metadata.schema_version,
+            snapshot_sequence: metadata.snapshot_sequence,
             active_requests: metrics.active_requests,
             pending_requests: metrics.pending_requests,
             peak_pending_requests: metrics.peak_pending_requests,

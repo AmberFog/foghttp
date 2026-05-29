@@ -17,3 +17,14 @@ def test_stats_from_raw_maps_unique_transport_stat_fields() -> None:
     stats = stats_from_raw(raw=raw_stats)
 
     assert stats == foghttp.TransportStats(**raw_values)
+    assert stats.schema_version == raw_values["schema_version"]
+    assert stats.snapshot_sequence == raw_values["snapshot_sequence"]
+
+
+def test_transport_stats_equality_ignores_snapshot_metadata() -> None:
+    first = foghttp.TransportStats(total_requests=1, snapshot_sequence=1)
+    second = foghttp.TransportStats(total_requests=1, snapshot_sequence=2)
+    different_metrics = foghttp.TransportStats(total_requests=2, snapshot_sequence=1)
+
+    assert first == second
+    assert first != different_metrics

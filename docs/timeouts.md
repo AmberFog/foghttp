@@ -164,6 +164,10 @@ updates. Historical acquire counters are compared with per-origin sums only
 while the origin registry still contains all historical origins; after idle
 origin pruning, the per-origin history can be incomplete. The snapshot remains
 diagnostic state rather than a lock-protected transport transaction.
+`TransportStats` and diagnostic snapshots include `schema_version` and a
+monotonic `snapshot_sequence` for ordering observations within one Rust
+transport lifetime. Use diagnostic snapshot sequence values for incident
+correlation, not as SLA transaction boundaries.
 Per-origin `last_activity_at_ns` is monotonic within the current transport
 metrics lifetime and is not a wall-clock Unix timestamp.
 
@@ -175,6 +179,8 @@ request limit. `blocked_by` is one of `none`, `global_active_requests`,
 `per_origin_active_requests`, or `mixed`; `mixed` means current waiters are
 blocked by more than one acquire limit. Origin keys are normalized origins only;
 paths, queries, userinfo, headers, and bodies are not included.
+For alert-oriented metrics, prefer `stats()` and the field guarantees described
+in [Telemetry contract](./telemetry.md).
 
 ```python
 limits = foghttp.Limits(

@@ -17,6 +17,8 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+pub const TELEMETRY_SNAPSHOT_SCHEMA_VERSION: u64 = 1;
+
 const TRANSPORT_STATE_SNAPSHOT_ATTEMPTS: usize = 8;
 
 #[derive(Default)]
@@ -45,6 +47,7 @@ pub struct Metrics {
     connections_aborted: AtomicUsize,
     buffered_response_bytes: AtomicUsize,
     buffered_response_budget_rejections: AtomicUsize,
+    telemetry_snapshot_sequence: AtomicU64,
     origin_registry: OriginMetricsRegistry,
 }
 
@@ -88,7 +91,19 @@ pub struct MetricsSnapshot {
     pub buffered_response_budget_rejections: usize,
 }
 
+pub struct StatsSnapshot {
+    pub metadata: TelemetrySnapshotMetadata,
+    pub metrics: MetricsSnapshot,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TelemetrySnapshotMetadata {
+    pub schema_version: u64,
+    pub snapshot_sequence: u64,
+}
+
 pub struct TransportStateSnapshot {
+    pub metadata: TelemetrySnapshotMetadata,
     pub metrics: MetricsSnapshot,
     pub origins: Vec<OriginMetricsSnapshot>,
     origins_include_all_historical_pressure: bool,
@@ -282,20 +297,59 @@ impl Metrics {
     }
 
     pub fn transport_state_snapshot(&self) -> TransportStateSnapshot {
-        let mut snapshot = self.transport_state_snapshot_once();
+        let metadata = self.next_telemetry_snapshot_metadata();
+        let mut snapshot = self.transport_state_snapshot_once(metadata);
         for _attempt in 1..TRANSPORT_STATE_SNAPSHOT_ATTEMPTS {
             if snapshot.has_coherent_pressure() {
                 return snapshot;
             }
 
             std::hint::spin_loop();
-            snapshot = self.transport_state_snapshot_once();
+            snapshot = self.transport_state_snapshot_once(metadata);
         }
         snapshot
     }
 
-    fn transport_state_snapshot_once(&self) -> TransportStateSnapshot {
+    pub fn stats_snapshot(&self) -> StatsSnapshot {
+        StatsSnapshot {
+            metadata: self.next_telemetry_snapshot_metadata(),
+            metrics: self.snapshot(),
+        }
+    }
+
+    pub fn next_telemetry_snapshot_metadata(&self) -> TelemetrySnapshotMetadata {
+        TelemetrySnapshotMetadata {
+            schema_version: TELEMETRY_SNAPSHOT_SCHEMA_VERSION,
+            snapshot_sequence: self.next_telemetry_snapshot_sequence(),
+        }
+    }
+
+    fn next_telemetry_snapshot_sequence(&self) -> u64 {
+        // This counter only orders observations; it does not publish metrics state.
+        let mut current = self.telemetry_snapshot_sequence.load(Ordering::Relaxed);
+        loop {
+            let Some(next) = current.checked_add(1) else {
+                return u64::MAX;
+            };
+
+            match self.telemetry_snapshot_sequence.compare_exchange_weak(
+                current,
+                next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_previous) => return next,
+                Err(actual) => current = actual,
+            }
+        }
+    }
+
+    fn transport_state_snapshot_once(
+        &self,
+        metadata: TelemetrySnapshotMetadata,
+    ) -> TransportStateSnapshot {
         TransportStateSnapshot {
+            metadata,
             metrics: self.snapshot(),
             origins: self.origin_snapshots(),
             origins_include_all_historical_pressure: self
@@ -465,7 +519,10 @@ impl OriginPressureTotals {
 
 #[cfg(test)]
 mod tests {
-    use super::{BufferedByteReservationError, Metrics, TransportStateSnapshot};
+    use super::{
+        BufferedByteReservationError, Metrics, TelemetrySnapshotMetadata, TransportStateSnapshot,
+        TELEMETRY_SNAPSHOT_SCHEMA_VERSION,
+    };
     use std::time::Duration;
 
     #[test]
@@ -533,6 +590,11 @@ mod tests {
 
         let snapshot = metrics.transport_state_snapshot();
 
+        assert_eq!(
+            snapshot.metadata.schema_version,
+            TELEMETRY_SNAPSHOT_SCHEMA_VERSION
+        );
+        assert!(snapshot.metadata.snapshot_sequence > 0);
         assert_eq!(snapshot.metrics.active_requests, 1);
         assert_eq!(snapshot.metrics.total_requests, 1);
         assert!(snapshot.has_coherent_pressure());
@@ -546,6 +608,19 @@ mod tests {
         assert_eq!(snapshot.origins[1].origin, "https://secondary.example.com");
         assert_eq!(snapshot.origins[1].pool_acquire_attempts, 1);
         assert_eq!(snapshot.origins[1].pool_acquire_immediate, 1);
+    }
+
+    #[test]
+    fn telemetry_snapshot_metadata_is_monotonic_and_schema_versioned() {
+        let metrics = Metrics::default();
+
+        let first = metrics.next_telemetry_snapshot_metadata();
+        let second = metrics.next_telemetry_snapshot_metadata();
+
+        assert_eq!(first.schema_version, TELEMETRY_SNAPSHOT_SCHEMA_VERSION);
+        assert_eq!(second.schema_version, TELEMETRY_SNAPSHOT_SCHEMA_VERSION);
+        assert!(first.snapshot_sequence > 0);
+        assert_eq!(second.snapshot_sequence, first.snapshot_sequence + 1);
     }
 
     #[test]
@@ -593,7 +668,7 @@ mod tests {
         origin_metrics.pool_acquire_started();
         metrics.pool_acquire_waited();
 
-        let snapshot = metrics.transport_state_snapshot_once();
+        let snapshot = metrics.transport_state_snapshot_once(test_metadata());
 
         assert!(!snapshot.has_coherent_pressure());
     }
@@ -607,7 +682,7 @@ mod tests {
         origin_metrics.connection_opened();
         metrics.connection_reused();
 
-        let snapshot = metrics.transport_state_snapshot_once();
+        let snapshot = metrics.transport_state_snapshot_once(test_metadata());
 
         assert!(!snapshot.has_coherent_pressure());
     }
@@ -621,11 +696,19 @@ mod tests {
         let origin_metrics = metrics.origin_metrics("https://api.example.com");
         origin_metrics.active_request_started();
         let snapshot = TransportStateSnapshot {
+            metadata: test_metadata(),
             metrics: metrics.snapshot(),
             origins: metrics.origin_snapshots(),
             origins_include_all_historical_pressure: false,
         };
 
         assert!(snapshot.has_coherent_pressure());
+    }
+
+    fn test_metadata() -> TelemetrySnapshotMetadata {
+        TelemetrySnapshotMetadata {
+            schema_version: TELEMETRY_SNAPSHOT_SCHEMA_VERSION,
+            snapshot_sequence: 1,
+        }
     }
 }

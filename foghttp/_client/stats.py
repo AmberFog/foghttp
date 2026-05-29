@@ -10,6 +10,8 @@ def stats_from_raw(
     raw: _foghttp.RawStats,
 ) -> TransportStats:
     return TransportStats(
+        schema_version=raw.schema_version,
+        snapshot_sequence=raw.snapshot_sequence,
         active_requests=raw.active_requests,
         pending_requests=raw.pending_requests,
         peak_pending_requests=raw.peak_pending_requests,
