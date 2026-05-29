@@ -252,6 +252,10 @@ finally:
 ```
 
 The default client path does not track Python-level debug request handles.
+`dump_lifecycle_debug()` is available even when `lifecycle_debug` is disabled.
+In that case `snapshot.enabled` is `False`, Python-level active request handles
+are empty, and the call does not create the lazy Rust transport by itself.
+
 When `lifecycle_debug` is enabled, `dump_lifecycle_debug()` returns:
 
 - active async request handles with method, mode, normalized origin, redacted
@@ -283,6 +287,15 @@ With `strict=True`, `aclose()` still closes the Rust transport first, then raise
 `LifecycleError` if shutdown started while debug-visible async work was active.
 This is intended for tests and controlled diagnostics, not as normal production
 shutdown behavior.
+
+On normal `async with` exit, strict mode follows the same rule. If the context
+body is already raising another exception, `__aexit__` still closes resources
+but does not replace the original exception with a strict lifecycle error.
+
+`assert_no_lifecycle_leaks()` checks both Python-level debug handles and current
+Rust transport pressure. When debug mode is disabled, this helper can still be
+used as a transport-pressure assertion, but it will not include Python-level
+request descriptions.
 
 If a debug-enabled async client is garbage collected while still open, the
 `UnclosedClientError` warning includes lifecycle debug context such as active

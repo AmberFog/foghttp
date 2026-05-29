@@ -23,6 +23,8 @@ from .telemetry.url import redacted_url, url_origin
 LifecycleDebugRequestToken: TypeAlias = int | None
 
 _DEBUG_LEAK_MESSAGE = "AsyncClient lifecycle debug detected active transport state"
+_MAX_DEBUG_REQUEST_DESCRIPTIONS = 10
+_NANOSECONDS_PER_MILLISECOND = 1_000_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,10 +54,6 @@ class AsyncLifecycleDebugTracker:
         self._lock = threading.Lock()
         self._next_request_id = 1
         self._active_requests: dict[int, _TrackedAsyncRequest] = {}
-
-    @property
-    def enabled(self) -> bool:
-        return self._config is not None
 
     @property
     def strict(self) -> bool:
@@ -98,35 +96,32 @@ class AsyncLifecycleDebugTracker:
         stats: TransportStats | None,
     ) -> AsyncLifecycleDebugSnapshot:
         observed_at_ns = time.perf_counter_ns()
-        with self._lock:
-            active_requests = tuple(
-                tracked_request.snapshot(observed_at_ns) for tracked_request in self._active_requests.values()
-            )
 
         return AsyncLifecycleDebugSnapshot(
-            enabled=self.enabled,
+            enabled=self._config is not None,
             strict=self.strict,
             closed=closed,
-            active_requests=active_requests,
+            active_requests=self._active_request_snapshots(observed_at_ns),
             transport_active_requests=0 if stats is None else stats.active_requests,
             transport_pending_requests=0 if stats is None else stats.pending_requests,
             pool_acquire_timeouts=0 if stats is None else stats.pool_acquire_timeouts,
         )
 
     def unclosed_warning_message(self, base_message: str) -> str:
-        if not self.enabled:
+        if self._config is None:
             return base_message
 
-        with self._lock:
-            active_requests = tuple(
-                f"{request.request_id}:{request.method} {request.redacted_url}"
-                for request in self._active_requests.values()
-            )
+        active_requests = self._active_request_snapshots(time.perf_counter_ns())
         return (
             f"{base_message}; lifecycle_debug_enabled=True; "
             f"active_async_requests={len(active_requests)}; "
-            f"active_requests={active_requests!r}"
+            f"active_requests={_request_descriptions(active_requests)!r}; "
+            f"omitted_active_requests={_omitted_request_count(active_requests)}"
         )
+
+    def _active_request_snapshots(self, observed_at_ns: int) -> tuple[AsyncLifecycleDebugRequest, ...]:
+        with self._lock:
+            return tuple(tracked_request.snapshot(observed_at_ns) for tracked_request in self._active_requests.values())
 
 
 def async_lifecycle_debug_leak_message(snapshot: AsyncLifecycleDebugSnapshot) -> str:
@@ -134,5 +129,26 @@ def async_lifecycle_debug_leak_message(snapshot: AsyncLifecycleDebugSnapshot) ->
         f"{_DEBUG_LEAK_MESSAGE}: "
         f"active_async_requests={snapshot.active_request_count}, "
         f"transport_active_requests={snapshot.transport_active_requests}, "
-        f"transport_pending_requests={snapshot.transport_pending_requests}"
+        f"transport_pending_requests={snapshot.transport_pending_requests}, "
+        f"active_requests={_request_descriptions(snapshot.active_requests)!r}, "
+        f"omitted_active_requests={_omitted_request_count(snapshot.active_requests)}"
     )
+
+
+def _request_descriptions(active_requests: tuple[AsyncLifecycleDebugRequest, ...]) -> tuple[str, ...]:
+    return tuple(
+        _request_description(active_request) for active_request in active_requests[:_MAX_DEBUG_REQUEST_DESCRIPTIONS]
+    )
+
+
+def _request_description(active_request: AsyncLifecycleDebugRequest) -> str:
+    age_ms = active_request.age_ns // _NANOSECONDS_PER_MILLISECOND
+    return (
+        f"{active_request.request_id}:{active_request.method} "
+        f"{active_request.mode} {active_request.redacted_url} "
+        f"age_ms={age_ms}"
+    )
+
+
+def _omitted_request_count(active_requests: tuple[AsyncLifecycleDebugRequest, ...]) -> int:
+    return max(0, len(active_requests) - _MAX_DEBUG_REQUEST_DESCRIPTIONS)

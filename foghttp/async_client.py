@@ -95,21 +95,10 @@ class AsyncClient(ClientCore):
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        await self.aclose()
+        self._close(raise_strict_lifecycle_errors=exc_type is None)
 
     async def aclose(self) -> None:
-        strict_snapshot = None
-        raw_client = None
-        with self._client_lock:
-            if not self._closed:
-                strict_snapshot = self._strict_lifecycle_debug_snapshot_locked()
-                self._closed = True
-                raw_client = self._client
-                self._client = None
-        if raw_client is not None:
-            close_raw_client(raw_client)
-        if strict_snapshot is not None and strict_snapshot.has_leaks:
-            raise LifecycleError(async_lifecycle_debug_leak_message(strict_snapshot))
+        self._close(raise_strict_lifecycle_errors=True)
 
     def dump_lifecycle_debug(self) -> AsyncLifecycleDebugSnapshot:
         with self._client_lock:
@@ -324,6 +313,20 @@ class AsyncClient(ClientCore):
 
     def _create_transport(self) -> AsyncTransport:
         return RawAsyncTransport(self._raw_client)
+
+    def _close(self, *, raise_strict_lifecycle_errors: bool) -> None:
+        strict_snapshot = None
+        raw_client = None
+        with self._client_lock:
+            if not self._closed:
+                strict_snapshot = self._strict_lifecycle_debug_snapshot_locked()
+                self._closed = True
+                raw_client = self._client
+                self._client = None
+        if raw_client is not None:
+            close_raw_client(raw_client)
+        if raise_strict_lifecycle_errors and strict_snapshot is not None and strict_snapshot.has_leaks:
+            raise LifecycleError(async_lifecycle_debug_leak_message(strict_snapshot))
 
     def _begin_async_request_lifecycle_debug(
         self,
