@@ -34,5 +34,5 @@ class TransportStats:
     connections_aborted: int = 0
     buffered_response_bytes: int = 0
     buffered_response_budget_rejections: int = 0
-    schema_version: int = field(default=TELEMETRY_SNAPSHOT_SCHEMA_VERSION, compare=False)
+    schema_version: int = TELEMETRY_SNAPSHOT_SCHEMA_VERSION
     snapshot_sequence: int = field(default=SYNTHETIC_TELEMETRY_SNAPSHOT_SEQUENCE, compare=False)

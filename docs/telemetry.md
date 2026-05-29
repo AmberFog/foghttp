@@ -44,7 +44,7 @@ for low-cardinality operational monitoring when the field type is appropriate:
 | `schema_version`, `snapshot_sequence` | schema marker, monotonic sequence | Useful for parser compatibility and observation ordering. |
 | `total_requests`, `failed_requests` | cumulative counters | Suitable for rates and error ratios. |
 | `pool_acquire_attempts`, `pool_acquire_immediate`, `pool_acquire_waited`, `pool_acquire_timeouts` | cumulative counters | Suitable for rates and pressure indicators. |
-| `pool_acquire_wait_time_total_ns`, `pool_acquire_wait_time_max_ns`, `pool_acquire_wait_time_last_ns` | cumulative total, max sample, last sample | Total and max are useful with care; last sample is diagnostic only. |
+| `pool_acquire_wait_time_total_ns`, `pool_acquire_wait_time_max_ns`, `pool_acquire_wait_time_last_ns` | cumulative total, max sample, last sample | Total and max are useful with care; last sample is diagnostic only and should not drive alerts. |
 | `response_body_reuse_eligible`, `response_body_closed`, `response_body_aborted` | cumulative counters | Suitable for lifecycle rates and regression alerts. |
 | `connections_opened`, `connections_open_failed`, `connections_closed`, `connections_reused`, `connections_aborted` | cumulative counters | Suitable for connection lifecycle rates. |
 | `active_requests`, `pending_requests`, `active_connections`, `idle_connections`, `buffered_response_bytes` | current gauges | Suitable for capacity and saturation alerts. |
