@@ -2,6 +2,7 @@ __all__ = ("ClientConfig",)
 
 from dataclasses import dataclass
 
+from ..lifecycle_debug import AsyncLifecycleDebugConfig
 from ..limits import Limits
 from ..telemetry import TelemetryConfig
 from ..timeouts import Timeouts
@@ -24,6 +25,7 @@ class ClientConfig:
     tls: TLSConfig | None
     runtime_workers: int | None
     telemetry: TelemetryConfig | None
+    lifecycle_debug: AsyncLifecycleDebugConfig | None
     request_defaults: RequestBuildDefaults
 
     @classmethod
@@ -41,6 +43,7 @@ class ClientConfig:
             tls=options.tls,
             runtime_workers=options.runtime_workers,
             telemetry=options.telemetry,
+            lifecycle_debug=options.lifecycle_debug,
             request_defaults=(
                 DEFAULT_REQUEST_BUILD_DEFAULTS
                 if options.base_url is None and options.headers is None and options.params is None

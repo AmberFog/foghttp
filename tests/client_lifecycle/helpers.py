@@ -74,6 +74,7 @@ def create_test_raw_client() -> "_foghttp.RawClient":
             tls=None,
             runtime_workers=1,
             telemetry=None,
+            lifecycle_debug=None,
         ),
     )
     return create_raw_client(config=config)

@@ -3,6 +3,7 @@ __all__ = ("ClientOptions", "validate_client_options")
 from dataclasses import dataclass
 
 from ..headers import HeaderSource
+from ..lifecycle_debug import AsyncLifecycleDebugConfig
 from ..limits import Limits
 from ..messages import (
     COOKIES_UNSUPPORTED,
@@ -35,6 +36,7 @@ class ClientOptions:
     tls: TLSConfig | None
     runtime_workers: int | None
     telemetry: TelemetryConfig | None
+    lifecycle_debug: AsyncLifecycleDebugConfig | None
 
 
 def validate_client_options(options: ClientOptions) -> None:

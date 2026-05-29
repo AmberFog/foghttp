@@ -311,6 +311,28 @@ async def test_async_stats_before_first_request_do_not_create_raw_client(
     assert raw_client_factory.calls == 0
 
 
+async def test_async_lifecycle_debug_snapshot_without_debug_does_not_create_raw_client(
+    async_client_factory: type[foghttp.AsyncClient],
+    raw_client_factory: RawClientFactory,
+) -> None:
+    client = async_client_factory()
+
+    snapshot = client.dump_lifecycle_debug()
+    client.assert_no_lifecycle_leaks()
+    await client.aclose()
+
+    assert snapshot == foghttp.AsyncLifecycleDebugSnapshot(
+        enabled=False,
+        strict=False,
+        closed=False,
+        active_requests=(),
+        transport_active_requests=0,
+        transport_pending_requests=0,
+        pool_acquire_timeouts=0,
+    )
+    assert raw_client_factory.calls == 0
+
+
 async def test_async_closed_client_rejects_stats(
     async_client_factory: type[foghttp.AsyncClient],
 ) -> None:

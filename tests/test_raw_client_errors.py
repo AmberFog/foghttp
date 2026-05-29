@@ -71,6 +71,7 @@ def _default_client_config() -> ClientConfig:
             tls=None,
             runtime_workers=1,
             telemetry=None,
+            lifecycle_debug=None,
         ),
     )
 

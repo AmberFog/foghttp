@@ -3,6 +3,10 @@
 __all__ = (
     "URL",
     "AsyncClient",
+    "AsyncLifecycleDebugConfig",
+    "AsyncLifecycleDebugRequest",
+    "AsyncLifecycleDebugRequestMode",
+    "AsyncLifecycleDebugSnapshot",
     "AsyncStreamResponse",
     "Client",
     "ClientClosedError",
@@ -68,6 +72,12 @@ from .errors.timeout import (
     TimeoutError,
 )
 from .headers import Headers
+from .lifecycle_debug import (
+    AsyncLifecycleDebugConfig,
+    AsyncLifecycleDebugRequest,
+    AsyncLifecycleDebugRequestMode,
+    AsyncLifecycleDebugSnapshot,
+)
 from .limits import Limits
 from .pool_diagnostics import OriginPoolDiagnostics, PoolBlockingReason, PoolDiagnostics
 from .request import Request

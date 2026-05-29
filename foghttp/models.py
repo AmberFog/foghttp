@@ -1,5 +1,9 @@
 __all__ = (
     "URL",
+    "AsyncLifecycleDebugConfig",
+    "AsyncLifecycleDebugRequest",
+    "AsyncLifecycleDebugRequestMode",
+    "AsyncLifecycleDebugSnapshot",
     "AsyncStreamResponse",
     "Headers",
     "Limits",
@@ -13,6 +17,12 @@ __all__ = (
 )
 
 from .headers import Headers
+from .lifecycle_debug import (
+    AsyncLifecycleDebugConfig,
+    AsyncLifecycleDebugRequest,
+    AsyncLifecycleDebugRequestMode,
+    AsyncLifecycleDebugSnapshot,
+)
 from .limits import Limits
 from .request import Request
 from .response import Response

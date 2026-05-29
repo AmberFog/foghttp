@@ -17,6 +17,7 @@ from ..transport_stats import TransportStats
 from ..types import QueryParams, RequestData
 from ..url import URL
 from .config import ClientConfig
+from .lifecycle_debug import AsyncLifecycleDebugTracker
 from .raw.lifecycle import create_raw_client
 from .request_builder.builder import RequestBuilder
 from .request_builder.defaults import DEFAULT_REQUEST_BUILD_DEFAULTS
@@ -42,6 +43,7 @@ class ClientCore:
         self._client_lock = threading.Lock()
         self._client: _foghttp.RawClient | None = None
         self._telemetry = TelemetryDispatcher(config.telemetry)
+        self._lifecycle_debug = AsyncLifecycleDebugTracker(config.lifecycle_debug)
         self._request_builder = (
             _DEFAULT_REQUEST_BUILDER
             if config.request_defaults is DEFAULT_REQUEST_BUILD_DEFAULTS
@@ -52,7 +54,7 @@ class ClientCore:
 
     def __del__(self) -> None:
         if getattr(self, "_closed", True) is False:
-            warnings.warn(UNCLOSED_CLIENT, UnclosedClientError, stacklevel=2)
+            warnings.warn(self._unclosed_client_message(), UnclosedClientError, stacklevel=2)
 
     def build_request(
         self,
@@ -160,6 +162,9 @@ class ClientCore:
 
     def _request_timeouts(self, timeout: Timeouts | None) -> Timeouts:
         return timeout or self._config.timeouts
+
+    def _unclosed_client_message(self) -> str:
+        return UNCLOSED_CLIENT
 
 
 def _origin_pressure_state(origin: "_foghttp.RawOriginPressure") -> OriginPressureState:

@@ -1,8 +1,11 @@
 __all__ = (
+    "wait_for_lifecycle_debug",
     "wait_for_no_active_requests",
     "wait_for_pending_requests",
     "wait_for_transport_state",
 )
+
+from collections.abc import Callable
 
 import foghttp
 from tests.support.transport_stats import wait_for_async_transport_stats
@@ -37,3 +40,20 @@ async def wait_for_transport_state(
             f"transport state did not settle: expected_active={active_requests}, expected_pending={pending_requests}"
         ),
     )
+
+
+async def wait_for_lifecycle_debug(
+    client: foghttp.AsyncClient,
+    condition: Callable[[foghttp.AsyncLifecycleDebugSnapshot], bool],
+    *,
+    message: str,
+) -> foghttp.AsyncLifecycleDebugSnapshot:
+    def stats_condition(_stats: foghttp.TransportStats) -> bool:
+        return condition(client.dump_lifecycle_debug())
+
+    await wait_for_async_transport_stats(
+        client,
+        stats_condition,
+        message=message,
+    )
+    return client.dump_lifecycle_debug()

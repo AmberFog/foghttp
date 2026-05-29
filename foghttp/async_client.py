@@ -6,9 +6,14 @@ from typing import Any
 from ._client.config import ClientConfig
 from ._client.constants import DEFAULT_MAX_REDIRECTS
 from ._client.core import ClientCore
+from ._client.lifecycle_debug import (
+    LifecycleDebugRequestToken,
+    async_lifecycle_debug_leak_message,
+)
 from ._client.options import ClientOptions
 from ._client.raw.lifecycle import close_raw_client
 from ._client.request_builder.header_policy import validate_safe_request_headers
+from ._client.stats import stats_from_raw
 from ._client.stream_context import AsyncStreamContext
 from ._client.telemetry import (
     TelemetryRequestContext,
@@ -18,12 +23,18 @@ from ._client.telemetry import (
     start_request_telemetry,
 )
 from ._client.transport import AsyncTransport, RawAsyncTransport
+from .errors import LifecycleError
 from .headers import HeaderSource
+from .lifecycle_debug import (
+    AsyncLifecycleDebugConfig,
+    AsyncLifecycleDebugRequestMode,
+    AsyncLifecycleDebugSnapshot,
+)
 from .limits import Limits
 from .methods import DELETE, GET, HEAD, PATCH, POST, PUT
 from .request import Request
 from .response import Response
-from .stream_response import AsyncStreamResponse, bind_stream_telemetry
+from .stream_response import AsyncStreamResponse, bind_stream_lifecycle_debug, bind_stream_telemetry
 from .telemetry import TelemetryConfig, TelemetryRequestMode
 from .timeouts import Timeouts
 from .tls import TLSConfig
@@ -50,6 +61,7 @@ class AsyncClient(ClientCore):
         tls: TLSConfig | None = None,
         runtime_workers: int | None = None,
         telemetry: TelemetryConfig | None = None,
+        lifecycle_debug: AsyncLifecycleDebugConfig | None = None,
     ) -> None:
         super().__init__(
             config=ClientConfig.from_options(
@@ -67,6 +79,7 @@ class AsyncClient(ClientCore):
                     tls=tls,
                     runtime_workers=runtime_workers,
                     telemetry=telemetry,
+                    lifecycle_debug=lifecycle_debug,
                 ),
             ),
         )
@@ -82,17 +95,19 @@ class AsyncClient(ClientCore):
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        await self.aclose()
+        self._close(raise_strict_lifecycle_errors=exc_type is None)
 
     async def aclose(self) -> None:
-        raw_client = None
+        self._close(raise_strict_lifecycle_errors=True)
+
+    def dump_lifecycle_debug(self) -> AsyncLifecycleDebugSnapshot:
         with self._client_lock:
-            if not self._closed:
-                self._closed = True
-                raw_client = self._client
-                self._client = None
-        if raw_client is not None:
-            close_raw_client(raw_client)
+            return self._lifecycle_debug_snapshot_locked()
+
+    def assert_no_lifecycle_leaks(self) -> None:
+        snapshot = self.dump_lifecycle_debug()
+        if snapshot.has_leaks:
+            raise LifecycleError(async_lifecycle_debug_leak_message(snapshot))
 
     async def request(
         self,
@@ -121,8 +136,9 @@ class AsyncClient(ClientCore):
     async def send(self, request: Request, *, timeout: Timeouts | None = None) -> Response:
         telemetry_context = self._telemetry.request_context(request, mode=TelemetryRequestMode.BUFFERED)
         telemetry_started = False
+        lifecycle_debug_token: LifecycleDebugRequestToken = None
         try:
-            self._ensure_open()
+            lifecycle_debug_token = self._begin_async_request_lifecycle_debug(request, mode="buffered")
             telemetry_started = start_request_telemetry(telemetry_context)
             validate_safe_request_headers(request.headers)
             response = await self._transport.send(request, timeouts=self._request_timeouts(timeout))
@@ -136,6 +152,8 @@ class AsyncClient(ClientCore):
         else:
             emit_buffered_response_telemetry(telemetry_context, response)
             return response
+        finally:
+            self._lifecycle_debug.finish_request(lifecycle_debug_token)
 
     def stream(
         self,
@@ -296,6 +314,29 @@ class AsyncClient(ClientCore):
     def _create_transport(self) -> AsyncTransport:
         return RawAsyncTransport(self._raw_client)
 
+    def _close(self, *, raise_strict_lifecycle_errors: bool) -> None:
+        strict_snapshot = None
+        raw_client = None
+        with self._client_lock:
+            if not self._closed:
+                strict_snapshot = self._strict_lifecycle_debug_snapshot_locked()
+                self._closed = True
+                raw_client = self._client
+                self._client = None
+        if raw_client is not None:
+            close_raw_client(raw_client)
+        if raise_strict_lifecycle_errors and strict_snapshot is not None and strict_snapshot.has_leaks:
+            raise LifecycleError(async_lifecycle_debug_leak_message(strict_snapshot))
+
+    def _begin_async_request_lifecycle_debug(
+        self,
+        request: Request,
+        *,
+        mode: AsyncLifecycleDebugRequestMode,
+    ) -> LifecycleDebugRequestToken:
+        self._ensure_open()
+        return self._lifecycle_debug.start_request(request, mode=mode)
+
     async def _send_stream(
         self,
         request: Request,
@@ -304,8 +345,10 @@ class AsyncClient(ClientCore):
     ) -> AsyncStreamResponse:
         telemetry_context = self._telemetry.request_context(request, mode=TelemetryRequestMode.STREAM)
         telemetry_started = False
+        lifecycle_debug_bound = False
+        lifecycle_debug_token: LifecycleDebugRequestToken = None
         try:
-            self._ensure_open()
+            lifecycle_debug_token = self._begin_async_request_lifecycle_debug(request, mode="stream")
             telemetry_started = start_request_telemetry(telemetry_context)
             validate_safe_request_headers(request.headers)
             response = await self._transport.stream(request, timeouts=self._request_timeouts(timeout))
@@ -317,8 +360,33 @@ class AsyncClient(ClientCore):
             )
             raise
         else:
+            if lifecycle_debug_token is not None:
+                bind_stream_lifecycle_debug(
+                    response,
+                    lambda: self._lifecycle_debug.finish_request(lifecycle_debug_token),
+                )
+                lifecycle_debug_bound = True
             _bind_stream_response_telemetry(telemetry_context, response)
             return response
+        finally:
+            if not lifecycle_debug_bound:
+                self._lifecycle_debug.finish_request(lifecycle_debug_token)
+
+    def _strict_lifecycle_debug_snapshot_locked(self) -> AsyncLifecycleDebugSnapshot | None:
+        if not self._lifecycle_debug.strict:
+            return None
+        return self._lifecycle_debug_snapshot_locked()
+
+    def _lifecycle_debug_snapshot_locked(self) -> AsyncLifecycleDebugSnapshot:
+        raw_client = self._client
+        stats = None if raw_client is None else stats_from_raw(raw=raw_client.stats())
+        return self._lifecycle_debug.snapshot(
+            closed=self._closed,
+            stats=stats,
+        )
+
+    def _unclosed_client_message(self) -> str:
+        return self._lifecycle_debug.unclosed_warning_message(super()._unclosed_client_message())
 
 
 def _bind_stream_response_telemetry(
