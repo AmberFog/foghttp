@@ -1,3 +1,4 @@
+from dataclasses import fields
 from types import SimpleNamespace
 
 import foghttp
@@ -32,6 +33,12 @@ RAW_STATS_VALUES = {
     "schema_version": 25,
     "snapshot_sequence": 26,
 }
+
+
+def test_raw_stats_values_cover_transport_stats_contract() -> None:
+    transport_stat_fields = {stat_field.name for stat_field in fields(foghttp.TransportStats)}
+
+    assert set(RAW_STATS_VALUES) == transport_stat_fields
 
 
 def test_stats_from_raw_maps_unique_transport_stat_fields() -> None:

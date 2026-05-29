@@ -524,11 +524,11 @@ mod tests {
         TELEMETRY_SNAPSHOT_SCHEMA_VERSION,
     };
     use std::sync::atomic::Ordering;
-    use std::sync::Arc;
+    use std::sync::{Arc, Barrier};
     use std::thread;
     use std::time::Duration;
 
-    const CONCURRENT_SNAPSHOT_COUNT: u64 = 32;
+    const CONCURRENT_SNAPSHOT_COUNT: usize = 32;
 
     #[test]
     fn buffered_response_reservation_rejects_without_changing_reserved_bytes() {
@@ -631,11 +631,16 @@ mod tests {
     #[test]
     fn telemetry_snapshot_sequence_is_unique_under_concurrent_rust_observers() {
         let metrics = Arc::new(Metrics::default());
+        let barrier = Arc::new(Barrier::new(CONCURRENT_SNAPSHOT_COUNT));
 
         let handles = (0..CONCURRENT_SNAPSHOT_COUNT)
             .map(|_thread_index| {
                 let metrics = Arc::clone(&metrics);
-                thread::spawn(move || metrics.next_telemetry_snapshot_metadata())
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    barrier.wait();
+                    metrics.next_telemetry_snapshot_metadata()
+                })
             })
             .collect::<Vec<_>>();
         let mut snapshots = handles
@@ -647,7 +652,9 @@ mod tests {
             .iter()
             .map(|snapshot| snapshot.snapshot_sequence)
             .collect::<Vec<_>>();
-        let expected_sequences = (1..=CONCURRENT_SNAPSHOT_COUNT).collect::<Vec<_>>();
+        let expected_sequences = (1..=CONCURRENT_SNAPSHOT_COUNT)
+            .map(|sequence| u64::try_from(sequence).expect("concurrent snapshot count fits u64"))
+            .collect::<Vec<_>>();
 
         assert_eq!(sequences, expected_sequences);
         assert!(snapshots

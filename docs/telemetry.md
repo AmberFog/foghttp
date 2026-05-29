@@ -75,6 +75,8 @@ guarantees:
 - use `TransportStats` current gauges for saturation and memory pressure
 - keep per-origin labels opt-in and bounded
 - redact or normalize labels before export
+- treat `snapshot_sequence == 0` as a synthetic pre-transport snapshot that
+  may be skipped for Rust-side telemetry streams
 - avoid deriving alert-critical counters from `dump_transport_state()` retries
   or `dump_pool_diagnostics()` waiter snapshots
 - benchmark exporter/versioning overhead before adding work to request hot paths
