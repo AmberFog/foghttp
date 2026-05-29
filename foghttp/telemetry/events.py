@@ -12,6 +12,12 @@ from .._telemetry import TELEMETRY_EVENT_SCHEMA_VERSION
 
 
 class TelemetryEventType(StrEnum):
+    """Telemetry event names.
+
+    Pool acquire and connection lifecycle names are reserved for the typed
+    contract and are not emitted by Python hooks yet.
+    """
+
     REQUEST_STARTED = "request_started"
     POOL_ACQUIRE_STARTED = "pool_acquire_started"
     POOL_ACQUIRE_FINISHED = "pool_acquire_finished"

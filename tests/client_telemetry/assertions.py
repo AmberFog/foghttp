@@ -27,10 +27,51 @@ def assert_event_sequence_is_monotonic(events: Sequence[TelemetryEvent]) -> None
         raise AssertionError(actual)
 
 
+def assert_event_sequences_are_unique(events: Sequence[TelemetryEvent]) -> None:
+    actual = sorted(event.event_sequence for event in events)
+    expected = list(range(1, len(events) + 1))
+    if actual != expected:
+        raise AssertionError(actual)
+
+
 def assert_single_request_id(events: Sequence[TelemetryEvent]) -> None:
     request_ids = {event.request_id for event in events}
     if len(request_ids) != 1 or None in request_ids:
         raise AssertionError(request_ids)
+
+
+def assert_redacted_urls_do_not_contain(events: Sequence[TelemetryEvent], secret: str) -> None:
+    leaked_urls = tuple(event.redacted_url for event in events if event.redacted_url and secret in event.redacted_url)
+    if leaked_urls:
+        raise AssertionError(leaked_urls)
+
+
+def assert_stream_completion(
+    events: Sequence[TelemetryEvent],
+    *,
+    outcome: TelemetryRequestOutcome,
+    error_type: str | None = None,
+) -> None:
+    body_event = events[-2]
+    request_event = events[-1]
+    actual_values = {
+        "body_elapsed_ns": body_event.elapsed_ns,
+        "body_outcome": body_event.outcome,
+        "body_error_type": body_event.error_type,
+        "request_elapsed_ns": request_event.elapsed_ns,
+        "request_outcome": request_event.outcome,
+        "request_error_type": request_event.error_type,
+    }
+    expected_values = {
+        "body_elapsed_ns": None,
+        "body_outcome": outcome,
+        "body_error_type": error_type,
+        "request_elapsed_ns": None,
+        "request_outcome": outcome,
+        "request_error_type": error_type,
+    }
+    if actual_values != expected_values:
+        raise AssertionError(actual_values)
 
 
 def assert_buffered_redirect_contract(events: Sequence[TelemetryEvent]) -> None:

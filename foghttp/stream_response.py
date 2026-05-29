@@ -8,7 +8,7 @@ from types import TracebackType
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
 from ._client.raw.errors import public_raw_error
-from ._client.telemetry import TelemetryRequestContext, elapsed_seconds_to_ns
+from ._client.telemetry import TelemetryRequestContext
 from ._client.telemetry.emission import TelemetryCompletion, TelemetryResponseMetadata
 from ._client.telemetry.url import (
     redacted_url as telemetry_redacted_url,
@@ -153,7 +153,7 @@ class _StreamResponseBase:
 
         self._telemetry_finished = True
         completion = TelemetryCompletion(
-            response=self._telemetry_response_metadata(),
+            response=self._telemetry_completion_metadata(),
             outcome=outcome,
             error=error,
             suppress_hook_errors=suppress_hook_errors,
@@ -161,10 +161,10 @@ class _StreamResponseBase:
         self._telemetry_context.response_body_finished(completion)
         self._telemetry_context.request_finished(completion)
 
-    def _telemetry_response_metadata(self) -> TelemetryResponseMetadata:
+    def _telemetry_completion_metadata(self) -> TelemetryResponseMetadata:
         return TelemetryResponseMetadata(
             status_code=self.status_code,
-            elapsed_ns=elapsed_seconds_to_ns(self.elapsed),
+            elapsed_ns=None,
             origin=url_origin(self.url),
             redacted_url=telemetry_redacted_url(self.url),
         )

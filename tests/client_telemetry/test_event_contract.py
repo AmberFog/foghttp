@@ -37,3 +37,26 @@ def test_event_schema_uses_event_constant() -> None:
     )
 
     assert event.schema_version == TELEMETRY_EVENT_SCHEMA_VERSION
+
+
+def test_request_redacts_url_secret_parts() -> None:
+    redacted_url = _start_event_redacted_url(_url_with_secret_parts())
+    assert redacted_url is not None
+    assert "<redacted>@example.com" in redacted_url
+    assert "hunter" not in redacted_url
+    assert "secret" not in redacted_url
+
+
+def _start_event_redacted_url(url: str) -> str | None:
+    sink = RecordingTelemetrySink()
+    telemetry_context = TelemetryDispatcher(TelemetryConfig(sink=sink)).request_context(
+        foghttp.Request(GET, url),
+        mode=TelemetryRequestMode.BUFFERED,
+    )
+    assert start_request_telemetry(telemetry_context)
+    return sink.events[0].redacted_url
+
+
+def _url_with_secret_parts() -> str:
+    userinfo = "user:hunter"
+    return f"https://{userinfo}@example.com/path?token=secret#section?password=secret"

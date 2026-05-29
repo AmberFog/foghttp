@@ -670,7 +670,8 @@ monotonic `snapshot_sequence` within one Rust transport lifetime. Use
 For opt-in event hooks, pass a typed telemetry config. Hooks receive redacted
 `TelemetryEvent` objects and are intended for logging/tracing bridges, not for
 mutating requests or responses. Hooks run inline, so keep sinks fast and
-non-blocking:
+non-blocking. The default hook error policy is development-strict; production
+exporters usually should use `on_hook_error="warn"` or `"ignore"`:
 
 ```python
 class Sink:

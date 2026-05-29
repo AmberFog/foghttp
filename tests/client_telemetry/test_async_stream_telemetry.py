@@ -10,7 +10,7 @@ from tests.client_streaming import (
     stream_readers,
 )
 from tests.client_streaming.server import AsyncStreamingServer
-from tests.client_telemetry.assertions import assert_event_types
+from tests.client_telemetry.assertions import assert_event_types, assert_stream_completion
 from tests.client_telemetry.constants import STREAM_EVENT_TYPES
 from tests.client_telemetry.models import RecordingTelemetrySink
 
@@ -30,8 +30,7 @@ async def test_async_stream_full_consume_events(http_server: str) -> None:
     assert content == b"xxxx"
     assert_event_types(sink.events, STREAM_EVENT_TYPES)
     assert sink.events[0].mode == foghttp.TelemetryRequestMode.STREAM
-    assert sink.events[-2].outcome == foghttp.TelemetryRequestOutcome.SUCCESS
-    assert sink.events[-1].outcome == foghttp.TelemetryRequestOutcome.SUCCESS
+    assert_stream_completion(sink.events, outcome=foghttp.TelemetryRequestOutcome.SUCCESS)
 
 
 async def test_async_stream_early_close_events(streaming_server: AsyncStreamingServer) -> None:
@@ -50,8 +49,7 @@ async def test_async_stream_early_close_events(streaming_server: AsyncStreamingS
             assert await stream_readers.next_stream_chunk(iterator) == stream_constants.FIRST_CHUNK
 
     assert_event_types(sink.events, STREAM_EVENT_TYPES)
-    assert sink.events[-2].outcome == foghttp.TelemetryRequestOutcome.CLOSED
-    assert sink.events[-1].outcome == foghttp.TelemetryRequestOutcome.CLOSED
+    assert_stream_completion(sink.events, outcome=foghttp.TelemetryRequestOutcome.CLOSED)
 
 
 async def test_async_stream_timeout_uses_public_error(
@@ -76,10 +74,11 @@ async def test_async_stream_timeout_uses_public_error(
         with pytest.raises(foghttp.ReadTimeout):
             await stream_readers.next_stream_chunk(iterator)
 
-    assert sink.events[-2].outcome == foghttp.TelemetryRequestOutcome.ERROR
-    assert sink.events[-2].error_type == "ReadTimeout"
-    assert sink.events[-1].outcome == foghttp.TelemetryRequestOutcome.ERROR
-    assert sink.events[-1].error_type == "ReadTimeout"
+    assert_stream_completion(
+        sink.events,
+        outcome=foghttp.TelemetryRequestOutcome.ERROR,
+        error_type="ReadTimeout",
+    )
 
 
 async def test_async_stream_read_cancel_emits_cancelled(
@@ -98,10 +97,11 @@ async def test_async_stream_read_cancel_emits_cancelled(
         ):
             await _cancel_pending_stream_read(response)
 
-    assert sink.events[-2].outcome == foghttp.TelemetryRequestOutcome.CANCELLED
-    assert sink.events[-2].error_type == "CancelledError"
-    assert sink.events[-1].outcome == foghttp.TelemetryRequestOutcome.CANCELLED
-    assert sink.events[-1].error_type == "CancelledError"
+    assert_stream_completion(
+        sink.events,
+        outcome=foghttp.TelemetryRequestOutcome.CANCELLED,
+        error_type="CancelledError",
+    )
 
 
 async def _cancel_pending_stream_read(response: foghttp.AsyncStreamResponse) -> None:

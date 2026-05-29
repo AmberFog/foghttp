@@ -6,7 +6,7 @@ from tests.client_telemetry.assertions import (
     assert_event_types,
     assert_single_request_id,
 )
-from tests.client_telemetry.models import RecordingTelemetrySink
+from tests.client_telemetry.models import FailingTelemetrySink, RecordingTelemetrySink
 
 
 async def test_async_buffered_core_events(http_server: str) -> None:
@@ -29,3 +29,15 @@ async def test_async_buffered_core_events(http_server: str) -> None:
     assert_single_request_id(sink.events)
     assert sink.events[0].mode == TelemetryRequestMode.BUFFERED
     assert sink.events[-1].outcome == TelemetryRequestOutcome.SUCCESS
+
+
+async def test_async_hook_ignore_keeps_request_running(http_server: str) -> None:
+    async with foghttp.AsyncClient(
+        telemetry=TelemetryConfig(
+            sink=FailingTelemetrySink(),
+            on_hook_error="ignore",
+        ),
+    ) as client:
+        response = await client.get(f"{http_server}/status/{OK}")
+
+    assert response.status_code == OK

@@ -14,6 +14,13 @@ _INVALID_HOOK_ERROR_POLICY = "on_hook_error must be 'raise', 'warn', or 'ignore'
 
 @dataclass(frozen=True, slots=True)
 class TelemetryConfig:
+    """Opt-in telemetry hook configuration.
+
+    The default hook error policy is development-strict. Production exporters
+    usually should use "warn" or "ignore" to avoid breaking HTTP requests from
+    observer failures.
+    """
+
     sink: TelemetryEventSink | None = None
     on_hook_error: TelemetryHookErrorPolicy = "raise"
 

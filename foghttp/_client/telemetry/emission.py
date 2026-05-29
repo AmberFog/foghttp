@@ -23,7 +23,7 @@ class TelemetryContextData:
 @dataclass(frozen=True, slots=True)
 class TelemetryResponseMetadata:
     status_code: int
-    elapsed_ns: int
+    elapsed_ns: int | None
     origin: str | None
     redacted_url: str
 

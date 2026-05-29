@@ -40,6 +40,11 @@ on the event loop. Keep sinks fast and non-blocking; exporters that write to
 files, sockets, queues, or tracing systems should enqueue compact redacted
 events and do heavier work outside the request path.
 
+For sync clients used concurrently from multiple threads, the same sink may be
+called concurrently. `event_sequence` orders event creation inside the client
+dispatcher; it is not a guarantee that a thread-safe sink will observe callbacks
+arriving in list order.
+
 Current event fields include:
 
 | field | meaning |
@@ -50,7 +55,7 @@ Current event fields include:
 | `request_id` | Client-local request correlation id for all events emitted for one request. |
 | `mode` | `buffered` or `stream`. |
 | `method`, `origin`, `redacted_url` | Safe request surface. URLs are redacted before they reach the hook. |
-| `status_code`, `elapsed_ns`, `redirect_hop` | Response/redirect context when applicable. |
+| `status_code`, `elapsed_ns`, `redirect_hop` | Response/redirect context when applicable. For stream completion events, `elapsed_ns` is `None` until FogHTTP exposes a separate body/request duration field. |
 | `outcome`, `error_type` | Completion outcome and public error class name when applicable. |
 
 FogHTTP never passes raw request or response bodies to telemetry hooks. Hook
@@ -58,7 +63,10 @@ URLs are redacted with the same policy used by `repr()` and public error
 messages. Headers are intentionally not included in the first event payload
 shape; future header surfaces must be explicit and redacted.
 
-`TelemetryConfig.on_hook_error` controls sink failures:
+`TelemetryConfig.on_hook_error` controls sink failures. The default is `raise`
+so development and tests catch broken hooks early. Production exporters usually
+should use `warn` or `ignore` so telemetry failures do not break outbound HTTP
+requests.
 
 | value | behavior |
 | --- | --- |
@@ -70,12 +78,12 @@ If a request is already failing because of transport, timeout, cancellation, or
 stream cleanup, telemetry cleanup errors are suppressed so the original request
 failure is not masked.
 
-The typed event model reserves names for pool acquire, connection lifecycle and
-redirect phases. The current Python hook delivery emits request start,
-redirect decisions visible in response history, response headers received,
-response body finished, and request finished events. Lower-level Rust pool and
-connection event delivery should be added as a follow-up before building
-Prometheus/OpenTelemetry exporters from event hooks.
+The typed event model reserves names for pool acquire and connection lifecycle
+phases. These enum members are not emitted by Python hooks yet. The current
+Python hook delivery emits request start, redirect decisions visible in response
+history, response headers received, response body finished, and request finished
+events. Lower-level Rust pool and connection event delivery should be added as a
+follow-up before building Prometheus/OpenTelemetry exporters from event hooks.
 
 ## Snapshot Metadata
 
