@@ -3,6 +3,7 @@ __all__ = ("ClientConfig",)
 from dataclasses import dataclass
 
 from ..limits import Limits
+from ..telemetry import TelemetryConfig
 from ..timeouts import Timeouts
 from ..tls import TLSConfig
 from .options import ClientOptions, validate_client_options
@@ -22,6 +23,7 @@ class ClientConfig:
     trust_env: bool
     tls: TLSConfig | None
     runtime_workers: int | None
+    telemetry: TelemetryConfig | None
     request_defaults: RequestBuildDefaults
 
     @classmethod
@@ -38,6 +40,7 @@ class ClientConfig:
             trust_env=options.trust_env,
             tls=options.tls,
             runtime_workers=options.runtime_workers,
+            telemetry=options.telemetry,
             request_defaults=(
                 DEFAULT_REQUEST_BUILD_DEFAULTS
                 if options.base_url is None and options.headers is None and options.params is None

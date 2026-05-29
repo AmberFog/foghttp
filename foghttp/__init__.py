@@ -27,6 +27,14 @@ __all__ = (
     "ResponseError",
     "StreamResponse",
     "TLSConfig",
+    "TelemetryConfig",
+    "TelemetryEvent",
+    "TelemetryEventSink",
+    "TelemetryEventType",
+    "TelemetryHookError",
+    "TelemetryHookErrorPolicy",
+    "TelemetryRequestMode",
+    "TelemetryRequestOutcome",
     "TimeoutDiagnostic",
     "TimeoutError",
     "TimeoutPhase",
@@ -66,6 +74,16 @@ from .request import Request
 from .request_info import RequestInfo
 from .response import Response
 from .stream_response import AsyncStreamResponse, StreamResponse
+from .telemetry import (
+    TelemetryConfig,
+    TelemetryEvent,
+    TelemetryEventSink,
+    TelemetryEventType,
+    TelemetryHookError,
+    TelemetryHookErrorPolicy,
+    TelemetryRequestMode,
+    TelemetryRequestOutcome,
+)
 from .timeout_diagnostics import TimeoutDiagnostic, TimeoutPhase
 from .timeouts import Timeouts
 from .tls import TLSConfig

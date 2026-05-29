@@ -12,6 +12,7 @@ from ..messages import (
     RUNTIME_WORKERS_INVALID,
     TRUST_ENV_UNSUPPORTED,
 )
+from ..telemetry import TelemetryConfig
 from ..timeouts import Timeouts
 from ..tls import TLSConfig
 from ..types import HttpVersions, QueryParams
@@ -33,6 +34,7 @@ class ClientOptions:
     trust_env: bool
     tls: TLSConfig | None
     runtime_workers: int | None
+    telemetry: TelemetryConfig | None
 
 
 def validate_client_options(options: ClientOptions) -> None:

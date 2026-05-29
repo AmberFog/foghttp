@@ -23,6 +23,7 @@ from .request_builder.defaults import DEFAULT_REQUEST_BUILD_DEFAULTS
 from .request_builder.merge import RequestMergeContract
 from .request_builder.models import RequestBuildOptions
 from .stats import stats_from_raw
+from .telemetry import TelemetryDispatcher
 
 
 if TYPE_CHECKING:
@@ -40,6 +41,7 @@ class ClientCore:
         self._closed = False
         self._client_lock = threading.Lock()
         self._client: _foghttp.RawClient | None = None
+        self._telemetry = TelemetryDispatcher(config.telemetry)
         self._request_builder = (
             _DEFAULT_REQUEST_BUILDER
             if config.request_defaults is DEFAULT_REQUEST_BUILD_DEFAULTS

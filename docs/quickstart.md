@@ -667,6 +667,21 @@ monotonic `snapshot_sequence` within one Rust transport lifetime. Use
 `TransportStats` for dashboards and alert-oriented metrics; see
 [Telemetry contract](./telemetry.md) for the current guarantees.
 
+For opt-in event hooks, pass a typed telemetry config. Hooks receive redacted
+`TelemetryEvent` objects and are intended for logging/tracing bridges, not for
+mutating requests or responses. Hooks run inline, so keep sinks fast and
+non-blocking:
+
+```python
+class Sink:
+    def emit(self, event: foghttp.TelemetryEvent) -> None:
+        print(event.event_type, event.redacted_url, event.outcome)
+
+
+with foghttp.Client(telemetry=foghttp.TelemetryConfig(sink=Sink())) as client:
+    response = client.get("https://httpbin.org/get?token=secret")
+```
+
 `Timeouts.connect` is client-level connector configuration. Per-request
 `timeout=` currently affects `pool`, `read`, and `total`, not `connect` or
 `write`. See [Timeout model](./timeouts.md) for the detailed current contract

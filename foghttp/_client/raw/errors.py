@@ -1,29 +1,58 @@
-__all__ = ("raise_public_raw_error",)
+__all__ = ("public_raw_error", "raise_public_raw_error")
 
 from typing import NoReturn
 
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
 from ...errors import (
+    FogHTTPError,
     PoolTimeout,
     ReadTimeout,
     RequestError,
     ResponseBodyBudgetExceededError,
     ResponseBodyTooLargeError,
+    ResponseError,
     TimeoutError,
 )
 from .timeout_errors import timeout_error_from_raw
 
 
+_RESPONSE_ERROR_TYPES = (
+    (_foghttp.FogHttpResponseBodyTooLargeError, ResponseBodyTooLargeError),
+    (_foghttp.FogHttpResponseBodyBudgetExceededError, ResponseBodyBudgetExceededError),
+)
+_TIMEOUT_ERROR_TYPES = (
+    (_foghttp.FogHttpPoolTimeoutError, PoolTimeout),
+    (_foghttp.FogHttpReadTimeoutError, ReadTimeout),
+    (_foghttp.FogHttpTimeoutError, TimeoutError),
+)
+
+
+def public_raw_error(exc: BaseException) -> FogHTTPError:
+    response_error_type = _response_error_type(exc)
+    if response_error_type is not None:
+        return response_error_type(str(exc))
+
+    timeout_error_type = _timeout_error_type(exc)
+    if timeout_error_type is not None:
+        return timeout_error_from_raw(exc, timeout_error_type)
+
+    return RequestError(str(exc))
+
+
 def raise_public_raw_error(exc: BaseException) -> NoReturn:
-    if isinstance(exc, _foghttp.FogHttpResponseBodyTooLargeError):
-        raise ResponseBodyTooLargeError(str(exc)) from exc
-    if isinstance(exc, _foghttp.FogHttpResponseBodyBudgetExceededError):
-        raise ResponseBodyBudgetExceededError(str(exc)) from exc
-    if isinstance(exc, _foghttp.FogHttpPoolTimeoutError):
-        raise timeout_error_from_raw(exc, PoolTimeout) from exc
-    if isinstance(exc, _foghttp.FogHttpReadTimeoutError):
-        raise timeout_error_from_raw(exc, ReadTimeout) from exc
-    if isinstance(exc, _foghttp.FogHttpTimeoutError):
-        raise timeout_error_from_raw(exc, TimeoutError) from exc
-    raise RequestError(str(exc)) from exc
+    raise public_raw_error(exc) from exc
+
+
+def _response_error_type(exc: BaseException) -> type[ResponseError] | None:
+    for raw_error_type, public_error_type in _RESPONSE_ERROR_TYPES:
+        if isinstance(exc, raw_error_type):
+            return public_error_type
+    return None
+
+
+def _timeout_error_type(exc: BaseException) -> type[TimeoutError] | None:
+    for raw_error_type, public_error_type in _TIMEOUT_ERROR_TYPES:
+        if isinstance(exc, raw_error_type):
+            return public_error_type
+    return None

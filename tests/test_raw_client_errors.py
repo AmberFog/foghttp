@@ -70,6 +70,7 @@ def _default_client_config() -> ClientConfig:
             trust_env=False,
             tls=None,
             runtime_workers=1,
+            telemetry=None,
         ),
     )
 

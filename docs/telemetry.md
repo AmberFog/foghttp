@@ -5,11 +5,77 @@ FogHTTP exposes two kinds of operational state today:
 - `client.stats()` returns low-cardinality transport counters and gauges.
 - `client.dump_transport_state()` and `client.dump_pool_diagnostics()` return
   diagnostic snapshots for incident debugging.
+- `telemetry=TelemetryConfig(...)` enables opt-in typed event hooks around
+  request and response lifecycle phases.
 
 These APIs are intentionally not the same contract. `TransportStats` is the
 current source for stable, low-cardinality operational counters. The `dump_*`
 APIs are richer debugging views and include per-origin labels, queue details,
 and pool pressure state that can change while requests are running.
+
+## Event Hooks
+
+Event hooks are an observer API, not middleware. A hook receives immutable
+`TelemetryEvent` values and must not be used to mutate requests, responses,
+headers, redirects, retry policy, or resource cleanup.
+
+```python
+from foghttp import Client, TelemetryConfig, TelemetryEvent
+
+
+class EventSink:
+    def emit(self, event: TelemetryEvent) -> None:
+        print(event.event_type, event.redacted_url, event.outcome)
+
+
+with Client(telemetry=TelemetryConfig(sink=EventSink())) as client:
+    response = client.get("https://api.example.com/items?token=secret")
+```
+
+The default path has no sink and does not allocate events. Python callbacks are
+only invoked when `TelemetryConfig(sink=...)` is passed to a client.
+
+Hooks run inline on the request path. For async clients this means the sink runs
+on the event loop. Keep sinks fast and non-blocking; exporters that write to
+files, sockets, queues, or tracing systems should enqueue compact redacted
+events and do heavier work outside the request path.
+
+Current event fields include:
+
+| field | meaning |
+| --- | --- |
+| `schema_version` | Version of the telemetry event shape. |
+| `event_sequence` | Monotonic Python-side sequence within the current client event dispatcher. |
+| `observed_at_ns` | Monotonic observation timestamp, not Unix epoch. |
+| `request_id` | Client-local request correlation id for all events emitted for one request. |
+| `mode` | `buffered` or `stream`. |
+| `method`, `origin`, `redacted_url` | Safe request surface. URLs are redacted before they reach the hook. |
+| `status_code`, `elapsed_ns`, `redirect_hop` | Response/redirect context when applicable. |
+| `outcome`, `error_type` | Completion outcome and public error class name when applicable. |
+
+FogHTTP never passes raw request or response bodies to telemetry hooks. Hook
+URLs are redacted with the same policy used by `repr()` and public error
+messages. Headers are intentionally not included in the first event payload
+shape; future header surfaces must be explicit and redacted.
+
+`TelemetryConfig.on_hook_error` controls sink failures:
+
+| value | behavior |
+| --- | --- |
+| `raise` | raise `TelemetryHookError` from the failing sink exception |
+| `warn` | emit a `RuntimeWarning` and keep the request running |
+| `ignore` | suppress sink failures |
+
+If a request is already failing because of transport, timeout, cancellation, or
+stream cleanup, telemetry cleanup errors are suppressed so the original request
+failure is not masked.
+
+The typed event model reserves names for pool acquire, connection lifecycle and
+redirect phases. The current Python hook delivery emits request start,
+redirect decisions visible in response history, response headers received,
+response body finished, and request finished events. Lower-level Rust pool and
+connection event delivery should be added as a follow-up before building
+Prometheus/OpenTelemetry exporters from event hooks.
 
 ## Snapshot Metadata
 
