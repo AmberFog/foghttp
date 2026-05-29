@@ -30,6 +30,25 @@ def test_sync_diagnostic_snapshots_before_transport_are_synthetic() -> None:
     assert diagnostics["snapshot_sequence"] == SYNTHETIC_SNAPSHOT_SEQUENCE
 
 
+def test_sync_synthetic_schema_version_matches_rust_schema_version(
+    sync_resource_http_server: str,
+) -> None:
+    with foghttp.Client() as client:
+        synthetic_stats = client.stats()
+        synthetic_state = client.dump_transport_state()
+        synthetic_diagnostics = client.dump_pool_diagnostics()
+
+        response = client.get(sync_resource_http_server)
+        real_stats = client.stats()
+        real_state = client.dump_transport_state()
+        real_diagnostics = client.dump_pool_diagnostics()
+
+    assert response.status_code == OK
+    assert synthetic_stats.schema_version == real_stats.schema_version
+    assert synthetic_state["schema_version"] == real_state["schema_version"]
+    assert synthetic_diagnostics["schema_version"] == real_diagnostics["schema_version"]
+
+
 def test_sync_diagnostic_snapshot_sequence_is_monotonic(
     sync_resource_http_server: str,
 ) -> None:

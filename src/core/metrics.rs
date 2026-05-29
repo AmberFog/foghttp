@@ -523,7 +523,12 @@ mod tests {
         BufferedByteReservationError, Metrics, TelemetrySnapshotMetadata, TransportStateSnapshot,
         TELEMETRY_SNAPSHOT_SCHEMA_VERSION,
     };
+    use std::sync::atomic::Ordering;
+    use std::sync::Arc;
+    use std::thread;
     use std::time::Duration;
+
+    const CONCURRENT_SNAPSHOT_COUNT: u64 = 32;
 
     #[test]
     fn buffered_response_reservation_rejects_without_changing_reserved_bytes() {
@@ -621,6 +626,49 @@ mod tests {
         assert_eq!(second.schema_version, TELEMETRY_SNAPSHOT_SCHEMA_VERSION);
         assert!(first.snapshot_sequence > 0);
         assert_eq!(second.snapshot_sequence, first.snapshot_sequence + 1);
+    }
+
+    #[test]
+    fn telemetry_snapshot_sequence_is_unique_under_concurrent_rust_observers() {
+        let metrics = Arc::new(Metrics::default());
+
+        let handles = (0..CONCURRENT_SNAPSHOT_COUNT)
+            .map(|_thread_index| {
+                let metrics = Arc::clone(&metrics);
+                thread::spawn(move || metrics.next_telemetry_snapshot_metadata())
+            })
+            .collect::<Vec<_>>();
+        let mut snapshots = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("snapshot observer thread panicked"))
+            .collect::<Vec<_>>();
+        snapshots.sort_by_key(|snapshot| snapshot.snapshot_sequence);
+        let sequences = snapshots
+            .iter()
+            .map(|snapshot| snapshot.snapshot_sequence)
+            .collect::<Vec<_>>();
+        let expected_sequences = (1..=CONCURRENT_SNAPSHOT_COUNT).collect::<Vec<_>>();
+
+        assert_eq!(sequences, expected_sequences);
+        assert!(snapshots
+            .iter()
+            .all(|snapshot| snapshot.schema_version == TELEMETRY_SNAPSHOT_SCHEMA_VERSION));
+    }
+
+    #[test]
+    fn telemetry_snapshot_sequence_saturates_at_u64_max() {
+        let metrics = Metrics::default();
+        metrics
+            .telemetry_snapshot_sequence
+            .store(u64::MAX - 1, Ordering::Relaxed);
+
+        let first = metrics.next_telemetry_snapshot_metadata();
+        let second = metrics.next_telemetry_snapshot_metadata();
+
+        assert_eq!(first.snapshot_sequence, u64::MAX);
+        assert_eq!(second.snapshot_sequence, u64::MAX);
+        assert_eq!(first.schema_version, TELEMETRY_SNAPSHOT_SCHEMA_VERSION);
+        assert_eq!(second.schema_version, TELEMETRY_SNAPSHOT_SCHEMA_VERSION);
     }
 
     #[test]

@@ -22,8 +22,9 @@ include two contract fields:
 | `snapshot_sequence` | Monotonic Rust-side sequence for telemetry snapshots within one transport lifetime. |
 
 The sequence starts at `1` after the Rust transport exists and increases across
-`stats()` plus both diagnostic snapshot APIs for that client. Synthetic
-pre-transport values returned before the first request use
+`stats()` plus both diagnostic snapshot APIs for that client. It is unique until
+the theoretical `u64::MAX` boundary; after that it saturates at `u64::MAX`.
+Synthetic pre-transport values returned before the first request use
 `snapshot_sequence == 0`; they preserve lazy transport creation and are not
 emitted by Rust.
 
