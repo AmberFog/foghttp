@@ -41,6 +41,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - async request cancellation that aborts the in-flight Rust request
 - global active request limit, per-origin active request limit, pending acquire
   limit, request stats, and stuck request pool diagnostics
+- opt-in typed telemetry event hooks for request, redirect, response headers,
+  response body, and request completion lifecycle
 - default per-response and aggregate buffered response memory limits
 - explicit `close()`/`aclose()` lifecycle for Rust runtime and pool resources;
   sync `close()` waits for in-flight sync requests, while async `aclose()`
@@ -73,6 +75,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | per-request connect timeout changes | `Timeouts.connect` configures the Rust connector from client-level settings when transport state is created; per-request `timeout.connect` does not reconfigure the connector |
 | separate read/write timeout semantics | `Timeouts.read` is implemented as a buffered and streamed response body progress timeout; `Timeouts.write` is reserved for later streaming upload/body work |
 | socket lifecycle telemetry granularity | `TransportStats` and `dump_transport_state()["origins"]` expose opened, open-failed, closed, reused, aborted, active, and idle tracked connection counters for the current HTTP/1 path; these are connector/lifecycle diagnostics, not a stable public view into Hyper's private pool internals |
+| telemetry hook granularity | `TelemetryConfig` currently dispatches Python-level request/response lifecycle events; lower-level Rust pool acquire and connection lifecycle event delivery is planned before Prometheus/OpenTelemetry exporters |
 | diagnostic snapshot transactionality | `stats()`, `dump_transport_state()`, and `dump_pool_diagnostics()` include `schema_version` and a monotonic `snapshot_sequence`, but the `dump_*` APIs remain diagnostic snapshots rather than lock-protected SLA transactions; use `stats()` for alert-oriented low-cardinality metrics |
 
 ## Practical Guidance

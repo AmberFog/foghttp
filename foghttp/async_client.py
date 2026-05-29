@@ -10,13 +10,21 @@ from ._client.options import ClientOptions
 from ._client.raw.lifecycle import close_raw_client
 from ._client.request_builder.header_policy import validate_safe_request_headers
 from ._client.stream_context import AsyncStreamContext
+from ._client.telemetry import (
+    TelemetryRequestContext,
+    emit_buffered_response_telemetry,
+    emit_request_error_telemetry,
+    emit_stream_response_headers_telemetry,
+    start_request_telemetry,
+)
 from ._client.transport import AsyncTransport, RawAsyncTransport
 from .headers import HeaderSource
 from .limits import Limits
 from .methods import DELETE, GET, HEAD, PATCH, POST, PUT
 from .request import Request
 from .response import Response
-from .stream_response import AsyncStreamResponse
+from .stream_response import AsyncStreamResponse, bind_stream_telemetry
+from .telemetry import TelemetryConfig, TelemetryRequestMode
 from .timeouts import Timeouts
 from .tls import TLSConfig
 from .types import HttpVersions, QueryParams, RequestData
@@ -41,6 +49,7 @@ class AsyncClient(ClientCore):
         trust_env: bool = False,
         tls: TLSConfig | None = None,
         runtime_workers: int | None = None,
+        telemetry: TelemetryConfig | None = None,
     ) -> None:
         super().__init__(
             config=ClientConfig.from_options(
@@ -57,6 +66,7 @@ class AsyncClient(ClientCore):
                     trust_env=trust_env,
                     tls=tls,
                     runtime_workers=runtime_workers,
+                    telemetry=telemetry,
                 ),
             ),
         )
@@ -109,10 +119,23 @@ class AsyncClient(ClientCore):
         return await self.send(request, timeout=timeout)
 
     async def send(self, request: Request, *, timeout: Timeouts | None = None) -> Response:
-        self._ensure_open()
-        validate_safe_request_headers(request.headers)
-        timeouts = self._request_timeouts(timeout)
-        return await self._transport.send(request, timeouts=timeouts)
+        telemetry_context = self._telemetry.request_context(request, mode=TelemetryRequestMode.BUFFERED)
+        telemetry_started = False
+        try:
+            self._ensure_open()
+            telemetry_started = start_request_telemetry(telemetry_context)
+            validate_safe_request_headers(request.headers)
+            response = await self._transport.send(request, timeouts=self._request_timeouts(timeout))
+        except BaseException as error:
+            emit_request_error_telemetry(
+                telemetry_context,
+                telemetry_started=telemetry_started,
+                error=error,
+            )
+            raise
+        else:
+            emit_buffered_response_telemetry(telemetry_context, response)
+            return response
 
     def stream(
         self,
@@ -279,7 +302,35 @@ class AsyncClient(ClientCore):
         *,
         timeout: Timeouts | None = None,
     ) -> AsyncStreamResponse:
-        self._ensure_open()
-        validate_safe_request_headers(request.headers)
-        timeouts = self._request_timeouts(timeout)
-        return await self._transport.stream(request, timeouts=timeouts)
+        telemetry_context = self._telemetry.request_context(request, mode=TelemetryRequestMode.STREAM)
+        telemetry_started = False
+        try:
+            self._ensure_open()
+            telemetry_started = start_request_telemetry(telemetry_context)
+            validate_safe_request_headers(request.headers)
+            response = await self._transport.stream(request, timeouts=self._request_timeouts(timeout))
+        except BaseException as error:
+            emit_request_error_telemetry(
+                telemetry_context,
+                telemetry_started=telemetry_started,
+                error=error,
+            )
+            raise
+        else:
+            _bind_stream_response_telemetry(telemetry_context, response)
+            return response
+
+
+def _bind_stream_response_telemetry(
+    telemetry_context: TelemetryRequestContext | None,
+    response: AsyncStreamResponse,
+) -> None:
+    if telemetry_context is None:
+        return
+
+    try:
+        emit_stream_response_headers_telemetry(telemetry_context, response)
+    except BaseException:
+        response.close()
+        raise
+    bind_stream_telemetry(response, telemetry_context)

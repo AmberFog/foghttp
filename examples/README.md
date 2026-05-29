@@ -20,6 +20,7 @@ uv run examples/compressed_response.py
 uv run examples/redirects.py
 uv run examples/prepared_requests.py
 uv run examples/request_builder_compatibility.py
+uv run examples/telemetry_hooks.py
 ```
 
 ## Good Examples
@@ -43,6 +44,8 @@ uv run examples/request_builder_compatibility.py
 - [request_builder_compatibility.py](./request_builder_compatibility.py):
   client defaults, repeated query params, form data, prepared requests, and body
   conflict validation.
+- [telemetry_hooks.py](./telemetry_hooks.py): opt-in typed telemetry events with
+  redacted URLs and explicit hook error policy.
 
 ## Limitations To Keep In Mind
 

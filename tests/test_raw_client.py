@@ -69,6 +69,7 @@ def _client_config(
             trust_env=trust_env,
             tls=tls,
             runtime_workers=runtime_workers,
+            telemetry=None,
         ),
     )
 

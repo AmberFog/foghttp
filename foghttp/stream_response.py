@@ -1,12 +1,19 @@
 __all__ = ("AsyncStreamResponse", "StreamResponse")
 
+import asyncio
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
 from types import TracebackType
 
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
-from ._client.raw.errors import raise_public_raw_error
+from ._client.raw.errors import public_raw_error
+from ._client.telemetry import TelemetryRequestContext
+from ._client.telemetry.emission import TelemetryCompletion, TelemetryResponseMetadata
+from ._client.telemetry.url import (
+    redacted_url as telemetry_redacted_url,
+    url_origin,
+)
 from ._redaction import redact_url
 from ._response.encoding import response_encoding
 from ._response.status import (
@@ -33,6 +40,7 @@ from .messages import (
 )
 from .request_info import RequestInfo
 from .response import Response
+from .telemetry import TelemetryRequestOutcome
 
 
 _DEFAULT_STREAM_TEXT_ERRORS = "replace"
@@ -50,6 +58,8 @@ class _StreamResponseBase:
     history: tuple[Response, ...] = ()
     _closed: bool = field(default=False, init=False, repr=False)
     _body_started: bool = field(default=False, init=False, repr=False)
+    _telemetry_context: TelemetryRequestContext | None = field(default=None, init=False, repr=False)
+    _telemetry_finished: bool = field(default=False, init=False, repr=False)
 
     def __repr__(self) -> str:
         return (
@@ -83,15 +93,15 @@ class _StreamResponseBase:
     def is_error(self) -> bool:
         return is_error_status(self.status_code)
 
-    def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        self._raw.close()
-
     @property
     def encoding(self) -> str:
         return response_encoding(self.headers, b"")
+
+    def close(self) -> None:
+        self._close(
+            outcome=TelemetryRequestOutcome.CLOSED,
+            suppress_telemetry_errors=False,
+        )
 
     def raise_for_status(self) -> None:
         if self.is_error:
@@ -104,6 +114,23 @@ class _StreamResponseBase:
                 response=self,
             )
 
+    def _close(
+        self,
+        *,
+        outcome: TelemetryRequestOutcome,
+        error: BaseException | None = None,
+        suppress_telemetry_errors: bool,
+    ) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._raw.close()
+        self._finish_telemetry(
+            outcome=outcome,
+            error=error,
+            suppress_hook_errors=suppress_telemetry_errors,
+        )
+
     def _start_body_iteration(self) -> None:
         if self._body_started:
             raise LifecycleError(STREAM_RESPONSE_BODY_CONSUMED)
@@ -113,6 +140,34 @@ class _StreamResponseBase:
 
     def _text_encoding(self, encoding: str | None) -> str:
         return self.encoding if encoding is None else encoding
+
+    def _finish_telemetry(
+        self,
+        *,
+        outcome: TelemetryRequestOutcome,
+        error: BaseException | None = None,
+        suppress_hook_errors: bool = False,
+    ) -> None:
+        if self._telemetry_context is None or self._telemetry_finished:
+            return
+
+        self._telemetry_finished = True
+        completion = TelemetryCompletion(
+            response=self._telemetry_completion_metadata(),
+            outcome=outcome,
+            error=error,
+            suppress_hook_errors=suppress_hook_errors,
+        )
+        self._telemetry_context.response_body_finished(completion)
+        self._telemetry_context.request_finished(completion)
+
+    def _telemetry_completion_metadata(self) -> TelemetryResponseMetadata:
+        return TelemetryResponseMetadata(
+            status_code=self.status_code,
+            elapsed_ns=None,
+            origin=url_origin(self.url),
+            redacted_url=telemetry_redacted_url(self.url),
+        )
 
 
 class StreamResponse(_StreamResponseBase):
@@ -127,7 +182,10 @@ class StreamResponse(_StreamResponseBase):
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        self.close()
+        self._close(
+            outcome=TelemetryRequestOutcome.CLOSED,
+            suppress_telemetry_errors=exc_type is not None,
+        )
 
     def iter_bytes(self) -> Iterator[bytes]:
         self._start_body_iteration()
@@ -172,18 +230,27 @@ class StreamResponse(_StreamResponseBase):
                 chunk = self._next_chunk()
                 if chunk is None:
                     self._closed = True
+                    self._finish_telemetry(outcome=TelemetryRequestOutcome.SUCCESS)
                     return
                 yield chunk
         finally:
             if not self._closed:
-                self.close()
+                self._close(
+                    outcome=TelemetryRequestOutcome.CLOSED,
+                    suppress_telemetry_errors=True,
+                )
 
     def _next_chunk(self) -> bytes | None:
         try:
             return self._raw.next_chunk()
-        except _foghttp.FogHttpError as exc:
-            self.close()
-            raise_public_raw_error(exc)
+        except _foghttp.FogHttpError as raw_error:
+            public_error = public_raw_error(raw_error)
+            self._close(
+                outcome=TelemetryRequestOutcome.ERROR,
+                error=public_error,
+                suppress_telemetry_errors=True,
+            )
+            raise public_error from raw_error
 
 
 class AsyncStreamResponse(_StreamResponseBase):
@@ -198,7 +265,12 @@ class AsyncStreamResponse(_StreamResponseBase):
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        self.close()
+        outcome = _async_exit_outcome(exc_type)
+        self._close(
+            outcome=outcome,
+            error=exc if outcome is TelemetryRequestOutcome.CANCELLED else None,
+            suppress_telemetry_errors=exc_type is not None,
+        )
 
     def aiter_bytes(self) -> AsyncIterator[bytes]:
         self._start_body_iteration()
@@ -246,15 +318,44 @@ class AsyncStreamResponse(_StreamResponseBase):
                 chunk = await self._next_chunk()
                 if chunk is None:
                     self._closed = True
+                    self._finish_telemetry(outcome=TelemetryRequestOutcome.SUCCESS)
                     return
                 yield chunk
+        except asyncio.CancelledError as cancelled_error:
+            self._close(
+                outcome=TelemetryRequestOutcome.CANCELLED,
+                error=cancelled_error,
+                suppress_telemetry_errors=True,
+            )
+            raise
         finally:
             if not self._closed:
-                self.close()
+                self._close(
+                    outcome=TelemetryRequestOutcome.CLOSED,
+                    suppress_telemetry_errors=True,
+                )
 
     async def _next_chunk(self) -> bytes | None:
         try:
             return await self._raw.next_chunk_async()
-        except _foghttp.FogHttpError as exc:
-            self.close()
-            raise_public_raw_error(exc)
+        except _foghttp.FogHttpError as raw_error:
+            public_error = public_raw_error(raw_error)
+            self._close(
+                outcome=TelemetryRequestOutcome.ERROR,
+                error=public_error,
+                suppress_telemetry_errors=True,
+            )
+            raise public_error from raw_error
+
+
+def bind_stream_telemetry(
+    response: _StreamResponseBase,
+    telemetry_context: TelemetryRequestContext,
+) -> None:
+    object.__setattr__(response, "_telemetry_context", telemetry_context)
+
+
+def _async_exit_outcome(exc_type: type[BaseException] | None) -> TelemetryRequestOutcome:
+    if exc_type is not None and issubclass(exc_type, asyncio.CancelledError):
+        return TelemetryRequestOutcome.CANCELLED
+    return TelemetryRequestOutcome.CLOSED
