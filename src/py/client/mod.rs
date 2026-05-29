@@ -334,7 +334,7 @@ impl RawClient {
     }
 
     fn stats(&self) -> RawStats {
-        self.metrics.snapshot().into()
+        self.metrics.stats_snapshot().into()
     }
 
     fn transport_state(&self) -> RawTransportState {

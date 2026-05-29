@@ -116,6 +116,7 @@ async with foghttp.AsyncClient() as client:
 - [Request builder compatibility](https://github.com/AmberFog/foghttp/blob/main/docs/request-builder.md)
 - [Client lifecycle](https://github.com/AmberFog/foghttp/blob/main/docs/lifecycle.md)
 - [Timeout model](https://github.com/AmberFog/foghttp/blob/main/docs/timeouts.md)
+- [Telemetry contract](https://github.com/AmberFog/foghttp/blob/main/docs/telemetry.md)
 - [Response streaming](https://github.com/AmberFog/foghttp/blob/main/docs/streaming.md)
 - [TLS trust](https://github.com/AmberFog/foghttp/blob/main/docs/tls.md)
 - [Use cases](https://github.com/AmberFog/foghttp/blob/main/docs/use-cases.md)

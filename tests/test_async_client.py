@@ -190,6 +190,8 @@ async def test_dump_transport_state(http_server: str) -> None:
         "response_body_aborted",
         "response_body_closed",
         "response_body_reuse_eligible",
+        "schema_version",
+        "snapshot_sequence",
         "origins",
     }
     assert state["pending_requests"] == 0

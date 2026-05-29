@@ -79,7 +79,7 @@ async def start_async_streaming_server() -> AsyncIterator[AsyncStreamingServer]:
                 first_chunk_sent=first_chunk_sent,
                 release_tail=release_tail,
             )
-        except OSError:
+        except (asyncio.IncompleteReadError, OSError):
             return
         finally:
             writer.close()

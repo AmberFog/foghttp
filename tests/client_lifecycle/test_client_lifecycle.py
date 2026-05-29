@@ -89,6 +89,8 @@ def test_sync_dump_transport_state_before_first_request_do_not_create_raw_client
         "response_body_aborted": 0,
         "response_body_closed": 0,
         "response_body_reuse_eligible": 0,
+        "schema_version": 1,
+        "snapshot_sequence": 0,
         "origins": {},
     }
     assert raw_client_factory.calls == 0
@@ -351,6 +353,8 @@ async def test_async_dump_transport_state_before_first_request_do_not_create_raw
         "response_body_aborted": 0,
         "response_body_closed": 0,
         "response_body_reuse_eligible": 0,
+        "schema_version": 1,
+        "snapshot_sequence": 0,
         "origins": {},
     }
     assert raw_client_factory.calls == 0

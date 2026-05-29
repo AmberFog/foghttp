@@ -25,6 +25,10 @@ pub struct RawOriginPoolDiagnostics {
 #[pyclass(skip_from_py_object)]
 pub struct RawPoolDiagnostics {
     #[pyo3(get)]
+    schema_version: u64,
+    #[pyo3(get)]
+    snapshot_sequence: u64,
+    #[pyo3(get)]
     active_requests: usize,
     #[pyo3(get)]
     pending_requests: usize,
@@ -62,7 +66,10 @@ impl From<OriginPoolDiagnosticsSnapshot> for RawOriginPoolDiagnostics {
 
 impl From<PoolDiagnosticsSnapshot> for RawPoolDiagnostics {
     fn from(snapshot: PoolDiagnosticsSnapshot) -> Self {
+        let metadata = snapshot.metadata;
         Self {
+            schema_version: metadata.schema_version,
+            snapshot_sequence: metadata.snapshot_sequence,
             active_requests: snapshot.active_requests,
             pending_requests: snapshot.pending_requests,
             pool_acquire_timeouts: snapshot.pool_acquire_timeouts,

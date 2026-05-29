@@ -152,8 +152,10 @@ impl AcquireGate {
     }
 
     pub fn diagnostics(&self) -> PoolDiagnosticsSnapshot {
+        let metadata = self.metrics.next_telemetry_snapshot_metadata();
         let metrics = self.metrics.snapshot();
         PoolDiagnosticsSnapshot::new(
+            metadata,
             &metrics,
             self.metrics.origin_pool_diagnostics_snapshots(),
             self.max_active_requests,

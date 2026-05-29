@@ -25,6 +25,8 @@ class OriginPoolDiagnostics(TypedDict):
 
 
 class PoolDiagnostics(TypedDict):
+    schema_version: int
+    snapshot_sequence: int
     active_requests: int
     pending_requests: int
     pool_acquire_timeouts: int

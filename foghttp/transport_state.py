@@ -28,6 +28,8 @@ class OriginPressureState(TypedDict):
 
 
 class TransportState(TypedDict):
+    schema_version: int
+    snapshot_sequence: int
     active_requests: int
     pending_requests: int
     peak_pending_requests: int

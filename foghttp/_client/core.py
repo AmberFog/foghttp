@@ -4,6 +4,7 @@ import threading
 from typing import TYPE_CHECKING, Any, cast
 import warnings
 
+from .._telemetry import SYNTHETIC_TELEMETRY_SNAPSHOT_SEQUENCE, TELEMETRY_SNAPSHOT_SCHEMA_VERSION
 from ..errors import ClientClosedError, UnclosedClientError
 from ..headers import HeaderSource
 from ..limits import Limits
@@ -94,6 +95,8 @@ class ClientCore:
         if raw_state is None:
             return _empty_transport_state()
         return {
+            "schema_version": raw_state.schema_version,
+            "snapshot_sequence": raw_state.snapshot_sequence,
             "active_requests": raw_state.active_requests,
             "pending_requests": raw_state.pending_requests,
             "peak_pending_requests": raw_state.peak_pending_requests,
@@ -185,6 +188,8 @@ def _origin_pressure_state(origin: "_foghttp.RawOriginPressure") -> OriginPressu
 
 def _empty_transport_state() -> TransportState:
     return {
+        "schema_version": TELEMETRY_SNAPSHOT_SCHEMA_VERSION,
+        "snapshot_sequence": SYNTHETIC_TELEMETRY_SNAPSHOT_SEQUENCE,
         "active_requests": 0,
         "pending_requests": 0,
         "peak_pending_requests": 0,
@@ -213,6 +218,8 @@ def _empty_transport_state() -> TransportState:
 
 def _empty_pool_diagnostics(limits: Limits) -> PoolDiagnostics:
     return {
+        "schema_version": TELEMETRY_SNAPSHOT_SCHEMA_VERSION,
+        "snapshot_sequence": SYNTHETIC_TELEMETRY_SNAPSHOT_SEQUENCE,
         "active_requests": 0,
         "pending_requests": 0,
         "pool_acquire_timeouts": 0,
@@ -228,6 +235,8 @@ def _empty_pool_diagnostics(limits: Limits) -> PoolDiagnostics:
 
 def _pool_diagnostics_state(raw: "_foghttp.RawPoolDiagnostics") -> PoolDiagnostics:
     return {
+        "schema_version": raw.schema_version,
+        "snapshot_sequence": raw.snapshot_sequence,
         "active_requests": raw.active_requests,
         "pending_requests": raw.pending_requests,
         "pool_acquire_timeouts": raw.pool_acquire_timeouts,
