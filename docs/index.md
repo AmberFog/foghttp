@@ -55,6 +55,10 @@ FogHTTP is designed around a few engineering priorities:
   custom-only CA trust
 - global and per-origin request backpressure with per-origin acquire pressure
   snapshots and stuck request diagnostics for operational visibility
+- opt-in typed telemetry event hooks with redacted request/response lifecycle
+  events
+- versioned telemetry snapshots that separate alert-oriented stats from
+  diagnostic dump APIs
 - opt-in async lifecycle debug snapshots for tests, staging, and incident
   diagnostics
 
@@ -113,6 +117,10 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - global active request limits, per-origin active request limits, pending
   acquire limits, per-origin acquire pressure snapshots, and stuck request
   diagnostics
+- opt-in typed telemetry event hooks for request, redirect, response headers,
+  response body, and request completion lifecycle
+- versioned telemetry snapshot metadata for `stats()`, `dump_transport_state()`,
+  and `dump_pool_diagnostics()`
 - opt-in async lifecycle debug mode for active request snapshots and strict
   leak checks
 - default per-response and aggregate buffered response body limits

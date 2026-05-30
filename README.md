@@ -28,6 +28,9 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - graceful sync `close()` for in-flight requests and cancellable async requests
 - global/per-origin request backpressure, per-origin acquire pressure stats, and
   stuck request diagnostics
+- typed telemetry event hooks with redacted request/response lifecycle events
+- versioned telemetry snapshots that separate alert-oriented stats from
+  diagnostic dump APIs
 - opt-in async lifecycle debug snapshots for staging and tests
 - advanced per-client Tokio runtime worker tuning
 - focused buffered HTTP surface for JSON and form APIs, internal services,
@@ -105,6 +108,10 @@ async with foghttp.AsyncClient() as client:
 - async request cancellation that aborts the in-flight Rust request
 - global and per-origin request backpressure, per-origin acquire pressure
   snapshots, stuck request diagnostics, and HTTP/1.1 over HTTP/HTTPS
+- opt-in typed telemetry event hooks for request, redirect, response headers,
+  response body, and request completion lifecycle
+- versioned telemetry snapshot metadata for `stats()`, `dump_transport_state()`,
+  and `dump_pool_diagnostics()`
 - opt-in async lifecycle debug mode for active request snapshots, strict leak
   checks, and unclosed-client diagnostics
 - default per-response and aggregate buffered response body limits for memory
