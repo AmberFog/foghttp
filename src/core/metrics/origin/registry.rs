@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::Instant;
 
-const ORIGIN_PRESSURE_CLEANUP_THRESHOLD: usize = 1024;
+pub(super) const ORIGIN_PRESSURE_CLEANUP_THRESHOLD: usize = 1024;
 
 pub struct OriginMetricsRegistry {
     started_at: Instant,
