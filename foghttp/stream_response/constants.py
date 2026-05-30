@@ -1,0 +1,4 @@
+__all__ = ("DEFAULT_STREAM_TEXT_ERRORS",)
+
+
+DEFAULT_STREAM_TEXT_ERRORS = "replace"

@@ -1,4 +1,4 @@
-use super::{RequestState, TransportRequest};
+use super::request::{RequestState, TransportRequest};
 use crate::core::headers::HeaderPairs;
 use crate::core::method::{GET, POST};
 use crate::core::metrics::Metrics;

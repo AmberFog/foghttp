@@ -24,7 +24,8 @@ from .limits import Limits
 from .methods import DELETE, GET, HEAD, PATCH, POST, PUT
 from .request import Request
 from .response import Response
-from .stream_response import StreamResponse, bind_stream_telemetry
+from .stream_response import StreamResponse
+from .stream_response.bindings import bind_stream_telemetry
 from .telemetry import TelemetryConfig, TelemetryRequestMode
 from .timeouts import Timeouts
 from .tls import TLSConfig

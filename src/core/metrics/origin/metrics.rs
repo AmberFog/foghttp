@@ -1,63 +1,15 @@
-use super::atomic::{
+use super::blocking::PendingRequestBlockingReason;
+use super::snapshots::{OriginMetricsSnapshot, OriginPoolDiagnosticsSnapshot};
+use super::waiters::PendingWaiters;
+use crate::core::metrics::atomic::{
     duration_as_nanos, saturating_atomic_u64_add, saturating_atomic_usize_sub,
     update_atomic_u64_max, update_atomic_usize_max,
 };
 use crate::core::metrics::ResponseBodyLifecycleOutcome;
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::Mutex;
+use std::sync::{MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
-
-const ORIGIN_PRESSURE_CLEANUP_THRESHOLD: usize = 1024;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PendingRequestBlockingReason {
-    None,
-    GlobalActiveRequests,
-    PerOriginActiveRequests,
-    Mixed,
-}
-
-pub struct OriginPoolDiagnosticsSnapshot {
-    pub origin: String,
-    pub active_requests: usize,
-    pub pending_requests: usize,
-    pub pool_acquire_timeouts: usize,
-    pub oldest_pending_request_wait_ns: u64,
-    pub blocked_by: PendingRequestBlockingReason,
-    pub last_activity_at_ns: u64,
-}
-
-pub struct OriginMetricsRegistry {
-    started_at: Instant,
-    origins: RwLock<HashMap<String, Arc<OriginMetrics>>>,
-    pruned_idle_origins: AtomicBool,
-}
-
-pub struct OriginMetricsSnapshot {
-    pub origin: String,
-    pub active_requests: usize,
-    pub pending_requests: usize,
-    pub peak_pending_requests: usize,
-    pub pool_acquire_attempts: usize,
-    pub pool_acquire_immediate: usize,
-    pub pool_acquire_waited: usize,
-    pub pool_acquire_timeouts: usize,
-    pub pool_acquire_wait_time_total_ns: u64,
-    pub pool_acquire_wait_time_max_ns: u64,
-    pub pool_acquire_wait_time_last_ns: u64,
-    pub response_body_reuse_eligible: usize,
-    pub response_body_closed: usize,
-    pub response_body_aborted: usize,
-    pub active_connections: usize,
-    pub idle_connections: usize,
-    pub connections_opened: usize,
-    pub connections_open_failed: usize,
-    pub connections_closed: usize,
-    pub connections_reused: usize,
-    pub connections_aborted: usize,
-    pub last_activity_at_ns: u64,
-}
 
 pub struct OriginMetrics {
     origin: String,
@@ -86,91 +38,8 @@ pub struct OriginMetrics {
     pending_waiters: Mutex<PendingWaiters>,
 }
 
-struct PendingWaiters {
-    next_waiter_id: u64,
-    waiters: HashMap<u64, PendingWaiter>,
-}
-
-struct PendingWaiter {
-    started: Instant,
-    blocked_by: PendingRequestBlockingReason,
-}
-
-struct PendingWaitersSnapshot {
-    pending_requests: usize,
-    oldest_pending_request_wait_ns: u64,
-    blocked_by: PendingRequestBlockingReason,
-}
-
-impl Default for OriginMetricsRegistry {
-    fn default() -> Self {
-        Self {
-            started_at: Instant::now(),
-            origins: RwLock::new(HashMap::new()),
-            pruned_idle_origins: AtomicBool::new(false),
-        }
-    }
-}
-
-impl OriginMetricsRegistry {
-    pub fn metrics_for(&self, origin: &str) -> Arc<OriginMetrics> {
-        if let Some(metrics) = self.read_origins().get(origin) {
-            return Arc::clone(metrics);
-        }
-
-        let mut origins = self.write_origins();
-        if let Some(metrics) = origins.get(origin) {
-            return Arc::clone(metrics);
-        }
-
-        if origins.len() >= ORIGIN_PRESSURE_CLEANUP_THRESHOLD {
-            let origin_count_before_cleanup = origins.len();
-            origins.retain(|_origin, metrics| !metrics.is_idle());
-            if origins.len() < origin_count_before_cleanup {
-                self.pruned_idle_origins.store(true, Ordering::Release);
-            }
-        }
-
-        let metrics = Arc::new(OriginMetrics::new(origin.to_owned(), self.started_at));
-        origins.insert(origin.to_owned(), Arc::clone(&metrics));
-        metrics
-    }
-
-    pub fn snapshots(&self) -> Vec<OriginMetricsSnapshot> {
-        let origins = self.read_origins();
-        let mut snapshots = origins
-            .values()
-            .map(|metrics| metrics.snapshot())
-            .collect::<Vec<_>>();
-        snapshots.sort_by(|left, right| left.origin.cmp(&right.origin));
-        snapshots
-    }
-
-    pub fn snapshots_include_all_historical_origins(&self) -> bool {
-        !self.pruned_idle_origins.load(Ordering::Acquire)
-    }
-
-    pub fn pool_diagnostics_snapshots(&self) -> Vec<OriginPoolDiagnosticsSnapshot> {
-        let origins = self.read_origins();
-        let mut snapshots = origins
-            .values()
-            .map(|metrics| metrics.pool_diagnostics_snapshot())
-            .collect::<Vec<_>>();
-        snapshots.sort_by(|left, right| left.origin.cmp(&right.origin));
-        snapshots
-    }
-
-    fn read_origins(&self) -> RwLockReadGuard<'_, HashMap<String, Arc<OriginMetrics>>> {
-        self.origins.read().unwrap_or_else(PoisonError::into_inner)
-    }
-
-    fn write_origins(&self) -> RwLockWriteGuard<'_, HashMap<String, Arc<OriginMetrics>>> {
-        self.origins.write().unwrap_or_else(PoisonError::into_inner)
-    }
-}
-
 impl OriginMetrics {
-    fn new(origin: String, started_at: Instant) -> Self {
+    pub(super) fn new(origin: String, started_at: Instant) -> Self {
         Self {
             origin,
             started_at,
@@ -306,7 +175,7 @@ impl OriginMetrics {
         self.touch();
     }
 
-    fn snapshot(&self) -> OriginMetricsSnapshot {
+    pub(super) fn snapshot(&self) -> OriginMetricsSnapshot {
         OriginMetricsSnapshot {
             origin: self.origin.clone(),
             active_requests: self.active_requests.load(Ordering::Relaxed),
@@ -339,7 +208,7 @@ impl OriginMetrics {
         }
     }
 
-    fn pool_diagnostics_snapshot(&self) -> OriginPoolDiagnosticsSnapshot {
+    pub(super) fn pool_diagnostics_snapshot(&self) -> OriginPoolDiagnosticsSnapshot {
         let waiters = self.lock_pending_waiters().snapshot();
         OriginPoolDiagnosticsSnapshot {
             origin: self.origin.clone(),
@@ -352,7 +221,7 @@ impl OriginMetrics {
         }
     }
 
-    fn is_idle(&self) -> bool {
+    pub(super) fn is_idle(&self) -> bool {
         self.active_requests.load(Ordering::Relaxed) == 0
             && self.pending_requests.load(Ordering::Acquire) == 0
             && self.active_connections.load(Ordering::Relaxed) == 0
@@ -369,65 +238,5 @@ impl OriginMetrics {
         self.pending_waiters
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-    }
-}
-
-impl Default for PendingWaiters {
-    fn default() -> Self {
-        Self {
-            next_waiter_id: 1,
-            waiters: HashMap::new(),
-        }
-    }
-}
-
-impl PendingWaiters {
-    fn insert(&mut self, blocked_by: PendingRequestBlockingReason) -> u64 {
-        let waiter_id = self.next_waiter_id;
-        self.next_waiter_id = self.next_waiter_id.saturating_add(1);
-        self.waiters.insert(
-            waiter_id,
-            PendingWaiter {
-                started: Instant::now(),
-                blocked_by,
-            },
-        );
-        waiter_id
-    }
-
-    fn remove(&mut self, waiter_id: u64) {
-        self.waiters.remove(&waiter_id);
-    }
-
-    fn snapshot(&self) -> PendingWaitersSnapshot {
-        let Some(first_waiter) = self.waiters.values().next() else {
-            return PendingWaitersSnapshot {
-                pending_requests: 0,
-                oldest_pending_request_wait_ns: 0,
-                blocked_by: PendingRequestBlockingReason::None,
-            };
-        };
-
-        let mut oldest_pending_request_wait_ns = duration_as_nanos(first_waiter.started.elapsed());
-        let blocked_by = first_waiter.blocked_by;
-        let mut is_mixed = false;
-
-        for waiter in self.waiters.values().skip(1) {
-            oldest_pending_request_wait_ns =
-                oldest_pending_request_wait_ns.max(duration_as_nanos(waiter.started.elapsed()));
-            if waiter.blocked_by != blocked_by {
-                is_mixed = true;
-            }
-        }
-
-        PendingWaitersSnapshot {
-            pending_requests: self.waiters.len(),
-            oldest_pending_request_wait_ns,
-            blocked_by: if is_mixed {
-                PendingRequestBlockingReason::Mixed
-            } else {
-                blocked_by
-            },
-        }
     }
 }
