@@ -40,7 +40,9 @@ per-file-ignores =
     foghttp/request.py: WPS237
     foghttp/request_info.py: WPS237
     foghttp/response.py: WPS214, WPS237
-    foghttp/stream_response.py: WPS201, WPS214, WPS237, WPS501
+    foghttp/stream_response/async_response.py: WPS214
+    foghttp/stream_response/base.py: WPS201, WPS237
+    foghttp/stream_response/sync_response.py: WPS501
     foghttp/url.py: WPS214, WPS237
     # Native resource adapters intentionally use try/finally-only cleanup paths.
     foghttp/_client/response.py: WPS501
