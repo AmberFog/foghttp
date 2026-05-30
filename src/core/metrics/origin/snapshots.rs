@@ -1,0 +1,36 @@
+use super::blocking::PendingRequestBlockingReason;
+
+pub struct OriginPoolDiagnosticsSnapshot {
+    pub origin: String,
+    pub active_requests: usize,
+    pub pending_requests: usize,
+    pub pool_acquire_timeouts: usize,
+    pub oldest_pending_request_wait_ns: u64,
+    pub blocked_by: PendingRequestBlockingReason,
+    pub last_activity_at_ns: u64,
+}
+
+pub struct OriginMetricsSnapshot {
+    pub origin: String,
+    pub active_requests: usize,
+    pub pending_requests: usize,
+    pub peak_pending_requests: usize,
+    pub pool_acquire_attempts: usize,
+    pub pool_acquire_immediate: usize,
+    pub pool_acquire_waited: usize,
+    pub pool_acquire_timeouts: usize,
+    pub pool_acquire_wait_time_total_ns: u64,
+    pub pool_acquire_wait_time_max_ns: u64,
+    pub pool_acquire_wait_time_last_ns: u64,
+    pub response_body_reuse_eligible: usize,
+    pub response_body_closed: usize,
+    pub response_body_aborted: usize,
+    pub active_connections: usize,
+    pub idle_connections: usize,
+    pub connections_opened: usize,
+    pub connections_open_failed: usize,
+    pub connections_closed: usize,
+    pub connections_reused: usize,
+    pub connections_aborted: usize,
+    pub last_activity_at_ns: u64,
+}

@@ -40,7 +40,6 @@ from .state_assertions import (
     assert_idle_stats,
     assert_network_failure_recovered,
     assert_poisoned_connection_not_reused,
-    assert_request_count,
     assert_request_count_between,
     assert_socket_closed,
     assert_socket_reused,

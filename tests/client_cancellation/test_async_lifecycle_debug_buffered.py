@@ -17,7 +17,6 @@ from .lifecycle_debug_data import (
 )
 from .lifecycle_debug_predicates import (
     has_cancelled_pending_waiter,
-    has_debug_request_count,
     has_disabled_transport_pressure,
     has_one_active_transport_request,
     has_one_buffered_request,
