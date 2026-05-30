@@ -1,5 +1,22 @@
-use super::response_headers;
+use super::{request_headers, response_headers};
 use hyper::header::{HeaderMap, HeaderName, HeaderValue};
+
+#[test]
+fn request_headers_preserve_repeated_values() {
+    let headers = request_headers(vec![
+        ("x-repeat".to_owned(), "first".to_owned()),
+        ("x-repeat".to_owned(), "second".to_owned()),
+    ])
+    .expect("valid request headers");
+
+    let values = headers
+        .get_all("x-repeat")
+        .iter()
+        .map(|value| value.to_str().expect("valid ascii header value"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(values, vec!["first", "second"]);
+}
 
 #[test]
 fn response_headers_preserve_obs_text_values_as_latin_1() {
