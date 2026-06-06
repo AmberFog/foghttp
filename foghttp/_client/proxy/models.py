@@ -7,7 +7,7 @@ __all__ = (
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from urllib.parse import urlunsplit
+from urllib.parse import unquote, urlunsplit
 
 from ..._redaction import REDACTED_VALUE
 from .constants import DEFAULT_PROXY_PORTS
@@ -114,7 +114,10 @@ def _proxy_credentials(
 ) -> ProxyCredentials | None:
     if username is None and password is None:
         return None
-    return ProxyCredentials(username="" if username is None else username, password=password)
+    return ProxyCredentials(
+        username="" if username is None else unquote(username),
+        password=None if password is None else unquote(password),
+    )
 
 
 def _proxy_endpoint_netloc(host: str, port: int) -> str:

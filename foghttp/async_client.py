@@ -59,6 +59,7 @@ class AsyncClient(ClientCore):
         max_redirects: int = DEFAULT_MAX_REDIRECTS,
         cookies: bool = False,
         trust_env: bool = False,
+        proxy: str | URL | None = None,
         tls: TLSConfig | None = None,
         runtime_workers: int | None = None,
         telemetry: TelemetryConfig | None = None,
@@ -77,6 +78,7 @@ class AsyncClient(ClientCore):
                     max_redirects=max_redirects,
                     cookies=cookies,
                     trust_env=trust_env,
+                    proxy=proxy,
                     tls=tls,
                     runtime_workers=runtime_workers,
                     telemetry=telemetry,
@@ -313,7 +315,7 @@ class AsyncClient(ClientCore):
         )
 
     def _create_transport(self) -> AsyncTransport:
-        return RawAsyncTransport(self._raw_client)
+        return RawAsyncTransport(self._raw_client, proxy_resolver=self._config.proxy_resolver)
 
     def _close(self, *, raise_strict_lifecycle_errors: bool) -> None:
         strict_snapshot = None

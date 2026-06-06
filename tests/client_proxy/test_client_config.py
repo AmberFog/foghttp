@@ -35,6 +35,23 @@ def test_client_config_does_not_read_env_when_trust_env_is_disabled() -> None:
     assert decision.proxy is None
 
 
+def test_client_config_uses_explicit_http_proxy_over_environment() -> None:
+    config = ClientConfig.from_options(
+        client_options(trust_env=True, proxy="http://explicit.proxy.example:8080"),
+        environ={
+            "HTTP_PROXY": "http://environment.proxy.example:8080",
+            "NO_PROXY": "*",
+        },
+    )
+
+    decision = config.proxy_resolver.resolve("http://api.example.com/items")
+
+    assert decision.source is ProxySource.EXPLICIT
+    assert decision.proxy is not None
+    assert decision.proxy.endpoint_url == "http://explicit.proxy.example:8080"
+    assert config.http_proxy is decision.proxy
+
+
 def test_client_config_redacts_proxy_credentials_in_repr(faker: Faker) -> None:
     username = faker.user_name()
     hidden_value = faker.pystr(min_chars=12, max_chars=12)

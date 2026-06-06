@@ -59,6 +59,32 @@ fn empty_buffered_body_is_replayable_even_when_boundary_flag_is_false() {
     assert!(state.body_replayability.can_replay());
 }
 
+#[test]
+fn request_info_excludes_transport_proxy_authorization() {
+    let state = RequestState::try_from(TransportRequest {
+        method: GET.to_owned(),
+        url: INITIAL_URL.to_owned(),
+        headers: HeaderPairs::new(),
+        body: None,
+        body_replayable: true,
+        use_http_proxy: true,
+        proxy_authorization: Some("Basic secret".to_owned()),
+        total_timeout: TOTAL_TIMEOUT,
+        read_timeout: READ_TIMEOUT,
+        max_response_body_size: None,
+        buffered_body_budget: BufferedBodyBudget::new(None, Arc::new(Metrics::default())),
+        follow_redirects: false,
+        max_redirects: 0,
+    })
+    .expect("valid request state");
+
+    assert!(state.request_info().headers.is_empty());
+    assert_eq!(
+        state.request_parts(true).proxy_authorization,
+        Some("Basic secret".to_owned()),
+    );
+}
+
 fn request_state(body: Option<Vec<u8>>, body_replayable: bool) -> RequestState {
     RequestState::try_from(TransportRequest {
         method: POST.to_owned(),
@@ -66,6 +92,8 @@ fn request_state(body: Option<Vec<u8>>, body_replayable: bool) -> RequestState {
         headers: HeaderPairs::new(),
         body,
         body_replayable,
+        use_http_proxy: false,
+        proxy_authorization: None,
         total_timeout: TOTAL_TIMEOUT,
         read_timeout: READ_TIMEOUT,
         max_response_body_size: None,

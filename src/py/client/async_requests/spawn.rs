@@ -1,11 +1,10 @@
 use super::active::{ActiveAsyncRequest, RequestCompletion};
 use super::callback::PythonFutureCancellation;
 use super::registry::AsyncRequestRegistry;
-use crate::core::client::HyperClient;
 use crate::core::metrics::Metrics;
 use crate::py::client::acquire::AcquireGate;
 use crate::py::client::future::complete_python_future;
-use crate::py::client::transport::{send_request, TransportRequest};
+use crate::py::client::transport::{send_request, TransportClients, TransportRequest};
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 use std::sync::Arc;
@@ -13,7 +12,7 @@ use tokio::runtime::Runtime;
 
 pub struct AsyncRequestSpawn {
     pub acquire_gate: AcquireGate,
-    pub client: HyperClient,
+    pub clients: TransportClients,
     pub metrics: Arc<Metrics>,
     pub pool_timeout: f64,
     pub request: TransportRequest,
@@ -27,7 +26,7 @@ pub fn spawn_async_request(
 ) -> PyResult<Py<PyAny>> {
     let AsyncRequestSpawn {
         acquire_gate,
-        client,
+        clients,
         metrics,
         pool_timeout,
         request,
@@ -49,7 +48,7 @@ pub fn spawn_async_request(
     metrics.request_started();
     let handle = runtime.spawn(async move {
         let result = send_request(
-            client,
+            clients,
             acquire_gate,
             Arc::clone(&task_metrics),
             pool_timeout,

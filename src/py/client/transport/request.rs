@@ -15,6 +15,8 @@ pub struct TransportRequest {
     pub headers: HeaderPairs,
     pub body: Option<Vec<u8>>,
     pub body_replayable: bool,
+    pub use_http_proxy: bool,
+    pub proxy_authorization: Option<String>,
     pub total_timeout: f64,
     pub read_timeout: f64,
     pub max_response_body_size: Option<usize>,
@@ -29,6 +31,8 @@ pub(super) struct RequestState {
     pub(super) headers: HeaderPairs,
     pub(super) body: Option<Vec<u8>>,
     pub(super) body_replayability: BodyReplayability,
+    pub(super) use_http_proxy: bool,
+    pub(super) proxy_authorization: Option<String>,
     pub(super) total_timeout: f64,
     pub(super) read_timeout: f64,
     pub(super) max_response_body_size: Option<usize>,
@@ -38,12 +42,17 @@ pub(super) struct RequestState {
 }
 
 impl RequestState {
-    pub(super) fn request_parts(&self) -> RequestParts {
+    pub(super) fn request_parts(&self, use_http_proxy: bool) -> RequestParts {
         RequestParts {
             method: self.method.clone(),
             url: self.url.clone(),
             headers: self.headers.clone(),
             body: self.body.clone(),
+            proxy_authorization: if use_http_proxy {
+                self.proxy_authorization.clone()
+            } else {
+                None
+            },
         }
     }
 
@@ -58,6 +67,12 @@ impl RequestState {
     pub(super) fn origin(&self) -> PyResult<String> {
         HttpUrl::parse(&self.url)
             .map(|url| url.origin())
+            .map_err(FogHttpError::new_err)
+    }
+
+    pub(super) fn use_http_proxy_for_current_url(&self) -> PyResult<bool> {
+        HttpUrl::parse(&self.url)
+            .map(|url| self.use_http_proxy && url.scheme() == "http")
             .map_err(FogHttpError::new_err)
     }
 
@@ -94,6 +109,8 @@ impl RequestState {
             headers: parts.headers,
             body: parts.body,
             body_replayability,
+            use_http_proxy: parts.use_http_proxy,
+            proxy_authorization: parts.proxy_authorization,
             total_timeout: parts.total_timeout,
             read_timeout: parts.read_timeout,
             max_response_body_size: parts.max_response_body_size,

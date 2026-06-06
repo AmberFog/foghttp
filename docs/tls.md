@@ -103,6 +103,6 @@ internal trust replacement until a dedicated pinning API exists.
 - Certificate files are read when the Rust transport is created.
 - The same `TLSConfig` works with `Client` and `AsyncClient`.
 - Operating-system trust stores are not used today.
-- `trust_env=True` supports `SSL_CERT_FILE` only; proxy env variables are
-  parsed for future proxy transport work.
+- `trust_env=True` supports `SSL_CERT_FILE` and plain HTTP proxy routing;
+  HTTPS proxy `CONNECT` is planned separately.
 - Disabling certificate verification is intentionally not supported.

@@ -32,6 +32,7 @@ class ClientOptions:
     max_redirects: int
     cookies: bool
     trust_env: bool
+    proxy: str | URL | None
     tls: TLSConfig | None
     runtime_workers: int | None
     telemetry: TelemetryConfig | None

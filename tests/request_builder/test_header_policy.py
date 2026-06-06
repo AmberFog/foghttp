@@ -15,6 +15,7 @@ TRANSPORT_MANAGED_HEADER_NAMES = (
     "Upgrade",
     "Keep-Alive",
     "Proxy-Connection",
+    "Proxy-Authorization",
 )
 
 

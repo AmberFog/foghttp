@@ -31,8 +31,26 @@ class ProxyResolver:
         return cls(explicit=None, environment=None)
 
     @classmethod
+    def from_explicit(
+        cls,
+        *,
+        proxy: ProxyUrl,
+        environment: ProxyRules | None = None,
+    ) -> "ProxyResolver":
+        return cls(explicit=ProxyRules(http=proxy), environment=environment)
+
+    @classmethod
     def from_environment(cls, rules: ProxyRules) -> "ProxyResolver":
         return cls(explicit=None, environment=rules)
+
+    def http_proxy(self) -> ProxyUrl | None:
+        if self.explicit is not None:
+            explicit_proxy = self.explicit.proxy_for_scheme("http")
+            if explicit_proxy is not None:
+                return explicit_proxy
+        if self.environment is None:
+            return None
+        return self.environment.proxy_for_scheme("http")
 
     def resolve(self, url: str) -> ProxyDecision:
         target = ProxyTarget.parse(url)

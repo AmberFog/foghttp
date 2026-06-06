@@ -102,6 +102,7 @@ async with foghttp.AsyncClient() as client:
   token-like URL params, and buffered body bytes
 - normalized `URL` model with origin comparison and relative joins
 - GET/HEAD/POST redirects with final URL, history, and conservative replay policy
+- plain HTTP proxy routing through explicit `proxy=` or `trust_env=True`
 - HTTPS with default WebPKI roots, explicit custom CA certificates, and
   custom-only CA trust
 - graceful sync `close()` that waits for in-flight sync requests
@@ -128,6 +129,7 @@ async with foghttp.AsyncClient() as client:
 - [Timeout model](https://github.com/AmberFog/foghttp/blob/main/docs/timeouts.md)
 - [Telemetry contract](https://github.com/AmberFog/foghttp/blob/main/docs/telemetry.md)
 - [Response streaming](https://github.com/AmberFog/foghttp/blob/main/docs/streaming.md)
+- [Proxy and trust_env](https://github.com/AmberFog/foghttp/blob/main/docs/proxies.md)
 - [TLS trust](https://github.com/AmberFog/foghttp/blob/main/docs/tls.md)
 - [Use cases](https://github.com/AmberFog/foghttp/blob/main/docs/use-cases.md)
 - [Redirects](https://github.com/AmberFog/foghttp/blob/main/docs/redirects.md)
@@ -140,7 +142,7 @@ async with foghttp.AsyncClient() as client:
 FogHTTP is currently focused on controlled HTTP workloads. Buffered responses
 are the broadest supported path; sync and async response streaming are available
 as bytes/text/line context-managed APIs. Streaming uploads, cookies, auth
-helpers, HTTP proxy routing, HTTPS proxy `CONNECT`, multipart uploads,
+helpers, HTTPS proxy `CONNECT`, multipart uploads,
 HTTP/2, automatic `Accept-Encoding` negotiation, streaming decompression,
 strict connection-level pool limits,
 per-request connect timeout reconfiguration, and request-body write timeout

@@ -284,7 +284,7 @@ except foghttp.HTTPStatusError as exc:
 | Streaming uploads | Not implemented |
 | Multipart files | Not implemented |
 | Cookies/session jar | Not implemented |
-| Proxy routing | Not implemented; `trust_env=True` validates env settings for future proxy support |
+| Proxy routing | Plain HTTP proxy routing is available; HTTPS `CONNECT`, SOCKS, PAC and platform proxy discovery are not implemented |
 | HTTP/2 | Not implemented |
 | Cookie jar and auth helper integration | Not implemented; cross-origin redirects still strip sensitive headers and drop body replay |
 | Unbounded buffered large downloads | `max_response_body_size` defaults to 10 MiB and `max_buffered_response_bytes` defaults to 100 MiB for buffered fail-fast protection; use `stream()` for incremental byte downloads |
