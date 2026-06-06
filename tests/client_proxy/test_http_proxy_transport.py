@@ -9,8 +9,15 @@ import foghttp
 from foghttp.methods import GET, POST
 from foghttp.status_codes.redirect import FOUND
 from tests.client_proxy.environment import clear_proxy_environment
-from tests.client_proxy.http_proxy_server import AsyncHTTPProxy, SyncHTTPProxy
+from tests.client_proxy.http_proxy_server import (
+    PROXY_REDIRECT_PATH,
+    PROXY_STREAM_CHUNK,
+    PROXY_STREAM_EARLY_CLOSE_PATH,
+    AsyncHTTPProxy,
+    SyncHTTPProxy,
+)
 from tests.redirect_helpers import redirect_to_location_url
+from tests.support.transport_stats import wait_for_async_transport_stats, wait_for_sync_transport_stats
 
 
 def test_sync_client_routes_http_request_through_explicit_proxy(
@@ -79,6 +86,46 @@ async def test_async_stream_routes_http_request_through_explicit_proxy(
 
     payload = json.loads(content)
     assert payload["request_line"] == f"{GET} {target_url} HTTP/1.1"
+    assert len(async_http_proxy.requests) == 1
+
+
+def test_sync_stream_early_close_through_explicit_proxy_releases_request_slot(
+    sync_http_proxy: SyncHTTPProxy,
+    unused_tcp_port: int,
+) -> None:
+    target_url = _target_url(unused_tcp_port, PROXY_STREAM_EARLY_CLOSE_PATH)
+
+    with foghttp.Client(proxy=sync_http_proxy.base_url) as client:
+        with client.stream(GET, target_url) as response:
+            byte_stream = response.iter_bytes()
+            assert next(byte_stream) == PROXY_STREAM_CHUNK
+
+        wait_for_sync_transport_stats(
+            client,
+            lambda stats: stats.active_requests == 0 and stats.response_body_aborted == 1,
+            message="early-closing a proxied sync stream should abort the body and release the request slot",
+        )
+
+    assert len(sync_http_proxy.requests) == 1
+
+
+async def test_async_stream_early_close_through_explicit_proxy_releases_request_slot(
+    async_http_proxy: AsyncHTTPProxy,
+    unused_tcp_port: int,
+) -> None:
+    target_url = _target_url(unused_tcp_port, PROXY_STREAM_EARLY_CLOSE_PATH)
+
+    async with foghttp.AsyncClient(proxy=async_http_proxy.base_url) as client:
+        async with client.stream(GET, target_url) as response:
+            byte_stream = response.aiter_bytes()
+            assert await anext(byte_stream) == PROXY_STREAM_CHUNK
+
+        await wait_for_async_transport_stats(
+            client,
+            lambda stats: stats.active_requests == 0 and stats.response_body_aborted == 1,
+            message="early-closing a proxied async stream should abort the body and release the request slot",
+        )
+
     assert len(async_http_proxy.requests) == 1
 
 
@@ -214,6 +261,65 @@ def test_trust_env_no_proxy_cross_origin_redirect_fails_closed(
         client.get(target_url)
 
     assert sync_http_proxy.requests == []
+
+
+def test_trust_env_http_proxy_cross_origin_redirect_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    sync_http_proxy: SyncHTTPProxy,
+    unused_tcp_port: int,
+) -> None:
+    clear_proxy_environment(monkeypatch)
+    monkeypatch.setenv("HTTP_PROXY", sync_http_proxy.base_url)
+    redirect_target = "http://redirect-target.example/items"
+    target_url = _target_url(
+        unused_tcp_port,
+        f"{PROXY_REDIRECT_PATH}?location={redirect_target}",
+    )
+
+    with (
+        foghttp.Client(trust_env=True, follow_redirects=True) as client,
+        pytest.raises(
+            foghttp.RequestError,
+            match="cross-origin redirect with environment proxy policy",
+        ),
+    ):
+        client.get(target_url)
+
+    assert len(sync_http_proxy.requests) == 1
+
+
+def test_explicit_proxy_http_to_https_redirect_fails_closed(
+    sync_http_proxy: SyncHTTPProxy,
+    unused_tcp_port: int,
+) -> None:
+    target_url = _target_url(
+        unused_tcp_port,
+        f"{PROXY_REDIRECT_PATH}?location=https://example.com/secure",
+    )
+
+    with (
+        foghttp.Client(proxy=sync_http_proxy.base_url, follow_redirects=True) as client,
+        pytest.raises(foghttp.RequestError, match="HTTPS proxy CONNECT is not implemented"),
+    ):
+        client.get(target_url)
+
+    assert len(sync_http_proxy.requests) == 1
+
+
+async def test_async_explicit_proxy_http_to_https_redirect_fails_closed(
+    async_http_proxy: AsyncHTTPProxy,
+    unused_tcp_port: int,
+) -> None:
+    target_url = _target_url(
+        unused_tcp_port,
+        f"{PROXY_REDIRECT_PATH}?location=https://example.com/secure",
+    )
+
+    async with foghttp.AsyncClient(proxy=async_http_proxy.base_url, follow_redirects=True) as client:
+        with pytest.raises(foghttp.RequestError, match="HTTPS proxy CONNECT is not implemented"):
+            await client.get(target_url)
+
+    assert len(async_http_proxy.requests) == 1
 
 
 def test_proxy_connection_failure_cleans_up_request_stats(unused_tcp_port: int) -> None:

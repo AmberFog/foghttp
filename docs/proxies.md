@@ -92,7 +92,9 @@ target origin. Rust follows redirects internally, and this foundation release
 does not yet recompute trusted-environment proxy decisions per redirect hop.
 For that reason, same-origin redirects can continue, but cross-origin redirects
 under environment proxy policy fail closed instead of reusing the initial proxy
-decision.
+decision. This includes `http://` to `http://` cross-origin redirects that
+would likely use the same configured proxy; per-hop environment proxy
+recomputation is planned separately.
 
 ## NO_PROXY Rules
 
@@ -109,6 +111,9 @@ FogHTTP supports a focused `NO_PROXY` subset:
 - IPv4 addresses
 - bracketed IPv6 addresses such as `[::1]` and `[::1]:8080`
 - comma-separated values with surrounding whitespace
+
+CIDR rules such as `10.0.0.0/8` are not supported yet and are rejected instead
+of being silently treated as hostname rules.
 
 Bracketed `NO_PROXY` hosts are IPv6-only. Bracketed DNS names, `localhost`
 and IPv4 addresses are rejected instead of being reinterpreted as normal host

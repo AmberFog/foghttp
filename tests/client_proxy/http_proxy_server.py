@@ -1,4 +1,7 @@
 __all__ = (
+    "PROXY_REDIRECT_PATH",
+    "PROXY_STREAM_CHUNK",
+    "PROXY_STREAM_EARLY_CLOSE_PATH",
     "AsyncHTTPProxy",
     "ProxyRequest",
     "SyncHTTPProxy",
@@ -18,8 +21,17 @@ from urllib.parse import urlsplit
 
 import pytest
 
+from foghttp.status_codes.redirect import FOUND
 from foghttp.status_codes.success import OK
 from tests.support.raw_responses import raw_response
+
+
+PROXY_REDIRECT_LOCATION_PARAM = "location"
+PROXY_REDIRECT_PATH = "/proxy-redirect"
+PROXY_STREAM_EARLY_CLOSE_PATH = "/proxy-stream-early-close"
+PROXY_STREAM_CHUNK = b"x" * 128
+PROXY_STREAM_CHUNKS = 8
+PROXY_STREAM_CHUNK_DELAY_SECONDS = 0.02
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +48,7 @@ class SyncHTTPProxy:
     base_url: str
     _requests: list[ProxyRequest] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock)
+    _stream_delay: threading.Event = field(default_factory=threading.Event)
 
     @property
     def requests(self) -> list[ProxyRequest]:
@@ -45,6 +58,9 @@ class SyncHTTPProxy:
     def append(self, request: ProxyRequest) -> None:
         with self._lock:
             self._requests.append(request)
+
+    def wait_between_stream_chunks(self) -> None:
+        self._stream_delay.wait(PROXY_STREAM_CHUNK_DELAY_SECONDS)
 
     def close(self) -> None:
         self.server.shutdown()
@@ -89,6 +105,14 @@ class SyncHTTPProxyHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"not an http response\r\n\r\n")
             return
 
+        if _target_path(self.path) == PROXY_REDIRECT_PATH:
+            self._write_redirect_response()
+            return
+
+        if _target_path(self.path) == PROXY_STREAM_EARLY_CLOSE_PATH:
+            self._write_chunked_stream_response()
+            return
+
         payload = _proxy_payload(request)
         self.send_response(OK)
         self.send_header("content-type", "application/json")
@@ -96,6 +120,26 @@ class SyncHTTPProxyHandler(BaseHTTPRequestHandler):
         self.send_header("connection", "close")
         self.end_headers()
         self.wfile.write(payload)
+
+    def _write_redirect_response(self) -> None:
+        self.send_response(FOUND)
+        self.send_header("location", _target_query_value(self.path, PROXY_REDIRECT_LOCATION_PARAM))
+        self.send_header("content-length", "0")
+        self.send_header("connection", "close")
+        self.end_headers()
+
+    def _write_chunked_stream_response(self) -> None:
+        self.send_response(OK)
+        self.send_header("content-type", "application/octet-stream")
+        self.send_header("transfer-encoding", "chunked")
+        self.send_header("connection", "close")
+        self.end_headers()
+        with suppress(OSError):
+            for _index in range(PROXY_STREAM_CHUNKS):
+                self.wfile.write(_chunk_frame(PROXY_STREAM_CHUNK))
+                self.wfile.flush()
+                self.server.proxy.wait_between_stream_chunks()  # type: ignore[attr-defined]
+            self.wfile.write(b"0\r\n\r\n")
 
 
 @pytest.fixture
@@ -128,8 +172,11 @@ async def async_http_proxy() -> AsyncIterator[AsyncHTTPProxy]:
                 msg = "async proxy fixture was not initialized"
                 raise RuntimeError(msg)
             proxy.requests.append(request)
-            writer.write(_raw_proxy_response(request))
-            await writer.drain()
+            if _target_path(_request_target(request)) == PROXY_STREAM_EARLY_CLOSE_PATH:
+                await _write_async_chunked_stream_response(writer)
+            else:
+                writer.write(_raw_proxy_response(request))
+                await writer.drain()
         finally:
             writer.close()
             with suppress(asyncio.CancelledError, OSError):
@@ -161,6 +208,18 @@ def _headers_from_head(head: str) -> dict[str, list[str]]:
 
 
 def _raw_proxy_response(request: ProxyRequest) -> bytes:
+    target = _request_target(request)
+    if _target_path(target) == PROXY_REDIRECT_PATH:
+        return raw_response(
+            FOUND,
+            "Found",
+            [
+                ("location", _target_query_value(target, PROXY_REDIRECT_LOCATION_PARAM)),
+                ("content-length", "0"),
+                ("connection", "close"),
+            ],
+        )
+
     return raw_response(
         OK,
         "OK",
@@ -183,5 +242,44 @@ def _proxy_payload(request: ProxyRequest) -> bytes:
     ).encode()
 
 
+async def _write_async_chunked_stream_response(writer: asyncio.StreamWriter) -> None:
+    writer.write(
+        raw_response(
+            OK,
+            "OK",
+            [
+                ("content-type", "application/octet-stream"),
+                ("transfer-encoding", "chunked"),
+                ("connection", "close"),
+            ],
+        ),
+    )
+    await writer.drain()
+    with suppress(OSError):
+        for _index in range(PROXY_STREAM_CHUNKS):
+            writer.write(_chunk_frame(PROXY_STREAM_CHUNK))
+            await writer.drain()
+            await asyncio.sleep(PROXY_STREAM_CHUNK_DELAY_SECONDS)
+        writer.write(b"0\r\n\r\n")
+        await writer.drain()
+
+
+def _request_target(request: ProxyRequest) -> str:
+    return request.request_line.split()[1]
+
+
 def _target_path(target: str) -> str:
     return urlsplit(target).path
+
+
+def _target_query_value(target: str, name: str) -> str:
+    prefix = f"{name}="
+    for query_field in urlsplit(target).query.split("&"):
+        if query_field.startswith(prefix):
+            return query_field.removeprefix(prefix)
+    msg = f"proxy redirect target is missing {name!r} query parameter"
+    raise AssertionError(msg)
+
+
+def _chunk_frame(chunk: bytes) -> bytes:
+    return f"{len(chunk):x}\r\n".encode() + chunk + b"\r\n"

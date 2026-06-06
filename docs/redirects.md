@@ -162,7 +162,9 @@ scheme-specific proxy variables, and `ALL_PROXY`. This foundation release does
 not yet recompute trusted-environment proxy decisions for each redirect hop
 inside Rust. Same-origin redirects can continue, but cross-origin redirects
 under environment proxy policy fail closed instead of reusing the initial
-proxy/direct decision.
+proxy/direct decision. This strict rule also applies when both HTTP origins
+would likely use the same configured proxy; per-hop environment proxy
+recomputation is planned separately.
 
 ## Redirect Limit
 
