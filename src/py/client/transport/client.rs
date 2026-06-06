@@ -5,20 +5,20 @@ use pyo3::prelude::*;
 #[derive(Clone)]
 pub struct TransportClients {
     direct: HyperClient,
-    http_proxy: Option<HyperClient>,
+    proxy: Option<HyperClient>,
 }
 
 impl TransportClients {
-    pub fn new(direct: HyperClient, http_proxy: Option<HyperClient>) -> Self {
-        Self { direct, http_proxy }
+    pub fn new(direct: HyperClient, proxy: Option<HyperClient>) -> Self {
+        Self { direct, proxy }
     }
 
-    pub(super) fn select(&self, use_http_proxy: bool) -> PyResult<HyperClient> {
-        if !use_http_proxy {
+    pub(super) fn select(&self, use_proxy_transport: bool) -> PyResult<HyperClient> {
+        if !use_proxy_transport {
             return Ok(self.direct.clone());
         }
-        self.http_proxy
+        self.proxy
             .clone()
-            .ok_or_else(|| FogHttpError::new_err("HTTP proxy transport is not configured"))
+            .ok_or_else(|| FogHttpError::new_err("proxy transport is not configured"))
     }
 }

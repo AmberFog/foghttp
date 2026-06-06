@@ -6,6 +6,7 @@ __all__ = (
     "validated_port",
 )
 
+from collections.abc import Mapping
 from typing import NoReturn
 from urllib.parse import SplitResult, urlsplit
 
@@ -17,7 +18,7 @@ def split_proxy_url(value: str, *, source: str) -> SplitResult:
     if not parts.scheme:
         _raise_invalid_proxy_url(source, "must include a scheme")
     if parts.scheme.lower() not in SUPPORTED_PROXY_SCHEMES:
-        _raise_invalid_proxy_url(source, "scheme must be http or https")
+        _raise_invalid_proxy_url(source, "scheme must be http")
     return parts
 
 
@@ -40,14 +41,20 @@ def validated_host(parts: SplitResult, *, source: str) -> str:
     return host.lower()
 
 
-def validated_port(parts: SplitResult, *, scheme: str, source: str) -> int:
+def validated_port(
+    parts: SplitResult,
+    *,
+    scheme: str,
+    source: str,
+    default_ports: Mapping[str, int] = DEFAULT_PROXY_PORTS,
+) -> int:
     try:
         port = parts.port
     except ValueError as error:
         msg = f"{source} port is invalid"
         raise ValueError(msg) from error
     if port is None:
-        return DEFAULT_PROXY_PORTS[scheme]
+        return default_ports[scheme]
     if port < MIN_PORT or port > MAX_PORT:
         _raise_invalid_proxy_url(source, f"port must be between {MIN_PORT} and {MAX_PORT}")
     return port

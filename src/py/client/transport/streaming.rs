@@ -5,7 +5,7 @@ use super::response::{raw_response, raw_stream_response};
 use crate::core::headers::response_headers;
 use crate::core::metrics::Metrics;
 use crate::core::request::build_request;
-use crate::errors::FogHttpError;
+use crate::errors::{transport_error_message, FogHttpError};
 use crate::messages::{redirect_limit_exceeded, REQUEST_TOTAL_TIMEOUT};
 use crate::py::client::acquire::AcquireGate;
 use crate::py::client::async_requests::RequestCompletion;
@@ -53,9 +53,9 @@ pub async fn send_stream_request(
         .map_err(|_| timeout_error(&acquire_timeout_context, REQUEST_TOTAL_TIMEOUT))??;
         let origin_metrics = permit.origin_metrics();
         let request_info = state.request_info();
-        let use_http_proxy = state.use_http_proxy_for_current_url()?;
-        let client = clients.select(use_http_proxy)?;
-        let request = build_request(state.request_parts(use_http_proxy))?;
+        let use_proxy_transport = state.use_proxy_transport_for_current_url()?;
+        let client = clients.select(use_proxy_transport)?;
+        let request = build_request(state.request_parts(use_proxy_transport))?;
 
         let response_headers_timeout_context = TimeoutContext::new(
             TimeoutPhase::ResponseHeaders,
@@ -70,7 +70,7 @@ pub async fn send_stream_request(
         )
         .await
         .map_err(|_| timeout_error(&response_headers_timeout_context, REQUEST_TOTAL_TIMEOUT))?
-        .map_err(|err| FogHttpError::new_err(err.to_string()))?;
+        .map_err(|err| FogHttpError::new_err(transport_error_message(&err)))?;
 
         let redirect = stream_redirect_decision(
             &state,

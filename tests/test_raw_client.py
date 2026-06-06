@@ -33,7 +33,9 @@ RAW_CLIENT_INIT_ARGUMENTS = (
     "trust_webpki_roots",
     "runtime_workers",
     "http_proxy_url",
-    "proxy_authorization",
+    "http_proxy_authorization",
+    "https_proxy_url",
+    "https_proxy_authorization",
 )
 
 RAW_REQUEST_ARGUMENTS = (
@@ -42,7 +44,7 @@ RAW_REQUEST_ARGUMENTS = (
     "headers",
     "body",
     "body_replayable",
-    "use_http_proxy",
+    "use_proxy_transport",
     "proxy_policy",
     "pool_timeout",
     "read_timeout",
@@ -95,7 +97,7 @@ def _raw_request(
         headers=[],
         body=body,
         body_replayable=body_replayable,
-        use_http_proxy=False,
+        use_proxy_transport=False,
         proxy_policy=ProxyTransportPolicy.DIRECT,
         timeouts=timeouts,
     )
@@ -153,7 +155,9 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
         "trust_webpki_roots": True,
         "runtime_workers": runtime_workers,
         "http_proxy_url": None,
-        "proxy_authorization": None,
+        "http_proxy_authorization": None,
+        "https_proxy_url": None,
+        "https_proxy_authorization": None,
     }
 
 
@@ -176,8 +180,12 @@ def test_create_raw_client_passes_proxy_endpoint_and_auth_to_rust_client(
     )
 
     assert isinstance(raw_client, RawClientProbe)
+    expected_auth = _basic_proxy_auth(username, password)
+    # Explicit proxy= maps both schemes to the same endpoint and credentials.
     assert captured_options["http_proxy_url"] == "http://proxy.example:8080"
-    assert captured_options["proxy_authorization"] == _basic_proxy_auth(username, password)
+    assert captured_options["http_proxy_authorization"] == expected_auth
+    assert captured_options["https_proxy_url"] == "http://proxy.example:8080"
+    assert captured_options["https_proxy_authorization"] == expected_auth
 
 
 def test_create_raw_client_passes_tls_trust_boundary_to_rust_client(
@@ -237,7 +245,7 @@ def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker:
         "headers": [],
         "body": body,
         "body_replayable": body_replayable,
-        "use_http_proxy": False,
+        "use_proxy_transport": False,
         "proxy_policy": ProxyTransportPolicy.DIRECT.value,
         "pool_timeout": timeouts.pool,
         "read_timeout": timeouts.read,
@@ -269,7 +277,7 @@ async def test_send_raw_request_async_passes_request_timeouts_without_connect_ti
         "headers": [],
         "body": None,
         "body_replayable": True,
-        "use_http_proxy": False,
+        "use_proxy_transport": False,
         "proxy_policy": ProxyTransportPolicy.DIRECT.value,
         "pool_timeout": timeouts.pool,
         "read_timeout": timeouts.read,

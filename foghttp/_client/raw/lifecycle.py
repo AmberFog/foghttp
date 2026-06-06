@@ -34,6 +34,8 @@ def create_raw_client(
             config.runtime_workers,
             None if config.http_proxy is None else config.http_proxy.endpoint_url,
             basic_proxy_authorization(config.http_proxy),
+            None if config.https_proxy is None else config.https_proxy.endpoint_url,
+            basic_proxy_authorization(config.https_proxy),
         )
     except _foghttp.FogHttpError as exc:
         raise ValueError(str(exc)) from exc

@@ -23,7 +23,7 @@ class RawRequestOptions:
     headers: Sequence[tuple[str, str]]
     body: bytes | None
     body_replayable: bool
-    use_http_proxy: bool
+    use_proxy_transport: bool
     proxy_policy: ProxyTransportPolicy
     timeouts: Timeouts
 
@@ -40,7 +40,7 @@ def send_raw_request(
             request.headers,
             request.body,
             request.body_replayable,
-            request.use_http_proxy,
+            request.use_proxy_transport,
             request.proxy_policy.value,
             request.timeouts.pool,
             request.timeouts.read,
@@ -62,7 +62,7 @@ def send_raw_stream_request(
             request.headers,
             request.body,
             request.body_replayable,
-            request.use_http_proxy,
+            request.use_proxy_transport,
             request.proxy_policy.value,
             request.timeouts.pool,
             request.timeouts.read,
@@ -84,7 +84,7 @@ async def send_raw_request_async(
             request.headers,
             request.body,
             request.body_replayable,
-            request.use_http_proxy,
+            request.use_proxy_transport,
             request.proxy_policy.value,
             request.timeouts.pool,
             request.timeouts.read,
@@ -106,7 +106,7 @@ async def send_raw_stream_request_async(
             request.headers,
             request.body,
             request.body_replayable,
-            request.use_http_proxy,
+            request.use_proxy_transport,
             request.proxy_policy.value,
             request.timeouts.pool,
             request.timeouts.read,

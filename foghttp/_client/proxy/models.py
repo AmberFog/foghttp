@@ -10,7 +10,7 @@ from enum import StrEnum
 from urllib.parse import unquote, urlunsplit
 
 from ..._redaction import REDACTED_VALUE
-from .constants import DEFAULT_PROXY_PORTS
+from .constants import DEFAULT_TARGET_PORTS
 from .url_parsing import (
     split_proxy_url,
     split_url,
@@ -88,11 +88,16 @@ class ProxyTarget:
     def parse(cls, value: str) -> "ProxyTarget":
         parts = split_url(value, source="target URL")
         scheme = parts.scheme.lower()
-        if scheme not in DEFAULT_PROXY_PORTS:
+        if scheme not in DEFAULT_TARGET_PORTS:
             msg = "target URL scheme must be http or https"
             raise ValueError(msg)
         host = validated_host(parts, source="target URL")
-        port = validated_port(parts, scheme=scheme, source="target URL")
+        port = validated_port(
+            parts,
+            scheme=scheme,
+            source="target URL",
+            default_ports=DEFAULT_TARGET_PORTS,
+        )
         return cls(scheme=scheme, host=host, port=port)
 
 

@@ -85,7 +85,7 @@ def _raw_request(url: str) -> RawRequestOptions:
         headers=[],
         body=None,
         body_replayable=True,
-        use_http_proxy=False,
+        use_proxy_transport=False,
         proxy_policy=ProxyTransportPolicy.DIRECT,
         timeouts=Timeouts(),
     )

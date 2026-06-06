@@ -58,7 +58,11 @@ impl RawClient {
     #[new]
     // The private PyO3 boundary mirrors Python client options. Internally we
     // group these values into typed option structs before building transport.
-    #[allow(clippy::fn_params_excessive_bools, clippy::too_many_arguments)]
+    #[allow(
+        clippy::fn_params_excessive_bools,
+        clippy::too_many_arguments,
+        clippy::similar_names
+    )]
     fn new(
         max_active_requests: usize,
         max_active_requests_per_origin: Option<usize>,
@@ -75,7 +79,9 @@ impl RawClient {
         trust_webpki_roots: bool,
         runtime_workers: Option<usize>,
         http_proxy_url: Option<String>,
-        proxy_authorization: Option<String>,
+        http_proxy_authorization: Option<String>,
+        https_proxy_url: Option<String>,
+        https_proxy_authorization: Option<String>,
     ) -> PyResult<Self> {
         validate_numeric_client_options(NumericClientOptions {
             max_active_requests,
@@ -97,12 +103,16 @@ impl RawClient {
             ca_certificates,
             trust_webpki_roots,
             http_proxy_url: None,
+            https_proxy_url: None,
+            https_proxy_authorization: None,
         };
         let client =
             build_client(&client_options, Arc::clone(&metrics)).map_err(FogHttpError::new_err)?;
-        let http_proxy_client = if let Some(http_proxy_url) = http_proxy_url {
+        let proxy_client = if http_proxy_url.is_some() || https_proxy_url.is_some() {
             let options = ClientOptions {
-                http_proxy_url: Some(http_proxy_url),
+                http_proxy_url,
+                https_proxy_url,
+                https_proxy_authorization,
                 ..client_options
             };
             Some(build_client(&options, Arc::clone(&metrics)).map_err(FogHttpError::new_err)?)
@@ -120,7 +130,7 @@ impl RawClient {
         );
 
         Ok(Self {
-            clients: Some(TransportClients::new(client, http_proxy_client)),
+            clients: Some(TransportClients::new(client, proxy_client)),
             runtime: Some(runtime),
             acquire_gate,
             metrics,
@@ -130,7 +140,7 @@ impl RawClient {
             buffered_body_budget,
             follow_redirects,
             max_redirects,
-            proxy_authorization,
+            proxy_authorization: http_proxy_authorization,
         })
     }
 
@@ -143,7 +153,7 @@ impl RawClient {
         headers: HeaderPairs,
         body: Option<Vec<u8>>,
         body_replayable: bool,
-        use_http_proxy: bool,
+        use_proxy_transport: bool,
         proxy_policy: String,
         pool_timeout: f64,
         read_timeout: f64,
@@ -175,7 +185,7 @@ impl RawClient {
                         headers,
                         body,
                         body_replayable,
-                        use_http_proxy,
+                        use_proxy_transport,
                         proxy_policy,
                         proxy_authorization,
                         total_timeout,
@@ -203,7 +213,7 @@ impl RawClient {
         headers: HeaderPairs,
         body: Option<Vec<u8>>,
         body_replayable: bool,
-        use_http_proxy: bool,
+        use_proxy_transport: bool,
         proxy_policy: String,
         pool_timeout: f64,
         read_timeout: f64,
@@ -233,7 +243,7 @@ impl RawClient {
                     headers,
                     body,
                     body_replayable,
-                    use_http_proxy,
+                    use_proxy_transport,
                     proxy_policy,
                     proxy_authorization,
                     total_timeout,
@@ -256,7 +266,7 @@ impl RawClient {
         headers: HeaderPairs,
         body: Option<Vec<u8>>,
         body_replayable: bool,
-        use_http_proxy: bool,
+        use_proxy_transport: bool,
         proxy_policy: String,
         pool_timeout: f64,
         read_timeout: f64,
@@ -294,7 +304,7 @@ impl RawClient {
                         headers,
                         body,
                         body_replayable,
-                        use_http_proxy,
+                        use_proxy_transport,
                         proxy_policy,
                         proxy_authorization,
                         total_timeout,
@@ -325,7 +335,7 @@ impl RawClient {
         headers: HeaderPairs,
         body: Option<Vec<u8>>,
         body_replayable: bool,
-        use_http_proxy: bool,
+        use_proxy_transport: bool,
         proxy_policy: String,
         pool_timeout: f64,
         read_timeout: f64,
@@ -356,7 +366,7 @@ impl RawClient {
                     headers,
                     body,
                     body_replayable,
-                    use_http_proxy,
+                    use_proxy_transport,
                     proxy_policy,
                     proxy_authorization,
                     total_timeout,

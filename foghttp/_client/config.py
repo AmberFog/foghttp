@@ -33,6 +33,7 @@ class ClientConfig:
     tls: TLSConfig | None
     proxy_resolver: ProxyResolver
     http_proxy: ProxyUrl | None
+    https_proxy: ProxyUrl | None
     runtime_workers: int | None
     telemetry: TelemetryConfig | None
     lifecycle_debug: AsyncLifecycleDebugConfig | None
@@ -62,7 +63,8 @@ class ClientConfig:
             trust_env=options.trust_env,
             tls=tls_from_trusted_environment(explicit_tls=options.tls, env_config=env_config),
             proxy_resolver=proxy_resolver,
-            http_proxy=proxy_resolver.http_proxy(),
+            http_proxy=proxy_resolver.routing_proxy("http"),
+            https_proxy=proxy_resolver.routing_proxy("https"),
             runtime_workers=options.runtime_workers,
             telemetry=options.telemetry,
             lifecycle_debug=options.lifecycle_debug,

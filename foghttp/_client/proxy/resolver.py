@@ -47,14 +47,16 @@ class ProxyResolver:
     def from_environment(cls, rules: ProxyRules) -> "ProxyResolver":
         return cls(explicit=None, environment=rules)
 
-    def http_proxy(self) -> ProxyUrl | None:
-        if self.explicit is not None:
-            explicit_proxy = self.explicit.proxy_for_scheme("http")
-            if explicit_proxy is not None:
-                return explicit_proxy
-        if self.environment is None:
-            return None
-        return self.environment.proxy_for_scheme("http")
+    def routing_proxy(self, scheme: str) -> ProxyUrl | None:
+        """Proxy endpoint for a target ``scheme`` (``http`` or ``https``).
+
+        Plain-HTTP targets proxy in absolute-form, HTTPS targets tunnel via
+        CONNECT. Explicit ``proxy=`` wins over environment and maps both schemes
+        to the same proxy; environment config may set different HTTP and HTTPS
+        proxies, which are routed independently.
+        """
+        rules = self.environment if self.explicit is None else self.explicit
+        return None if rules is None else rules.proxy_for_scheme(scheme)
 
     def transport_policy(self) -> ProxyTransportPolicy:
         if self.explicit is not None:

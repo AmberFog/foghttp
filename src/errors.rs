@@ -13,6 +13,34 @@ create_exception!(
     FogHttpError
 );
 
+/// Format a transport error including its source chain.
+///
+/// `hyper`/`hyper-util` errors keep the actionable cause (TLS validation
+/// failure, proxy CONNECT rejection, refused connection) in `source()` while
+/// the top-level `Display` is only a generic phase label such as
+/// `client error (Connect)`. Surfacing the chain keeps the public error
+/// diagnostic without leaking credentials, because the proxy connector never
+/// places credentials in connection URIs or CONNECT-failure messages.
+pub fn transport_error_message(error: &dyn std::error::Error) -> String {
+    const MAX_DEPTH: usize = 5;
+    let mut message = error.to_string();
+    let mut source = error.source();
+    let mut depth = 0;
+    while let Some(cause) = source {
+        if depth >= MAX_DEPTH {
+            break;
+        }
+        let cause_text = cause.to_string();
+        if !cause_text.is_empty() && !message.contains(&cause_text) {
+            message.push_str(": ");
+            message.push_str(&cause_text);
+        }
+        source = cause.source();
+        depth += 1;
+    }
+    message
+}
+
 pub fn register(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("FogHttpError", py.get_type::<FogHttpError>())?;
     module.add("FogHttpTimeoutError", py.get_type::<FogHttpTimeoutError>())?;

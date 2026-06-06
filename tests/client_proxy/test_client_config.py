@@ -12,6 +12,11 @@ from .client_options import client_options
 from .environment import clear_proxy_environment
 
 
+def _https_proxy_endpoint_with_userinfo() -> str:
+    userinfo = "user:password"
+    return f"https://{userinfo}@proxy.example:443"
+
+
 def test_client_config_snapshots_trust_env_proxy_values() -> None:
     env = {"HTTPS_PROXY": "http://first.proxy.example:8080"}
     config = ClientConfig.from_options(client_options(trust_env=True), environ=env)
@@ -65,6 +70,38 @@ def test_client_config_applies_explicit_proxy_policy_to_https_targets() -> None:
 
     assert decision.source is ProxySource.EXPLICIT
     assert decision.proxy is config.http_proxy
+
+
+def test_client_config_rejects_https_scheme_proxy_endpoint() -> None:
+    with pytest.raises(ValueError, match="proxy URL scheme must be http"):
+        ClientConfig.from_options(
+            client_options(trust_env=False, proxy="https://proxy.example:443"),
+            environ={},
+        )
+
+
+@pytest.mark.parametrize(
+    "proxy_url",
+    [
+        pytest.param("https://proxy.example:443", id="https-proxy-endpoint"),
+        pytest.param(_https_proxy_endpoint_with_userinfo(), id="https-proxy-userinfo"),
+    ],
+)
+def test_public_client_rejects_https_scheme_proxy_endpoint(proxy_url: str) -> None:
+    with pytest.raises(ValueError, match="proxy URL scheme must be http"):
+        foghttp.Client(proxy=proxy_url)
+
+
+@pytest.mark.parametrize(
+    "proxy_url",
+    [
+        pytest.param("https://proxy.example:443", id="https-proxy-endpoint"),
+        pytest.param(_https_proxy_endpoint_with_userinfo(), id="https-proxy-userinfo"),
+    ],
+)
+def test_public_async_client_rejects_https_scheme_proxy_endpoint(proxy_url: str) -> None:
+    with pytest.raises(ValueError, match="proxy URL scheme must be http"):
+        foghttp.AsyncClient(proxy=proxy_url)
 
 
 def test_client_config_redacts_proxy_credentials_in_repr(faker: Faker) -> None:
@@ -181,3 +218,20 @@ async def test_public_async_client_accepts_trust_env_without_creating_transport(
 
     async with foghttp.AsyncClient(trust_env=True) as client:
         assert client.stats() == foghttp.TransportStats()
+
+
+def test_client_config_resolves_per_scheme_environment_proxies() -> None:
+    # Different HTTP and HTTPS env proxies are routed independently: HTTP targets
+    # use HTTP_PROXY (absolute-form), HTTPS targets use HTTPS_PROXY (CONNECT).
+    config = ClientConfig.from_options(
+        client_options(trust_env=True),
+        environ={
+            "HTTP_PROXY": "http://http.proxy.example:8080",
+            "HTTPS_PROXY": "http://https.proxy.example:9090",
+        },
+    )
+
+    assert config.http_proxy is not None
+    assert config.http_proxy.endpoint_url == "http://http.proxy.example:8080"
+    assert config.https_proxy is not None
+    assert config.https_proxy.endpoint_url == "http://https.proxy.example:9090"
