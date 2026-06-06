@@ -11,7 +11,6 @@ KEEPALIVE = True
 FOLLOW_REDIRECTS = False
 TRUST_WEBPKI_ROOTS = True
 CUSTOM_ONLY_TRUST_WEBPKI_ROOTS = False
-TRUST_ENV = False
 REQUEST_BODY_REPLAYABLE = True
 
 
@@ -34,7 +33,6 @@ def test_raw_client_rejects_empty_custom_only_tls_trust_store() -> None:
             20,
             (),
             CUSTOM_ONLY_TRUST_WEBPKI_ROOTS,
-            TRUST_ENV,
             None,
         )
 
@@ -58,7 +56,6 @@ def test_raw_client_rejects_invalid_idle_timeout_without_panic() -> None:
             20,
             (),
             TRUST_WEBPKI_ROOTS,
-            TRUST_ENV,
             None,
         )
 
@@ -82,7 +79,6 @@ def test_raw_client_rejects_too_large_active_request_limit_without_panic() -> No
             20,
             (),
             TRUST_WEBPKI_ROOTS,
-            TRUST_ENV,
             None,
         )
 
@@ -140,6 +136,5 @@ def _raw_client() -> _foghttp.RawClient:
         20,
         (),
         TRUST_WEBPKI_ROOTS,
-        TRUST_ENV,
         None,
     )

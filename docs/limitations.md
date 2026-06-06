@@ -38,6 +38,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - GET/HEAD/POST redirects
 - HTTPS with default WebPKI roots, explicit custom CA certificate files, and
   custom-only CA trust through `TLSConfig(trust_webpki_roots=False)`
+- `trust_env=True` environment snapshot for future proxy decisions and
+  `SSL_CERT_FILE`; see [Proxy and trust_env](./proxies.md)
 - async request cancellation that aborts the in-flight Rust request
 - global active request limit, per-origin active request limit, pending acquire
   limit, request stats, and stuck request pool diagnostics
@@ -65,7 +67,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | Multipart uploads | Not available |
 | `files=` | Reserved in the body matrix; not available yet |
 | Cookie jar | `cookies=True` is rejected |
-| Proxy support | `trust_env=True` is rejected |
+| HTTP proxy routing | Not available yet; `trust_env=True` snapshots and validates proxy env, but requests still use direct transport |
+| HTTPS proxy `CONNECT` | Not available yet |
 | Auth helpers | Use manual headers for simple cases |
 | Disabling TLS verification | Not available by design; use `TLSConfig` with explicit CA certificates |
 | OS trust store integration | Not available; FogHTTP uses bundled WebPKI roots unless `trust_webpki_roots=False` is set |
@@ -101,7 +104,7 @@ Wait before using FogHTTP when:
 
 - you need transparent streaming decompression
 - you upload large files
-- you need proxy behavior from environment variables
+- you need actual proxy routing from environment variables
 - you rely on cookies across requests
 - you need multipart form-data or large uploads
 - you need per-request connect timeout reconfiguration or request-body write

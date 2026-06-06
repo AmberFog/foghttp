@@ -30,7 +30,6 @@ def create_raw_client(
             config.max_redirects,
             ca_certificate_bytes(config.tls),
             trust_webpki_roots(config.tls),
-            config.trust_env,
             config.runtime_workers,
         )
     except _foghttp.FogHttpError as exc:

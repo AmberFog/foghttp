@@ -139,9 +139,10 @@ async with foghttp.AsyncClient() as client:
 
 FogHTTP is currently focused on controlled HTTP workloads. Buffered responses
 are the broadest supported path; sync and async response streaming are available
-as bytes/text/line context-managed APIs. Streaming uploads, cookies, auth helpers,
-proxy support, multipart uploads, HTTP/2, automatic `Accept-Encoding`
-negotiation, streaming decompression, strict connection-level pool limits,
+as bytes/text/line context-managed APIs. Streaming uploads, cookies, auth
+helpers, HTTP proxy routing, HTTPS proxy `CONNECT`, multipart uploads,
+HTTP/2, automatic `Accept-Encoding` negotiation, streaming decompression,
+strict connection-level pool limits,
 per-request connect timeout reconfiguration, and request-body write timeout
 semantics are planned for later versions. Response body read timeout is
 available for buffered and streaming response bodies. Socket lifecycle telemetry

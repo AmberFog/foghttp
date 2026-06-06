@@ -82,9 +82,14 @@ only an internal or regulated CA bundle.
 
 ## Native Roots And Environment
 
-FogHTTP does not load operating-system trust stores today. It also does not read
-TLS settings from `trust_env`. The active trust boundary is always the explicit
-`TLSConfig` plus bundled WebPKI roots when `trust_webpki_roots=True`.
+FogHTTP does not load operating-system trust stores today. With
+`trust_env=True`, `SSL_CERT_FILE` is mapped to
+`TLSConfig(ca_certificates=(...))` only when no explicit `tls=` is passed.
+The environment path is snapshotted at client config creation; the certificate
+file is read and validated later, when the Rust transport is created.
+`SSL_CERT_DIR` and environment-driven TLS verification disabling are not used.
+The active trust boundary is always explicit `TLSConfig`, env-derived
+`SSL_CERT_FILE`, and bundled WebPKI roots when `trust_webpki_roots=True`.
 
 ## Unsupported Unsafe Modes
 
@@ -97,6 +102,7 @@ internal trust replacement until a dedicated pinning API exists.
 - Custom certificates must be PEM files containing CA certificates.
 - Certificate files are read when the Rust transport is created.
 - The same `TLSConfig` works with `Client` and `AsyncClient`.
-- Operating-system trust stores and `trust_env` proxy/TLS behavior are not used
-  today.
+- Operating-system trust stores are not used today.
+- `trust_env=True` supports `SSL_CERT_FILE` only; proxy env variables are
+  parsed for future proxy transport work.
 - Disabling certificate verification is intentionally not supported.

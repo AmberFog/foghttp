@@ -1,18 +1,8 @@
 use crate::core::numeric::{
     duration_from_secs, validate_optional_usize_option, validate_usize_option,
 };
-use crate::errors::FogHttpError;
-use crate::messages::TRUST_ENV_UNSUPPORTED;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-
-pub fn validate_unsupported_options(trust_env: bool) -> PyResult<()> {
-    if trust_env {
-        return Err(FogHttpError::new_err(TRUST_ENV_UNSUPPORTED));
-    }
-
-    Ok(())
-}
 
 #[derive(Clone, Copy)]
 pub struct NumericClientOptions {
