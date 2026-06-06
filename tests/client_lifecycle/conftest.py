@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 import pytest
 
 import foghttp
+from foghttp._client.raw import requests as raw_requests
 from foghttp.status_codes.server_error import INTERNAL_SERVER_ERROR
 from foghttp.status_codes.success import OK
 
@@ -105,7 +106,7 @@ def sync_noop_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_response_from_raw(**_kwargs: object) -> object:
         return object()
 
-    monkeypatch.setattr(transport_module, "send_raw_request", fake_send_raw_request)
+    monkeypatch.setattr(raw_requests, "send_raw_request", fake_send_raw_request)
     monkeypatch.setattr(transport_module, "response_from_raw", fake_response_from_raw)
 
 
@@ -119,5 +120,5 @@ def async_noop_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_response_from_raw(**_kwargs: object) -> object:
         return object()
 
-    monkeypatch.setattr(transport_module, "send_raw_request_async", fake_send_raw_request_async)
+    monkeypatch.setattr(raw_requests, "send_raw_request_async", fake_send_raw_request_async)
     monkeypatch.setattr(transport_module, "response_from_raw", fake_response_from_raw)

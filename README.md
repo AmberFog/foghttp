@@ -102,7 +102,8 @@ async with foghttp.AsyncClient() as client:
   token-like URL params, and buffered body bytes
 - normalized `URL` model with origin comparison and relative joins
 - GET/HEAD/POST redirects with final URL, history, and conservative replay policy
-- plain HTTP proxy routing through explicit `proxy=` or `trust_env=True`
+- plain HTTP proxy routing through explicit `proxy=` or `trust_env=True`;
+  proxied HTTPS targets fail closed until `CONNECT` is implemented
 - HTTPS with default WebPKI roots, explicit custom CA certificates, and
   custom-only CA trust
 - graceful sync `close()` that waits for in-flight sync requests

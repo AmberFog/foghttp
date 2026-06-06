@@ -104,5 +104,5 @@ internal trust replacement until a dedicated pinning API exists.
 - The same `TLSConfig` works with `Client` and `AsyncClient`.
 - Operating-system trust stores are not used today.
 - `trust_env=True` supports `SSL_CERT_FILE` and plain HTTP proxy routing;
-  HTTPS proxy `CONNECT` is planned separately.
+  proxied HTTPS targets fail closed until HTTPS proxy `CONNECT` is implemented.
 - Disabling certificate verification is intentionally not supported.

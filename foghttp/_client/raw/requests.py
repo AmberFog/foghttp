@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
 from ...timeouts import Timeouts
+from ..proxy import ProxyTransportPolicy
 from .errors import raise_public_raw_error
 
 
@@ -23,6 +24,7 @@ class RawRequestOptions:
     body: bytes | None
     body_replayable: bool
     use_http_proxy: bool
+    proxy_policy: ProxyTransportPolicy
     timeouts: Timeouts
 
 
@@ -39,6 +41,7 @@ def send_raw_request(
             request.body,
             request.body_replayable,
             request.use_http_proxy,
+            request.proxy_policy.value,
             request.timeouts.pool,
             request.timeouts.read,
             request.timeouts.total,
@@ -60,6 +63,7 @@ def send_raw_stream_request(
             request.body,
             request.body_replayable,
             request.use_http_proxy,
+            request.proxy_policy.value,
             request.timeouts.pool,
             request.timeouts.read,
             request.timeouts.total,
@@ -81,6 +85,7 @@ async def send_raw_request_async(
             request.body,
             request.body_replayable,
             request.use_http_proxy,
+            request.proxy_policy.value,
             request.timeouts.pool,
             request.timeouts.read,
             request.timeouts.total,
@@ -102,6 +107,7 @@ async def send_raw_stream_request_async(
             request.body,
             request.body_replayable,
             request.use_http_proxy,
+            request.proxy_policy.value,
             request.timeouts.pool,
             request.timeouts.read,
             request.timeouts.total,

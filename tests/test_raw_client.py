@@ -8,6 +8,7 @@ from foghttp import _foghttp
 from foghttp._client.config import ClientConfig
 from foghttp._client.constants import DEFAULT_MAX_REDIRECTS
 from foghttp._client.options import ClientOptions
+from foghttp._client.proxy import ProxyTransportPolicy
 from foghttp._client.raw.lifecycle import create_raw_client
 from foghttp._client.raw.requests import RawRequestOptions, send_raw_request, send_raw_request_async
 from foghttp.limits import Limits
@@ -42,6 +43,7 @@ RAW_REQUEST_ARGUMENTS = (
     "body",
     "body_replayable",
     "use_http_proxy",
+    "proxy_policy",
     "pool_timeout",
     "read_timeout",
     "total_timeout",
@@ -94,6 +96,7 @@ def _raw_request(
         body=body,
         body_replayable=body_replayable,
         use_http_proxy=False,
+        proxy_policy=ProxyTransportPolicy.DIRECT,
         timeouts=timeouts,
     )
 
@@ -235,6 +238,7 @@ def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker:
         "body": body,
         "body_replayable": body_replayable,
         "use_http_proxy": False,
+        "proxy_policy": ProxyTransportPolicy.DIRECT.value,
         "pool_timeout": timeouts.pool,
         "read_timeout": timeouts.read,
         "total_timeout": timeouts.total,
@@ -266,6 +270,7 @@ async def test_send_raw_request_async_passes_request_timeouts_without_connect_ti
         "body": None,
         "body_replayable": True,
         "use_http_proxy": False,
+        "proxy_policy": ProxyTransportPolicy.DIRECT.value,
         "pool_timeout": timeouts.pool,
         "read_timeout": timeouts.read,
         "total_timeout": timeouts.total,

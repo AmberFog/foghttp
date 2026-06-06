@@ -4,6 +4,7 @@ from faker import Faker
 import pytest
 
 from foghttp import _foghttp
+from foghttp._client.proxy import ProxyTransportPolicy
 from foghttp.methods import GET
 
 
@@ -13,6 +14,7 @@ TRUST_WEBPKI_ROOTS = True
 CUSTOM_ONLY_TRUST_WEBPKI_ROOTS = False
 REQUEST_BODY_REPLAYABLE = True
 USE_HTTP_PROXY = False
+PROXY_TRANSPORT_POLICY = ProxyTransportPolicy.DIRECT.value
 
 
 def test_raw_client_rejects_empty_custom_only_tls_trust_store() -> None:
@@ -104,6 +106,7 @@ def test_raw_client_sync_request_rejects_invalid_timeout_without_panic(faker: Fa
                 None,
                 REQUEST_BODY_REPLAYABLE,
                 USE_HTTP_PROXY,
+                PROXY_TRANSPORT_POLICY,
                 math.nan,
                 1.0,
                 1.0,
@@ -126,6 +129,7 @@ def test_raw_client_sync_request_rejects_invalid_read_timeout_without_panic(fake
                 None,
                 REQUEST_BODY_REPLAYABLE,
                 USE_HTTP_PROXY,
+                PROXY_TRANSPORT_POLICY,
                 1.0,
                 math.nan,
                 1.0,
@@ -150,6 +154,7 @@ async def test_raw_client_async_request_rejects_invalid_timeout_without_panic(
                 None,
                 REQUEST_BODY_REPLAYABLE,
                 USE_HTTP_PROXY,
+                PROXY_TRANSPORT_POLICY,
                 1.0,
                 1.0,
                 math.inf,

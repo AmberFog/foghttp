@@ -1,4 +1,5 @@
 from base64 import b64encode
+import json
 from urllib.parse import urlsplit
 
 from faker import Faker
@@ -6,8 +7,10 @@ import pytest
 
 import foghttp
 from foghttp.methods import GET, POST
+from foghttp.status_codes.redirect import FOUND
 from tests.client_proxy.environment import clear_proxy_environment
 from tests.client_proxy.http_proxy_server import AsyncHTTPProxy, SyncHTTPProxy
+from tests.redirect_helpers import redirect_to_location_url
 
 
 def test_sync_client_routes_http_request_through_explicit_proxy(
@@ -29,6 +32,23 @@ def test_sync_client_routes_http_request_through_explicit_proxy(
     assert len(sync_http_proxy.requests) == 1
 
 
+def test_sync_stream_routes_http_request_through_explicit_proxy(
+    sync_http_proxy: SyncHTTPProxy,
+    unused_tcp_port: int,
+) -> None:
+    target_url = _target_url(unused_tcp_port, "/stream-via-proxy")
+
+    with (
+        foghttp.Client(proxy=sync_http_proxy.base_url) as client,
+        client.stream(GET, target_url) as response,
+    ):
+        content = b"".join(response.iter_bytes())
+
+    payload = json.loads(content)
+    assert payload["request_line"] == f"{GET} {target_url} HTTP/1.1"
+    assert len(sync_http_proxy.requests) == 1
+
+
 async def test_async_client_routes_http_request_through_explicit_proxy(
     async_http_proxy: AsyncHTTPProxy,
     unused_tcp_port: int,
@@ -42,6 +62,23 @@ async def test_async_client_routes_http_request_through_explicit_proxy(
     assert response.request.url == target_url
     assert payload["request_line"] == f"{GET} {target_url} HTTP/1.1"
     assert payload["headers"]["host"] == [urlsplit(target_url).netloc]
+    assert len(async_http_proxy.requests) == 1
+
+
+async def test_async_stream_routes_http_request_through_explicit_proxy(
+    async_http_proxy: AsyncHTTPProxy,
+    unused_tcp_port: int,
+) -> None:
+    target_url = _target_url(unused_tcp_port, "/async-stream-via-proxy")
+
+    async with (
+        foghttp.AsyncClient(proxy=async_http_proxy.base_url) as client,
+        client.stream(GET, target_url) as response,
+    ):
+        content = b"".join([chunk async for chunk in response.aiter_bytes()])
+
+    payload = json.loads(content)
+    assert payload["request_line"] == f"{GET} {target_url} HTTP/1.1"
     assert len(async_http_proxy.requests) == 1
 
 
@@ -82,6 +119,23 @@ def test_trust_env_http_proxy_routes_http_request(
     assert len(sync_http_proxy.requests) == 1
 
 
+def test_trust_env_all_proxy_routes_http_request(
+    monkeypatch: pytest.MonkeyPatch,
+    sync_http_proxy: SyncHTTPProxy,
+    unused_tcp_port: int,
+) -> None:
+    target_url = _target_url(unused_tcp_port, "/all-proxy")
+    clear_proxy_environment(monkeypatch)
+    monkeypatch.setenv("ALL_PROXY", sync_http_proxy.base_url)
+
+    with foghttp.Client(trust_env=True) as client:
+        response = client.get(target_url)
+
+    payload = response.json()
+    assert payload["request_line"] == f"{GET} {target_url} HTTP/1.1"
+    assert len(sync_http_proxy.requests) == 1
+
+
 def test_no_proxy_bypasses_trusted_environment_http_proxy(
     monkeypatch: pytest.MonkeyPatch,
     sync_http_proxy: SyncHTTPProxy,
@@ -96,6 +150,69 @@ def test_no_proxy_bypasses_trusted_environment_http_proxy(
 
     payload = response.json()
     assert payload["request_line"] == f"{GET} / HTTP/1.1"
+    assert sync_http_proxy.requests == []
+
+
+def test_https_proxy_target_fails_closed_before_connect_support(
+    sync_http_proxy: SyncHTTPProxy,
+) -> None:
+    with foghttp.Client(proxy=sync_http_proxy.base_url) as client:
+        with pytest.raises(foghttp.RequestError, match="HTTPS proxy CONNECT is not implemented"):
+            client.get("https://example.com/items")
+
+        assert client.stats() == foghttp.TransportStats()
+
+    assert sync_http_proxy.requests == []
+
+
+@pytest.mark.parametrize(
+    "proxy_env_name",
+    [
+        pytest.param("HTTPS_PROXY", id="https-proxy"),
+        pytest.param("ALL_PROXY", id="all-proxy"),
+    ],
+)
+def test_trust_env_https_proxy_target_fails_closed_before_connect_support(
+    monkeypatch: pytest.MonkeyPatch,
+    proxy_env_name: str,
+    sync_http_proxy: SyncHTTPProxy,
+) -> None:
+    clear_proxy_environment(monkeypatch)
+    monkeypatch.setenv(proxy_env_name, sync_http_proxy.base_url)
+
+    with foghttp.Client(trust_env=True) as client:
+        with pytest.raises(foghttp.RequestError, match="HTTPS proxy CONNECT is not implemented"):
+            client.get("https://example.com/items")
+
+        assert client.stats() == foghttp.TransportStats()
+
+    assert sync_http_proxy.requests == []
+
+
+def test_trust_env_no_proxy_cross_origin_redirect_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    sync_http_proxy: SyncHTTPProxy,
+    sync_http_server: str,
+    unused_tcp_port: int,
+) -> None:
+    clear_proxy_environment(monkeypatch)
+    monkeypatch.setenv("HTTP_PROXY", sync_http_proxy.base_url)
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1")
+    target_url = redirect_to_location_url(
+        sync_http_server,
+        status_code=FOUND,
+        location=_target_url(unused_tcp_port, "/redirect-target"),
+    )
+
+    with (
+        foghttp.Client(trust_env=True, follow_redirects=True) as client,
+        pytest.raises(
+            foghttp.RequestError,
+            match="cross-origin redirect with environment proxy policy",
+        ),
+    ):
+        client.get(target_url)
+
     assert sync_http_proxy.requests == []
 
 

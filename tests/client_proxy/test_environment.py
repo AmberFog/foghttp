@@ -6,6 +6,7 @@ from foghttp._client.proxy import (
     ProxyResolver,
     ProxyRules,
     ProxySource,
+    ProxyTransportPolicy,
     ProxyUrl,
     environment_proxy_config,
 )
@@ -34,6 +35,30 @@ def test_all_proxy_is_used_when_scheme_specific_proxy_is_absent() -> None:
     assert decision.source is ProxySource.ENVIRONMENT
     assert decision.proxy is not None
     assert decision.proxy.endpoint_url == "http://all.proxy.example:8080"
+
+
+def test_empty_environment_rules_do_not_enable_proxy_transport_policy() -> None:
+    resolver = ProxyResolver.from_environment(environment_proxy_config({}).rules)
+
+    assert resolver.transport_policy() is ProxyTransportPolicy.DIRECT
+
+
+def test_environment_proxy_enables_environment_transport_policy() -> None:
+    resolver = ProxyResolver.from_environment(
+        environment_proxy_config({"ALL_PROXY": "http://all.proxy.example:8080"}).rules,
+    )
+
+    assert resolver.transport_policy() is ProxyTransportPolicy.ENVIRONMENT_PROXY
+
+
+def test_explicit_proxy_enables_explicit_transport_policy_for_all_target_schemes() -> None:
+    resolver = ProxyResolver.from_explicit(proxy=ProxyUrl.parse("http://proxy.example:8080"))
+
+    http_decision = resolver.resolve("http://api.example.com/items")
+    https_decision = resolver.resolve("https://api.example.com/items")
+
+    assert resolver.transport_policy() is ProxyTransportPolicy.EXPLICIT_PROXY
+    assert http_decision.proxy is https_decision.proxy
 
 
 def test_lowercase_proxy_env_wins_over_uppercase_proxy_env() -> None:

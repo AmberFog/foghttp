@@ -5,6 +5,7 @@ __all__ = (
     "BODY_PARAMETER_CONFLICT",
     "CLIENT_CLOSED",
     "COOKIES_UNSUPPORTED",
+    "HTTPS_PROXY_CONNECT_UNSUPPORTED",
     "HTTP_VERSION_UNSUPPORTED",
     "MAX_REDIRECTS_INVALID",
     "POOL_ACQUIRE_QUEUE_FULL",
@@ -32,6 +33,7 @@ BODY_PARAMETER_CONFLICT = "pass only one body parameter: content, data, or json"
 CLIENT_CLOSED = "FogHTTP client is closed"
 COOKIES_UNSUPPORTED = "cookies are planned after the MVP"
 HTTP_VERSION_UNSUPPORTED = "only HTTP/1.1 is supported in the MVP"
+HTTPS_PROXY_CONNECT_UNSUPPORTED = "HTTPS proxy CONNECT is not implemented"
 MAX_REDIRECTS_INVALID = "max_redirects must be greater than or equal to 0"
 POOL_ACQUIRE_QUEUE_FULL = "request acquire queue is full"
 POOL_ACQUIRE_TIMEOUT = "request acquire timeout expired"

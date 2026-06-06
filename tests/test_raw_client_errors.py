@@ -5,6 +5,7 @@ from foghttp import _foghttp
 from foghttp._client.config import ClientConfig
 from foghttp._client.constants import DEFAULT_MAX_REDIRECTS
 from foghttp._client.options import ClientOptions
+from foghttp._client.proxy import ProxyTransportPolicy
 from foghttp._client.raw.lifecycle import create_raw_client
 from foghttp._client.raw.requests import RawRequestOptions, send_raw_request, send_raw_request_async
 from foghttp.errors import (
@@ -85,6 +86,7 @@ def _raw_request(url: str) -> RawRequestOptions:
         body=None,
         body_replayable=True,
         use_http_proxy=False,
+        proxy_policy=ProxyTransportPolicy.DIRECT,
         timeouts=Timeouts(),
     )
 

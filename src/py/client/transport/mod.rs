@@ -2,6 +2,7 @@ mod body;
 mod buffered;
 mod client;
 mod context;
+mod proxy;
 mod request;
 mod response;
 mod streaming;

@@ -3,12 +3,16 @@
 FogHTTP supports plain HTTP proxy routing for `http://` target URLs.
 
 `https://` target URLs over proxy require HTTP `CONNECT`; that is intentionally
-out of scope for the current proxy foundation and is tracked separately.
+out of scope for the current proxy foundation and is tracked separately. When a
+proxy policy selects a proxy for an `https://` target, FogHTTP raises
+`RequestError` instead of silently falling back to a direct connection.
 
 ## Explicit Proxy
 
-Use client-level `proxy=` when all plain HTTP requests from that client should
-use the same proxy endpoint:
+Use client-level `proxy=` when all requests from that client should use the
+same proxy endpoint. In the current release, proxied `http://` requests are
+supported and proxied `https://` requests fail closed until HTTP `CONNECT` is
+implemented:
 
 ```python
 import foghttp
@@ -64,8 +68,8 @@ the client is created:
 | Variable | Current behavior |
 |---|---|
 | `HTTP_PROXY` / `http_proxy` | Routes plain HTTP target URLs through the selected proxy. Uppercase `HTTP_PROXY` is ignored when `REQUEST_METHOD` is set to avoid HTTPoxy-style CGI leakage. |
-| `HTTPS_PROXY` / `https_proxy` | Parsed and validated for future HTTPS `CONNECT` support. It does not route `https://` targets yet. |
-| `ALL_PROXY` / `all_proxy` | Fallback proxy when no scheme-specific proxy is set. For this release it can route plain HTTP targets. |
+| `HTTPS_PROXY` / `https_proxy` | Parsed and validated for future HTTPS `CONNECT` support. If selected for an `https://` target before CONNECT exists, the request fails closed with `RequestError`. |
+| `ALL_PROXY` / `all_proxy` | Fallback proxy when no scheme-specific proxy is set. For this release it routes plain HTTP targets and fails closed for proxied `https://` targets. |
 | `NO_PROXY` / `no_proxy` | Bypass rules for environment-derived proxy decisions. Explicit `proxy=` wins over `NO_PROXY`. |
 | `SSL_CERT_FILE` / `ssl_cert_file` | Converted to `TLSConfig(ca_certificates=(...))` if `tls=` is not passed explicitly. |
 | `SSL_CERT_DIR` | Ignored. Directory trust-store loading is not implemented. |
@@ -74,6 +78,21 @@ Lowercase proxy variables win over uppercase variants for the same setting.
 Scheme-specific proxy variables win over `ALL_PROXY`.
 
 Environment variables are not read on every request.
+
+## Redirects With Proxy Policy
+
+Explicit `proxy=` is a stable client-level policy. HTTP redirects from one
+`http://` origin to another `http://` origin continue through the same proxy.
+Redirects from an explicit proxied HTTP request to `https://` fail closed until
+HTTP `CONNECT` is implemented.
+
+Environment-derived proxy routing can change on each URL because `NO_PROXY`,
+scheme-specific proxy variables and `ALL_PROXY` are evaluated against the
+target origin. Rust follows redirects internally, and this foundation release
+does not yet recompute trusted-environment proxy decisions per redirect hop.
+For that reason, same-origin redirects can continue, but cross-origin redirects
+under environment proxy policy fail closed instead of reusing the initial proxy
+decision.
 
 ## NO_PROXY Rules
 

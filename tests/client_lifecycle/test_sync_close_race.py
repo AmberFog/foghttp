@@ -9,6 +9,7 @@ from faker import Faker
 import pytest
 
 import foghttp
+from foghttp._client.raw import requests as raw_requests
 from foghttp.methods import GET
 
 from .helpers import (
@@ -59,7 +60,7 @@ def test_sync_close_waits_for_send_in_validation_window(
         "validate_safe_request_headers",
         fake_validate_safe_request_headers,
     )
-    monkeypatch.setattr(transport_module, "send_raw_request", fake_send_raw_request)
+    monkeypatch.setattr(raw_requests, "send_raw_request", fake_send_raw_request)
     monkeypatch.setattr(transport_module, "response_from_raw", fake_response_from_raw)
     monkeypatch.setattr(client_module, "close_raw_client", fake_close_raw_client)
 

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 from .models import ProxyDecision, ProxySource, ProxyTarget, ProxyUrl
 from .no_proxy import NoProxyMatcher
+from .transport_policy import ProxyTransportPolicy
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +20,9 @@ class ProxyRules:
         if scheme == "https":
             return self.https or self.all_proxy
         return None
+
+    def has_routing_policy(self) -> bool:
+        return self.http is not None or self.https is not None or self.all_proxy is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +41,7 @@ class ProxyResolver:
         proxy: ProxyUrl,
         environment: ProxyRules | None = None,
     ) -> "ProxyResolver":
-        return cls(explicit=ProxyRules(http=proxy), environment=environment)
+        return cls(explicit=ProxyRules(http=proxy, https=proxy), environment=environment)
 
     @classmethod
     def from_environment(cls, rules: ProxyRules) -> "ProxyResolver":
@@ -51,6 +55,13 @@ class ProxyResolver:
         if self.environment is None:
             return None
         return self.environment.proxy_for_scheme("http")
+
+    def transport_policy(self) -> ProxyTransportPolicy:
+        if self.explicit is not None:
+            return ProxyTransportPolicy.EXPLICIT_PROXY
+        if self.environment is not None and self.environment.has_routing_policy():
+            return ProxyTransportPolicy.ENVIRONMENT_PROXY
+        return ProxyTransportPolicy.DIRECT
 
     def resolve(self, url: str) -> ProxyDecision:
         target = ProxyTarget.parse(url)

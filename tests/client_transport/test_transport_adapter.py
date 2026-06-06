@@ -3,10 +3,11 @@ from typing import NoReturn
 from faker import Faker
 import pytest
 
-from foghttp._client.proxy import ProxyResolver, ProxyUrl
+from foghttp._client.proxy import ProxyResolver, ProxyTransportPolicy, ProxyUrl
 from foghttp._client.raw.requests import RawRequestOptions
 from foghttp._client.transport import RawAsyncTransport, RawSyncTransport
 from foghttp._request_body import request_body
+from foghttp.errors import RequestError
 from foghttp.methods import GET, POST
 from foghttp.request import Request
 from foghttp.timeouts import Timeouts
@@ -82,7 +83,7 @@ def test_raw_sync_transport_sends_prepared_request_through_raw_client(
         assert isinstance(kwargs["started"], float)
         return response
 
-    monkeypatch.setattr("foghttp._client.transport.send_raw_request", fake_send_raw_request)
+    monkeypatch.setattr("foghttp._client.raw.requests.send_raw_request", fake_send_raw_request)
     monkeypatch.setattr("foghttp._client.transport.response_from_raw", fake_response_from_raw)
 
     result = RawSyncTransport(lambda: raw_client, proxy_resolver=ProxyResolver.disabled()).send(
@@ -100,6 +101,7 @@ def test_raw_sync_transport_sends_prepared_request_through_raw_client(
         body=body.content,
         body_replayable=body.replayable,
         use_http_proxy=False,
+        proxy_policy=ProxyTransportPolicy.DIRECT,
         timeouts=timeouts,
     )
 
@@ -124,7 +126,7 @@ def test_raw_sync_transport_marks_http_requests_for_proxy(
     def fake_response_from_raw(**_kwargs: object) -> object:
         return response
 
-    monkeypatch.setattr("foghttp._client.transport.send_raw_request", fake_send_raw_request)
+    monkeypatch.setattr("foghttp._client.raw.requests.send_raw_request", fake_send_raw_request)
     monkeypatch.setattr("foghttp._client.transport.response_from_raw", fake_response_from_raw)
 
     result = RawSyncTransport(lambda: raw_client, proxy_resolver=proxy_resolver).send(
@@ -136,40 +138,25 @@ def test_raw_sync_transport_marks_http_requests_for_proxy(
     raw_request = captured_request["request"]
     assert isinstance(raw_request, RawRequestOptions)
     assert raw_request.use_http_proxy is True
+    assert raw_request.proxy_policy is ProxyTransportPolicy.EXPLICIT_PROXY
 
 
-def test_raw_sync_transport_does_not_mark_https_requests_for_http_proxy(
+def test_raw_sync_transport_rejects_https_requests_for_http_proxy(
     faker: Faker,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured_request: dict[str, object] = {}
-    raw_client = object()
-    raw_response = object()
     request = Request(GET, f"https://{faker.domain_name()}/{faker.uri_path()}")
-    response = response_for_request(request)
     proxy_resolver = ProxyResolver.from_explicit(
         proxy=ProxyUrl.parse("http://proxy.example:8080"),
     )
 
-    def fake_send_raw_request(**kwargs: object) -> object:
-        captured_request.update(kwargs)
-        return raw_response
+    monkeypatch.setattr("foghttp._client.raw.requests.send_raw_request", _fail_send_raw_request)
 
-    def fake_response_from_raw(**_kwargs: object) -> object:
-        return response
-
-    monkeypatch.setattr("foghttp._client.transport.send_raw_request", fake_send_raw_request)
-    monkeypatch.setattr("foghttp._client.transport.response_from_raw", fake_response_from_raw)
-
-    result = RawSyncTransport(lambda: raw_client, proxy_resolver=proxy_resolver).send(
-        request,
-        timeouts=Timeouts(),
-    )
-
-    assert result is response
-    raw_request = captured_request["request"]
-    assert isinstance(raw_request, RawRequestOptions)
-    assert raw_request.use_http_proxy is False
+    with pytest.raises(RequestError, match="HTTPS proxy CONNECT is not implemented"):
+        RawSyncTransport(_fail_raw_client_provider, proxy_resolver=proxy_resolver).send(
+            request,
+            timeouts=Timeouts(),
+        )
 
 
 async def test_raw_async_transport_sends_prepared_request_through_raw_client(
@@ -198,7 +185,7 @@ async def test_raw_async_transport_sends_prepared_request_through_raw_client(
         assert isinstance(kwargs["started"], float)
         return response
 
-    monkeypatch.setattr("foghttp._client.transport.send_raw_request_async", fake_send_raw_request_async)
+    monkeypatch.setattr("foghttp._client.raw.requests.send_raw_request_async", fake_send_raw_request_async)
     monkeypatch.setattr("foghttp._client.transport.response_from_raw", fake_response_from_raw)
 
     result = await RawAsyncTransport(lambda: raw_client, proxy_resolver=ProxyResolver.disabled()).send(
@@ -216,10 +203,21 @@ async def test_raw_async_transport_sends_prepared_request_through_raw_client(
         body=body.content,
         body_replayable=body.replayable,
         use_http_proxy=False,
+        proxy_policy=ProxyTransportPolicy.DIRECT,
         timeouts=timeouts,
     )
 
 
 def _fail_create_raw_client(**_kwargs: object) -> NoReturn:
     msg = "raw client should not be created when a test transport is installed"
+    raise AssertionError(msg)
+
+
+def _fail_raw_client_provider() -> NoReturn:
+    msg = "raw client should not be created for rejected proxy policy"
+    raise AssertionError(msg)
+
+
+def _fail_send_raw_request(**_kwargs: object) -> NoReturn:
+    msg = "raw request should not be sent for rejected proxy policy"
     raise AssertionError(msg)

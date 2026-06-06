@@ -42,7 +42,8 @@ uv run examples/telemetry_hooks.py
 - [compressed_response.py](./compressed_response.py): manual
   `Accept-Encoding` negotiation with transparent buffered response decoding.
 - [http_proxy.py](./http_proxy.py): direct HTTP request by default, or plain
-  HTTP proxy routing with `FOGHTTP_HTTP_PROXY=http://proxy:port`.
+  HTTP proxy routing with `FOGHTTP_HTTP_PROXY=http://proxy:port`; proxied HTTPS
+  targets fail closed until `CONNECT` is implemented.
 - [redirects.py](./redirects.py): GET and POST redirects, final URL, and
   history.
 - [prepared_requests.py](./prepared_requests.py): build, inspect, adjust, and
@@ -59,3 +60,4 @@ FogHTTP supports sync and async response streaming for bytes, text, and lines,
 plus plain HTTP proxy routing. Uploads are still buffered. Do not use these
 examples as templates for large uploads, multipart forms, cookie sessions,
 HTTPS proxy `CONNECT`, SOCKS/PAC proxy clients, or streaming decompression yet.
+Proxied HTTPS targets fail closed instead of falling back to direct transport.

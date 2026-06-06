@@ -68,7 +68,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | `files=` | Reserved in the body matrix; not available yet |
 | Cookie jar | `cookies=True` is rejected |
 | Plain HTTP proxy routing | Available for `http://` targets through explicit `proxy=` or `trust_env=True` environment config |
-| HTTPS proxy `CONNECT` | Not available yet |
+| HTTPS proxy `CONNECT` | Not available yet; proxied `https://` targets fail closed instead of using direct transport |
 | Auth helpers | Use manual headers for simple cases |
 | Disabling TLS verification | Not available by design; use `TLSConfig` with explicit CA certificates |
 | OS trust store integration | Not available; FogHTTP uses bundled WebPKI roots unless `trust_webpki_roots=False` is set |
