@@ -1,26 +1,29 @@
 # Proxy and trust_env
 
-FogHTTP supports plain HTTP proxy routing for `http://` target URLs.
+FogHTTP supports plain HTTP proxy routing for `http://` target URLs and HTTPS
+proxy tunnelling for `https://` target URLs via HTTP `CONNECT`.
 
-`https://` target URLs over proxy require HTTP `CONNECT`; that is intentionally
-out of scope for the current proxy foundation and is tracked separately. When a
-proxy policy selects a proxy for an `https://` target, FogHTTP raises
-`RequestError` instead of silently falling back to a direct connection.
+For `https://` targets, FogHTTP opens a `CONNECT` tunnel to the proxy and then
+performs the TLS handshake against the **target** host over that tunnel, so the
+certificate is validated for the target origin, not the proxy. If the tunnel
+cannot be established — proxy authentication failure, a non-2xx `CONNECT`
+status, or the proxy closing the tunnel early — FogHTTP raises `RequestError`
+instead of silently falling back to a direct connection.
 
 ## Explicit Proxy
 
 Use client-level `proxy=` when all requests from that client should use the
-same proxy endpoint. In the current release, proxied `http://` requests are
-supported and proxied `https://` requests fail closed until HTTP `CONNECT` is
-implemented:
+same proxy endpoint. Both `http://` and `https://` targets are routed through
+the proxy: plain HTTP uses absolute-form, HTTPS is tunnelled via `CONNECT`:
 
 ```python
 import foghttp
 
 with foghttp.Client(proxy="http://proxy.internal:8080") as client:
-    response = client.get("http://api.internal/items")
+    plain = client.get("http://api.internal/items")
+    secure = client.get("https://api.internal/items")  # tunnelled via CONNECT
 
-print(response.status_code)
+print(plain.status_code, secure.status_code)
 ```
 
 The same option is available on `AsyncClient`.
@@ -35,6 +38,29 @@ Host: api.internal
 The `Host` header remains the target origin host. It is not replaced with the
 proxy host.
 
+## HTTPS CONNECT Tunnelling
+
+For `https://` targets, FogHTTP sends a `CONNECT target-host:port` request to
+the proxy and, once the proxy answers `200`, performs the TLS handshake through
+the tunnel:
+
+```http
+CONNECT api.internal:443 HTTP/1.1
+Host: api.internal:443
+```
+
+TLS is validated against the **target** host using the same `TLSConfig` rules as
+a direct connection; the proxy never terminates TLS and cannot impersonate the
+target. A failed tunnel (`CONNECT` non-2xx, proxy auth failure, or early close)
+maps to a stable `RequestError`, releases the request slot, and does not return
+a poisoned connection to the pool. The tunnelled request itself is sent in
+origin-form, exactly like a direct HTTPS request.
+
+`Timeouts.connect` bounds the whole connect phase, including the `CONNECT`
+handshake, so a proxy that accepts the socket but never answers `CONNECT` fails
+with a connect timeout instead of hanging until the total deadline. Request
+cancellation during tunnel setup aborts the attempt and releases the slot.
+
 ## Proxy Authentication
 
 Proxy credentials can be passed as userinfo in the proxy URL:
@@ -48,10 +74,12 @@ with foghttp.Client(proxy=proxy) as client:
     response = client.get("http://api.internal/items")
 ```
 
-FogHTTP keeps the canonical proxy endpoint without userinfo and sends
-`Proxy-Authorization` as a transport-managed header only when the request uses
-the proxy path. The header is not part of `Request.headers`, response history,
-or user-facing request metadata.
+FogHTTP keeps the canonical proxy endpoint without userinfo and manages
+`Proxy-Authorization` as a transport-owned credential. For plain HTTP proxying
+it is sent as an absolute-form request header; for HTTPS it is sent only on the
+`CONNECT` request to the proxy and never on the tunnelled request to the target
+origin. In both cases the header is not part of `Request.headers`, response
+history, or user-facing request metadata.
 
 Manual `Proxy-Authorization` headers are rejected by the safe public API.
 
@@ -68,8 +96,8 @@ the client is created:
 | Variable | Current behavior |
 |---|---|
 | `HTTP_PROXY` / `http_proxy` | Routes plain HTTP target URLs through the selected proxy. Uppercase `HTTP_PROXY` is ignored when `REQUEST_METHOD` is set to avoid HTTPoxy-style CGI leakage. |
-| `HTTPS_PROXY` / `https_proxy` | Parsed and validated for future HTTPS `CONNECT` support. If selected for an `https://` target before CONNECT exists, the request fails closed with `RequestError`. |
-| `ALL_PROXY` / `all_proxy` | Fallback proxy when no scheme-specific proxy is set. For this release it routes plain HTTP targets and fails closed for proxied `https://` targets. |
+| `HTTPS_PROXY` / `https_proxy` | Tunnels `https://` target URLs through the selected proxy via `CONNECT`. |
+| `ALL_PROXY` / `all_proxy` | Fallback proxy when no scheme-specific proxy is set. Routes plain HTTP targets and tunnels `https://` targets via `CONNECT`. |
 | `NO_PROXY` / `no_proxy` | Bypass rules for environment-derived proxy decisions. Explicit `proxy=` wins over `NO_PROXY`. |
 | `SSL_CERT_FILE` / `ssl_cert_file` | Converted to `TLSConfig(ca_certificates=(...))` if `tls=` is not passed explicitly. |
 | `SSL_CERT_DIR` | Ignored. Directory trust-store loading is not implemented. |
@@ -77,14 +105,19 @@ the client is created:
 Lowercase proxy variables win over uppercase variants for the same setting.
 Scheme-specific proxy variables win over `ALL_PROXY`.
 
+HTTP and HTTPS proxies are routed independently: plain-HTTP targets use the
+HTTP-scheme proxy (`HTTP_PROXY`/`ALL_PROXY`) in absolute-form, and HTTPS targets
+use the HTTPS-scheme proxy (`HTTPS_PROXY`/`ALL_PROXY`) via `CONNECT`. They may
+point at the same or at different proxy endpoints.
+
 Environment variables are not read on every request.
 
 ## Redirects With Proxy Policy
 
 Explicit `proxy=` is a stable client-level policy. HTTP redirects from one
-`http://` origin to another `http://` origin continue through the same proxy.
-Redirects from an explicit proxied HTTP request to `https://` fail closed until
-HTTP `CONNECT` is implemented.
+`http://` origin to another `http://` origin continue through the same proxy,
+and a redirect from a proxied `http://` request to an `https://` target upgrades
+to a `CONNECT` tunnel through the same proxy.
 
 Environment-derived proxy routing can change on each URL because `NO_PROXY`,
 scheme-specific proxy variables and `ALL_PROXY` are evaluated against the
@@ -146,7 +179,6 @@ Use explicit `TLSConfig` for custom CA bundles and custom-only trust.
 
 ## Not Implemented Yet
 
-- HTTPS proxy `CONNECT` for `https://` targets
 - SOCKS5/SOCKS5h
 - PAC/WPAD or platform/browser proxy discovery
 - per-route proxy policies

@@ -4,7 +4,7 @@ use super::request::{RequestState, TransportRequest};
 use super::response::raw_response;
 use crate::core::metrics::Metrics;
 use crate::core::request::build_request;
-use crate::errors::FogHttpError;
+use crate::errors::{transport_error_message, FogHttpError};
 use crate::messages::{redirect_limit_exceeded, REQUEST_TOTAL_TIMEOUT};
 use crate::py::client::acquire::AcquireGate;
 use crate::py::client::redirects::{redirect_decision, RedirectDecision};
@@ -63,7 +63,7 @@ pub async fn send_request(
             )
             .await
             .map_err(|_| timeout_error(&response_headers_timeout_context, REQUEST_TOTAL_TIMEOUT))?
-            .map_err(|err| FogHttpError::new_err(err.to_string()))?;
+            .map_err(|err| FogHttpError::new_err(transport_error_message(&err)))?;
 
             raw_response(
                 response,

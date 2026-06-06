@@ -290,7 +290,9 @@ class RawClient:
         trust_webpki_roots: bool,
         runtime_workers: int | None,
         http_proxy_url: str | None,
-        proxy_authorization: str | None,
+        http_proxy_authorization: str | None,
+        https_proxy_url: str | None,
+        https_proxy_authorization: str | None,
     ) -> None: ...
     def request(
         self,

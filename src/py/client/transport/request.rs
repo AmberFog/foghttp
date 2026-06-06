@@ -47,12 +47,18 @@ pub(super) struct RequestState {
 
 impl RequestState {
     pub(super) fn request_parts(&self, use_http_proxy: bool) -> RequestParts {
+        // Proxy-Authorization is sent as a request header only on the plain-HTTP
+        // absolute-form proxy path. For HTTPS the credentials travel on the
+        // CONNECT request inside the tunnel connector and must never reach the
+        // tunnelled request to the target origin.
+        let send_proxy_authorization =
+            use_http_proxy && HttpUrl::parse(&self.url).is_ok_and(|url| url.scheme() == "http");
         RequestParts {
             method: self.method.clone(),
             url: self.url.clone(),
             headers: self.headers.clone(),
             body: self.body.clone(),
-            proxy_authorization: if use_http_proxy {
+            proxy_authorization: if send_proxy_authorization {
                 self.proxy_authorization.clone()
             } else {
                 None

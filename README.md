@@ -102,8 +102,8 @@ async with foghttp.AsyncClient() as client:
   token-like URL params, and buffered body bytes
 - normalized `URL` model with origin comparison and relative joins
 - GET/HEAD/POST redirects with final URL, history, and conservative replay policy
-- plain HTTP proxy routing through explicit `proxy=` or `trust_env=True`;
-  proxied HTTPS targets fail closed until `CONNECT` is implemented
+- HTTP proxy routing and HTTPS proxy `CONNECT` tunnelling through explicit
+  `proxy=` or `trust_env=True`
 - HTTPS with default WebPKI roots, explicit custom CA certificates, and
   custom-only CA trust
 - graceful sync `close()` that waits for in-flight sync requests
@@ -142,8 +142,9 @@ async with foghttp.AsyncClient() as client:
 
 FogHTTP is currently focused on controlled HTTP workloads. Buffered responses
 are the broadest supported path; sync and async response streaming are available
-as bytes/text/line context-managed APIs. Streaming uploads, cookies, auth
-helpers, HTTPS proxy `CONNECT`, multipart uploads,
+as bytes/text/line context-managed APIs. HTTP proxy routing and HTTPS proxy
+`CONNECT` tunnelling are available through `proxy=` and `trust_env=True`.
+Streaming uploads, cookies, auth helpers, multipart uploads,
 HTTP/2, automatic `Accept-Encoding` negotiation, streaming decompression,
 strict connection-level pool limits,
 per-request connect timeout reconfiguration, and request-body write timeout

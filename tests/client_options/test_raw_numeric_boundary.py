@@ -39,6 +39,8 @@ def test_raw_client_rejects_empty_custom_only_tls_trust_store() -> None:
             None,
             None,
             None,
+            None,
+            None,
         )
 
 
@@ -64,6 +66,8 @@ def test_raw_client_rejects_invalid_idle_timeout_without_panic() -> None:
             None,
             None,
             None,
+            None,
+            None,
         )
 
 
@@ -86,6 +90,8 @@ def test_raw_client_rejects_too_large_active_request_limit_without_panic() -> No
             20,
             (),
             TRUST_WEBPKI_ROOTS,
+            None,
+            None,
             None,
             None,
             None,
@@ -178,6 +184,8 @@ def _raw_client() -> _foghttp.RawClient:
         20,
         (),
         TRUST_WEBPKI_ROOTS,
+        None,
+        None,
         None,
         None,
         None,

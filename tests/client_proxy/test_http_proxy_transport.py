@@ -201,40 +201,8 @@ def test_no_proxy_bypasses_trusted_environment_http_proxy(
     assert sync_http_proxy.requests == []
 
 
-def test_https_proxy_target_fails_closed_before_connect_support(
-    sync_http_proxy: SyncHTTPProxy,
-) -> None:
-    with foghttp.Client(proxy=sync_http_proxy.base_url) as client:
-        with pytest.raises(foghttp.RequestError, match="HTTPS proxy CONNECT is not implemented"):
-            client.get("https://example.com/items")
-
-        assert client.stats() == foghttp.TransportStats()
-
-    assert sync_http_proxy.requests == []
-
-
-@pytest.mark.parametrize(
-    "proxy_env_name",
-    [
-        pytest.param("HTTPS_PROXY", id="https-proxy"),
-        pytest.param("ALL_PROXY", id="all-proxy"),
-    ],
-)
-def test_trust_env_https_proxy_target_fails_closed_before_connect_support(
-    monkeypatch: pytest.MonkeyPatch,
-    proxy_env_name: str,
-    sync_http_proxy: SyncHTTPProxy,
-) -> None:
-    clear_proxy_environment(monkeypatch)
-    monkeypatch.setenv(proxy_env_name, sync_http_proxy.base_url)
-
-    with foghttp.Client(trust_env=True) as client:
-        with pytest.raises(foghttp.RequestError, match="HTTPS proxy CONNECT is not implemented"):
-            client.get("https://example.com/items")
-
-        assert client.stats() == foghttp.TransportStats()
-
-    assert sync_http_proxy.requests == []
+# HTTPS targets through a proxy are exercised end to end by the CONNECT tunnel
+# tests in test_https_proxy_connect.py.
 
 
 def test_trust_env_no_proxy_cross_origin_redirect_fails_closed(
@@ -348,32 +316,9 @@ async def test_async_explicit_proxy_http_to_http_cross_origin_redirect_uses_same
     )
 
 
-def test_explicit_proxy_http_to_https_redirect_fails_closed(
-    sync_http_proxy: SyncHTTPProxy,
-    unused_tcp_port: int,
-) -> None:
-    target_url = _proxy_redirect_url(unused_tcp_port, "https://example.com/secure")
-
-    with (
-        foghttp.Client(proxy=sync_http_proxy.base_url, follow_redirects=True) as client,
-        pytest.raises(foghttp.RequestError, match="HTTPS proxy CONNECT is not implemented"),
-    ):
-        client.get(target_url)
-
-    assert len(sync_http_proxy.requests) == 1
-
-
-async def test_async_explicit_proxy_http_to_https_redirect_fails_closed(
-    async_http_proxy: AsyncHTTPProxy,
-    unused_tcp_port: int,
-) -> None:
-    target_url = _proxy_redirect_url(unused_tcp_port, "https://example.com/secure")
-
-    async with foghttp.AsyncClient(proxy=async_http_proxy.base_url, follow_redirects=True) as client:
-        with pytest.raises(foghttp.RequestError, match="HTTPS proxy CONNECT is not implemented"):
-            await client.get(target_url)
-
-    assert len(async_http_proxy.requests) == 1
+# An explicit-proxy http -> https redirect now upgrades to a CONNECT tunnel; the
+# CONNECT path itself is covered by test_https_proxy_connect.py and the Rust unit
+# test explicit_proxy_tunnels_https_redirect_via_connect.
 
 
 def test_proxy_connection_failure_cleans_up_request_stats(unused_tcp_port: int) -> None:

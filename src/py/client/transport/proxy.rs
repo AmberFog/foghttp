@@ -1,8 +1,6 @@
 use crate::core::url::HttpUrl;
 use crate::errors::FogHttpError;
-use crate::messages::{
-    HTTPS_PROXY_CONNECT_UNSUPPORTED, PROXY_REDIRECT_POLICY_RECOMPUTE_UNSUPPORTED,
-};
+use crate::messages::PROXY_REDIRECT_POLICY_RECOMPUTE_UNSUPPORTED;
 use pyo3::prelude::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -32,7 +30,10 @@ impl ProxyTransportPolicy {
     ) -> PyResult<bool> {
         match self {
             Self::Direct => Ok(false),
-            Self::ExplicitProxy => explicit_proxy_for(current_url),
+            // Explicit `proxy=` routes every target through the proxy: plain HTTP
+            // uses absolute-form, HTTPS is tunnelled via CONNECT. Both are served
+            // by the proxy transport client.
+            Self::ExplicitProxy => Ok(true),
             Self::EnvironmentProxy => {
                 environment_proxy_for(initial_use_http_proxy, initial_origin, current_url)
             }
@@ -45,21 +46,16 @@ impl ProxyTransportPolicy {
         next_url: &HttpUrl,
     ) -> PyResult<()> {
         match self {
-            Self::Direct => Ok(()),
-            Self::ExplicitProxy => explicit_proxy_for(next_url).map(|_| ()),
+            // Direct has no proxy decision. Explicit proxy stays a stable
+            // client-level policy across hops, routing HTTP and HTTPS hops alike
+            // through the same proxy.
+            Self::Direct | Self::ExplicitProxy => Ok(()),
             Self::EnvironmentProxy if next_url.origin() == initial_origin => Ok(()),
             Self::EnvironmentProxy => Err(FogHttpError::new_err(
                 PROXY_REDIRECT_POLICY_RECOMPUTE_UNSUPPORTED,
             )),
         }
     }
-}
-
-fn explicit_proxy_for(current_url: &HttpUrl) -> PyResult<bool> {
-    if current_url.scheme() == "http" {
-        return Ok(true);
-    }
-    Err(FogHttpError::new_err(HTTPS_PROXY_CONNECT_UNSUPPORTED))
 }
 
 fn environment_proxy_for(

@@ -181,3 +181,20 @@ async def test_public_async_client_accepts_trust_env_without_creating_transport(
 
     async with foghttp.AsyncClient(trust_env=True) as client:
         assert client.stats() == foghttp.TransportStats()
+
+
+def test_client_config_resolves_per_scheme_environment_proxies() -> None:
+    # Different HTTP and HTTPS env proxies are routed independently: HTTP targets
+    # use HTTP_PROXY (absolute-form), HTTPS targets use HTTPS_PROXY (CONNECT).
+    config = ClientConfig.from_options(
+        client_options(trust_env=True),
+        environ={
+            "HTTP_PROXY": "http://http.proxy.example:8080",
+            "HTTPS_PROXY": "http://https.proxy.example:9090",
+        },
+    )
+
+    assert config.http_proxy is not None
+    assert config.http_proxy.endpoint_url == "http://http.proxy.example:8080"
+    assert config.https_proxy is not None
+    assert config.https_proxy.endpoint_url == "http://https.proxy.example:9090"

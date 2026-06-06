@@ -154,8 +154,8 @@ proxy decision.
 
 With explicit `proxy=`, FogHTTP treats the proxy as a stable client-level
 policy. HTTP redirects to another `http://` origin continue through the same
-proxy. Redirects to `https://` fail closed until HTTPS proxy `CONNECT` is
-implemented.
+proxy. Redirects to `https://` upgrade to a `CONNECT` tunnel through the same
+proxy.
 
 With `trust_env=True`, proxy decisions depend on the target URL, `NO_PROXY`,
 scheme-specific proxy variables, and `ALL_PROXY`. This foundation release does

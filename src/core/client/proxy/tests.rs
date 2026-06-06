@@ -1,14 +1,115 @@
-use super::HttpProxyConnector;
+use super::{
+    establish_tunnel, find_headers_end, parse_connect_status, tunnel_authority, HttpProxyConnector,
+};
+use crate::messages::PROXY_CONNECT_CLOSED;
 use hyper::rt::{Read, ReadBufCursor, Write};
 use hyper::Uri;
 use hyper_util::client::legacy::connect::{Connected, Connection};
+use hyper_util::rt::TokioIo;
 use std::future::{ready, Ready};
 use std::io::{Error, IoSlice};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::runtime::{Builder, Runtime};
 use tower_service::Service;
+
+#[test]
+fn tunnel_authority_uses_default_https_port_when_absent() {
+    assert_eq!(
+        tunnel_authority(&http_uri("https://api.example/items")).unwrap(),
+        "api.example:443",
+    );
+    assert_eq!(
+        tunnel_authority(&http_uri("https://api.example:8443/items")).unwrap(),
+        "api.example:8443",
+    );
+}
+
+#[test]
+fn find_headers_end_detects_terminator() {
+    assert_eq!(find_headers_end(b"HTTP/1.1 200 OK\r\n\r\n"), Some(19));
+    assert_eq!(find_headers_end(b"HTTP/1.1 200 OK\r\n"), None);
+}
+
+#[test]
+fn parse_connect_status_reads_status_code() {
+    assert_eq!(
+        parse_connect_status(b"HTTP/1.1 200 Connection Established\r\n\r\n").unwrap(),
+        200,
+    );
+    assert_eq!(
+        parse_connect_status(b"HTTP/1.1   200   Connection Established\r\n\r\n").unwrap(),
+        200,
+    );
+    assert_eq!(
+        parse_connect_status(b"HTTP/1.0 407 Proxy Authentication Required\r\n\r\n").unwrap(),
+        407,
+    );
+    assert!(parse_connect_status(b"GARBAGE\r\n\r\n").is_err());
+    assert!(parse_connect_status(b"HTTP/1.1 OK\r\n\r\n").is_err());
+}
+
+#[test]
+fn establish_tunnel_sends_connect_and_returns_stream_on_success() {
+    runtime().block_on(async {
+        let (client, mut server) = tokio::io::duplex(1024);
+        server
+            .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+            .await
+            .unwrap();
+
+        let tunnel = establish_tunnel(
+            TokioIo::new(client),
+            "api.example:443",
+            Some("Basic c2VjcmV0"),
+        )
+        .await;
+        assert!(tunnel.is_ok());
+
+        let mut request = vec![0_u8; 1024];
+        let read = server.read(&mut request).await.unwrap();
+        let request = String::from_utf8_lossy(&request[..read]);
+        assert!(request.starts_with("CONNECT api.example:443 HTTP/1.1\r\n"));
+        assert!(request.contains("Host: api.example:443\r\n"));
+        assert!(request.contains("Proxy-Authorization: Basic c2VjcmV0\r\n"));
+    });
+}
+
+#[test]
+fn establish_tunnel_rejects_non_2xx_status() {
+    runtime().block_on(async {
+        let (client, mut server) = tokio::io::duplex(1024);
+        server
+            .write_all(b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n")
+            .await
+            .unwrap();
+
+        let error = establish_tunnel(TokioIo::new(client), "api.example:443", None)
+            .await
+            .expect_err("non-2xx CONNECT must fail");
+        assert!(error.to_string().contains("407"));
+    });
+}
+
+#[test]
+fn establish_tunnel_errors_when_proxy_closes_before_response() {
+    runtime().block_on(async {
+        let (client, mut server) = tokio::io::duplex(1024);
+        let server_task = tokio::spawn(async move {
+            let mut request = [0_u8; 1024];
+            let _ = server.read(&mut request).await;
+            drop(server);
+        });
+
+        let error = establish_tunnel(TokioIo::new(client), "api.example:443", None)
+            .await
+            .expect_err("closed tunnel must fail");
+        assert!(error.to_string().contains(PROXY_CONNECT_CLOSED));
+        server_task.await.unwrap();
+    });
+}
 
 #[test]
 fn direct_connector_uses_target_uri_without_proxy_flag() {
