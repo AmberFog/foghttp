@@ -169,6 +169,19 @@ def test_https_scheme_proxy_endpoint_is_rejected() -> None:
     assert "scheme must be http" in str(exc_info.value)
 
 
+@pytest.mark.parametrize(
+    "no_proxy",
+    [
+        pytest.param("10.0.0.0/8", id="ipv4-cidr"),
+        pytest.param("192.168.0.0/16", id="ipv4-private-cidr"),
+        pytest.param("2001:db8::/32", id="ipv6-cidr"),
+    ],
+)
+def test_no_proxy_cidr_rules_are_rejected(no_proxy: str) -> None:
+    with pytest.raises(ValueError, match="NO_PROXY CIDR rules are not supported"):
+        environment_proxy_config({"NO_PROXY": no_proxy})
+
+
 def test_malformed_proxy_host_error_does_not_leak_credentials(faker: Faker) -> None:
     username = faker.user_name()
     hidden_value = faker.pystr(min_chars=12, max_chars=12)

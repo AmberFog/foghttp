@@ -1,4 +1,5 @@
 __all__ = (
+    "ConnectHttpRecord",
     "ConnectProxy",
     "ConnectRecord",
     "start_connect_proxy",
@@ -25,6 +26,12 @@ class ConnectRecord:
     proxy_authorization: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class ConnectHttpRecord:
+    request_line: str
+    proxy_authorization: str | None
+
+
 @dataclass(slots=True)
 class _ProxyConfig:
     require_auth: bool
@@ -41,6 +48,7 @@ class ConnectProxy:
     server: socketserver.ThreadingTCPServer
     thread: threading.Thread
     _records: list[ConnectRecord] = field(default_factory=list)
+    _http_records: list[ConnectHttpRecord] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     @property
@@ -53,9 +61,18 @@ class ConnectProxy:
         with self._lock:
             return list(self._records)
 
+    @property
+    def http_requests(self) -> list[ConnectHttpRecord]:
+        with self._lock:
+            return list(self._http_records)
+
     def record(self, connect: ConnectRecord) -> None:
         with self._lock:
             self._records.append(connect)
+
+    def record_http(self, request: ConnectHttpRecord) -> None:
+        with self._lock:
+            self._http_records.append(request)
 
     def close(self) -> None:
         self.server.shutdown()
@@ -105,10 +122,16 @@ class _ConnectHandler(socketserver.BaseRequestHandler):
         head = _read_head(self.request)
         if head is None:
             return
-        method, authority, headers = _parse_head(head)
+        request_line, method, authority, headers = _parse_head(head)
         authorization = headers.get("proxy-authorization")
 
         if method != "CONNECT":
+            proxy.record_http(
+                ConnectHttpRecord(
+                    request_line=request_line,
+                    proxy_authorization=authorization,
+                ),
+            )
             _handle_non_connect(self.request, config)
             return
 
@@ -168,19 +191,20 @@ def _read_head(connection: socket.socket) -> bytes | None:
     return bytes(buffer)
 
 
-def _parse_head(head: bytes) -> tuple[str, str, dict[str, str]]:
+def _parse_head(head: bytes) -> tuple[str, str, str, dict[str, str]]:
     text = head.decode("latin-1")
     lines = text.split("\r\n")
-    request_line = lines[0].split(" ")
-    method = request_line[0]
-    authority = request_line[1] if len(request_line) > 1 else ""
+    request_line = lines[0]
+    request_parts = request_line.split(" ")
+    method = request_parts[0]
+    authority = request_parts[1] if len(request_parts) > 1 else ""
     headers: dict[str, str] = {}
     for line in lines[1:]:
         if not line or ":" not in line:
             continue
         name, _, value = line.partition(":")
         headers[name.strip().lower()] = value.strip()
-    return method, authority, headers
+    return request_line, method, authority, headers
 
 
 def _open_upstream(authority: str) -> socket.socket | None:

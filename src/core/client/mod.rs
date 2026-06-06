@@ -24,7 +24,7 @@ pub type HyperClient =
 
 const HTTP_PROXY_ENDPOINT_SCHEME: &str = "http";
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ClientOptions {
     pub max_idle_connections_per_host: usize,
     pub idle_timeout: f64,
@@ -53,9 +53,9 @@ pub fn build_client(options: &ClientOptions, metrics: Arc<Metrics>) -> Result<Hy
             http,
             ProxyTunnelTarget::new(
                 parse_proxy_endpoint(proxy_url)?,
-                options.https_proxy_authorization.clone(),
+                options.https_proxy_authorization.as_deref(),
                 connect_timeout,
-            ),
+            )?,
         ),
         None => HttpsTunnelConnector::direct(http),
     };
@@ -93,8 +93,11 @@ fn parse_proxy_endpoint(proxy_url: &str) -> Result<Uri, String> {
     if uri.scheme_str() != Some(HTTP_PROXY_ENDPOINT_SCHEME) {
         return Err("proxy URL scheme must be http".to_owned());
     }
-    if uri.authority().is_none() {
+    let Some(authority) = uri.authority() else {
         return Err("proxy URL must include a host".to_owned());
+    };
+    if authority.as_str().contains('@') {
+        return Err("proxy URL must not include userinfo".to_owned());
     }
     if let Some(path_and_query) = uri.path_and_query() {
         if path_and_query.as_str() != "/" {
@@ -121,6 +124,13 @@ mod tests {
         let error = parse_proxy_endpoint("https://proxy.example:443").unwrap_err();
 
         assert_eq!(error, "proxy URL scheme must be http");
+    }
+
+    #[test]
+    fn parse_proxy_endpoint_rejects_userinfo() {
+        let error = parse_proxy_endpoint("http://user:secret@proxy.example:8080").unwrap_err();
+
+        assert_eq!(error, "proxy URL must not include userinfo");
     }
 
     #[test]

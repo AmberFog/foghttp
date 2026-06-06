@@ -68,8 +68,10 @@ endpoint connection telemetry.
 
 `Timeouts.connect` bounds the whole connect phase, including the `CONNECT`
 handshake, so a proxy that accepts the socket but never answers `CONNECT` fails
-with a connect timeout instead of hanging until the total deadline. Request
-cancellation during tunnel setup aborts the attempt and releases the slot.
+with a connect timeout instead of hanging until the total deadline. This uses
+the client-level connector timeout; per-request `timeout.connect` does not
+reconfigure the connector yet. Request cancellation during tunnel setup aborts
+the attempt and releases the slot.
 
 ## Proxy Authentication
 

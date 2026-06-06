@@ -79,6 +79,24 @@ def test_sync_https_request_tunnels_through_connect_proxy(
     assert connects[0].authority == urlsplit(server.url).netloc
 
 
+def test_https_connect_transport_telemetry_is_target_origin_keyed(
+    connect_proxy: ConnectProxy,
+    tls_target: tuple[TLSServer, TLSCertificateBundle],
+) -> None:
+    server, bundle = tls_target
+
+    with foghttp.Client(proxy=connect_proxy.base_url, tls=_tls(bundle)) as client:
+        response = client.get(_target_url(server))
+        stats = client.stats()
+        state = client.dump_transport_state()
+
+    assert response.status_code == OK
+    assert stats.connections_opened >= 1
+    assert server.url in state["origins"]
+    assert connect_proxy.base_url not in state["origins"]
+    assert state["origins"][server.url]["connections_opened"] >= 1
+
+
 async def test_async_https_request_tunnels_through_connect_proxy(
     connect_proxy: ConnectProxy,
     tls_target: tuple[TLSServer, TLSCertificateBundle],
@@ -225,6 +243,40 @@ def test_sync_http_to_https_redirect_uses_connect_tunnel(
         assert response.url == redirect_target
         assert len(response.history) == 1
         assert proxy.connects[0].authority == urlsplit(server.url).netloc
+
+
+def test_explicit_proxy_authorization_survives_http_to_https_redirect(
+    faker: Faker,
+    tls_target: tuple[TLSServer, TLSCertificateBundle],
+) -> None:
+    server, bundle = tls_target
+    redirect_target = _target_url(server)
+    username = faker.user_name()
+    password = faker.pystr(min_chars=10, max_chars=10)
+    expected = _basic(username, password)
+    with _connect_proxy(
+        require_auth=True,
+        expected_authorization=expected,
+        http_redirect_location=redirect_target,
+    ) as proxy:
+        proxy_url = f"http://{username}:{password}@{urlsplit(proxy.base_url).netloc}"
+        with foghttp.Client(
+            proxy=proxy_url,
+            tls=_tls(bundle),
+            follow_redirects=True,
+        ) as client:
+            response = client.get("http://proxy-start.example/redirect")
+
+    assert response.status_code == OK
+    assert response.url == redirect_target
+    assert [request.proxy_authorization for request in proxy.http_requests] == [
+        expected,
+    ]
+    assert [connect.proxy_authorization for connect in proxy.connects] == [expected]
+    assert "proxy-authorization" not in response.request.headers
+    assert all("proxy-authorization" not in item.request.headers for item in response.history)
+    assert username not in repr(response.request)
+    assert password not in repr(response.request)
 
 
 async def test_async_http_to_https_redirect_uses_connect_tunnel(
@@ -414,6 +466,25 @@ def test_trust_env_no_proxy_bypasses_connect_for_https_target(
     assert connect_proxy.connects == []
 
 
+async def test_async_trust_env_no_proxy_bypasses_connect_for_https_target(
+    connect_proxy: ConnectProxy,
+    tls_target: tuple[TLSServer, TLSCertificateBundle],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server, bundle = tls_target
+    clear_proxy_environment(monkeypatch)
+    monkeypatch.setenv("HTTPS_PROXY", connect_proxy.base_url)
+    monkeypatch.setenv("NO_PROXY", urlsplit(server.url).hostname or "")
+
+    async with foghttp.AsyncClient(trust_env=True, tls=_tls(bundle)) as client:
+        response = await client.get(_target_url(server))
+
+    assert response.status_code == OK
+    assert response.content == TLS_OK_BODY
+    # Async NO_PROXY uses the same security boundary: no CONNECT is allowed.
+    assert connect_proxy.connects == []
+
+
 def test_failed_connect_does_not_leak_proxy_credentials(
     faker: Faker,
     tls_target: tuple[TLSServer, TLSCertificateBundle],
@@ -487,17 +558,45 @@ async def test_async_cancellation_during_connect_releases_slot(
             )
 
 
+async def test_async_connect_handshake_timeout_is_request_error_and_releases_slot(
+    tls_target: tuple[TLSServer, TLSCertificateBundle],
+) -> None:
+    server, bundle = tls_target
+    with _connect_proxy(hang=True) as proxy:
+        async with foghttp.AsyncClient(
+            proxy=proxy.base_url,
+            tls=_tls(bundle),
+            timeouts=Timeouts(connect=0.3),
+        ) as client:
+            with pytest.raises(foghttp.RequestError, match="timed out"):
+                await client.get(_target_url(server))
+
+            stats = client.stats()
+
+        assert stats.failed_requests == 1
+        assert stats.active_requests == 0
+
+
 def test_per_scheme_environment_proxies_route_independently(
     sync_http_proxy: SyncHTTPProxy,
     connect_proxy: ConnectProxy,
     tls_target: tuple[TLSServer, TLSCertificateBundle],
     monkeypatch: pytest.MonkeyPatch,
     unused_tcp_port: int,
+    faker: Faker,
 ) -> None:
     server, bundle = tls_target
+    http_username = f"http_{faker.user_name()}"
+    http_password = faker.pystr(min_chars=8, max_chars=8)
+    https_username = f"https_{faker.user_name()}"
+    https_password = faker.pystr(min_chars=8, max_chars=8)
+    http_proxy_url = f"http://{http_username}:{http_password}@{urlsplit(sync_http_proxy.base_url).netloc}"
+    https_proxy_url = f"http://{https_username}:{https_password}@{urlsplit(connect_proxy.base_url).netloc}"
+    http_proxy_authorization = _basic(http_username, http_password)
+    https_proxy_authorization = _basic(https_username, https_password)
     clear_proxy_environment(monkeypatch)
-    monkeypatch.setenv("HTTP_PROXY", sync_http_proxy.base_url)
-    monkeypatch.setenv("HTTPS_PROXY", connect_proxy.base_url)
+    monkeypatch.setenv("HTTP_PROXY", http_proxy_url)
+    monkeypatch.setenv("HTTPS_PROXY", https_proxy_url)
     http_target = f"http://target.example:{unused_tcp_port}/via-http-proxy"
 
     with foghttp.Client(trust_env=True, tls=_tls(bundle)) as client:
@@ -506,7 +605,9 @@ def test_per_scheme_environment_proxies_route_independently(
 
     # Plain HTTP went through HTTP_PROXY in absolute-form; HTTPS tunnelled through
     # the distinct HTTPS_PROXY via CONNECT. One client, two independent routes.
-    assert http_response.json()["request_line"] == f"GET {http_target} HTTP/1.1"
+    http_payload = http_response.json()
+    assert http_payload["request_line"] == f"GET {http_target} HTTP/1.1"
+    assert http_payload["headers"]["proxy-authorization"] == [http_proxy_authorization]
     assert [record.request_line for record in sync_http_proxy.requests] == [
         f"GET {http_target} HTTP/1.1",
     ]
@@ -514,3 +615,7 @@ def test_per_scheme_environment_proxies_route_independently(
     assert [connect.authority for connect in connect_proxy.connects] == [
         urlsplit(server.url).netloc,
     ]
+    assert [connect.proxy_authorization for connect in connect_proxy.connects] == [
+        https_proxy_authorization,
+    ]
+    assert http_proxy_authorization != https_proxy_authorization

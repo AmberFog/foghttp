@@ -81,6 +81,60 @@ def test_raw_client_rejects_https_scheme_proxy_endpoint_without_panic(
         )
 
 
+def test_raw_client_rejects_invalid_https_proxy_authorization_without_panic() -> None:
+    with pytest.raises(
+        _foghttp.FogHttpError,
+        match="proxy authorization header is invalid",
+    ):
+        _foghttp.RawClient(
+            1,
+            None,
+            1,
+            1,
+            None,
+            None,
+            30.0,
+            KEEPALIVE,
+            2.0,
+            FOLLOW_REDIRECTS,
+            20,
+            (),
+            TRUST_WEBPKI_ROOTS,
+            None,
+            None,
+            None,
+            "http://proxy.example:8080",
+            "Basic ok\r\nInjected: yes",
+        )
+
+
+def test_raw_client_rejects_proxy_endpoint_userinfo_without_panic() -> None:
+    with pytest.raises(
+        _foghttp.FogHttpError,
+        match="proxy URL must not include userinfo",
+    ):
+        _foghttp.RawClient(
+            1,
+            None,
+            1,
+            1,
+            None,
+            None,
+            30.0,
+            KEEPALIVE,
+            2.0,
+            FOLLOW_REDIRECTS,
+            20,
+            (),
+            TRUST_WEBPKI_ROOTS,
+            None,
+            "http://user@proxy.example:8080",
+            None,
+            None,
+            None,
+        )
+
+
 def test_raw_client_rejects_invalid_idle_timeout_without_panic() -> None:
     with pytest.raises(
         ValueError,

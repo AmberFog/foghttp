@@ -1,5 +1,6 @@
 use super::{
     establish_tunnel, find_headers_end, parse_connect_status, tunnel_authority, HttpProxyConnector,
+    ProxyAuthorization,
 };
 use crate::messages::PROXY_CONNECT_CLOSED;
 use hyper::rt::{Read, ReadBufCursor, Write};
@@ -60,9 +61,15 @@ fn parse_connect_status_reads_status_code() {
 }
 
 #[test]
+fn proxy_authorization_rejects_invalid_header_value() {
+    assert!(ProxyAuthorization::parse("Basic ok\r\nInjected: yes").is_err());
+}
+
+#[test]
 fn establish_tunnel_sends_connect_and_returns_stream_on_success() {
     runtime().block_on(async {
         let (client, mut server) = tokio::io::duplex(1024);
+        let proxy_authorization = ProxyAuthorization::parse("Basic c2VjcmV0").unwrap();
         server
             .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
             .await
@@ -71,7 +78,7 @@ fn establish_tunnel_sends_connect_and_returns_stream_on_success() {
         let tunnel = establish_tunnel(
             TokioIo::new(client),
             "api.example:443",
-            Some("Basic c2VjcmV0"),
+            Some(&proxy_authorization),
         )
         .await;
         assert!(tunnel.is_ok());
@@ -94,9 +101,10 @@ fn establish_tunnel_rejects_non_2xx_status() {
             .await
             .unwrap();
 
-        let error = establish_tunnel(TokioIo::new(client), "api.example:443", None)
-            .await
-            .expect_err("non-2xx CONNECT must fail");
+        let Err(error) = establish_tunnel(TokioIo::new(client), "api.example:443", None).await
+        else {
+            panic!("non-2xx CONNECT must fail");
+        };
         assert!(error.to_string().contains("407"));
     });
 }
@@ -110,26 +118,32 @@ fn establish_tunnel_rejects_non_2xx_status_with_body_using_status() {
             .await
             .unwrap();
 
-        let error = establish_tunnel(TokioIo::new(client), "api.example:443", None)
-            .await
-            .expect_err("non-2xx CONNECT with body must surface status");
+        let Err(error) = establish_tunnel(TokioIo::new(client), "api.example:443", None).await
+        else {
+            panic!("non-2xx CONNECT with body must surface status");
+        };
         assert!(error.to_string().contains("502"));
     });
 }
 
 #[test]
-fn establish_tunnel_rejects_2xx_response_with_extra_bytes() {
+fn establish_tunnel_preserves_2xx_response_extra_bytes_as_tunnel_data() {
     runtime().block_on(async {
         let (client, mut server) = tokio::io::duplex(1024);
         server
-            .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\nunexpected")
+            .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\ntunnel-data")
             .await
             .unwrap();
 
-        let error = establish_tunnel(TokioIo::new(client), "api.example:443", None)
+        let tunnel = establish_tunnel(TokioIo::new(client), "api.example:443", None)
             .await
-            .expect_err("successful CONNECT must not include extra response bytes");
-        assert!(error.to_string().contains("invalid response"));
+            .expect("successful CONNECT should preserve bytes after headers as tunnel data");
+        let mut tunnel = TokioIo::new(tunnel);
+        let mut payload = [0_u8; 11];
+
+        tunnel.read_exact(&mut payload).await.unwrap();
+
+        assert_eq!(&payload, b"tunnel-data");
     });
 }
 
@@ -143,9 +157,10 @@ fn establish_tunnel_errors_when_proxy_closes_before_response() {
             drop(server);
         });
 
-        let error = establish_tunnel(TokioIo::new(client), "api.example:443", None)
-            .await
-            .expect_err("closed tunnel must fail");
+        let Err(error) = establish_tunnel(TokioIo::new(client), "api.example:443", None).await
+        else {
+            panic!("closed tunnel must fail");
+        };
         assert!(error.to_string().contains(PROXY_CONNECT_CLOSED));
         server_task.await.unwrap();
     });
