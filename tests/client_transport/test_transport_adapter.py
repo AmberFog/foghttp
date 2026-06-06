@@ -99,7 +99,7 @@ def test_raw_sync_transport_sends_prepared_request_through_raw_client(
         headers=request.headers.multi_items(),
         body=body.content,
         body_replayable=body.replayable,
-        use_http_proxy=False,
+        use_proxy_transport=False,
         proxy_policy=ProxyTransportPolicy.DIRECT,
         timeouts=timeouts,
     )
@@ -136,7 +136,7 @@ def test_raw_sync_transport_marks_http_requests_for_proxy(
     assert result is response
     raw_request = captured_request["request"]
     assert isinstance(raw_request, RawRequestOptions)
-    assert raw_request.use_http_proxy is True
+    assert raw_request.use_proxy_transport is True
     assert raw_request.proxy_policy is ProxyTransportPolicy.EXPLICIT_PROXY
 
 
@@ -173,7 +173,7 @@ def test_raw_sync_transport_routes_https_requests_through_explicit_proxy(
     assert isinstance(raw_request, RawRequestOptions)
     # HTTPS targets are now routed through the proxy transport client (CONNECT)
     # rather than rejected before transport.
-    assert raw_request.use_http_proxy is True
+    assert raw_request.use_proxy_transport is True
     assert raw_request.proxy_policy is ProxyTransportPolicy.EXPLICIT_PROXY
 
 
@@ -220,7 +220,7 @@ async def test_raw_async_transport_sends_prepared_request_through_raw_client(
         headers=request.headers.multi_items(),
         body=body.content,
         body_replayable=body.replayable,
-        use_http_proxy=False,
+        use_proxy_transport=False,
         proxy_policy=ProxyTransportPolicy.DIRECT,
         timeouts=timeouts,
     )

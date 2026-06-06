@@ -9,6 +9,7 @@ from faker import Faker
 import pytest
 
 import foghttp
+from foghttp.methods import GET
 from foghttp.status_codes.success import OK
 from foghttp.timeouts import Timeouts
 from foghttp.tls import TLSConfig
@@ -18,7 +19,7 @@ from tests.client_proxy.http_proxy_server import SyncHTTPProxy
 from tests.client_tls.certificates import TLSCertificateBundle, create_tls_certificate_bundle
 from tests.client_tls.constants import TLS_OK_BODY, TLS_PATH
 from tests.client_tls.models import TLSServer
-from tests.support.transport_stats import wait_for_async_transport_stats
+from tests.support.transport_stats import wait_for_async_transport_stats, wait_for_sync_transport_stats
 
 
 def _target_url(server: TLSServer) -> str:
@@ -40,6 +41,7 @@ def _connect_proxy(
     require_auth: bool = False,
     expected_authorization: str | None = None,
     reject_status: int | None = None,
+    reject_body: bytes = b"",
     early_close: bool = False,
     http_redirect_location: str | None = None,
     hang: bool = False,
@@ -48,6 +50,7 @@ def _connect_proxy(
         require_auth=require_auth,
         expected_authorization=expected_authorization,
         reject_status=reject_status,
+        reject_body=reject_body,
         early_close=early_close,
         http_redirect_location=http_redirect_location,
         hang=hang,
@@ -89,6 +92,96 @@ async def test_async_https_request_tunnels_through_connect_proxy(
     assert response.status_code == OK
     assert response.content == TLS_OK_BODY
     assert connect_proxy.connects[0].authority == urlsplit(server.url).netloc
+
+
+def test_sync_https_stream_tunnels_through_connect_proxy(
+    connect_proxy: ConnectProxy,
+    tls_target: tuple[TLSServer, TLSCertificateBundle],
+) -> None:
+    server, bundle = tls_target
+    url = _target_url(server)
+
+    with foghttp.Client(proxy=connect_proxy.base_url, tls=_tls(bundle)) as client:
+        with client.stream(GET, url) as response:
+            content = b"".join(response.iter_bytes())
+
+        stats = client.stats()
+
+    assert response.status_code == OK
+    assert content == TLS_OK_BODY
+    assert connect_proxy.connects[0].authority == urlsplit(server.url).netloc
+    assert stats.active_requests == 0
+    assert stats.response_body_closed == 1
+    assert stats.response_body_aborted == 0
+
+
+async def test_async_https_stream_tunnels_through_connect_proxy(
+    connect_proxy: ConnectProxy,
+    tls_target: tuple[TLSServer, TLSCertificateBundle],
+) -> None:
+    server, bundle = tls_target
+    url = _target_url(server)
+
+    async with foghttp.AsyncClient(proxy=connect_proxy.base_url, tls=_tls(bundle)) as client:
+        async with client.stream(GET, url) as response:
+            chunks = [chunk async for chunk in response.aiter_bytes()]
+
+        stats = client.stats()
+
+    assert response.status_code == OK
+    assert b"".join(chunks) == TLS_OK_BODY
+    assert connect_proxy.connects[0].authority == urlsplit(server.url).netloc
+    assert stats.active_requests == 0
+    assert stats.response_body_closed == 1
+    assert stats.response_body_aborted == 0
+
+
+def test_sync_https_stream_early_close_releases_slot(
+    connect_proxy: ConnectProxy,
+    tls_target: tuple[TLSServer, TLSCertificateBundle],
+) -> None:
+    server, bundle = tls_target
+    url = _target_url(server)
+
+    with foghttp.Client(proxy=connect_proxy.base_url, tls=_tls(bundle)) as client:
+        with client.stream(GET, url) as response:
+            assert response.status_code == OK
+            assert connect_proxy.connects[0].authority == urlsplit(server.url).netloc
+            wait_for_sync_transport_stats(
+                client,
+                lambda stats: stats.active_requests == 1,
+                message="CONNECT stream should keep the request slot before body close",
+            )
+
+        wait_for_sync_transport_stats(
+            client,
+            lambda stats: stats.active_requests == 0 and stats.response_body_aborted == 1,
+            message="closing a CONNECT stream before body EOF must release the request slot",
+        )
+
+
+async def test_async_https_stream_early_close_releases_slot(
+    connect_proxy: ConnectProxy,
+    tls_target: tuple[TLSServer, TLSCertificateBundle],
+) -> None:
+    server, bundle = tls_target
+    url = _target_url(server)
+
+    async with foghttp.AsyncClient(proxy=connect_proxy.base_url, tls=_tls(bundle)) as client:
+        async with client.stream(GET, url) as response:
+            assert response.status_code == OK
+            assert connect_proxy.connects[0].authority == urlsplit(server.url).netloc
+            await wait_for_async_transport_stats(
+                client,
+                lambda stats: stats.active_requests == 1,
+                message="CONNECT stream should keep the request slot before body close",
+            )
+
+        await wait_for_async_transport_stats(
+            client,
+            lambda stats: stats.active_requests == 0 and stats.response_body_aborted == 1,
+            message="closing a CONNECT stream before body EOF must release the request slot",
+        )
 
 
 def test_proxy_authorization_is_sent_only_on_connect_and_redacted(
@@ -193,6 +286,20 @@ def test_connect_non_2xx_is_request_error(
 ) -> None:
     server, bundle = tls_target
     with _connect_proxy(reject_status=502) as proxy:
+        with foghttp.Client(proxy=proxy.base_url, tls=_tls(bundle)) as client:
+            with pytest.raises(foghttp.RequestError, match="502"):
+                client.get(_target_url(server))
+
+            stats = client.stats()
+
+        assert stats.active_requests == 0
+
+
+def test_connect_non_2xx_with_body_preserves_status_error(
+    tls_target: tuple[TLSServer, TLSCertificateBundle],
+) -> None:
+    server, bundle = tls_target
+    with _connect_proxy(reject_status=502, reject_body=b"proxy error body") as proxy:
         with foghttp.Client(proxy=proxy.base_url, tls=_tls(bundle)) as client:
             with pytest.raises(foghttp.RequestError, match="502"):
                 client.get(_target_url(server))

@@ -16,7 +16,7 @@ pub struct TransportRequest {
     pub headers: HeaderPairs,
     pub body: Option<Vec<u8>>,
     pub body_replayable: bool,
-    pub use_http_proxy: bool,
+    pub use_proxy_transport: bool,
     pub proxy_policy: String,
     pub proxy_authorization: Option<String>,
     pub total_timeout: f64,
@@ -33,7 +33,7 @@ pub(super) struct RequestState {
     pub(super) headers: HeaderPairs,
     pub(super) body: Option<Vec<u8>>,
     pub(super) body_replayability: BodyReplayability,
-    pub(super) use_http_proxy: bool,
+    pub(super) use_proxy_transport: bool,
     pub(super) proxy_policy: ProxyTransportPolicy,
     pub(super) initial_origin: String,
     pub(super) proxy_authorization: Option<String>,
@@ -46,13 +46,13 @@ pub(super) struct RequestState {
 }
 
 impl RequestState {
-    pub(super) fn request_parts(&self, use_http_proxy: bool) -> RequestParts {
+    pub(super) fn request_parts(&self, use_proxy_transport: bool) -> RequestParts {
         // Proxy-Authorization is sent as a request header only on the plain-HTTP
         // absolute-form proxy path. For HTTPS the credentials travel on the
         // CONNECT request inside the tunnel connector and must never reach the
         // tunnelled request to the target origin.
-        let send_proxy_authorization =
-            use_http_proxy && HttpUrl::parse(&self.url).is_ok_and(|url| url.scheme() == "http");
+        let send_proxy_authorization = use_proxy_transport
+            && HttpUrl::parse(&self.url).is_ok_and(|url| url.scheme() == "http");
         RequestParts {
             method: self.method.clone(),
             url: self.url.clone(),
@@ -80,10 +80,10 @@ impl RequestState {
             .map_err(FogHttpError::new_err)
     }
 
-    pub(super) fn use_http_proxy_for_current_url(&self) -> PyResult<bool> {
+    pub(super) fn use_proxy_transport_for_current_url(&self) -> PyResult<bool> {
         let url = HttpUrl::parse(&self.url).map_err(FogHttpError::new_err)?;
         self.proxy_policy
-            .use_http_proxy(self.use_http_proxy, &self.initial_origin, &url)
+            .use_proxy_transport(self.use_proxy_transport, &self.initial_origin, &url)
     }
 
     pub(super) fn apply_redirect(&mut self, redirect: RedirectAction) -> PyResult<()> {
@@ -124,7 +124,7 @@ impl RequestState {
             headers: parts.headers,
             body: parts.body,
             body_replayability,
-            use_http_proxy: parts.use_http_proxy,
+            use_proxy_transport: parts.use_proxy_transport,
             proxy_policy,
             initial_origin: url.origin(),
             proxy_authorization: parts.proxy_authorization,

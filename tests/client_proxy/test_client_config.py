@@ -67,6 +67,14 @@ def test_client_config_applies_explicit_proxy_policy_to_https_targets() -> None:
     assert decision.proxy is config.http_proxy
 
 
+def test_client_config_rejects_https_scheme_proxy_endpoint() -> None:
+    with pytest.raises(ValueError, match="proxy URL scheme must be http"):
+        ClientConfig.from_options(
+            client_options(trust_env=False, proxy="https://proxy.example:443"),
+            environ={},
+        )
+
+
 def test_client_config_redacts_proxy_credentials_in_repr(faker: Faker) -> None:
     username = faker.user_name()
     hidden_value = faker.pystr(min_chars=12, max_chars=12)

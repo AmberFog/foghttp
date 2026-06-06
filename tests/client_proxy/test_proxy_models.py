@@ -54,6 +54,7 @@ def test_proxy_urls_reject_zero_ports(value: str, source: str) -> None:
         pytest.param("http://proxy.example/path", id="path"),
         pytest.param("http://proxy.example?x=1", id="query"),
         pytest.param("http://proxy.example#frag", id="fragment"),
+        pytest.param("https://proxy.example", id="unsupported-https-proxy-endpoint"),
         pytest.param("socks5://proxy.example:1080", id="unsupported-scheme"),
     ],
 )

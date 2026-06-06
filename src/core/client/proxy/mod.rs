@@ -268,12 +268,12 @@ where
         }
         response.extend_from_slice(&chunk[..read]);
         if let Some(headers_end) = find_headers_end(&response) {
-            if response.len() != headers_end {
-                return Err(PROXY_CONNECT_INVALID_RESPONSE.into());
-            }
-            let status = parse_connect_status(&response)?;
+            let status = parse_connect_status(&response[..headers_end])?;
             if !(200..300).contains(&status) {
                 return Err(proxy_connect_rejected(status).into());
+            }
+            if response.len() != headers_end {
+                return Err(PROXY_CONNECT_INVALID_RESPONSE.into());
             }
             return Ok(io.into_inner());
         }

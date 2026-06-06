@@ -39,7 +39,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - HTTPS with default WebPKI roots, explicit custom CA certificate files, and
   custom-only CA trust through `TLSConfig(trust_webpki_roots=False)`
 - plain HTTP proxy routing and HTTPS proxy `CONNECT` through explicit `proxy=`
-  or `trust_env=True`, plus `SSL_CERT_FILE`; see
+  or `trust_env=True` when the proxy endpoint uses `http://`, plus
+  `SSL_CERT_FILE`; see
   [Proxy and trust_env](./proxies.md)
 - async request cancellation that aborts the in-flight Rust request
 - global active request limit, per-origin active request limit, pending acquire
@@ -69,7 +70,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | `files=` | Reserved in the body matrix; not available yet |
 | Cookie jar | `cookies=True` is rejected |
 | Plain HTTP proxy routing | Available for `http://` targets through explicit `proxy=` or `trust_env=True` environment config |
-| HTTPS proxy `CONNECT` | Available for `https://` targets through explicit `proxy=` or `trust_env=True`; TLS is validated against the target host |
+| HTTPS proxy `CONNECT` | Available for `https://` targets through explicit `proxy=` or `trust_env=True` when the proxy endpoint itself uses `http://`; TLS is validated against the target host |
+| TLS-to-proxy endpoints | `https://proxy.example:443` proxy endpoint URLs are rejected; TLS-to-proxy is not implemented yet |
 | Auth helpers | Use manual headers for simple cases |
 | Disabling TLS verification | Not available by design; use `TLSConfig` with explicit CA certificates |
 | OS trust store integration | Not available; FogHTTP uses bundled WebPKI roots unless `trust_webpki_roots=False` is set |

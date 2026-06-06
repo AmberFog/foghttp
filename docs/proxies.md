@@ -13,8 +13,9 @@ instead of silently falling back to a direct connection.
 ## Explicit Proxy
 
 Use client-level `proxy=` when all requests from that client should use the
-same proxy endpoint. Both `http://` and `https://` targets are routed through
-the proxy: plain HTTP uses absolute-form, HTTPS is tunnelled via `CONNECT`:
+same HTTP proxy endpoint. Both `http://` and `https://` targets are routed
+through the proxy: plain HTTP uses absolute-form, HTTPS is tunnelled via
+`CONNECT`:
 
 ```python
 import foghttp
@@ -27,6 +28,11 @@ print(plain.status_code, secure.status_code)
 ```
 
 The same option is available on `AsyncClient`.
+
+Proxy endpoint URLs must currently use the `http://` scheme. HTTPS target URLs
+are still supported through that proxy via `CONNECT`, but TLS-to-proxy
+endpoints such as `https://proxy.internal:443` are not implemented yet and are
+rejected when client configuration is created.
 
 FogHTTP sends proxied HTTP requests in absolute-form:
 
@@ -55,6 +61,10 @@ target. A failed tunnel (`CONNECT` non-2xx, proxy auth failure, or early close)
 maps to a stable `RequestError`, releases the request slot, and does not return
 a poisoned connection to the pool. The tunnelled request itself is sent in
 origin-form, exactly like a direct HTTPS request.
+
+Connection and pool telemetry for HTTPS CONNECT is keyed by the target origin
+whose TLS session is tunnelled. FogHTTP does not yet expose separate proxy
+endpoint connection telemetry.
 
 `Timeouts.connect` bounds the whole connect phase, including the `CONNECT`
 handshake, so a proxy that accepts the socket but never answers `CONNECT` fails
@@ -95,8 +105,8 @@ the client is created:
 
 | Variable | Current behavior |
 |---|---|
-| `HTTP_PROXY` / `http_proxy` | Routes plain HTTP target URLs through the selected proxy. Uppercase `HTTP_PROXY` is ignored when `REQUEST_METHOD` is set to avoid HTTPoxy-style CGI leakage. |
-| `HTTPS_PROXY` / `https_proxy` | Tunnels `https://` target URLs through the selected proxy via `CONNECT`. |
+| `HTTP_PROXY` / `http_proxy` | Routes plain HTTP target URLs through the selected HTTP proxy endpoint. Uppercase `HTTP_PROXY` is ignored when `REQUEST_METHOD` is set to avoid HTTPoxy-style CGI leakage. |
+| `HTTPS_PROXY` / `https_proxy` | Tunnels `https://` target URLs through the selected HTTP proxy endpoint via `CONNECT`. |
 | `ALL_PROXY` / `all_proxy` | Fallback proxy when no scheme-specific proxy is set. Routes plain HTTP targets and tunnels `https://` targets via `CONNECT`. |
 | `NO_PROXY` / `no_proxy` | Bypass rules for environment-derived proxy decisions. Explicit `proxy=` wins over `NO_PROXY`. |
 | `SSL_CERT_FILE` / `ssl_cert_file` | Converted to `TLSConfig(ca_certificates=(...))` if `tls=` is not passed explicitly. |
@@ -108,7 +118,8 @@ Scheme-specific proxy variables win over `ALL_PROXY`.
 HTTP and HTTPS proxies are routed independently: plain-HTTP targets use the
 HTTP-scheme proxy (`HTTP_PROXY`/`ALL_PROXY`) in absolute-form, and HTTPS targets
 use the HTTPS-scheme proxy (`HTTPS_PROXY`/`ALL_PROXY`) via `CONNECT`. They may
-point at the same or at different proxy endpoints.
+point at the same or at different HTTP proxy endpoints. The proxy endpoint URL
+itself must still use `http://`.
 
 Environment variables are not read on every request.
 
@@ -180,6 +191,7 @@ Use explicit `TLSConfig` for custom CA bundles and custom-only trust.
 ## Not Implemented Yet
 
 - SOCKS5/SOCKS5h
+- TLS-to-proxy endpoints (`https://proxy.example:443`)
 - PAC/WPAD or platform/browser proxy discovery
 - per-route proxy policies
 - proxy retry policy

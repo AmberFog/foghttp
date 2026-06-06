@@ -22,9 +22,9 @@ impl ProxyTransportPolicy {
         }
     }
 
-    pub(super) fn use_http_proxy(
+    pub(super) fn use_proxy_transport(
         self,
-        initial_use_http_proxy: bool,
+        initial_use_proxy_transport: bool,
         initial_origin: &str,
         current_url: &HttpUrl,
     ) -> PyResult<bool> {
@@ -35,7 +35,7 @@ impl ProxyTransportPolicy {
             // by the proxy transport client.
             Self::ExplicitProxy => Ok(true),
             Self::EnvironmentProxy => {
-                environment_proxy_for(initial_use_http_proxy, initial_origin, current_url)
+                environment_proxy_for(initial_use_proxy_transport, initial_origin, current_url)
             }
         }
     }
@@ -59,12 +59,12 @@ impl ProxyTransportPolicy {
 }
 
 fn environment_proxy_for(
-    initial_use_http_proxy: bool,
+    initial_use_proxy_transport: bool,
     initial_origin: &str,
     current_url: &HttpUrl,
 ) -> PyResult<bool> {
     if current_url.origin() == initial_origin {
-        return Ok(initial_use_http_proxy);
+        return Ok(initial_use_proxy_transport);
     }
     Err(FogHttpError::new_err(
         PROXY_REDIRECT_POLICY_RECOMPUTE_UNSUPPORTED,

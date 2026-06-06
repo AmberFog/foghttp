@@ -13,7 +13,7 @@ FOLLOW_REDIRECTS = False
 TRUST_WEBPKI_ROOTS = True
 CUSTOM_ONLY_TRUST_WEBPKI_ROOTS = False
 REQUEST_BODY_REPLAYABLE = True
-USE_HTTP_PROXY = False
+USE_PROXY_TRANSPORT = False
 PROXY_TRANSPORT_POLICY = ProxyTransportPolicy.DIRECT.value
 
 
@@ -40,6 +40,43 @@ def test_raw_client_rejects_empty_custom_only_tls_trust_store() -> None:
             None,
             None,
             None,
+            None,
+        )
+
+
+@pytest.mark.parametrize(
+    ("http_proxy_url", "https_proxy_url"),
+    [
+        pytest.param("https://proxy.example:443", None, id="http-proxy-slot"),
+        pytest.param(None, "https://proxy.example:443", id="https-proxy-slot"),
+    ],
+)
+def test_raw_client_rejects_https_scheme_proxy_endpoint_without_panic(
+    http_proxy_url: str | None,
+    https_proxy_url: str | None,
+) -> None:
+    with pytest.raises(
+        _foghttp.FogHttpError,
+        match="proxy URL scheme must be http",
+    ):
+        _foghttp.RawClient(
+            1,
+            None,
+            1,
+            1,
+            None,
+            None,
+            30.0,
+            KEEPALIVE,
+            2.0,
+            FOLLOW_REDIRECTS,
+            20,
+            (),
+            TRUST_WEBPKI_ROOTS,
+            None,
+            http_proxy_url,
+            None,
+            https_proxy_url,
             None,
         )
 
@@ -111,7 +148,7 @@ def test_raw_client_sync_request_rejects_invalid_timeout_without_panic(faker: Fa
                 [],
                 None,
                 REQUEST_BODY_REPLAYABLE,
-                USE_HTTP_PROXY,
+                USE_PROXY_TRANSPORT,
                 PROXY_TRANSPORT_POLICY,
                 math.nan,
                 1.0,
@@ -134,7 +171,7 @@ def test_raw_client_sync_request_rejects_invalid_read_timeout_without_panic(fake
                 [],
                 None,
                 REQUEST_BODY_REPLAYABLE,
-                USE_HTTP_PROXY,
+                USE_PROXY_TRANSPORT,
                 PROXY_TRANSPORT_POLICY,
                 1.0,
                 math.nan,
@@ -159,7 +196,7 @@ async def test_raw_client_async_request_rejects_invalid_timeout_without_panic(
                 [],
                 None,
                 REQUEST_BODY_REPLAYABLE,
-                USE_HTTP_PROXY,
+                USE_PROXY_TRANSPORT,
                 PROXY_TRANSPORT_POLICY,
                 1.0,
                 1.0,

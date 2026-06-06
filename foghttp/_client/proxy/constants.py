@@ -1,6 +1,7 @@
 __all__ = (
     "ALL_PROXY_ENV_NAMES",
     "DEFAULT_PROXY_PORTS",
+    "DEFAULT_TARGET_PORTS",
     "HTTPS_PROXY_ENV_NAMES",
     "HTTP_PROXY_ENV_NAMES",
     "MAX_PORT",
@@ -23,6 +24,11 @@ SSL_CERT_FILE_ENV_NAMES = ("ssl_cert_file", "SSL_CERT_FILE")
 MIN_PORT = 1
 MAX_PORT = 65535
 DEFAULT_PROXY_PORTS = MappingProxyType(
+    {
+        "http": 80,
+    },
+)
+DEFAULT_TARGET_PORTS = MappingProxyType(
     {
         "http": 80,
         "https": 443,

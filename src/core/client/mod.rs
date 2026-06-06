@@ -9,6 +9,7 @@ use crate::core::numeric::duration_from_secs;
 use crate::core::tls::build_tls_config;
 use bytes::Bytes;
 use http_body_util::Full;
+use hyper::Uri;
 use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
@@ -20,6 +21,8 @@ pub type RequestBody = Full<Bytes>;
 type BaseConnector = HttpsConnector<HttpsTunnelConnector<HttpConnector>>;
 pub type HyperClient =
     Client<InstrumentedConnector<HttpProxyConnector<BaseConnector>>, RequestBody>;
+
+const HTTP_PROXY_ENDPOINT_SCHEME: &str = "http";
 
 #[derive(Clone, Debug)]
 pub struct ClientOptions {
@@ -49,7 +52,7 @@ pub fn build_client(options: &ClientOptions, metrics: Arc<Metrics>) -> Result<Hy
         Some(proxy_url) => HttpsTunnelConnector::https_proxy(
             http,
             ProxyTunnelTarget::new(
-                hyper::Uri::from_str(proxy_url).map_err(|err| err.to_string())?,
+                parse_proxy_endpoint(proxy_url)?,
                 options.https_proxy_authorization.clone(),
                 connect_timeout,
             ),
@@ -65,10 +68,9 @@ pub fn build_client(options: &ClientOptions, metrics: Arc<Metrics>) -> Result<Hy
         .wrap_connector(tunnel);
     // Above TLS: plain-HTTP targets route to the http-scheme proxy in absolute-form.
     let connector = match &options.http_proxy_url {
-        Some(proxy_url) => HttpProxyConnector::http_proxy(
-            connector,
-            hyper::Uri::from_str(proxy_url).map_err(|err| err.to_string())?,
-        ),
+        Some(proxy_url) => {
+            HttpProxyConnector::http_proxy(connector, parse_proxy_endpoint(proxy_url)?)
+        }
         None => HttpProxyConnector::direct(connector),
     };
     let connector = InstrumentedConnector::new(connector, metrics);
@@ -84,4 +86,49 @@ pub fn build_client(options: &ClientOptions, metrics: Arc<Metrics>) -> Result<Hy
         options.idle_timeout,
     )?);
     Ok(builder.build(connector))
+}
+
+fn parse_proxy_endpoint(proxy_url: &str) -> Result<Uri, String> {
+    let uri = Uri::from_str(proxy_url).map_err(|err| err.to_string())?;
+    if uri.scheme_str() != Some(HTTP_PROXY_ENDPOINT_SCHEME) {
+        return Err("proxy URL scheme must be http".to_owned());
+    }
+    if uri.authority().is_none() {
+        return Err("proxy URL must include a host".to_owned());
+    }
+    if let Some(path_and_query) = uri.path_and_query() {
+        if path_and_query.as_str() != "/" {
+            return Err("proxy URL must not include path or query".to_owned());
+        }
+    }
+    Ok(uri)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_proxy_endpoint;
+
+    #[test]
+    fn parse_proxy_endpoint_accepts_http_endpoint() {
+        let uri = parse_proxy_endpoint("http://proxy.example:8080").unwrap();
+
+        assert_eq!(uri.scheme_str(), Some("http"));
+        assert_eq!(uri.authority().unwrap().as_str(), "proxy.example:8080");
+    }
+
+    #[test]
+    fn parse_proxy_endpoint_rejects_https_endpoint() {
+        let error = parse_proxy_endpoint("https://proxy.example:443").unwrap_err();
+
+        assert_eq!(error, "proxy URL scheme must be http");
+    }
+
+    #[test]
+    fn parse_proxy_endpoint_rejects_path_or_query() {
+        for proxy_url in ["http://proxy.example/path", "http://proxy.example?debug=1"] {
+            let error = parse_proxy_endpoint(proxy_url).unwrap_err();
+
+            assert_eq!(error, "proxy URL must not include path or query");
+        }
+    }
 }

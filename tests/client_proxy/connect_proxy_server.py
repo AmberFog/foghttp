@@ -30,6 +30,7 @@ class _ProxyConfig:
     require_auth: bool
     expected_authorization: str | None
     reject_status: int | None
+    reject_body: bytes
     early_close: bool
     http_redirect_location: str | None
     hang: bool
@@ -67,6 +68,7 @@ def start_connect_proxy(
     require_auth: bool = False,
     expected_authorization: str | None = None,
     reject_status: int | None = None,
+    reject_body: bytes = b"",
     early_close: bool = False,
     http_redirect_location: str | None = None,
     hang: bool = False,
@@ -75,6 +77,7 @@ def start_connect_proxy(
         require_auth=require_auth,
         expected_authorization=expected_authorization,
         reject_status=reject_status,
+        reject_body=reject_body,
         early_close=early_close,
         http_redirect_location=http_redirect_location,
         hang=hang,
@@ -122,7 +125,12 @@ class _ConnectHandler(socketserver.BaseRequestHandler):
             _send_status(self.request, 407, "Proxy Authentication Required")
             return
         if config.reject_status is not None:
-            _send_status(self.request, config.reject_status, "Proxy Error")
+            _send_status(
+                self.request,
+                config.reject_status,
+                "Proxy Error",
+                body=config.reject_body,
+            )
             return
         if config.hang:
             # Accept the CONNECT but never answer: blocks until the client gives
@@ -183,10 +191,18 @@ def _open_upstream(authority: str) -> socket.socket | None:
         return None
 
 
-def _send_status(connection: socket.socket, status: int, reason: str) -> None:
-    response = f"HTTP/1.1 {status} {reason}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+def _send_status(
+    connection: socket.socket,
+    status: int,
+    reason: str,
+    *,
+    body: bytes = b"",
+) -> None:
+    response = (f"HTTP/1.1 {status} {reason}\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n").encode(
+        "latin-1",
+    )
     with suppress(OSError):
-        connection.sendall(response.encode("latin-1"))
+        connection.sendall(response + body)
 
 
 def _send_redirect(connection: socket.socket, location: str) -> None:

@@ -20,7 +20,7 @@ def raw_request_options(
         headers=request.headers.multi_items(),
         body=body.content,
         body_replayable=body.replayable,
-        use_http_proxy=proxy_decision.uses_proxy,
+        use_proxy_transport=proxy_decision.uses_proxy,
         proxy_policy=proxy_resolver.transport_policy(),
         timeouts=timeouts,
     )

@@ -13,8 +13,8 @@ impl TransportClients {
         Self { direct, proxy }
     }
 
-    pub(super) fn select(&self, use_http_proxy: bool) -> PyResult<HyperClient> {
-        if !use_http_proxy {
+    pub(super) fn select(&self, use_proxy_transport: bool) -> PyResult<HyperClient> {
+        if !use_proxy_transport {
             return Ok(self.direct.clone());
         }
         self.proxy

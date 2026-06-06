@@ -162,6 +162,13 @@ def test_invalid_proxy_url_error_does_not_leak_credentials(faker: Faker) -> None
     assert hidden_value not in message
 
 
+def test_https_scheme_proxy_endpoint_is_rejected() -> None:
+    with pytest.raises(ValueError, match="HTTPS_PROXY is invalid") as exc_info:
+        environment_proxy_config({"HTTPS_PROXY": "https://proxy.example:443"})
+
+    assert "scheme must be http" in str(exc_info.value)
+
+
 def test_malformed_proxy_host_error_does_not_leak_credentials(faker: Faker) -> None:
     username = faker.user_name()
     hidden_value = faker.pystr(min_chars=12, max_chars=12)

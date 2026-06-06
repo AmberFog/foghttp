@@ -69,7 +69,7 @@ fn request_info_excludes_transport_proxy_authorization() {
         headers: HeaderPairs::new(),
         body: None,
         body_replayable: true,
-        use_http_proxy: true,
+        use_proxy_transport: true,
         proxy_policy: "explicit_proxy".to_owned(),
         proxy_authorization: Some("Basic secret".to_owned()),
         total_timeout: TOTAL_TIMEOUT,
@@ -96,7 +96,7 @@ fn explicit_proxy_tunnels_https_redirect_via_connect() {
         headers: HeaderPairs::new(),
         body: None,
         body_replayable: true,
-        use_http_proxy: true,
+        use_proxy_transport: true,
         proxy_policy: "explicit_proxy".to_owned(),
         proxy_authorization: Some("Basic secret".to_owned()),
         total_timeout: TOTAL_TIMEOUT,
@@ -119,7 +119,7 @@ fn explicit_proxy_tunnels_https_redirect_via_connect() {
 
     assert_eq!(state.url, "https://example.com/secure");
     assert!(state
-        .use_http_proxy_for_current_url()
+        .use_proxy_transport_for_current_url()
         .expect("explicit proxy routes https targets through the proxy"));
     // Proxy credentials travel on the CONNECT request, never on the tunnelled
     // request to the target origin.
@@ -134,7 +134,7 @@ fn environment_proxy_blocks_cross_origin_redirect_until_per_hop_decisions_exist(
         headers: HeaderPairs::new(),
         body: None,
         body_replayable: true,
-        use_http_proxy: true,
+        use_proxy_transport: true,
         proxy_policy: "environment_proxy".to_owned(),
         proxy_authorization: None,
         total_timeout: TOTAL_TIMEOUT,
@@ -167,7 +167,7 @@ fn request_state(body: Option<Vec<u8>>, body_replayable: bool) -> RequestState {
         headers: HeaderPairs::new(),
         body,
         body_replayable,
-        use_http_proxy: false,
+        use_proxy_transport: false,
         proxy_policy: "direct".to_owned(),
         proxy_authorization: None,
         total_timeout: TOTAL_TIMEOUT,

@@ -28,6 +28,14 @@ fn tunnel_authority_uses_default_https_port_when_absent() {
 }
 
 #[test]
+fn tunnel_authority_preserves_bracketed_ipv6_host() {
+    assert_eq!(
+        tunnel_authority(&http_uri("https://[::1]:8443/items")).unwrap(),
+        "[::1]:8443",
+    );
+}
+
+#[test]
 fn find_headers_end_detects_terminator() {
     assert_eq!(find_headers_end(b"HTTP/1.1 200 OK\r\n\r\n"), Some(19));
     assert_eq!(find_headers_end(b"HTTP/1.1 200 OK\r\n"), None);
@@ -90,6 +98,38 @@ fn establish_tunnel_rejects_non_2xx_status() {
             .await
             .expect_err("non-2xx CONNECT must fail");
         assert!(error.to_string().contains("407"));
+    });
+}
+
+#[test]
+fn establish_tunnel_rejects_non_2xx_status_with_body_using_status() {
+    runtime().block_on(async {
+        let (client, mut server) = tokio::io::duplex(1024);
+        server
+            .write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 11\r\n\r\nproxy error")
+            .await
+            .unwrap();
+
+        let error = establish_tunnel(TokioIo::new(client), "api.example:443", None)
+            .await
+            .expect_err("non-2xx CONNECT with body must surface status");
+        assert!(error.to_string().contains("502"));
+    });
+}
+
+#[test]
+fn establish_tunnel_rejects_2xx_response_with_extra_bytes() {
+    runtime().block_on(async {
+        let (client, mut server) = tokio::io::duplex(1024);
+        server
+            .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\nunexpected")
+            .await
+            .unwrap();
+
+        let error = establish_tunnel(TokioIo::new(client), "api.example:443", None)
+            .await
+            .expect_err("successful CONNECT must not include extra response bytes");
+        assert!(error.to_string().contains("invalid response"));
     });
 }
 

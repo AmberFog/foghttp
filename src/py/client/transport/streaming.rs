@@ -53,9 +53,9 @@ pub async fn send_stream_request(
         .map_err(|_| timeout_error(&acquire_timeout_context, REQUEST_TOTAL_TIMEOUT))??;
         let origin_metrics = permit.origin_metrics();
         let request_info = state.request_info();
-        let use_http_proxy = state.use_http_proxy_for_current_url()?;
-        let client = clients.select(use_http_proxy)?;
-        let request = build_request(state.request_parts(use_http_proxy))?;
+        let use_proxy_transport = state.use_proxy_transport_for_current_url()?;
+        let client = clients.select(use_proxy_transport)?;
+        let request = build_request(state.request_parts(use_proxy_transport))?;
 
         let response_headers_timeout_context = TimeoutContext::new(
             TimeoutPhase::ResponseHeaders,
