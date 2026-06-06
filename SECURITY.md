@@ -67,8 +67,8 @@ The following areas are especially security-sensitive in FogHTTP:
 - URL credentials, token-like query parameters, or secrets in repr/error output
 - sensitive header redaction
 - request or response body leakage in diagnostics
-- SSRF-related behavior in redirects, URL normalization, proxy support, or
-  future environment-driven configuration
+- SSRF-related behavior in redirects, URL normalization, proxy support,
+  `trust_env` environment configuration, or future environment-driven behavior
 - header smuggling or unsafe manual framing headers
 - decompression, buffering, and response-body memory limits
 - denial of service through connection, request, pending queue, runtime, or
@@ -118,8 +118,9 @@ The following are usually out of scope unless they demonstrate a concrete
 FogHTTP vulnerability:
 
 - attacks that require arbitrary code execution in the caller process
-- reports about unsupported features such as proxy support, cookie jar behavior,
-  multipart uploads, or HTTP/2 unless the current code exposes unsafe behavior
+- reports about unsupported features such as proxy transport behavior, cookie
+  jar behavior, multipart uploads, or HTTP/2 unless the current code exposes
+  unsafe behavior
 - denial-of-service reports that ignore documented response and request limits
 - issues caused only by intentionally disabling security in user application
   code outside FogHTTP

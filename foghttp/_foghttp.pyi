@@ -288,7 +288,6 @@ class RawClient:
         max_redirects: int,
         ca_certificates: Sequence[bytes],
         trust_webpki_roots: bool,
-        trust_env: bool,
         runtime_workers: int | None,
     ) -> None: ...
     def request(

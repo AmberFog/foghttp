@@ -11,7 +11,6 @@ from ..messages import (
     MAX_REDIRECTS_INVALID,
     RUNTIME_WORKERS_ENV_INVALID,
     RUNTIME_WORKERS_INVALID,
-    TRUST_ENV_UNSUPPORTED,
 )
 from ..telemetry import TelemetryConfig
 from ..timeouts import Timeouts
@@ -48,7 +47,5 @@ def validate_client_options(options: ClientOptions) -> None:
         raise ValueError(RUNTIME_WORKERS_ENV_INVALID)
     if options.cookies:
         raise NotImplementedError(COOKIES_UNSUPPORTED)
-    if options.trust_env:
-        raise NotImplementedError(TRUST_ENV_UNSUPPORTED)
     if options.http_versions and options.http_versions != ["HTTP/1.1"]:
         raise NotImplementedError(HTTP_VERSION_UNSUPPORTED)

@@ -29,7 +29,6 @@ RAW_CLIENT_INIT_ARGUMENTS = (
     "max_redirects",
     "ca_certificates",
     "trust_webpki_roots",
-    "trust_env",
     "runtime_workers",
 )
 
@@ -116,7 +115,6 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
     follow_redirects = True
     max_redirects = 9
     runtime_workers = 3
-    trust_env = False
 
     raw_client = create_raw_client(
         config=_client_config(
@@ -125,7 +123,6 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
             follow_redirects=follow_redirects,
             max_redirects=max_redirects,
             runtime_workers=runtime_workers,
-            trust_env=trust_env,
         ),
     )
 
@@ -144,7 +141,6 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
         "max_redirects": max_redirects,
         "ca_certificates": (),
         "trust_webpki_roots": True,
-        "trust_env": trust_env,
         "runtime_workers": runtime_workers,
     }
 

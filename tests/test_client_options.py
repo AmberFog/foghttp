@@ -34,11 +34,6 @@ def test_client_rejects_cookies_until_supported() -> None:
         foghttp.Client(cookies=True)
 
 
-def test_client_rejects_trust_env_until_supported() -> None:
-    with pytest.raises(NotImplementedError, match="trust_env/proxy support is planned after the MVP"):
-        foghttp.Client(trust_env=True)
-
-
 def test_client_rejects_unsupported_http_versions() -> None:
     with pytest.raises(NotImplementedError, match=r"only HTTP/1\.1 is supported in the MVP"):
         foghttp.Client(http_versions=["HTTP/2"])

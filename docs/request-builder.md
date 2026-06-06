@@ -25,7 +25,7 @@ the current FogHTTP API. The same flow is available as a runnable example in
 | `files` | Reserved | Planned for multipart uploads. Not accepted yet. |
 | `auth` | Planned | Use explicit `Authorization` headers for simple static tokens. |
 | cookies/session jar | Planned | `cookies=True` is rejected today. |
-| proxy / `trust_env` | Planned | `trust_env=True` is rejected today. |
+| proxy / `trust_env` | Partly supported | `trust_env=True` snapshots and validates proxy/TLS environment settings. HTTP proxy routing and HTTPS `CONNECT` are planned follow-ups. |
 | `timeout` | Partly supported | Per-request `pool`, `read`, and `total` timeouts are supported. Per-request `connect` does not reconfigure the connector. `write` is reserved. |
 | `follow_redirects` | Supported | Client-level setting. GET/HEAD/POST redirects use conservative security rules. |
 | prepared request | Supported | Use `build_request()` and `send()`. Building a request does not create transport state. |
@@ -192,7 +192,7 @@ Current intentional gaps:
 - no `files=` multipart uploads yet
 - no cookie jar
 - no `auth=` helper
-- no proxy or `trust_env` behavior
+- no proxy routing behavior
 - no streaming request body API yet
 - no streaming decompression helpers yet
 - no disabling TLS verification

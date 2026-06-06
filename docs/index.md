@@ -74,6 +74,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - [Telemetry contract](./telemetry.md)
 - [Response streaming](./streaming.md)
 - [TLS trust](./tls.md)
+- [Proxy and trust_env](./proxies.md)
 - [Use cases](./use-cases.md)
 - [Redirects](./redirects.md)
 - [Limitations](./limitations.md)
@@ -129,7 +130,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 ## Not Yet
 
 FogHTTP does not yet implement streaming uploads, cookies, multipart uploads,
-proxy support, `trust_env`, HTTP/2, automatic `Accept-Encoding` negotiation,
-streaming decompression, or advanced authentication helpers. Disabling TLS
-verification is intentionally not supported. See [Limitations](./limitations.md)
-for details.
+HTTP proxy routing, HTTPS proxy `CONNECT`, HTTP/2, automatic `Accept-Encoding`
+negotiation, streaming decompression, or advanced authentication helpers.
+`trust_env` currently snapshots and validates proxy/TLS environment settings,
+but proxy transport support is still planned. Disabling TLS verification is
+intentionally not supported. See [Limitations](./limitations.md) for details.

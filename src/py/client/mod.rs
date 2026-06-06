@@ -21,8 +21,7 @@ use crate::py::client::async_requests::{
     AsyncStreamRequestSpawn, RequestCompletion,
 };
 use crate::py::client::options::{
-    validate_numeric_client_options, validate_request_timeouts, validate_unsupported_options,
-    NumericClientOptions,
+    validate_numeric_client_options, validate_request_timeouts, NumericClientOptions,
 };
 use crate::py::client::runtime::build_runtime;
 use crate::py::client::streams::StreamRegistry;
@@ -71,10 +70,8 @@ impl RawClient {
         max_redirects: usize,
         ca_certificates: Vec<Vec<u8>>,
         trust_webpki_roots: bool,
-        trust_env: bool,
         runtime_workers: Option<usize>,
     ) -> PyResult<Self> {
-        validate_unsupported_options(trust_env)?;
         validate_numeric_client_options(NumericClientOptions {
             max_active_requests,
             max_active_requests_per_origin,
