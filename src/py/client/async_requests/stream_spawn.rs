@@ -1,14 +1,13 @@
 use super::active::{ActiveAsyncRequest, RequestCompletion};
 use super::callback::PythonFutureCancellation;
 use super::registry::AsyncRequestRegistry;
-use crate::core::client::HyperClient;
 use crate::core::metrics::Metrics;
 use crate::errors::FogHttpError;
 use crate::messages::STREAM_REQUEST_TASK_START_FAILED;
 use crate::py::client::acquire::AcquireGate;
 use crate::py::client::future::complete_python_stream_future;
 use crate::py::client::streams::StreamRegistry;
-use crate::py::client::transport::{send_stream_request, TransportRequest};
+use crate::py::client::transport::{send_stream_request, TransportClients, TransportRequest};
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 use std::sync::Arc;
@@ -17,7 +16,7 @@ use tokio::sync::oneshot;
 
 pub struct AsyncStreamRequestSpawn {
     pub acquire_gate: AcquireGate,
-    pub client: HyperClient,
+    pub clients: TransportClients,
     pub metrics: Arc<Metrics>,
     pub active_streams: StreamRegistry,
     pub pool_timeout: f64,
@@ -32,7 +31,7 @@ pub fn spawn_async_stream_request(
 ) -> PyResult<Py<PyAny>> {
     let AsyncStreamRequestSpawn {
         acquire_gate,
-        client,
+        clients,
         metrics,
         active_streams,
         pool_timeout,
@@ -60,7 +59,7 @@ pub fn spawn_async_stream_request(
             return;
         }
         let result = send_stream_request(
-            client,
+            clients,
             acquire_gate,
             Arc::clone(&task_metrics),
             active_streams,

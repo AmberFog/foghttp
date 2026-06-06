@@ -53,6 +53,7 @@ class Client(ClientCore):
         max_redirects: int = DEFAULT_MAX_REDIRECTS,
         cookies: bool = False,
         trust_env: bool = False,
+        proxy: str | URL | None = None,
         tls: TLSConfig | None = None,
         runtime_workers: int | None = None,
         telemetry: TelemetryConfig | None = None,
@@ -70,6 +71,7 @@ class Client(ClientCore):
                     max_redirects=max_redirects,
                     cookies=cookies,
                     trust_env=trust_env,
+                    proxy=proxy,
                     tls=tls,
                     runtime_workers=runtime_workers,
                     telemetry=telemetry,
@@ -354,7 +356,7 @@ class Client(ClientCore):
             return self._raw_client_locked()
 
     def _create_transport(self) -> SyncTransport:
-        return RawSyncTransport(self._sync_send_raw_client)
+        return RawSyncTransport(self._sync_send_raw_client, proxy_resolver=self._config.proxy_resolver)
 
     def _finish_sync_send(self, token: object) -> None:
         with self._lifecycle_condition:

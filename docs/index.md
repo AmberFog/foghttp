@@ -124,14 +124,18 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
   and `dump_pool_diagnostics()`
 - opt-in async lifecycle debug mode for active request snapshots and strict
   leak checks
+- plain HTTP proxy routing through explicit `proxy=` or `trust_env=True`
+  `HTTP_PROXY` / `ALL_PROXY`; proxied HTTPS targets fail closed until `CONNECT`
+  exists
 - default per-response and aggregate buffered response body limits
 - grouped HTTP status constants and reusable HTTP method constants
 
 ## Not Yet
 
 FogHTTP does not yet implement streaming uploads, cookies, multipart uploads,
-HTTP proxy routing, HTTPS proxy `CONNECT`, HTTP/2, automatic `Accept-Encoding`
+HTTPS proxy `CONNECT`, HTTP/2, automatic `Accept-Encoding`
 negotiation, streaming decompression, or advanced authentication helpers.
-`trust_env` currently snapshots and validates proxy/TLS environment settings,
-but proxy transport support is still planned. Disabling TLS verification is
-intentionally not supported. See [Limitations](./limitations.md) for details.
+`trust_env` supports plain HTTP proxy routing and `SSL_CERT_FILE`; proxied
+HTTPS targets fail closed until HTTPS `CONNECT` is implemented. Disabling TLS
+verification is intentionally not supported. See [Limitations](./limitations.md)
+for details.

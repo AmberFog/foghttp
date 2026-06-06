@@ -10,7 +10,7 @@ mod streams;
 mod timeout_diagnostics;
 mod transport;
 
-use crate::core::client::{build_client, ClientOptions, HyperClient};
+use crate::core::client::{build_client, ClientOptions};
 use crate::core::headers::HeaderPairs;
 use crate::core::metrics::Metrics;
 use crate::core::response::BufferedBodyBudget;
@@ -25,7 +25,9 @@ use crate::py::client::options::{
 };
 use crate::py::client::runtime::build_runtime;
 use crate::py::client::streams::StreamRegistry;
-use crate::py::client::transport::{send_request, send_stream_request, TransportRequest};
+use crate::py::client::transport::{
+    send_request, send_stream_request, TransportClients, TransportRequest,
+};
 use crate::py::response::RawResponse;
 use crate::py::stats::RawStats;
 use crate::py::{RawPoolDiagnostics, RawTransportState};
@@ -38,7 +40,7 @@ pub use streams::RawStreamResponse;
 
 #[pyclass]
 pub struct RawClient {
-    client: Option<HyperClient>,
+    clients: Option<TransportClients>,
     runtime: Option<Runtime>,
     acquire_gate: AcquireGate,
     metrics: Arc<Metrics>,
@@ -48,6 +50,7 @@ pub struct RawClient {
     buffered_body_budget: BufferedBodyBudget,
     follow_redirects: bool,
     max_redirects: usize,
+    proxy_authorization: Option<String>,
 }
 
 #[pymethods]
@@ -71,6 +74,8 @@ impl RawClient {
         ca_certificates: Vec<Vec<u8>>,
         trust_webpki_roots: bool,
         runtime_workers: Option<usize>,
+        http_proxy_url: Option<String>,
+        proxy_authorization: Option<String>,
     ) -> PyResult<Self> {
         validate_numeric_client_options(NumericClientOptions {
             max_active_requests,
@@ -91,9 +96,19 @@ impl RawClient {
             connect_timeout,
             ca_certificates,
             trust_webpki_roots,
+            http_proxy_url: None,
         };
         let client =
             build_client(&client_options, Arc::clone(&metrics)).map_err(FogHttpError::new_err)?;
+        let http_proxy_client = if let Some(http_proxy_url) = http_proxy_url {
+            let options = ClientOptions {
+                http_proxy_url: Some(http_proxy_url),
+                ..client_options
+            };
+            Some(build_client(&options, Arc::clone(&metrics)).map_err(FogHttpError::new_err)?)
+        } else {
+            None
+        };
         let runtime = build_runtime(max_active_requests, runtime_workers)?;
         let buffered_body_budget =
             BufferedBodyBudget::new(max_buffered_response_bytes, Arc::clone(&metrics));
@@ -105,7 +120,7 @@ impl RawClient {
         );
 
         Ok(Self {
-            client: Some(client),
+            clients: Some(TransportClients::new(client, http_proxy_client)),
             runtime: Some(runtime),
             acquire_gate,
             metrics,
@@ -115,6 +130,7 @@ impl RawClient {
             buffered_body_budget,
             follow_redirects,
             max_redirects,
+            proxy_authorization,
         })
     }
 
@@ -127,13 +143,15 @@ impl RawClient {
         headers: HeaderPairs,
         body: Option<Vec<u8>>,
         body_replayable: bool,
+        use_http_proxy: bool,
+        proxy_policy: String,
         pool_timeout: f64,
         read_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<RawResponse> {
         validate_request_timeouts(pool_timeout, read_timeout, total_timeout)?;
 
-        let client = self.client()?.clone();
+        let clients = self.clients()?.clone();
         let runtime = self.runtime()?;
         let acquire_gate = self.acquire_gate.clone();
         let metrics = Arc::clone(&self.metrics);
@@ -141,12 +159,13 @@ impl RawClient {
         let buffered_body_budget = self.buffered_body_budget.clone();
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
+        let proxy_authorization = self.proxy_authorization.clone();
         self.metrics.request_started();
 
         let result = py.detach(|| {
             runtime.block_on(async move {
                 send_request(
-                    client,
+                    clients,
                     acquire_gate,
                     metrics,
                     pool_timeout,
@@ -156,6 +175,9 @@ impl RawClient {
                         headers,
                         body,
                         body_replayable,
+                        use_http_proxy,
+                        proxy_policy,
+                        proxy_authorization,
                         total_timeout,
                         read_timeout,
                         max_response_body_size,
@@ -181,25 +203,28 @@ impl RawClient {
         headers: HeaderPairs,
         body: Option<Vec<u8>>,
         body_replayable: bool,
+        use_http_proxy: bool,
+        proxy_policy: String,
         pool_timeout: f64,
         read_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<Py<PyAny>> {
         validate_request_timeouts(pool_timeout, read_timeout, total_timeout)?;
 
-        let client = self.client()?.clone();
+        let clients = self.clients()?.clone();
         let runtime = self.runtime()?;
         let max_response_body_size = self.max_response_body_size;
         let buffered_body_budget = self.buffered_body_budget.clone();
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
+        let proxy_authorization = self.proxy_authorization.clone();
         spawn_async_request(
             py,
             runtime,
             &self.active_async_requests,
             AsyncRequestSpawn {
                 acquire_gate: self.acquire_gate.clone(),
-                client,
+                clients,
                 metrics: Arc::clone(&self.metrics),
                 pool_timeout,
                 request: TransportRequest {
@@ -208,6 +233,9 @@ impl RawClient {
                     headers,
                     body,
                     body_replayable,
+                    use_http_proxy,
+                    proxy_policy,
+                    proxy_authorization,
                     total_timeout,
                     read_timeout,
                     max_response_body_size,
@@ -228,13 +256,15 @@ impl RawClient {
         headers: HeaderPairs,
         body: Option<Vec<u8>>,
         body_replayable: bool,
+        use_http_proxy: bool,
+        proxy_policy: String,
         pool_timeout: f64,
         read_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<RawStreamResponse> {
         validate_request_timeouts(pool_timeout, read_timeout, total_timeout)?;
 
-        let client = self.client()?.clone();
+        let clients = self.clients()?.clone();
         let runtime = self.runtime()?;
         let acquire_gate = self.acquire_gate.clone();
         let metrics = Arc::clone(&self.metrics);
@@ -244,6 +274,7 @@ impl RawClient {
         let buffered_body_budget = self.buffered_body_budget.clone();
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
+        let proxy_authorization = self.proxy_authorization.clone();
         let completion = RequestCompletion::default();
         let request_completion = completion.clone();
         self.metrics.request_started();
@@ -251,7 +282,7 @@ impl RawClient {
         let result = py.detach(|| {
             runtime.block_on(async move {
                 send_stream_request(
-                    client,
+                    clients,
                     acquire_gate,
                     Arc::clone(&metrics),
                     active_streams,
@@ -263,6 +294,9 @@ impl RawClient {
                         headers,
                         body,
                         body_replayable,
+                        use_http_proxy,
+                        proxy_policy,
+                        proxy_authorization,
                         total_timeout,
                         read_timeout,
                         max_response_body_size,
@@ -291,25 +325,28 @@ impl RawClient {
         headers: HeaderPairs,
         body: Option<Vec<u8>>,
         body_replayable: bool,
+        use_http_proxy: bool,
+        proxy_policy: String,
         pool_timeout: f64,
         read_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<Py<PyAny>> {
         validate_request_timeouts(pool_timeout, read_timeout, total_timeout)?;
 
-        let client = self.client()?.clone();
+        let clients = self.clients()?.clone();
         let runtime = self.runtime()?;
         let max_response_body_size = self.max_response_body_size;
         let buffered_body_budget = self.buffered_body_budget.clone();
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
+        let proxy_authorization = self.proxy_authorization.clone();
         spawn_async_stream_request(
             py,
             runtime,
             &self.active_async_requests,
             AsyncStreamRequestSpawn {
                 acquire_gate: self.acquire_gate.clone(),
-                client,
+                clients,
                 metrics: Arc::clone(&self.metrics),
                 active_streams: self.active_streams.clone(),
                 pool_timeout,
@@ -319,6 +356,9 @@ impl RawClient {
                     headers,
                     body,
                     body_replayable,
+                    use_http_proxy,
+                    proxy_policy,
+                    proxy_authorization,
                     total_timeout,
                     read_timeout,
                     max_response_body_size,
@@ -348,8 +388,8 @@ impl RawClient {
 }
 
 impl RawClient {
-    fn client(&self) -> PyResult<&HyperClient> {
-        self.client
+    fn clients(&self) -> PyResult<&TransportClients> {
+        self.clients
             .as_ref()
             .ok_or_else(|| FogHttpError::new_err("client is closed"))
     }
@@ -363,7 +403,7 @@ impl RawClient {
     fn close_resources(&mut self) {
         self.active_async_requests.abort_all();
         self.active_streams.abort_all();
-        self.client.take();
+        self.clients.take();
         if let Some(runtime) = self.runtime.take() {
             runtime.shutdown_background();
         }

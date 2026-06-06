@@ -6,6 +6,7 @@ use crate::errors::FogHttpError;
 use crate::messages::NON_REPLAYABLE_REQUEST_BODY_REDIRECT;
 use crate::py::client::body::BodyReplayability;
 use crate::py::client::redirects::{redirect_headers, RedirectAction, RedirectHeaderPolicy};
+use crate::py::client::transport::proxy::ProxyTransportPolicy;
 use crate::py::response::RawRequestInfo;
 use pyo3::prelude::*;
 
@@ -15,6 +16,9 @@ pub struct TransportRequest {
     pub headers: HeaderPairs,
     pub body: Option<Vec<u8>>,
     pub body_replayable: bool,
+    pub use_http_proxy: bool,
+    pub proxy_policy: String,
+    pub proxy_authorization: Option<String>,
     pub total_timeout: f64,
     pub read_timeout: f64,
     pub max_response_body_size: Option<usize>,
@@ -29,6 +33,10 @@ pub(super) struct RequestState {
     pub(super) headers: HeaderPairs,
     pub(super) body: Option<Vec<u8>>,
     pub(super) body_replayability: BodyReplayability,
+    pub(super) use_http_proxy: bool,
+    pub(super) proxy_policy: ProxyTransportPolicy,
+    pub(super) initial_origin: String,
+    pub(super) proxy_authorization: Option<String>,
     pub(super) total_timeout: f64,
     pub(super) read_timeout: f64,
     pub(super) max_response_body_size: Option<usize>,
@@ -38,12 +46,17 @@ pub(super) struct RequestState {
 }
 
 impl RequestState {
-    pub(super) fn request_parts(&self) -> RequestParts {
+    pub(super) fn request_parts(&self, use_http_proxy: bool) -> RequestParts {
         RequestParts {
             method: self.method.clone(),
             url: self.url.clone(),
             headers: self.headers.clone(),
             body: self.body.clone(),
+            proxy_authorization: if use_http_proxy {
+                self.proxy_authorization.clone()
+            } else {
+                None
+            },
         }
     }
 
@@ -61,13 +74,23 @@ impl RequestState {
             .map_err(FogHttpError::new_err)
     }
 
+    pub(super) fn use_http_proxy_for_current_url(&self) -> PyResult<bool> {
+        let url = HttpUrl::parse(&self.url).map_err(FogHttpError::new_err)?;
+        self.proxy_policy
+            .use_http_proxy(self.use_http_proxy, &self.initial_origin, &url)
+    }
+
     pub(super) fn apply_redirect(&mut self, redirect: RedirectAction) -> PyResult<()> {
         if redirect.preserve_body && self.body.is_some() && !self.body_replayability.can_replay() {
             return Err(FogHttpError::new_err(NON_REPLAYABLE_REQUEST_BODY_REDIRECT));
         }
 
+        let next_url = HttpUrl::parse(&redirect.url).map_err(FogHttpError::new_err)?;
+        self.proxy_policy
+            .validate_redirect(&self.initial_origin, &next_url)?;
+
         self.method = redirect.method;
-        self.url = redirect.url;
+        next_url.as_str().clone_into(&mut self.url);
         self.headers = redirect_headers(
             std::mem::take(&mut self.headers),
             RedirectHeaderPolicy {
@@ -87,6 +110,7 @@ impl RequestState {
         let url = HttpUrl::parse(&parts.url).map_err(FogHttpError::new_err)?;
         let body_replayability =
             BodyReplayability::from_buffered_body(parts.body.as_deref(), parts.body_replayable);
+        let proxy_policy = ProxyTransportPolicy::parse(&parts.proxy_policy)?;
 
         Ok(Self {
             method: parts.method.to_uppercase(),
@@ -94,6 +118,10 @@ impl RequestState {
             headers: parts.headers,
             body: parts.body,
             body_replayability,
+            use_http_proxy: parts.use_http_proxy,
+            proxy_policy,
+            initial_origin: url.origin(),
+            proxy_authorization: parts.proxy_authorization,
             total_timeout: parts.total_timeout,
             read_timeout: parts.read_timeout,
             max_response_body_size: parts.max_response_body_size,

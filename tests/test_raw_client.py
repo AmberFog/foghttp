@@ -1,3 +1,4 @@
+from base64 import b64encode
 from pathlib import Path
 
 from faker import Faker
@@ -7,6 +8,7 @@ from foghttp import _foghttp
 from foghttp._client.config import ClientConfig
 from foghttp._client.constants import DEFAULT_MAX_REDIRECTS
 from foghttp._client.options import ClientOptions
+from foghttp._client.proxy import ProxyTransportPolicy
 from foghttp._client.raw.lifecycle import create_raw_client
 from foghttp._client.raw.requests import RawRequestOptions, send_raw_request, send_raw_request_async
 from foghttp.limits import Limits
@@ -30,6 +32,8 @@ RAW_CLIENT_INIT_ARGUMENTS = (
     "ca_certificates",
     "trust_webpki_roots",
     "runtime_workers",
+    "http_proxy_url",
+    "proxy_authorization",
 )
 
 RAW_REQUEST_ARGUMENTS = (
@@ -38,6 +42,8 @@ RAW_REQUEST_ARGUMENTS = (
     "headers",
     "body",
     "body_replayable",
+    "use_http_proxy",
+    "proxy_policy",
     "pool_timeout",
     "read_timeout",
     "total_timeout",
@@ -52,6 +58,7 @@ def _client_config(
     max_redirects: int = DEFAULT_MAX_REDIRECTS,
     runtime_workers: int | None = None,
     trust_env: bool = False,
+    proxy: str | None = None,
     tls: TLSConfig | None = None,
 ) -> ClientConfig:
     return ClientConfig.from_options(
@@ -66,6 +73,7 @@ def _client_config(
             max_redirects=max_redirects,
             cookies=False,
             trust_env=trust_env,
+            proxy=proxy,
             tls=tls,
             runtime_workers=runtime_workers,
             telemetry=None,
@@ -87,6 +95,8 @@ def _raw_request(
         headers=[],
         body=body,
         body_replayable=body_replayable,
+        use_http_proxy=False,
+        proxy_policy=ProxyTransportPolicy.DIRECT,
         timeouts=timeouts,
     )
 
@@ -142,7 +152,32 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
         "ca_certificates": (),
         "trust_webpki_roots": True,
         "runtime_workers": runtime_workers,
+        "http_proxy_url": None,
+        "proxy_authorization": None,
     }
+
+
+def test_create_raw_client_passes_proxy_endpoint_and_auth_to_rust_client(
+    faker: Faker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_options: dict[str, object] = {}
+
+    class RawClientProbe:
+        def __init__(self, *args: object) -> None:
+            captured_options.update(dict(zip(RAW_CLIENT_INIT_ARGUMENTS, args, strict=True)))
+
+    monkeypatch.setattr(_foghttp, "RawClient", RawClientProbe)
+    username = faker.user_name()
+    password = faker.pystr(min_chars=8, max_chars=8)
+
+    raw_client = create_raw_client(
+        config=_client_config(proxy=f"http://{username}:{password}@proxy.example:8080"),
+    )
+
+    assert isinstance(raw_client, RawClientProbe)
+    assert captured_options["http_proxy_url"] == "http://proxy.example:8080"
+    assert captured_options["proxy_authorization"] == _basic_proxy_auth(username, password)
 
 
 def test_create_raw_client_passes_tls_trust_boundary_to_rust_client(
@@ -202,6 +237,8 @@ def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker:
         "headers": [],
         "body": body,
         "body_replayable": body_replayable,
+        "use_http_proxy": False,
+        "proxy_policy": ProxyTransportPolicy.DIRECT.value,
         "pool_timeout": timeouts.pool,
         "read_timeout": timeouts.read,
         "total_timeout": timeouts.total,
@@ -232,7 +269,14 @@ async def test_send_raw_request_async_passes_request_timeouts_without_connect_ti
         "headers": [],
         "body": None,
         "body_replayable": True,
+        "use_http_proxy": False,
+        "proxy_policy": ProxyTransportPolicy.DIRECT.value,
         "pool_timeout": timeouts.pool,
         "read_timeout": timeouts.read,
         "total_timeout": timeouts.total,
     }
+
+
+def _basic_proxy_auth(username: str, password: str) -> str:
+    token = f"{username}:{password}".encode()
+    return f"Basic {b64encode(token).decode('ascii')}"

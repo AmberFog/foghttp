@@ -3,6 +3,7 @@ use crate::core::headers::{request_headers, HeaderPairs};
 use crate::errors::FogHttpError;
 use bytes::Bytes;
 use http_body_util::Full;
+use hyper::header::{HeaderValue, PROXY_AUTHORIZATION};
 use hyper::{Method, Request, Uri};
 use pyo3::prelude::*;
 use std::str::FromStr;
@@ -12,6 +13,7 @@ pub struct RequestParts {
     pub url: String,
     pub headers: HeaderPairs,
     pub body: Option<Vec<u8>>,
+    pub proxy_authorization: Option<String>,
 }
 
 pub fn build_request(parts: RequestParts) -> PyResult<Request<RequestBody>> {
@@ -25,5 +27,10 @@ pub fn build_request(parts: RequestParts) -> PyResult<Request<RequestBody>> {
         .map_err(|err| FogHttpError::new_err(err.to_string()))?;
 
     *request.headers_mut() = request_headers(parts.headers)?;
+    if let Some(proxy_authorization) = parts.proxy_authorization {
+        let value = HeaderValue::from_str(&proxy_authorization)
+            .map_err(|err| FogHttpError::new_err(err.to_string()))?;
+        request.headers_mut().insert(PROXY_AUTHORIZATION, value);
+    }
     Ok(request)
 }

@@ -1,48 +1,100 @@
 # Proxy and trust_env
 
-FogHTTP has a `trust_env` resolver foundation, but HTTP proxy routing is not
-implemented yet. The resolver snapshots and validates environment configuration
-when the client is created so future proxy transport work can use a typed,
-redacted decision model without reading environment variables on each request.
+FogHTTP supports plain HTTP proxy routing for `http://` target URLs.
 
-## Current Behavior
+`https://` target URLs over proxy require HTTP `CONNECT`; that is intentionally
+out of scope for the current proxy foundation and is tracked separately. When a
+proxy policy selects a proxy for an `https://` target, FogHTTP raises
+`RequestError` instead of silently falling back to a direct connection.
+
+## Explicit Proxy
+
+Use client-level `proxy=` when all requests from that client should use the
+same proxy endpoint. In the current release, proxied `http://` requests are
+supported and proxied `https://` requests fail closed until HTTP `CONNECT` is
+implemented:
+
+```python
+import foghttp
+
+with foghttp.Client(proxy="http://proxy.internal:8080") as client:
+    response = client.get("http://api.internal/items")
+
+print(response.status_code)
+```
+
+The same option is available on `AsyncClient`.
+
+FogHTTP sends proxied HTTP requests in absolute-form:
+
+```http
+GET http://api.internal/items HTTP/1.1
+Host: api.internal
+```
+
+The `Host` header remains the target origin host. It is not replaced with the
+proxy host.
+
+## Proxy Authentication
+
+Proxy credentials can be passed as userinfo in the proxy URL:
+
+```python
+username = load_proxy_username()
+password = load_proxy_password()
+proxy = f"http://{username}:{password}@proxy.internal:8080"
+
+with foghttp.Client(proxy=proxy) as client:
+    response = client.get("http://api.internal/items")
+```
+
+FogHTTP keeps the canonical proxy endpoint without userinfo and sends
+`Proxy-Authorization` as a transport-managed header only when the request uses
+the proxy path. The header is not part of `Request.headers`, response history,
+or user-facing request metadata.
+
+Manual `Proxy-Authorization` headers are rejected by the safe public API.
+
+Proxy credentials are redacted in debug-facing representations and should not
+be logged directly.
+
+## trust_env
 
 `trust_env=False` remains the default.
 
-With `trust_env=True`, FogHTTP currently:
-
-- accepts the client option
-- reads supported environment variables once during client configuration
-- validates proxy URLs and `NO_PROXY` rules
-- redacts proxy credentials in debug-facing representations
-- maps `SSL_CERT_FILE` to `TLSConfig` when no explicit `tls=` is passed
-
-It does not yet:
-
-- route HTTP requests through a proxy
-- tunnel HTTPS requests through `CONNECT`
-- support SOCKS, PAC, WPAD, browser proxy stores, or platform proxy discovery
-- read proxy environment variables on every request
-- use `SSL_CERT_DIR`
-- disable TLS verification through environment variables
-
-## Supported Environment Variables
+With `trust_env=True`, FogHTTP snapshots supported environment variables when
+the client is created:
 
 | Variable | Current behavior |
 |---|---|
-| `HTTP_PROXY` / `http_proxy` | Parsed for future HTTP proxy decisions. Uppercase `HTTP_PROXY` is ignored when `REQUEST_METHOD` is set to avoid HTTPoxy-style CGI leakage. |
-| `HTTPS_PROXY` / `https_proxy` | Parsed for future HTTPS proxy decisions. |
-| `ALL_PROXY` / `all_proxy` | Parsed as fallback when no scheme-specific proxy is set. |
-| `NO_PROXY` / `no_proxy` | Parsed as bypass rules for the selected target origin. |
+| `HTTP_PROXY` / `http_proxy` | Routes plain HTTP target URLs through the selected proxy. Uppercase `HTTP_PROXY` is ignored when `REQUEST_METHOD` is set to avoid HTTPoxy-style CGI leakage. |
+| `HTTPS_PROXY` / `https_proxy` | Parsed and validated for future HTTPS `CONNECT` support. If selected for an `https://` target before CONNECT exists, the request fails closed with `RequestError`. |
+| `ALL_PROXY` / `all_proxy` | Fallback proxy when no scheme-specific proxy is set. For this release it routes plain HTTP targets and fails closed for proxied `https://` targets. |
+| `NO_PROXY` / `no_proxy` | Bypass rules for environment-derived proxy decisions. Explicit `proxy=` wins over `NO_PROXY`. |
 | `SSL_CERT_FILE` / `ssl_cert_file` | Converted to `TLSConfig(ca_certificates=(...))` if `tls=` is not passed explicitly. |
 | `SSL_CERT_DIR` | Ignored. Directory trust-store loading is not implemented. |
 
 Lowercase proxy variables win over uppercase variants for the same setting.
 Scheme-specific proxy variables win over `ALL_PROXY`.
 
-Proxy URLs may include userinfo for future proxy authentication support. FogHTTP
-keeps the canonical proxy endpoint without userinfo and exposes credentials only
-through internal typed fields with redacted debug representations.
+Environment variables are not read on every request.
+
+## Redirects With Proxy Policy
+
+Explicit `proxy=` is a stable client-level policy. HTTP redirects from one
+`http://` origin to another `http://` origin continue through the same proxy.
+Redirects from an explicit proxied HTTP request to `https://` fail closed until
+HTTP `CONNECT` is implemented.
+
+Environment-derived proxy routing can change on each URL because `NO_PROXY`,
+scheme-specific proxy variables and `ALL_PROXY` are evaluated against the
+target origin. Rust follows redirects internally, and this foundation release
+does not yet recompute trusted-environment proxy decisions per redirect hop.
+For that reason, same-origin redirects can continue, but cross-origin redirects
+under environment proxy policy fail closed instead of reusing the initial proxy
+decision. This includes `http://` to `http://` cross-origin redirects that
+would likely use the same configured proxy; per-hop environment proxy
+recomputation is planned separately.
 
 ## NO_PROXY Rules
 
@@ -59,6 +111,9 @@ FogHTTP supports a focused `NO_PROXY` subset:
 - IPv4 addresses
 - bracketed IPv6 addresses such as `[::1]` and `[::1]:8080`
 - comma-separated values with surrounding whitespace
+
+CIDR rules such as `10.0.0.0/8` are not supported yet and are rejected instead
+of being silently treated as hostname rules.
 
 Bracketed `NO_PROXY` hosts are IPv6-only. Bracketed DNS names, `localhost`
 and IPv4 addresses are rejected instead of being reinterpreted as normal host
@@ -88,3 +143,11 @@ created.
 FogHTTP intentionally does not expose a `verify=False` compatibility mode and
 does not honor environment variables that disable certificate verification.
 Use explicit `TLSConfig` for custom CA bundles and custom-only trust.
+
+## Not Implemented Yet
+
+- HTTPS proxy `CONNECT` for `https://` targets
+- SOCKS5/SOCKS5h
+- PAC/WPAD or platform/browser proxy discovery
+- per-route proxy policies
+- proxy retry policy

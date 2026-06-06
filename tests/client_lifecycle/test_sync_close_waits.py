@@ -9,6 +9,7 @@ from faker import Faker
 import pytest
 
 import foghttp
+from foghttp._client.raw import requests as raw_requests
 from foghttp.status_codes.success import OK
 
 from .constants import BLOCKING_RESPONSE_PATH
@@ -51,7 +52,7 @@ def test_sync_close_waits_for_in_flight_send(
         raw_close_started.set()
         raw_client_to_close.close()
 
-    monkeypatch.setattr(transport_module, "send_raw_request", fake_send_raw_request)
+    monkeypatch.setattr(raw_requests, "send_raw_request", fake_send_raw_request)
     monkeypatch.setattr(transport_module, "response_from_raw", fake_response_from_raw)
     monkeypatch.setattr(client_module, "close_raw_client", fake_close_raw_client)
 

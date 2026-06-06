@@ -1,5 +1,7 @@
+mod proxy;
 mod telemetry;
 
+pub(crate) use proxy::HttpProxyConnector;
 pub(crate) use telemetry::{ConnectionTelemetry, ConnectionUseGuard, InstrumentedConnector};
 
 use crate::core::metrics::Metrics;
@@ -11,10 +13,13 @@ use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
+use std::str::FromStr;
 use std::sync::Arc;
 
 pub type RequestBody = Full<Bytes>;
-pub type HyperClient = Client<InstrumentedConnector<HttpsConnector<HttpConnector>>, RequestBody>;
+type BaseConnector = HttpsConnector<HttpConnector>;
+pub type HyperClient =
+    Client<InstrumentedConnector<HttpProxyConnector<BaseConnector>>, RequestBody>;
 
 #[derive(Clone, Debug)]
 pub struct ClientOptions {
@@ -24,6 +29,7 @@ pub struct ClientOptions {
     pub connect_timeout: f64,
     pub ca_certificates: Vec<Vec<u8>>,
     pub trust_webpki_roots: bool,
+    pub http_proxy_url: Option<String>,
 }
 
 pub fn build_client(options: &ClientOptions, metrics: Arc<Metrics>) -> Result<HyperClient, String> {
@@ -40,6 +46,13 @@ pub fn build_client(options: &ClientOptions, metrics: Arc<Metrics>) -> Result<Hy
         .https_or_http()
         .enable_http1()
         .wrap_connector(http);
+    let connector = match &options.http_proxy_url {
+        Some(proxy_url) => HttpProxyConnector::http_proxy(
+            connector,
+            hyper::Uri::from_str(proxy_url).map_err(|err| err.to_string())?,
+        ),
+        None => HttpProxyConnector::direct(connector),
+    };
     let connector = InstrumentedConnector::new(connector, metrics);
 
     let mut builder = Client::builder(TokioExecutor::new());

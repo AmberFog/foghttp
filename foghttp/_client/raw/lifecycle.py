@@ -3,6 +3,7 @@ __all__ = ("close_raw_client", "create_raw_client")
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
 from ..config import ClientConfig
+from ..proxy.auth import basic_proxy_authorization
 from ..tls import ca_certificate_bytes, trust_webpki_roots
 
 
@@ -31,6 +32,8 @@ def create_raw_client(
             ca_certificate_bytes(config.tls),
             trust_webpki_roots(config.tls),
             config.runtime_workers,
+            None if config.http_proxy is None else config.http_proxy.endpoint_url,
+            basic_proxy_authorization(config.http_proxy),
         )
     except _foghttp.FogHttpError as exc:
         raise ValueError(str(exc)) from exc

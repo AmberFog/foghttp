@@ -147,6 +147,25 @@ following the downgrade.
 Future streaming bodies will use an explicit replayability model because
 non-replayable streams must not be resent automatically.
 
+## Proxy Policy
+
+Redirects interact with proxy routing because a redirect target can change the
+proxy decision.
+
+With explicit `proxy=`, FogHTTP treats the proxy as a stable client-level
+policy. HTTP redirects to another `http://` origin continue through the same
+proxy. Redirects to `https://` fail closed until HTTPS proxy `CONNECT` is
+implemented.
+
+With `trust_env=True`, proxy decisions depend on the target URL, `NO_PROXY`,
+scheme-specific proxy variables, and `ALL_PROXY`. This foundation release does
+not yet recompute trusted-environment proxy decisions for each redirect hop
+inside Rust. Same-origin redirects can continue, but cross-origin redirects
+under environment proxy policy fail closed instead of reusing the initial
+proxy/direct decision. This strict rule also applies when both HTTP origins
+would likely use the same configured proxy; per-hop environment proxy
+recomputation is planned separately.
+
 ## Redirect Limit
 
 `max_redirects` defaults to `20`. If the limit is exceeded, FogHTTP raises

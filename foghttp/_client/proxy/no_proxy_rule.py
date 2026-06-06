@@ -37,6 +37,9 @@ class NoProxyRule:
 
         host, port = split_no_proxy_host_port(stripped_value)
         normalized_host = normalize_rule_host(host)
+        if "/" in host:
+            msg = "NO_PROXY CIDR rules are not supported"
+            raise ValueError(msg)
         if _is_malformed_rule_host(host):
             msg = "NO_PROXY host is invalid"
             raise ValueError(msg)

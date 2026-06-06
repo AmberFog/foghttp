@@ -3,7 +3,10 @@ use crate::core::headers::HeaderPairs;
 use crate::core::method::{GET, POST};
 use crate::core::metrics::Metrics;
 use crate::core::response::BufferedBodyBudget;
-use crate::messages::NON_REPLAYABLE_REQUEST_BODY_REDIRECT;
+use crate::messages::{
+    HTTPS_PROXY_CONNECT_UNSUPPORTED, NON_REPLAYABLE_REQUEST_BODY_REDIRECT,
+    PROXY_REDIRECT_POLICY_RECOMPUTE_UNSUPPORTED,
+};
 use crate::py::client::redirects::RedirectAction;
 use pyo3::Python;
 use std::sync::Arc;
@@ -59,6 +62,99 @@ fn empty_buffered_body_is_replayable_even_when_boundary_flag_is_false() {
     assert!(state.body_replayability.can_replay());
 }
 
+#[test]
+fn request_info_excludes_transport_proxy_authorization() {
+    let state = RequestState::try_from(TransportRequest {
+        method: GET.to_owned(),
+        url: INITIAL_URL.to_owned(),
+        headers: HeaderPairs::new(),
+        body: None,
+        body_replayable: true,
+        use_http_proxy: true,
+        proxy_policy: "explicit_proxy".to_owned(),
+        proxy_authorization: Some("Basic secret".to_owned()),
+        total_timeout: TOTAL_TIMEOUT,
+        read_timeout: READ_TIMEOUT,
+        max_response_body_size: None,
+        buffered_body_budget: BufferedBodyBudget::new(None, Arc::new(Metrics::default())),
+        follow_redirects: false,
+        max_redirects: 0,
+    })
+    .expect("valid request state");
+
+    assert!(state.request_info().headers.is_empty());
+    assert_eq!(
+        state.request_parts(true).proxy_authorization,
+        Some("Basic secret".to_owned()),
+    );
+}
+
+#[test]
+fn explicit_proxy_blocks_https_redirect_until_connect_is_supported() {
+    let mut state = RequestState::try_from(TransportRequest {
+        method: GET.to_owned(),
+        url: INITIAL_URL.to_owned(),
+        headers: HeaderPairs::new(),
+        body: None,
+        body_replayable: true,
+        use_http_proxy: true,
+        proxy_policy: "explicit_proxy".to_owned(),
+        proxy_authorization: None,
+        total_timeout: TOTAL_TIMEOUT,
+        read_timeout: READ_TIMEOUT,
+        max_response_body_size: None,
+        buffered_body_budget: BufferedBodyBudget::new(None, Arc::new(Metrics::default())),
+        follow_redirects: true,
+        max_redirects: 20,
+    })
+    .expect("valid request state");
+
+    let error = state
+        .apply_redirect(RedirectAction {
+            method: GET.to_owned(),
+            preserve_body: false,
+            remove_sensitive_headers: true,
+            url: "https://example.com/secure".to_owned(),
+        })
+        .expect_err("CONNECT is not supported yet");
+
+    assert!(error.to_string().contains(HTTPS_PROXY_CONNECT_UNSUPPORTED));
+}
+
+#[test]
+fn environment_proxy_blocks_cross_origin_redirect_until_per_hop_decisions_exist() {
+    let mut state = RequestState::try_from(TransportRequest {
+        method: GET.to_owned(),
+        url: INITIAL_URL.to_owned(),
+        headers: HeaderPairs::new(),
+        body: None,
+        body_replayable: true,
+        use_http_proxy: true,
+        proxy_policy: "environment_proxy".to_owned(),
+        proxy_authorization: None,
+        total_timeout: TOTAL_TIMEOUT,
+        read_timeout: READ_TIMEOUT,
+        max_response_body_size: None,
+        buffered_body_budget: BufferedBodyBudget::new(None, Arc::new(Metrics::default())),
+        follow_redirects: true,
+        max_redirects: 20,
+    })
+    .expect("valid request state");
+
+    let error = state
+        .apply_redirect(RedirectAction {
+            method: GET.to_owned(),
+            preserve_body: false,
+            remove_sensitive_headers: true,
+            url: "http://api.example.com/next".to_owned(),
+        })
+        .expect_err("cross-origin env proxy redirect should fail closed");
+
+    assert!(error
+        .to_string()
+        .contains(PROXY_REDIRECT_POLICY_RECOMPUTE_UNSUPPORTED));
+}
+
 fn request_state(body: Option<Vec<u8>>, body_replayable: bool) -> RequestState {
     RequestState::try_from(TransportRequest {
         method: POST.to_owned(),
@@ -66,6 +162,9 @@ fn request_state(body: Option<Vec<u8>>, body_replayable: bool) -> RequestState {
         headers: HeaderPairs::new(),
         body,
         body_replayable,
+        use_http_proxy: false,
+        proxy_policy: "direct".to_owned(),
+        proxy_authorization: None,
         total_timeout: TOTAL_TIMEOUT,
         read_timeout: READ_TIMEOUT,
         max_response_body_size: None,

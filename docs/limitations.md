@@ -38,8 +38,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - GET/HEAD/POST redirects
 - HTTPS with default WebPKI roots, explicit custom CA certificate files, and
   custom-only CA trust through `TLSConfig(trust_webpki_roots=False)`
-- `trust_env=True` environment snapshot for future proxy decisions and
-  `SSL_CERT_FILE`; see [Proxy and trust_env](./proxies.md)
+- plain HTTP proxy routing through explicit `proxy=` or `trust_env=True`,
+  plus `SSL_CERT_FILE`; see [Proxy and trust_env](./proxies.md)
 - async request cancellation that aborts the in-flight Rust request
 - global active request limit, per-origin active request limit, pending acquire
   limit, request stats, and stuck request pool diagnostics
@@ -67,14 +67,14 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | Multipart uploads | Not available |
 | `files=` | Reserved in the body matrix; not available yet |
 | Cookie jar | `cookies=True` is rejected |
-| HTTP proxy routing | Not available yet; `trust_env=True` snapshots and validates proxy env, but requests still use direct transport |
-| HTTPS proxy `CONNECT` | Not available yet |
+| Plain HTTP proxy routing | Available for `http://` targets through explicit `proxy=` or `trust_env=True` environment config |
+| HTTPS proxy `CONNECT` | Not available yet; proxied `https://` targets fail closed instead of using direct transport |
 | Auth helpers | Use manual headers for simple cases |
 | Disabling TLS verification | Not available by design; use `TLSConfig` with explicit CA certificates |
 | OS trust store integration | Not available; FogHTTP uses bundled WebPKI roots unless `trust_webpki_roots=False` is set |
 | HTTP/2 | Not available |
 | automatic `Accept-Encoding` negotiation | Not implemented; send `Accept-Encoding` manually when you want compressed responses |
-| transport-managed request headers | Safe API rejects manual `Host`, `Content-Length`, `Transfer-Encoding`, `TE`, `Trailer`, `Connection`, `Upgrade`, `Keep-Alive`, and `Proxy-Connection` |
+| transport-managed request headers | Safe API rejects manual `Host`, `Content-Length`, `Transfer-Encoding`, `TE`, `Trailer`, `Connection`, `Upgrade`, `Keep-Alive`, `Proxy-Connection`, and `Proxy-Authorization` |
 | request body source conflicts | Only one body source can be passed today: `json=`, `data=`, or `content=` |
 | true active connection-level limits | `max_active_requests_per_origin` limits buffered request slots; socket lifecycle telemetry is observable, but FogHTTP does not yet expose separate physical connection limits |
 | per-request connect timeout changes | `Timeouts.connect` configures the Rust connector from client-level settings when transport state is created; per-request `timeout.connect` does not reconfigure the connector |
@@ -104,7 +104,7 @@ Wait before using FogHTTP when:
 
 - you need transparent streaming decompression
 - you upload large files
-- you need actual proxy routing from environment variables
+- you need HTTPS proxy `CONNECT`, SOCKS, PAC, WPAD, or platform proxy discovery
 - you rely on cookies across requests
 - you need multipart form-data or large uploads
 - you need per-request connect timeout reconfiguration or request-body write

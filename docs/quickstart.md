@@ -529,8 +529,9 @@ with foghttp.Client() as client:
 FogHTTP treats authority, framing, and hop-by-hop request headers as
 transport-managed. The safe API rejects manual `Host`, `Content-Length`,
 `Transfer-Encoding`, `TE`, `Trailer`, `Connection`, `Upgrade`, `Keep-Alive`,
-and `Proxy-Connection` headers. Use semantic headers such as `Accept`,
-`Authorization`, `Content-Type`, and application-specific `X-*` headers.
+`Proxy-Connection`, and `Proxy-Authorization` headers. Use semantic headers
+such as `Accept`, `Authorization`, `Content-Type`, and application-specific
+`X-*` headers.
 
 Debug-facing representations and `HTTPStatusError` messages redact sensitive
 header values, URL credentials, common token query or fragment parameters, and

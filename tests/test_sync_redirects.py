@@ -142,7 +142,7 @@ def test_same_origin_redirect_preserves_sensitive_headers(sync_http_server: str)
 
     payload = response.json()
     assert header_values(payload, "authorization") == ["Bearer secret"]
-    assert header_values(payload, "proxy-authorization") == ["Basic proxy-secret"]
+    assert header_values(payload, "proxy-authorization") == []
     assert header_values(payload, "cookie") == ["session=secret"]
     assert header_values(payload, "host") == [urlsplit(sync_http_server).netloc]
     assert header_values(payload, "origin") == ["https://example.com"]

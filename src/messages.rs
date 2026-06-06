@@ -6,8 +6,11 @@ pub const STREAM_RESPONSE_READ_ABORTED: &str = "stream response body read was ab
 pub const REQUEST_TOTAL_TIMEOUT: &str = "request total timeout expired";
 pub const HTTPS_TO_HTTP_REDIRECT_BLOCKED: &str =
     "https-to-http redirect blocked by redirect security policy";
+pub const HTTPS_PROXY_CONNECT_UNSUPPORTED: &str = "HTTPS proxy CONNECT is not implemented";
 pub const NON_REPLAYABLE_REQUEST_BODY_REDIRECT: &str =
     "cannot follow redirect with non-replayable request body";
+pub const PROXY_REDIRECT_POLICY_RECOMPUTE_UNSUPPORTED: &str =
+    "cross-origin redirect with environment proxy policy requires per-hop proxy decisions";
 
 pub fn response_body_too_large(limit: usize) -> String {
     format!("response body exceeded max_response_body_size of {limit} bytes")

@@ -1,7 +1,7 @@
+use super::client::TransportClients;
 use super::context::RawResponseContext;
 use super::request::{RequestState, TransportRequest};
 use super::response::raw_response;
-use crate::core::client::HyperClient;
 use crate::core::metrics::Metrics;
 use crate::core::request::build_request;
 use crate::errors::FogHttpError;
@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 pub async fn send_request(
-    client: HyperClient,
+    clients: TransportClients,
     acquire_gate: AcquireGate,
     metrics: Arc<Metrics>,
     pool_timeout: f64,
@@ -46,7 +46,9 @@ pub async fn send_request(
             .map_err(|_| timeout_error(&acquire_timeout_context, REQUEST_TOTAL_TIMEOUT))??;
             let origin_metrics = permit.origin_metrics();
             let request_info = state.request_info();
-            let request = build_request(state.request_parts())?;
+            let use_http_proxy = state.use_http_proxy_for_current_url()?;
+            let client = clients.select(use_http_proxy)?;
+            let request = build_request(state.request_parts(use_http_proxy))?;
 
             let response_headers_timeout_context = TimeoutContext::new(
                 TimeoutPhase::ResponseHeaders,

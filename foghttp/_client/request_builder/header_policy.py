@@ -11,6 +11,7 @@ TRANSPORT_MANAGED_REQUEST_HEADERS = frozenset(
         "host",
         "keep-alive",
         "proxy-connection",
+        "proxy-authorization",
         "te",
         "trailer",
         "transfer-encoding",

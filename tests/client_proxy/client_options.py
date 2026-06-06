@@ -8,6 +8,7 @@ from foghttp.tls import TLSConfig
 def client_options(
     *,
     trust_env: bool,
+    proxy: str | None = None,
     tls: TLSConfig | None = None,
 ) -> ClientOptions:
     return ClientOptions(
@@ -21,6 +22,7 @@ def client_options(
         max_redirects=DEFAULT_MAX_REDIRECTS,
         cookies=False,
         trust_env=trust_env,
+        proxy=proxy,
         tls=tls,
         runtime_workers=None,
         telemetry=None,
