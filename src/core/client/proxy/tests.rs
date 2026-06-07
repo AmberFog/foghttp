@@ -1,8 +1,11 @@
 use super::{
-    establish_tunnel, find_headers_end, parse_connect_status, tunnel_authority, HttpProxyConnector,
-    ProxyAuthorization,
+    establish_tunnel, find_headers_end, parse_connect_status, parse_proxy_endpoint,
+    tunnel_authority, HttpProxyConnector, ProxyAuthorization,
 };
-use crate::messages::PROXY_CONNECT_CLOSED;
+use crate::messages::{
+    PROXY_CONNECT_CLOSED, PROXY_ENDPOINT_PATH_OR_QUERY_UNSUPPORTED,
+    PROXY_ENDPOINT_SCHEME_UNSUPPORTED, PROXY_ENDPOINT_USERINFO_UNSUPPORTED,
+};
 use hyper::rt::{Read, ReadBufCursor, Write};
 use hyper::Uri;
 use hyper_util::client::legacy::connect::{Connected, Connection};
@@ -61,8 +64,61 @@ fn parse_connect_status_reads_status_code() {
 }
 
 #[test]
+fn parse_connect_status_rejects_malformed_status_line() {
+    for response in [
+        b"HTTP/1.1 20 OK\r\n\r\n" as &[u8],
+        b"HTTP/1.1 2000 Weird\r\n\r\n",
+        b"HTTP/1.xyz 200 OK\r\n\r\n",
+        b"HTTP/1. 200 OK\r\n\r\n",
+        b"HTTP/2.0 200 OK\r\n\r\n",
+    ] {
+        assert!(parse_connect_status(response).is_err());
+    }
+}
+
+#[test]
 fn proxy_authorization_rejects_invalid_header_value() {
     assert!(ProxyAuthorization::parse("Basic ok\r\nInjected: yes").is_err());
+}
+
+#[test]
+fn parse_proxy_endpoint_accepts_http_endpoint() {
+    let uri = parse_proxy_endpoint("http://proxy.example:8080").unwrap();
+
+    assert_eq!(uri.scheme_str(), Some("http"));
+    assert_eq!(uri.authority().unwrap().as_str(), "proxy.example:8080");
+}
+
+#[test]
+fn parse_proxy_endpoint_accepts_root_path_endpoint() {
+    let uri = parse_proxy_endpoint("http://proxy.example/").unwrap();
+
+    assert_eq!(uri.scheme_str(), Some("http"));
+    assert_eq!(uri.authority().unwrap().as_str(), "proxy.example");
+    assert_eq!(uri.path_and_query().unwrap().as_str(), "/");
+}
+
+#[test]
+fn parse_proxy_endpoint_rejects_https_endpoint() {
+    let error = parse_proxy_endpoint("https://proxy.example:443").unwrap_err();
+
+    assert_eq!(error, PROXY_ENDPOINT_SCHEME_UNSUPPORTED);
+}
+
+#[test]
+fn parse_proxy_endpoint_rejects_userinfo() {
+    let error = parse_proxy_endpoint("http://user:secret@proxy.example:8080").unwrap_err();
+
+    assert_eq!(error, PROXY_ENDPOINT_USERINFO_UNSUPPORTED);
+}
+
+#[test]
+fn parse_proxy_endpoint_rejects_path_or_query() {
+    for proxy_url in ["http://proxy.example/path", "http://proxy.example?debug=1"] {
+        let error = parse_proxy_endpoint(proxy_url).unwrap_err();
+
+        assert_eq!(error, PROXY_ENDPOINT_PATH_OR_QUERY_UNSUPPORTED);
+    }
 }
 
 #[test]

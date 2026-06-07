@@ -121,8 +121,6 @@ fn explicit_proxy_tunnels_https_redirect_via_connect() {
     assert!(state
         .use_proxy_transport_for_current_url()
         .expect("explicit proxy routes https targets through the proxy"));
-    // Proxy credentials travel on the CONNECT request, never on the tunnelled
-    // request to the target origin.
     assert_eq!(state.request_parts(true).proxy_authorization, None);
 }
 

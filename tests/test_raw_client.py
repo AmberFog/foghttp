@@ -181,7 +181,6 @@ def test_create_raw_client_passes_proxy_endpoint_and_auth_to_rust_client(
 
     assert isinstance(raw_client, RawClientProbe)
     expected_auth = _basic_proxy_auth(username, password)
-    # Explicit proxy= maps both schemes to the same endpoint and credentials.
     assert captured_options["http_proxy_url"] == "http://proxy.example:8080"
     assert captured_options["http_proxy_authorization"] == expected_auth
     assert captured_options["https_proxy_url"] == "http://proxy.example:8080"

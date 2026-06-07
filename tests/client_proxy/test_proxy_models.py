@@ -32,6 +32,15 @@ def test_proxy_url_normalizes_ipv6_endpoint() -> None:
     assert proxy.endpoint_url == "http://[::1]:8080"
 
 
+def test_proxy_url_normalizes_root_path_endpoint() -> None:
+    proxy = ProxyUrl.parse("http://proxy.example/")
+
+    assert proxy.host == "proxy.example"
+    assert proxy.port == HTTP_DEFAULT_PORT
+    assert proxy.endpoint_netloc == "proxy.example:80"
+    assert proxy.endpoint_url == "http://proxy.example:80"
+
+
 @pytest.mark.parametrize(
     ("value", "source"),
     [

@@ -171,8 +171,6 @@ def test_raw_sync_transport_routes_https_requests_through_explicit_proxy(
     assert result is response
     raw_request = captured_request["request"]
     assert isinstance(raw_request, RawRequestOptions)
-    # HTTPS targets are now routed through the proxy transport client (CONNECT)
-    # rather than rejected before transport.
     assert raw_request.use_proxy_transport is True
     assert raw_request.proxy_policy is ProxyTransportPolicy.EXPLICIT_PROXY
 

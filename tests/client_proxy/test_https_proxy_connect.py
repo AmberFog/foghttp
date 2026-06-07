@@ -218,8 +218,6 @@ def test_proxy_authorization_is_sent_only_on_connect_and_redacted(
         assert response.content == TLS_OK_BODY
         connect = proxy.connects[0]
         assert connect.proxy_authorization == expected
-        # Proxy credentials authenticate the CONNECT request only and must never
-        # appear on the tunnelled request to the target or in diagnostics.
         assert "proxy-authorization" not in response.request.headers
         assert username not in repr(response.request)
         assert password not in repr(response.request)
@@ -462,7 +460,6 @@ def test_trust_env_no_proxy_bypasses_connect_for_https_target(
 
     assert response.status_code == OK
     assert response.content == TLS_OK_BODY
-    # NO_PROXY must take the HTTPS target direct, never through the CONNECT proxy.
     assert connect_proxy.connects == []
 
 
@@ -481,7 +478,6 @@ async def test_async_trust_env_no_proxy_bypasses_connect_for_https_target(
 
     assert response.status_code == OK
     assert response.content == TLS_OK_BODY
-    # Async NO_PROXY uses the same security boundary: no CONNECT is allowed.
     assert connect_proxy.connects == []
 
 
@@ -503,8 +499,6 @@ def test_failed_connect_does_not_leak_proxy_credentials(
         ):
             client.get(_target_url(server))
 
-    # The CONNECT failure surfaces a redacted, diagnostic error: the proxy status
-    # is visible but the proxy credentials sent on the CONNECT request are not.
     message = str(exc_info.value)
     assert "407" in message
     assert username not in message
@@ -603,8 +597,6 @@ def test_per_scheme_environment_proxies_route_independently(
         http_response = client.get(http_target)
         https_response = client.get(_target_url(server))
 
-    # Plain HTTP went through HTTP_PROXY in absolute-form; HTTPS tunnelled through
-    # the distinct HTTPS_PROXY via CONNECT. One client, two independent routes.
     http_payload = http_response.json()
     assert http_payload["request_line"] == f"GET {http_target} HTTP/1.1"
     assert http_payload["headers"]["proxy-authorization"] == [http_proxy_authorization]

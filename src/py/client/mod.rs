@@ -56,12 +56,11 @@ pub struct RawClient {
 #[pymethods]
 impl RawClient {
     #[new]
-    // The private PyO3 boundary mirrors Python client options. Internally we
-    // group these values into typed option structs before building transport.
     #[allow(
         clippy::fn_params_excessive_bools,
         clippy::too_many_arguments,
-        clippy::similar_names
+        clippy::similar_names,
+        reason = "PyO3 constructor mirrors Python client options before transport grouping."
     )]
     fn new(
         max_active_requests: usize,

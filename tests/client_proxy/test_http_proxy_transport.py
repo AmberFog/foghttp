@@ -201,10 +201,6 @@ def test_no_proxy_bypasses_trusted_environment_http_proxy(
     assert sync_http_proxy.requests == []
 
 
-# HTTPS targets through a proxy are exercised end to end by the CONNECT tunnel
-# tests in test_https_proxy_connect.py.
-
-
 def test_trust_env_no_proxy_cross_origin_redirect_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
     sync_http_proxy: SyncHTTPProxy,
@@ -314,11 +310,6 @@ async def test_async_explicit_proxy_http_to_http_cross_origin_redirect_uses_same
         f"{GET} {target_url} HTTP/1.1",
         f"{GET} {redirect_target} HTTP/1.1",
     )
-
-
-# An explicit-proxy http -> https redirect now upgrades to a CONNECT tunnel; the
-# CONNECT path itself is covered by test_https_proxy_connect.py and the Rust unit
-# test explicit_proxy_tunnels_https_redirect_via_connect.
 
 
 def test_proxy_connection_failure_cleans_up_request_stats(unused_tcp_port: int) -> None:

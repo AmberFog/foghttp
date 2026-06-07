@@ -1,6 +1,7 @@
 mod proxy;
 mod telemetry;
 
+use proxy::parse_proxy_endpoint;
 pub(crate) use proxy::{HttpProxyConnector, HttpsTunnelConnector, ProxyTunnelTarget};
 pub(crate) use telemetry::{ConnectionTelemetry, ConnectionUseGuard, InstrumentedConnector};
 
@@ -9,20 +10,16 @@ use crate::core::numeric::duration_from_secs;
 use crate::core::tls::build_tls_config;
 use bytes::Bytes;
 use http_body_util::Full;
-use hyper::Uri;
 use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
-use std::str::FromStr;
 use std::sync::Arc;
 
 pub type RequestBody = Full<Bytes>;
 type BaseConnector = HttpsConnector<HttpsTunnelConnector<HttpConnector>>;
 pub type HyperClient =
     Client<InstrumentedConnector<HttpProxyConnector<BaseConnector>>, RequestBody>;
-
-const HTTP_PROXY_ENDPOINT_SCHEME: &str = "http";
 
 #[derive(Clone)]
 pub struct ClientOptions {
@@ -32,9 +29,6 @@ pub struct ClientOptions {
     pub connect_timeout: f64,
     pub ca_certificates: Vec<Vec<u8>>,
     pub trust_webpki_roots: bool,
-    // Proxy endpoints are kept per scheme: `http_proxy_url` serves plain-HTTP
-    // targets in absolute-form, `https_proxy_url` tunnels HTTPS targets via
-    // CONNECT. They may point at the same or different proxies.
     pub http_proxy_url: Option<String>,
     pub https_proxy_url: Option<String>,
     pub https_proxy_authorization: Option<String>,
@@ -47,8 +41,7 @@ pub fn build_client(options: &ClientOptions, metrics: Arc<Metrics>) -> Result<Hy
     http.enforce_http(false);
     http.set_connect_timeout(Some(connect_timeout));
 
-    // Below TLS: HTTPS targets tunnel through the https-scheme proxy via CONNECT.
-    let tunnel = match &options.https_proxy_url {
+    let tunnel_connector = match &options.https_proxy_url {
         Some(proxy_url) => HttpsTunnelConnector::https_proxy(
             http,
             ProxyTunnelTarget::new(
@@ -65,15 +58,14 @@ pub fn build_client(options: &ClientOptions, metrics: Arc<Metrics>) -> Result<Hy
         .with_tls_config(tls_config)
         .https_or_http()
         .enable_http1()
-        .wrap_connector(tunnel);
-    // Above TLS: plain-HTTP targets route to the http-scheme proxy in absolute-form.
-    let connector = match &options.http_proxy_url {
+        .wrap_connector(tunnel_connector);
+    let proxy_connector = match &options.http_proxy_url {
         Some(proxy_url) => {
             HttpProxyConnector::http_proxy(connector, parse_proxy_endpoint(proxy_url)?)
         }
         None => HttpProxyConnector::direct(connector),
     };
-    let connector = InstrumentedConnector::new(connector, metrics);
+    let connector = InstrumentedConnector::new(proxy_connector, metrics);
 
     let mut builder = Client::builder(TokioExecutor::new());
     builder.pool_max_idle_per_host(if options.keepalive {
@@ -86,59 +78,4 @@ pub fn build_client(options: &ClientOptions, metrics: Arc<Metrics>) -> Result<Hy
         options.idle_timeout,
     )?);
     Ok(builder.build(connector))
-}
-
-fn parse_proxy_endpoint(proxy_url: &str) -> Result<Uri, String> {
-    let uri = Uri::from_str(proxy_url).map_err(|err| err.to_string())?;
-    if uri.scheme_str() != Some(HTTP_PROXY_ENDPOINT_SCHEME) {
-        return Err("proxy URL scheme must be http".to_owned());
-    }
-    let Some(authority) = uri.authority() else {
-        return Err("proxy URL must include a host".to_owned());
-    };
-    if authority.as_str().contains('@') {
-        return Err("proxy URL must not include userinfo".to_owned());
-    }
-    if let Some(path_and_query) = uri.path_and_query() {
-        if path_and_query.as_str() != "/" {
-            return Err("proxy URL must not include path or query".to_owned());
-        }
-    }
-    Ok(uri)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::parse_proxy_endpoint;
-
-    #[test]
-    fn parse_proxy_endpoint_accepts_http_endpoint() {
-        let uri = parse_proxy_endpoint("http://proxy.example:8080").unwrap();
-
-        assert_eq!(uri.scheme_str(), Some("http"));
-        assert_eq!(uri.authority().unwrap().as_str(), "proxy.example:8080");
-    }
-
-    #[test]
-    fn parse_proxy_endpoint_rejects_https_endpoint() {
-        let error = parse_proxy_endpoint("https://proxy.example:443").unwrap_err();
-
-        assert_eq!(error, "proxy URL scheme must be http");
-    }
-
-    #[test]
-    fn parse_proxy_endpoint_rejects_userinfo() {
-        let error = parse_proxy_endpoint("http://user:secret@proxy.example:8080").unwrap_err();
-
-        assert_eq!(error, "proxy URL must not include userinfo");
-    }
-
-    #[test]
-    fn parse_proxy_endpoint_rejects_path_or_query() {
-        for proxy_url in ["http://proxy.example/path", "http://proxy.example?debug=1"] {
-            let error = parse_proxy_endpoint(proxy_url).unwrap_err();
-
-            assert_eq!(error, "proxy URL must not include path or query");
-        }
-    }
 }

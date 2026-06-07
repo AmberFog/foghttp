@@ -30,9 +30,6 @@ impl ProxyTransportPolicy {
     ) -> PyResult<bool> {
         match self {
             Self::Direct => Ok(false),
-            // Explicit `proxy=` routes every target through the proxy: plain HTTP
-            // uses absolute-form, HTTPS is tunnelled via CONNECT. Both are served
-            // by the proxy transport client.
             Self::ExplicitProxy => Ok(true),
             Self::EnvironmentProxy => {
                 environment_proxy_for(initial_use_proxy_transport, initial_origin, current_url)
@@ -46,9 +43,6 @@ impl ProxyTransportPolicy {
         next_url: &HttpUrl,
     ) -> PyResult<()> {
         match self {
-            // Direct has no proxy decision. Explicit proxy stays a stable
-            // client-level policy across hops, routing HTTP and HTTPS hops alike
-            // through the same proxy.
             Self::Direct | Self::ExplicitProxy => Ok(()),
             Self::EnvironmentProxy if next_url.origin() == initial_origin => Ok(()),
             Self::EnvironmentProxy => Err(FogHttpError::new_err(

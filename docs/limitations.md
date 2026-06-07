@@ -60,7 +60,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - reusable HTTP method constants through `foghttp.methods`
 - HTTP/1.1 over HTTP and HTTPS
 
-## Not Implemented Yet
+## Current Gaps And Constraints
 
 | Feature | Current behavior |
 |---|---|
@@ -72,6 +72,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | Plain HTTP proxy routing | Available for `http://` targets through explicit `proxy=` or `trust_env=True` environment config |
 | HTTPS proxy `CONNECT` | Available for `https://` targets through explicit `proxy=` or `trust_env=True` when the proxy endpoint itself uses `http://`; TLS is validated against the target host |
 | TLS-to-proxy endpoints | `https://proxy.example:443` proxy endpoint URLs are rejected; TLS-to-proxy is not implemented yet |
+| Environment proxy redirects | Same-origin redirects can continue; cross-origin redirects under `trust_env=True` proxy policy fail closed until per-hop environment proxy recomputation is implemented |
 | Auth helpers | Use manual headers for simple cases |
 | Disabling TLS verification | Not available by design; use `TLSConfig` with explicit CA certificates |
 | OS trust store integration | Not available; FogHTTP uses bundled WebPKI roots unless `trust_webpki_roots=False` is set |
