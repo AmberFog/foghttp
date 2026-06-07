@@ -271,11 +271,15 @@ pub(super) fn parse_connect_status(response: &[u8]) -> Result<u16, BoxError> {
         .map_err(|_| BoxError::from(PROXY_CONNECT_INVALID_RESPONSE))?;
     let mut parts = status_line.split_whitespace();
     let version = parts.next().unwrap_or_default();
-    if !version.starts_with("HTTP/1.") {
+    if !matches!(version, "HTTP/1.0" | "HTTP/1.1") {
         return Err(PROXY_CONNECT_INVALID_RESPONSE.into());
     }
-    parts
+    let code = parts
         .next()
-        .and_then(|code| code.parse::<u16>().ok())
-        .ok_or_else(|| BoxError::from(PROXY_CONNECT_INVALID_RESPONSE))
+        .ok_or_else(|| BoxError::from(PROXY_CONNECT_INVALID_RESPONSE))?;
+    if code.len() != 3 || !code.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(PROXY_CONNECT_INVALID_RESPONSE.into());
+    }
+    code.parse::<u16>()
+        .map_err(|_| BoxError::from(PROXY_CONNECT_INVALID_RESPONSE))
 }

@@ -34,6 +34,9 @@ are still supported through that proxy via `CONNECT`, but TLS-to-proxy
 endpoints such as `https://proxy.internal:443` are not implemented yet and are
 rejected when client configuration is created.
 
+An empty endpoint path and `/` are treated as the same proxy endpoint. Paths,
+queries, and fragments other than `/` are rejected.
+
 FogHTTP sends proxied HTTP requests in absolute-form:
 
 ```http
