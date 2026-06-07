@@ -156,8 +156,6 @@ class _ConnectHandler(socketserver.BaseRequestHandler):
             )
             return
         if config.hang:
-            # Accept the CONNECT but never answer: blocks until the client gives
-            # up (connect timeout) or cancels and drops the socket.
             self.request.recv(1)
             return
 

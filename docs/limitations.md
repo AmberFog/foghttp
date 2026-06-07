@@ -60,7 +60,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - reusable HTTP method constants through `foghttp.methods`
 - HTTP/1.1 over HTTP and HTTPS
 
-## Not Implemented Yet
+## Current Gaps And Constraints
 
 | Feature | Current behavior |
 |---|---|

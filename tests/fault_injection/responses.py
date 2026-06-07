@@ -91,8 +91,6 @@ def write_empty_response(connection: socket, status_code: int, reason: str, *, c
 
 
 def _write_delayed_eof_unknown_size_body(connection: socket, response_size: int) -> None:
-    # Without content-length the body remains incomplete until EOF; the delayed
-    # close makes aggregate buffered-budget overlap deterministic under review.
     connection.sendall(
         _raw_headers(
             [

@@ -85,8 +85,6 @@ async def write_async_body_safety_response(
             ),
         )
         await writer.drain()
-        # Without content-length the body remains incomplete until EOF; delaying
-        # close keeps concurrent buffered-body budget tests deterministic.
         await asyncio.sleep(BODY_RESPONSE_DELAY)
         return True
 
@@ -192,7 +190,5 @@ def _write_sync_delayed_eof_unknown_size_bytes(
     with suppress(OSError):
         handler.wfile.write(b"x" * response_size)
         handler.wfile.flush()
-    # Without content-length the body remains incomplete until EOF; delaying
-    # close keeps concurrent buffered-body budget tests deterministic.
     time.sleep(BODY_RESPONSE_DELAY)
     return True

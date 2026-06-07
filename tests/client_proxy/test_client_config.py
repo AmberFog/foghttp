@@ -221,8 +221,6 @@ async def test_public_async_client_accepts_trust_env_without_creating_transport(
 
 
 def test_client_config_resolves_per_scheme_environment_proxies() -> None:
-    # Different HTTP and HTTPS env proxies are routed independently: HTTP targets
-    # use HTTP_PROXY (absolute-form), HTTPS targets use HTTPS_PROXY (CONNECT).
     config = ClientConfig.from_options(
         client_options(trust_env=True),
         environ={
