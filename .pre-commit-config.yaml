@@ -28,7 +28,7 @@ repos:
       - id: add-trailing-comma
 
   - repo: https://github.com/crate-ci/typos
-    rev: v1
+    rev: v1.47.2
     hooks:
       - id: typos
 
@@ -66,4 +66,4 @@ repos:
           - orjson>=3.11,<4
           - typing-extensions>=4.3.0,<5
         args: [--config-file=pyproject.toml, --install-types, --non-interactive]
-        files: ^foghttp/.*\.pyi?$
+        files: ^(foghttp|tests/types)/.*\.pyi?$

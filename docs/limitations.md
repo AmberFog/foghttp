@@ -68,6 +68,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | Streaming uploads | Not available; request bodies are buffered |
 | Multipart uploads | Not available |
 | `files=` | Reserved in the body matrix; not available yet |
+| Upload typing contracts | Public provider/factory and multipart aliases are available for planned upload APIs, but they do not enable runtime streaming uploads yet |
 | Cookie jar | `cookies=True` is rejected |
 | Plain HTTP proxy routing | Available for `http://` targets through explicit `proxy=` or `trust_env=True` environment config |
 | HTTPS proxy `CONNECT` | Available for `https://` targets through explicit `proxy=` or `trust_env=True` when the proxy endpoint itself uses `http://`; TLS is validated against the target host |

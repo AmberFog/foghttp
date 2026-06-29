@@ -71,6 +71,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - [Request builder compatibility](./request-builder.md)
 - [Client lifecycle](./lifecycle.md)
 - [Timeout model](./timeouts.md)
+- [Upload typing contracts](./upload-types.md)
 - [Telemetry contract](./telemetry.md)
 - [Response streaming](./streaming.md)
 - [TLS trust](./tls.md)
@@ -104,6 +105,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - sync and async bytes/text/line response streaming with context-managed cleanup
 - response status flags for success, redirects, and client/server errors
 - prepared `Request` objects with `build_request()` and `send()`
+- public upload typing contracts for planned streaming and multipart body
+  providers
 - case-insensitive `Headers` with repeated value support
 - safe policy for transport-managed request headers
 - redacted repr/error surfaces for sensitive headers, URL credentials,
