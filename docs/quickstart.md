@@ -404,7 +404,9 @@ Passing more than one body source raises `ValueError`. `Content-Length` and
 in request headers; the Rust transport owns them. Buffered `json=`, `data=`,
 and `content=` bodies are replayable for the current redirect policy. Iterator,
 async iterator, and streaming request bodies are not accepted yet and will need
-an explicit non-replayable body contract later.
+an explicit non-replayable body contract later. Public provider and multipart
+type aliases are available for that planned contract; see
+[Upload typing contracts](./upload-types.md).
 
 ## Buffered Response Decoding
 

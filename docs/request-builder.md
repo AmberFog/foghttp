@@ -179,7 +179,9 @@ already provide a content type.
 
 Buffered `json=`, `data=`, and `content=` request bodies are replayable for the
 current redirect policy. Future streaming uploads will need an explicit
-non-replayable body contract.
+non-replayable body contract. The public provider and multipart aliases that
+future upload APIs will use are documented in
+[Upload typing contracts](./upload-types.md).
 
 ## Intentional Differences
 

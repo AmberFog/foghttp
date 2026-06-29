@@ -65,13 +65,10 @@ show_missing = true
 
 [tool.mypy]
 python_version = "3.11"
-files = ["foghttp"]
+files = ["foghttp", "tests/types"]
 strict = true
 warn_unreachable = true
 warn_unused_configs = true
 pretty = true
 show_error_codes = true
 namespace_packages = false
-exclude = [
-    "^tests/",
-]
