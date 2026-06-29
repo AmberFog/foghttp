@@ -1,13 +1,17 @@
 import asyncio
-from typing import TYPE_CHECKING
+from typing import Protocol
 
 
-if TYPE_CHECKING:
-    from foghttp import _foghttp
+class AsyncUploadSender(Protocol):
+    def send_nowait(self, chunk: bytes) -> bool: ...
+
+    def fail_nowait(self, message: str) -> bool: ...
+
+    def is_closed(self) -> bool: ...
 
 
 async def send_async_upload_chunk(
-    raw_body: "_foghttp.RawUploadBody",
+    raw_body: AsyncUploadSender,
     ready: asyncio.Event,
     chunk: bytes,
 ) -> bool:
@@ -21,7 +25,7 @@ async def send_async_upload_chunk(
 
 
 async def fail_async_upload_body(
-    raw_body: "_foghttp.RawUploadBody",
+    raw_body: AsyncUploadSender,
     ready: asyncio.Event,
     message: str,
 ) -> None:
