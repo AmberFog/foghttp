@@ -15,6 +15,7 @@ const INITIAL_URL: &str = "http://example.com/start";
 const REDIRECT_URL: &str = "http://example.com/next";
 const READ_TIMEOUT: f64 = 10.0;
 const TOTAL_TIMEOUT: f64 = 30.0;
+const WRITE_TIMEOUT: f64 = 2.0;
 
 fn initialize_python() {
     static PYTHON: Once = Once::new();
@@ -62,6 +63,15 @@ fn empty_buffered_body_is_replayable_even_when_boundary_flag_is_false() {
 }
 
 #[test]
+fn write_timeout_context_exists_only_for_non_empty_request_body() {
+    let empty_state = request_state(Some(Vec::new()), true);
+    let body_state = request_state(Some(vec![1, 2, 3]), true);
+
+    assert!(empty_state.write_timeout_context(INITIAL_URL, 0).is_none());
+    assert!(body_state.write_timeout_context(INITIAL_URL, 0).is_some());
+}
+
+#[test]
 fn request_info_excludes_transport_proxy_authorization() {
     let state = RequestState::try_from(TransportRequest {
         method: GET.to_owned(),
@@ -74,6 +84,7 @@ fn request_info_excludes_transport_proxy_authorization() {
         proxy_authorization: Some("Basic secret".to_owned()),
         total_timeout: TOTAL_TIMEOUT,
         read_timeout: READ_TIMEOUT,
+        write_timeout: WRITE_TIMEOUT,
         max_response_body_size: None,
         buffered_body_budget: BufferedBodyBudget::new(None, Arc::new(Metrics::default())),
         follow_redirects: false,
@@ -101,6 +112,7 @@ fn explicit_proxy_tunnels_https_redirect_via_connect() {
         proxy_authorization: Some("Basic secret".to_owned()),
         total_timeout: TOTAL_TIMEOUT,
         read_timeout: READ_TIMEOUT,
+        write_timeout: WRITE_TIMEOUT,
         max_response_body_size: None,
         buffered_body_budget: BufferedBodyBudget::new(None, Arc::new(Metrics::default())),
         follow_redirects: true,
@@ -137,6 +149,7 @@ fn environment_proxy_blocks_cross_origin_redirect_until_per_hop_decisions_exist(
         proxy_authorization: None,
         total_timeout: TOTAL_TIMEOUT,
         read_timeout: READ_TIMEOUT,
+        write_timeout: WRITE_TIMEOUT,
         max_response_body_size: None,
         buffered_body_budget: BufferedBodyBudget::new(None, Arc::new(Metrics::default())),
         follow_redirects: true,
@@ -170,6 +183,7 @@ fn request_state(body: Option<Vec<u8>>, body_replayable: bool) -> RequestState {
         proxy_authorization: None,
         total_timeout: TOTAL_TIMEOUT,
         read_timeout: READ_TIMEOUT,
+        write_timeout: WRITE_TIMEOUT,
         max_response_body_size: None,
         buffered_body_budget: BufferedBodyBudget::new(None, Arc::new(Metrics::default())),
         follow_redirects: true,

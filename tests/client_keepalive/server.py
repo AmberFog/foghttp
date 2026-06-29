@@ -82,6 +82,9 @@ class KeepAliveHTTPHandler(BaseRequestHandler):
             if request is None:
                 connection.sendall(_raw_empty_response(BAD_REQUEST, "Bad Request", close=True))
                 return
+            pending = _discard_request_body(connection, pending, request.content_length)
+            if pending is None:
+                return
 
             close_after_response = _request_closes_connection(request.headers)
             request_index = server.state.record_request(connection_id)
@@ -133,6 +136,7 @@ class KeepAliveState:
 class ParsedRequest:
     target: str
     headers: dict[str, str]
+    content_length: int
 
 
 def _read_request_head(connection: socket, pending: bytes) -> tuple[bytes | None, bytes]:
@@ -157,9 +161,15 @@ def _parse_request(request_head: bytes) -> ParsedRequest | None:
     except ValueError:
         return None
 
+    headers = _parse_headers(lines[1:])
+    content_length = _content_length(headers)
+    if content_length is None:
+        return None
+
     return ParsedRequest(
         target=target,
-        headers=_parse_headers(lines[1:]),
+        headers=headers,
+        content_length=content_length,
     )
 
 
@@ -170,6 +180,33 @@ def _parse_headers(lines: list[str]) -> dict[str, str]:
         if separator:
             headers[name.strip().casefold()] = value.strip()
     return headers
+
+
+def _content_length(headers: dict[str, str]) -> int | None:
+    raw_value = headers.get("content-length", "0")
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return None
+    return None if value < 0 else value
+
+
+def _discard_request_body(
+    connection: socket,
+    pending: bytes,
+    content_length: int,
+) -> bytes | None:
+    remaining = content_length - len(pending)
+    while remaining > 0:
+        try:
+            chunk = connection.recv(min(SOCKET_READ_SIZE, remaining))
+        except (OSError, TimeoutError):
+            return None
+        if not chunk:
+            return None
+        pending += chunk
+        remaining -= len(chunk)
+    return pending[content_length:]
 
 
 def _request_closes_connection(headers: dict[str, str]) -> bool:

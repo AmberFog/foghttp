@@ -4,16 +4,9 @@ from typing import NoReturn
 
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
-from ...errors import (
-    FogHTTPError,
-    PoolTimeout,
-    ReadTimeout,
-    RequestError,
-    ResponseBodyBudgetExceededError,
-    ResponseBodyTooLargeError,
-    ResponseError,
-    TimeoutError,
-)
+from ...errors import FogHTTPError, RequestError
+from ...errors.response import ResponseBodyBudgetExceededError, ResponseBodyTooLargeError, ResponseError
+from ...errors.timeout import PoolTimeout, ReadTimeout, TimeoutError, WriteTimeout
 from .timeout_errors import timeout_error_from_raw
 
 
@@ -24,6 +17,7 @@ _RESPONSE_ERROR_TYPES = (
 _TIMEOUT_ERROR_TYPES = (
     (_foghttp.FogHttpPoolTimeoutError, PoolTimeout),
     (_foghttp.FogHttpReadTimeoutError, ReadTimeout),
+    (_foghttp.FogHttpWriteTimeoutError, WriteTimeout),
     (_foghttp.FogHttpTimeoutError, TimeoutError),
 )
 

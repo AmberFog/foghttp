@@ -1,4 +1,4 @@
-__all__ = ("ConnectTimeout", "PoolTimeout", "ReadTimeout", "TimeoutError")
+__all__ = ("ConnectTimeout", "PoolTimeout", "ReadTimeout", "TimeoutError", "WriteTimeout")
 
 from ..timeout_diagnostics import TimeoutDiagnostic, TimeoutPhase
 from .base import RequestError
@@ -43,6 +43,10 @@ class ConnectTimeout(TimeoutError):
 
 class ReadTimeout(TimeoutError):
     """Raised when reading a response times out."""
+
+
+class WriteTimeout(TimeoutError):
+    """Raised when writing a request body times out."""
 
 
 class PoolTimeout(TimeoutError):

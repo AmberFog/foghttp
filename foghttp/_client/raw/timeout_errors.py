@@ -72,6 +72,8 @@ def _coerce_timeout_phase(value: object) -> TimeoutPhase | None:
     match str(value):
         case "pool_acquire":
             return "pool_acquire"
+        case "request_body":
+            return "request_body"
         case "response_headers":
             return "response_headers"
         case "response_body":

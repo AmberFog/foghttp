@@ -148,10 +148,11 @@ the proxy endpoint itself uses `http://`.
 Streaming uploads, cookies, auth helpers, multipart uploads,
 HTTP/2, automatic `Accept-Encoding` negotiation, streaming decompression,
 strict connection-level pool limits,
-per-request connect timeout reconfiguration, and request-body write timeout
+per-request connect timeout reconfiguration, and streaming upload write timeout
 semantics are planned for later versions. Response body read timeout is
-available for buffered and streaming response bodies. Socket lifecycle telemetry
-is available for the current HTTP/1 path. Disabling TLS verification is
+available for buffered and streaming response bodies; request body write timeout
+is available for buffered request bodies. Socket lifecycle telemetry is
+available for the current HTTP/1 path. Disabling TLS verification is
 intentionally not supported.
 
 ## Development

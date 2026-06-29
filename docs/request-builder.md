@@ -26,7 +26,7 @@ the current FogHTTP API. The same flow is available as a runnable example in
 | `auth` | Planned | Use explicit `Authorization` headers for simple static tokens. |
 | cookies/session jar | Planned | `cookies=True` is rejected today. |
 | proxy / `trust_env` | Supported | HTTP proxy routing and HTTPS `CONNECT` tunnelling through client-level `proxy=` or `trust_env=True` when the proxy endpoint uses `http://`. |
-| `timeout` | Partly supported | Per-request `pool`, `read`, and `total` timeouts are supported. Per-request `connect` does not reconfigure the connector. `write` is reserved. |
+| `timeout` | Partly supported | Per-request `pool`, `read`, `write`, and `total` timeouts are supported. Per-request `connect` does not reconfigure the connector. |
 | `follow_redirects` | Supported | Client-level setting. GET/HEAD/POST redirects use conservative security rules. |
 | prepared request | Supported | Use `build_request()` and `send()`. Building a request does not create transport state. |
 

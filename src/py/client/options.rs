@@ -52,10 +52,12 @@ pub fn validate_numeric_client_options(options: NumericClientOptions) -> PyResul
 pub fn validate_request_timeouts(
     pool_timeout: f64,
     read_timeout: f64,
+    write_timeout: f64,
     total_timeout: f64,
 ) -> PyResult<()> {
     duration_from_secs("Timeouts.pool", pool_timeout).map_err(PyValueError::new_err)?;
     duration_from_secs("Timeouts.read", read_timeout).map_err(PyValueError::new_err)?;
+    duration_from_secs("Timeouts.write", write_timeout).map_err(PyValueError::new_err)?;
     duration_from_secs("Timeouts.total", total_timeout).map_err(PyValueError::new_err)?;
 
     Ok(())

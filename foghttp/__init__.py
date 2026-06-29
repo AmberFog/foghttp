@@ -46,6 +46,7 @@ __all__ = (
     "TransportState",
     "TransportStats",
     "UnclosedClientError",
+    "WriteTimeout",
 )
 
 from .async_client import AsyncClient
@@ -70,6 +71,7 @@ from .errors.timeout import (
     PoolTimeout,
     ReadTimeout,
     TimeoutError,
+    WriteTimeout,
 )
 from .headers import Headers
 from .lifecycle_debug import (

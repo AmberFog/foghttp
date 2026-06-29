@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import AsyncIterator, Iterator
 from contextlib import suppress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import socket
 import threading
 import time
 from typing import Any
@@ -11,7 +12,13 @@ import pytest
 
 from foghttp.status_codes.success import OK
 
-from .constants import SLOW_RESPONSE_DELAY, SLOW_RESPONSE_PATH
+from .constants import (
+    SLOW_RESPONSE_DELAY,
+    SLOW_RESPONSE_PATH,
+    SLOW_UPLOAD_HOLD_DELAY,
+    SLOW_UPLOAD_PATH,
+    SLOW_UPLOAD_RECEIVE_BUFFER_SIZE,
+)
 
 
 OK_BODY = b"OK"
@@ -45,10 +52,15 @@ def sync_timeout_http_server() -> Iterator[str]:
 async def _start_async_timeout_server() -> asyncio.AbstractServer:
     async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
+            _set_async_receive_buffer(writer)
             head = await reader.readuntil(b"\r\n\r\n")
             request_line = head.decode("iso-8859-1").splitlines()[0]
             _method, target, _version = request_line.split()
-            if urlsplit(target).path == SLOW_RESPONSE_PATH:
+            path = urlsplit(target).path
+            if path == SLOW_UPLOAD_PATH:
+                await asyncio.sleep(SLOW_UPLOAD_HOLD_DELAY)
+                return
+            if path == SLOW_RESPONSE_PATH:
                 await asyncio.sleep(SLOW_RESPONSE_DELAY)
 
             writer.write(_raw_ok_response())
@@ -63,6 +75,16 @@ async def _start_async_timeout_server() -> asyncio.AbstractServer:
     return await asyncio.start_server(handle, "127.0.0.1", 0)
 
 
+def _set_async_receive_buffer(writer: asyncio.StreamWriter) -> None:
+    transport_socket = writer.get_extra_info("socket")
+    if transport_socket is not None:
+        transport_socket.setsockopt(
+            socket.SOL_SOCKET,
+            socket.SO_RCVBUF,
+            SLOW_UPLOAD_RECEIVE_BUFFER_SIZE,
+        )
+
+
 def _raw_ok_response() -> bytes:
     return (f"HTTP/1.1 {OK} OK\r\ncontent-length: {len(OK_BODY)}\r\nconnection: close\r\n\r\n").encode() + OK_BODY
 
@@ -70,8 +92,27 @@ def _raw_ok_response() -> bytes:
 class TimeoutHTTPHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
+    def setup(self) -> None:
+        self.request.setsockopt(
+            socket.SOL_SOCKET,
+            socket.SO_RCVBUF,
+            SLOW_UPLOAD_RECEIVE_BUFFER_SIZE,
+        )
+        super().setup()
+
     def do_GET(self) -> None:
-        if urlsplit(self.path).path == SLOW_RESPONSE_PATH:
+        self._write_response()
+
+    def do_POST(self) -> None:
+        self._write_response()
+
+    def _write_response(self) -> None:
+        path = urlsplit(self.path).path
+        if path == SLOW_UPLOAD_PATH:
+            self.close_connection = True
+            time.sleep(SLOW_UPLOAD_HOLD_DELAY)
+            return
+        if path == SLOW_RESPONSE_PATH:
             time.sleep(SLOW_RESPONSE_DELAY)
 
         try:

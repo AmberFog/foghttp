@@ -7,6 +7,7 @@ class FogHttpError(Exception): ...
 class FogHttpTimeoutError(FogHttpError): ...
 class FogHttpPoolTimeoutError(FogHttpTimeoutError): ...
 class FogHttpReadTimeoutError(FogHttpTimeoutError): ...
+class FogHttpWriteTimeoutError(FogHttpTimeoutError): ...
 class FogHttpResponseBodyTooLargeError(FogHttpError): ...
 class FogHttpResponseBodyBudgetExceededError(FogHttpError): ...
 
@@ -305,6 +306,7 @@ class RawClient:
         proxy_policy: str,
         pool_timeout: float,
         read_timeout: float,
+        write_timeout: float,
         total_timeout: float,
     ) -> RawResponse: ...
     async def request_async(
@@ -318,6 +320,7 @@ class RawClient:
         proxy_policy: str,
         pool_timeout: float,
         read_timeout: float,
+        write_timeout: float,
         total_timeout: float,
     ) -> RawResponse: ...
     def request_stream(
@@ -331,6 +334,7 @@ class RawClient:
         proxy_policy: str,
         pool_timeout: float,
         read_timeout: float,
+        write_timeout: float,
         total_timeout: float,
     ) -> RawStreamResponse: ...
     async def request_stream_async(
@@ -344,6 +348,7 @@ class RawClient:
         proxy_policy: str,
         pool_timeout: float,
         read_timeout: float,
+        write_timeout: float,
         total_timeout: float,
     ) -> RawStreamResponse: ...
     def stats(self) -> RawStats: ...

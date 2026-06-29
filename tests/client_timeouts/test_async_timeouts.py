@@ -10,7 +10,11 @@ from .constants import (
     RECOVERY_TOTAL_TIMEOUT,
     SENSITIVE_QUERY,
     SLOW_RESPONSE_PATH,
+    SLOW_UPLOAD_BODY_SIZE,
+    SLOW_UPLOAD_PATH,
     TOTAL_TIMEOUT,
+    WRITE_TIMEOUT,
+    WRITE_TIMEOUT_TOTAL,
 )
 from .helpers import (
     assert_timeout_diagnostic,
@@ -92,3 +96,52 @@ async def test_async_total_timeout_wins_over_longer_pool_timeout(
     assert final_stats.active_requests == 0
     assert final_stats.pending_requests == 0
     assert final_stats.pool_acquire_timeouts == 0
+
+
+async def test_async_cancellation_during_request_body_write_releases_request_slot(
+    timeout_http_server: str,
+) -> None:
+    timeouts = foghttp.Timeouts(write=RECOVERY_TOTAL_TIMEOUT, total=RECOVERY_TOTAL_TIMEOUT)
+    body = b"x" * SLOW_UPLOAD_BODY_SIZE
+
+    async with foghttp.AsyncClient(timeouts=timeouts) as client:
+        task = asyncio.create_task(client.post(timeout_http_server + SLOW_UPLOAD_PATH, content=body))
+        await wait_for_async_stats(client, lambda stats: stats.active_requests == 1)
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        await wait_for_async_stats(client, lambda stats: stats.active_requests == 0)
+        response = await client.get(timeout_http_server)
+        final_stats = client.stats()
+
+    assert response.status_code == OK
+    assert final_stats.active_requests == 0
+    assert final_stats.pending_requests == 0
+
+
+async def test_async_request_body_write_timeout_maps_to_write_timeout(
+    timeout_http_server: str,
+) -> None:
+    timeouts = foghttp.Timeouts(write=WRITE_TIMEOUT, total=WRITE_TIMEOUT_TOTAL)
+    body = b"x" * SLOW_UPLOAD_BODY_SIZE
+
+    async with foghttp.AsyncClient(timeouts=timeouts) as client:
+        with pytest.raises(foghttp.WriteTimeout, match="request body write timeout expired") as exc_info:
+            await client.post(timeout_http_server + SLOW_UPLOAD_PATH, content=body)
+
+        stats_after_error = client.stats()
+        response = await client.get(timeout_http_server)
+        final_stats = client.stats()
+
+    assert_timeout_diagnostic(
+        exc_info.value,
+        phase="request_body",
+        origin=timeout_http_server,
+        timeout=WRITE_TIMEOUT,
+    )
+    assert_timeout_error_stats(stats_after_error)
+    assert stats_after_error.connections_aborted == 1
+    assert response.status_code == OK
+    assert_timeout_recovery_stats(final_stats)

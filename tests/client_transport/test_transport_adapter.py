@@ -3,6 +3,7 @@ from typing import NoReturn
 from faker import Faker
 import pytest
 
+import foghttp
 from foghttp._client.proxy import ProxyResolver, ProxyTransportPolicy, ProxyUrl
 from foghttp._client.raw.requests import RawRequestOptions
 from foghttp._client.transport import RawAsyncTransport, RawSyncTransport
@@ -13,13 +14,19 @@ from foghttp.timeouts import Timeouts
 from tests.request_factories import non_replayable_request
 
 from .models import (
+    AsyncFailingTransport,
     AsyncRecordingTransport,
     AsyncTransportClient,
+    SyncFailingTransport,
     SyncRecordingTransport,
     SyncTransportClient,
     TransportCall,
     response_for_request,
 )
+
+
+_WRITE_TIMEOUT = 0.25
+_WRITE_TIMEOUT_ORIGIN = "https://api.example.com"
 
 
 def test_sync_send_uses_transport_adapter_without_opening_raw_client(
@@ -54,6 +61,36 @@ async def test_async_send_uses_transport_adapter_without_opening_raw_client(
 
     assert result is response
     assert transport.calls == [TransportCall(request=request, timeouts=client_timeouts)]
+
+
+def test_sync_send_preserves_transport_write_timeout() -> None:
+    timeouts = Timeouts(write=_WRITE_TIMEOUT)
+    timeout = _write_timeout(timeout=timeouts.write)
+    transport = SyncFailingTransport(error=timeout)
+
+    with (
+        SyncTransportClient(transport=transport, timeouts=timeouts) as client,
+        pytest.raises(foghttp.WriteTimeout) as exc_info,
+    ):
+        client.post(_WRITE_TIMEOUT_ORIGIN, content=b"request body")
+
+    assert exc_info.value is timeout
+    assert exc_info.value.phase == "request_body"
+    assert len(transport.calls) == 1
+
+
+async def test_async_send_preserves_transport_write_timeout() -> None:
+    timeouts = Timeouts(write=_WRITE_TIMEOUT)
+    timeout = _write_timeout(timeout=timeouts.write)
+    transport = AsyncFailingTransport(error=timeout)
+
+    async with AsyncTransportClient(transport=transport, timeouts=timeouts) as client:
+        with pytest.raises(foghttp.WriteTimeout) as exc_info:
+            await client.post(_WRITE_TIMEOUT_ORIGIN, content=b"request body")
+
+    assert exc_info.value is timeout
+    assert exc_info.value.phase == "request_body"
+    assert len(transport.calls) == 1
 
 
 def test_raw_sync_transport_sends_prepared_request_through_raw_client(
@@ -227,3 +264,17 @@ async def test_raw_async_transport_sends_prepared_request_through_raw_client(
 def _fail_create_raw_client(**_kwargs: object) -> NoReturn:
     msg = "raw client should not be created when a test transport is installed"
     raise AssertionError(msg)
+
+
+def _write_timeout(*, timeout: float | None) -> foghttp.WriteTimeout:
+    timeout_value = 0.0 if timeout is None else timeout
+    return foghttp.WriteTimeout(
+        "request body write timeout expired",
+        diagnostic=foghttp.TimeoutDiagnostic(
+            phase="request_body",
+            elapsed=timeout_value,
+            timeout=timeout_value,
+            origin=_WRITE_TIMEOUT_ORIGIN,
+            redirect_hop=0,
+        ),
+    )

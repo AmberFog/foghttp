@@ -1,6 +1,8 @@
 __all__ = (
+    "AsyncFailingTransport",
     "AsyncRecordingTransport",
     "AsyncTransportClient",
+    "SyncFailingTransport",
     "SyncRecordingTransport",
     "SyncTransportClient",
     "TransportCall",
@@ -38,6 +40,16 @@ class SyncRecordingTransport:
 
 
 @dataclass(slots=True)
+class SyncFailingTransport:
+    error: BaseException
+    calls: list[TransportCall] = field(default_factory=list)
+
+    def send(self, request: Request, *, timeouts: Timeouts) -> Response:
+        self.calls.append(TransportCall(request=request, timeouts=timeouts))
+        raise self.error
+
+
+@dataclass(slots=True)
 class AsyncRecordingTransport:
     response: Response
     calls: list[TransportCall] = field(default_factory=list)
@@ -47,21 +59,35 @@ class AsyncRecordingTransport:
         return self.response
 
 
+@dataclass(slots=True)
+class AsyncFailingTransport:
+    error: BaseException
+    calls: list[TransportCall] = field(default_factory=list)
+
+    async def send(self, request: Request, *, timeouts: Timeouts) -> Response:
+        self.calls.append(TransportCall(request=request, timeouts=timeouts))
+        raise self.error
+
+
+SyncTestTransport = SyncRecordingTransport | SyncFailingTransport
+AsyncTestTransport = AsyncRecordingTransport | AsyncFailingTransport
+
+
 class SyncTransportClient(foghttp.Client):
-    def __init__(self, transport: SyncRecordingTransport, *, timeouts: Timeouts) -> None:
+    def __init__(self, transport: SyncTestTransport, *, timeouts: Timeouts) -> None:
         self._test_transport = transport
         super().__init__(timeouts=timeouts)
 
-    def _create_transport(self) -> SyncRecordingTransport:
+    def _create_transport(self) -> SyncTestTransport:
         return self._test_transport
 
 
 class AsyncTransportClient(foghttp.AsyncClient):
-    def __init__(self, transport: AsyncRecordingTransport, *, timeouts: Timeouts) -> None:
+    def __init__(self, transport: AsyncTestTransport, *, timeouts: Timeouts) -> None:
         self._test_transport = transport
         super().__init__(timeouts=timeouts)
 
-    def _create_transport(self) -> AsyncRecordingTransport:
+    def _create_transport(self) -> AsyncTestTransport:
         return self._test_transport
 
 
