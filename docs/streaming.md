@@ -147,8 +147,8 @@ For streaming responses:
 - `total` covers acquire, redirect hops, and response headers before the
   streamed response is returned.
 - `read` controls progress while waiting for the next streamed body chunk.
-- `write` applies to buffered request body writes before the streamed response
-  is returned. Streaming uploads are still future work.
+- `write` applies to buffered request body writes and streaming upload chunk
+  progress before the streamed response is returned.
 
 `ReadTimeout` during `iter_bytes()` or `aiter_bytes()` aborts the streamed body
 and exposes `diagnostic.phase == "response_body"`.
@@ -172,7 +172,8 @@ The current streaming API is intentionally narrow:
 
 - bytes, text, and line iteration only
 - no streaming response decompression yet
-- no streaming uploads yet
+- request body streaming is available through `content=` and documented in
+  [Request builder compatibility](./request-builder.md)
 
 Buffered responses still support transparent `gzip`, `deflate`, and `br`
 decoding. Streaming responses expose response body bytes after HTTP transfer

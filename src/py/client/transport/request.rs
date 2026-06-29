@@ -1,7 +1,7 @@
 use crate::core::client::RequestWriteTimeoutContext;
 use crate::core::headers::HeaderPairs;
 use crate::core::numeric::duration_from_secs;
-use crate::core::request::RequestParts;
+use crate::core::request::{RequestBodyParts, RequestParts};
 use crate::core::response::BufferedBodyBudget;
 use crate::core::url::HttpUrl;
 use crate::errors::FogHttpError;
@@ -9,6 +9,7 @@ use crate::messages::NON_REPLAYABLE_REQUEST_BODY_REDIRECT;
 use crate::py::client::body::BodyReplayability;
 use crate::py::client::redirects::{redirect_headers, RedirectAction, RedirectHeaderPolicy};
 use crate::py::client::transport::proxy::ProxyTransportPolicy;
+use crate::py::client::upload_body::RawUploadBody;
 use crate::py::response::RawRequestInfo;
 use pyo3::prelude::*;
 use std::time::Duration;
@@ -18,6 +19,7 @@ pub struct TransportRequest {
     pub url: String,
     pub headers: HeaderPairs,
     pub body: Option<Vec<u8>>,
+    pub body_stream: Option<Py<RawUploadBody>>,
     pub body_replayable: bool,
     pub use_proxy_transport: bool,
     pub proxy_policy: String,
@@ -35,7 +37,7 @@ pub(super) struct RequestState {
     pub(super) method: String,
     pub(super) url: String,
     pub(super) headers: HeaderPairs,
-    pub(super) body: Option<Vec<u8>>,
+    pub(super) body: RequestBodyState,
     pub(super) body_replayability: BodyReplayability,
     pub(super) use_proxy_transport: bool,
     pub(super) proxy_policy: ProxyTransportPolicy,
@@ -52,14 +54,17 @@ pub(super) struct RequestState {
 }
 
 impl RequestState {
-    pub(super) fn request_parts(&self, use_proxy_transport: bool) -> RequestParts {
-        RequestParts {
+    pub(super) fn take_request_parts(
+        &mut self,
+        use_proxy_transport: bool,
+    ) -> PyResult<RequestParts> {
+        Ok(RequestParts {
             method: self.method.clone(),
             url: self.url.clone(),
             headers: self.headers.clone(),
-            body: self.body.clone(),
+            body: self.body.take_body_parts()?,
             proxy_authorization: self.plain_http_proxy_authorization(use_proxy_transport),
-        }
+        })
     }
 
     fn plain_http_proxy_authorization(&self, use_proxy_transport: bool) -> Option<String> {
@@ -85,7 +90,7 @@ impl RequestState {
     }
 
     pub(super) fn has_request_body(&self) -> bool {
-        self.body.as_ref().is_some_and(|body| !body.is_empty())
+        self.body.has_request_body()
     }
 
     pub(super) fn write_timeout_context(
@@ -111,7 +116,10 @@ impl RequestState {
     }
 
     pub(super) fn apply_redirect(&mut self, redirect: RedirectAction) -> PyResult<()> {
-        if redirect.preserve_body && self.body.is_some() && !self.body_replayability.can_replay() {
+        if redirect.preserve_body
+            && self.has_request_body()
+            && !self.body_replayability.can_replay()
+        {
             return Err(FogHttpError::new_err(NON_REPLAYABLE_REQUEST_BODY_REDIRECT));
         }
 
@@ -130,7 +138,7 @@ impl RequestState {
         );
 
         if !redirect.preserve_body {
-            self.body = None;
+            self.body = RequestBodyState::Empty;
             self.body_replayability = BodyReplayability::Replayable;
         }
         Ok(())
@@ -140,15 +148,19 @@ impl RequestState {
         let url = HttpUrl::parse(&parts.url).map_err(FogHttpError::new_err)?;
         let write_timeout = duration_from_secs("Timeouts.write", parts.write_timeout)
             .map_err(pyo3::exceptions::PyValueError::new_err)?;
-        let body_replayability =
-            BodyReplayability::from_buffered_body(parts.body.as_deref(), parts.body_replayable);
+        let body = RequestBodyState::from_raw_parts(parts.body, parts.body_stream);
+        let body_replayability = if body.has_request_body() {
+            BodyReplayability::from_replayable(parts.body_replayable)
+        } else {
+            BodyReplayability::Replayable
+        };
         let proxy_policy = ProxyTransportPolicy::parse(&parts.proxy_policy)?;
 
         Ok(Self {
             method: parts.method.to_uppercase(),
             url: url.as_str().to_owned(),
             headers: parts.headers,
-            body: parts.body,
+            body,
             body_replayability,
             use_proxy_transport: parts.use_proxy_transport,
             proxy_policy,
@@ -163,5 +175,43 @@ impl RequestState {
             follow_redirects: parts.follow_redirects,
             max_redirects: parts.max_redirects,
         })
+    }
+}
+
+pub(super) enum RequestBodyState {
+    Empty,
+    Buffered(Vec<u8>),
+    Streaming(Py<RawUploadBody>),
+}
+
+impl RequestBodyState {
+    fn from_raw_parts(body: Option<Vec<u8>>, body_stream: Option<Py<RawUploadBody>>) -> Self {
+        if let Some(body_stream) = body_stream {
+            return Self::Streaming(body_stream);
+        }
+
+        match body {
+            Some(content) if !content.is_empty() => Self::Buffered(content),
+            _ => Self::Empty,
+        }
+    }
+
+    fn has_request_body(&self) -> bool {
+        !matches!(self, Self::Empty)
+    }
+
+    fn take_body_parts(&mut self) -> PyResult<RequestBodyParts> {
+        match self {
+            Self::Empty => Ok(RequestBodyParts::Buffered(None)),
+            Self::Buffered(content) => Ok(RequestBodyParts::Buffered(Some(content.clone()))),
+            Self::Streaming(body_stream) => {
+                let (receiver, content_length) =
+                    Python::attach(|py| body_stream.borrow(py).take_receiver(py))?;
+                Ok(RequestBodyParts::Streaming {
+                    receiver,
+                    content_length,
+                })
+            }
+        }
     }
 }

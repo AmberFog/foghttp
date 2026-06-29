@@ -4,6 +4,7 @@ import pytest
 from foghttp._client.proxy import ProxyTransportPolicy
 from foghttp._client.raw.lifecycle import close_raw_client
 from foghttp._client.raw.requests import RawRequestOptions, send_raw_request
+from foghttp._request_body import RequestBody
 from foghttp.errors import RequestError
 from foghttp.methods import GET
 from foghttp.timeouts import Timeouts
@@ -29,8 +30,7 @@ def test_raw_client_rejects_requests_after_close_without_leaking_metrics(faker: 
                 method=GET,
                 url=faker.url(),
                 headers=[],
-                body=None,
-                body_replayable=True,
+                body=RequestBody.replayable_body(None),
                 use_proxy_transport=False,
                 proxy_policy=ProxyTransportPolicy.DIRECT,
                 timeouts=Timeouts(),

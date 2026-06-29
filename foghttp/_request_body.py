@@ -11,19 +11,47 @@ if TYPE_CHECKING:
 @dataclass(frozen=True, slots=True)
 class RequestBody:
     content: bytes | None
+    stream: object | None
+    content_length: int | None
     replayable: bool
 
     def __post_init__(self) -> None:
-        if not self.content and not self.replayable:
+        if self.content is not None and self.stream is not None:
+            msg = "request body cannot be both buffered and streaming"
+            raise ValueError(msg)
+        if not self.content and self.stream is None and not self.replayable:
             object.__setattr__(self, "replayable", True)
 
     @classmethod
     def replayable_body(cls, content: bytes | None) -> "RequestBody":
-        return cls(content=content, replayable=True)
+        return cls(content=content, stream=None, content_length=None, replayable=True)
 
     @classmethod
     def non_replayable_body(cls, content: bytes) -> "RequestBody":
-        return cls(content=content, replayable=False)
+        return cls(content=content, stream=None, content_length=None, replayable=False)
+
+    @classmethod
+    def streaming_body(
+        cls,
+        stream: object,
+        *,
+        content_length: int | None = None,
+    ) -> "RequestBody":
+        return cls(content=None, stream=stream, content_length=content_length, replayable=False)
+
+    @classmethod
+    def replayable_streaming_body(
+        cls,
+        stream_factory: object,
+        *,
+        content_length: int | None = None,
+    ) -> "RequestBody":
+        return cls(
+            content=None,
+            stream=stream_factory,
+            content_length=content_length,
+            replayable=True,
+        )
 
 
 def request_body(request: "Request") -> RequestBody:

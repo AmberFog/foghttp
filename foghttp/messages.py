@@ -11,9 +11,11 @@ __all__ = (
     "POOL_ACQUIRE_TIMEOUT",
     "RUNTIME_WORKERS_ENV_INVALID",
     "RUNTIME_WORKERS_INVALID",
+    "STREAMING_BODY_CHUNK_UNSUPPORTED",
     "STREAM_CONTEXT_REENTERED",
     "STREAM_RESPONSE_BODY_CONSUMED",
     "STREAM_RESPONSE_CLOSED",
+    "SYNC_CLIENT_ASYNC_BODY_UNSUPPORTED",
     "UNCLOSED_CLIENT",
     "http_status_error",
     "http_status_reason",
@@ -26,7 +28,9 @@ from ._redaction import redact_url
 
 
 BASE_URL_QUERY_OR_FRAGMENT_UNSUPPORTED = "base_url must not include query or fragment"
-BODY_CONTENT_UNSUPPORTED = "content must be bytes, str, or None"
+BODY_CONTENT_UNSUPPORTED = (
+    "content must be bytes, str, binary file-like, bytes-like iterable, async bytes-like iterable, or None"
+)
 BODY_DATA_UNSUPPORTED = "data must be a mapping, sequence of pairs, bytes, str, or None"
 BODY_PARAMETER_CONFLICT = "pass only one body parameter: content, data, or json"
 CLIENT_CLOSED = "FogHTTP client is closed"
@@ -40,6 +44,8 @@ RUNTIME_WORKERS_INVALID = "runtime_workers must be an integer between 1 and 32"
 STREAM_CONTEXT_REENTERED = "stream context cannot be entered more than once"
 STREAM_RESPONSE_BODY_CONSUMED = "stream response body can be consumed only once"
 STREAM_RESPONSE_CLOSED = "stream response is closed"
+STREAMING_BODY_CHUNK_UNSUPPORTED = "streaming request body chunks must be bytes-like"
+SYNC_CLIENT_ASYNC_BODY_UNSUPPORTED = "sync Client cannot send async streaming request bodies"
 UNCLOSED_CLIENT = "FogHTTP client was not closed"
 
 

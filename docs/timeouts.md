@@ -1,8 +1,9 @@
 # Timeout Model
 
 FogHTTP timeout settings are seconds as `float` values. The current timeout
-model covers buffered responses and sync/async response streaming. Streaming
-uploads and more specific connect timeout exception mapping are planned later.
+model covers buffered responses, sync/async response streaming, and streaming
+request uploads. More specific connect timeout exception mapping is planned
+later.
 
 ```python
 import foghttp
@@ -25,9 +26,9 @@ with foghttp.Client(timeouts=timeouts) as client:
 |---|---:|---|---|
 | `connect` | `2.0` | Client-level Rust connector TCP connect timeout. It is read when the lazy Rust transport is created from the client constructor settings. | No stable dedicated `ConnectTimeout` mapping yet; low-level connect failures can surface as `RequestError`, while the outer `total` deadline can raise `TimeoutError`. |
 | `pool` | `1.0` | Waiting for a global or per-origin active request slot. | `PoolTimeout` for acquire timeout or full pending queue. |
-| `total` | `30.0` | Buffered path: outer deadline for acquiring a request slot, sending a buffered request body, waiting for response headers, and collecting the buffered response body for each transport hop. Stream path: acquire, redirect hops, request body send, and response headers before the stream is returned. The same budget is shared across redirect hops. | Base `TimeoutError`. |
+| `total` | `30.0` | Buffered path: outer deadline for acquiring a request slot, sending the request body, waiting for response headers, and collecting the buffered response body for each transport hop. Stream path: acquire, redirect hops, streaming upload send, and response headers before the response stream is returned. The same budget is shared across redirect hops. | Base `TimeoutError`. |
 | `read` | `10.0` | Waiting for the next response body frame/chunk while collecting a buffered response body or consuming a streamed body. | `ReadTimeout`. |
-| `write` | `10.0` | Waiting for buffered request body write progress while the transport sends a non-empty request body. | `WriteTimeout`. |
+| `write` | `10.0` | Waiting for buffered request body write progress, streaming upload provider chunks, and streaming upload socket write progress while sending a non-empty request body. | `WriteTimeout`. |
 
 `PoolTimeout`, `ReadTimeout`, and `WriteTimeout` are subclasses of
 `TimeoutError`. Catch the more specific subclasses first when application code
@@ -203,14 +204,14 @@ with foghttp.Client(limits=limits, timeouts=timeouts) as client:
 path. For buffered responses it wraps:
 
 - waiting for the acquire gate, together with `pool`
-- sending a buffered request body for the current hop, together with `write`
+- sending the request body for the current hop, together with `write`
 - waiting for response headers for the current hop
 - collecting the buffered response body for the current hop
 - redirect hops as one shared budget
 
 For streaming responses, `total` wraps acquire, redirect hops, and response
-headers before the stream is returned, including any buffered request body sent
-before those headers arrive. It does not cap the full
+headers before the stream is returned, including any buffered or streaming
+request body sent before those headers arrive. It does not cap the full
 application-level streaming consumption phase after headers. Async callers can
 use `asyncio.timeout()` around the streaming block when the whole download needs
 a wall-clock budget.
@@ -316,10 +317,15 @@ configuration until the timeout exception split is expanded.
 
 ## Write Timeout
 
-`Timeouts.write` is a request body write progress timeout for buffered
-non-empty request bodies. When the underlying socket stops accepting write
-progress for longer than the configured value, FogHTTP aborts the connection
-and raises `WriteTimeout` with `diagnostic.phase == "request_body"`.
+`Timeouts.write` is a request body write progress timeout for non-empty
+buffered request bodies and streaming `content=` providers. For buffered
+bodies, it covers socket write progress. For streaming bodies, it also covers
+waiting for the next provider chunk. When write progress stalls for longer than
+the configured value, FogHTTP aborts the connection and raises `WriteTimeout`
+with `diagnostic.phase == "request_body"`.
+FogHTTP cannot forcibly interrupt arbitrary blocking code inside a user-provided
+sync iterator; after a timeout it stops waiting for the upload feeder, and the
+provider observes closure when it next yields or returns.
 Like other FogHTTP timeout values, `write=0.0` is a zero-duration timeout, not a
 disabled setting; it can fail immediately when request body write progress is
 blocked.
@@ -328,16 +334,12 @@ The timeout is scoped to transport writes for the current request hop. It does
 not replace `Timeouts.total`; the broader total deadline still covers acquire,
 redirect hops, response headers, and buffered response body collection.
 
-To keep the per-request write deadline scoped to the request that owns the
-body, FogHTTP currently sends non-empty buffered request bodies through an
-isolated no-idle transport path. That avoids leaking one request's write
+To keep the per-request write deadline scoped to the request that owns the body,
+FogHTTP currently sends non-empty buffered and streaming request bodies through
+an isolated no-idle transport path. That avoids leaking one request's write
 deadline into a pooled connection reused by a later request. The observable
-tradeoff is that requests with non-empty buffered bodies are not currently a
+tradeoff is that requests with non-empty bodies are not currently a
 connection-reuse optimization path.
-
-Streaming uploads are still planned separately. Until streaming upload support
-lands, request bodies are buffered before they are sent, and `Timeouts.write`
-applies to writing that buffered body to the transport.
 
 ## Buffered Body Limit
 

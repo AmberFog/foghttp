@@ -13,6 +13,7 @@ FOLLOW_REDIRECTS = False
 TRUST_WEBPKI_ROOTS = True
 CUSTOM_ONLY_TRUST_WEBPKI_ROOTS = False
 REQUEST_BODY_REPLAYABLE = True
+BODY_STREAM = None
 USE_PROXY_TRANSPORT = False
 PROXY_TRANSPORT_POLICY = ProxyTransportPolicy.DIRECT.value
 
@@ -201,6 +202,7 @@ def test_raw_client_sync_request_rejects_invalid_timeout_without_panic(faker: Fa
                 faker.url(),
                 [],
                 None,
+                BODY_STREAM,
                 REQUEST_BODY_REPLAYABLE,
                 USE_PROXY_TRANSPORT,
                 PROXY_TRANSPORT_POLICY,
@@ -225,6 +227,7 @@ def test_raw_client_sync_request_rejects_invalid_read_timeout_without_panic(fake
                 faker.url(),
                 [],
                 None,
+                BODY_STREAM,
                 REQUEST_BODY_REPLAYABLE,
                 USE_PROXY_TRANSPORT,
                 PROXY_TRANSPORT_POLICY,
@@ -249,6 +252,7 @@ def test_raw_client_sync_request_rejects_invalid_write_timeout_without_panic(fak
                 faker.url(),
                 [],
                 None,
+                BODY_STREAM,
                 REQUEST_BODY_REPLAYABLE,
                 USE_PROXY_TRANSPORT,
                 PROXY_TRANSPORT_POLICY,
@@ -275,6 +279,7 @@ async def test_raw_client_async_request_rejects_invalid_timeout_without_panic(
                 faker.url(),
                 [],
                 None,
+                BODY_STREAM,
                 REQUEST_BODY_REPLAYABLE,
                 USE_PROXY_TRANSPORT,
                 PROXY_TRANSPORT_POLICY,

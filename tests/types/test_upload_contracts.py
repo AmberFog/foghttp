@@ -11,6 +11,7 @@ from foghttp.types import (
     AsyncMultipartFiles,
     AsyncMultipartFileTuple,
     BinaryFile,
+    BodyChunk,
     SyncByteStream,
     SyncByteStreamFactory,
     SyncMultipartFileContent,
@@ -47,7 +48,7 @@ def async_chunks() -> AsyncByteStream:
     return AsyncChunks((b"async",))
 
 
-async def collect_chunks(stream: AsyncByteStream) -> list[bytes]:
+async def collect_chunks(stream: AsyncByteStream) -> list[BodyChunk]:
     return [chunk async for chunk in stream]
 
 

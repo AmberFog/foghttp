@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, cast
 import warnings
 
 from .._telemetry import SYNTHETIC_TELEMETRY_SNAPSHOT_SEQUENCE, TELEMETRY_SNAPSHOT_SCHEMA_VERSION
+from .._upload_body import AsyncRequestContent, SyncRequestContent
 from ..errors import ClientClosedError, UnclosedClientError
 from ..headers import HeaderSource
 from ..limits import Limits
@@ -63,7 +64,7 @@ class ClientCore:
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
-        content: bytes | str | None = None,
+        content: SyncRequestContent | AsyncRequestContent | None = None,
         data: RequestData = None,
         json: Any = None,
     ) -> Request:

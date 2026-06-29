@@ -15,12 +15,37 @@ async def _read_request(reader: asyncio.StreamReader) -> tuple[str, bytes]:
     head = await reader.readuntil(b"\r\n\r\n")
     headers = head.decode("iso-8859-1")
     length = 0
+    chunked = False
     for line in headers.split("\r\n"):
         name, _, value = line.partition(":")
         if name.lower() == "content-length":
             length = int(value.strip())
-    body = await reader.readexactly(length) if length else b""
+        if name.lower() == "transfer-encoding" and value.strip().lower() == "chunked":
+            chunked = True
+    if chunked:
+        body = await _read_chunked_body(reader)
+    else:
+        body = await reader.readexactly(length) if length else b""
     return headers, body
+
+
+async def _read_chunked_body(reader: asyncio.StreamReader) -> bytes:
+    body = bytearray()
+    while True:
+        size_line = await reader.readline()
+        size = int(size_line.split(b";", maxsplit=1)[0].strip(), 16)
+        if size == 0:
+            await _read_trailers(reader)
+            return bytes(body)
+        body.extend(await reader.readexactly(size))
+        await reader.readexactly(2)
+
+
+async def _read_trailers(reader: asyncio.StreamReader) -> None:
+    while True:
+        line = await reader.readline()
+        if line in (b"\r\n", b""):
+            return
 
 
 async def _start_async_http_server() -> tuple[asyncio.AbstractServer, str]:

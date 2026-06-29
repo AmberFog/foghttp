@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator, Iterator
 from typing import Protocol, TypeAlias
 
 
-BodyChunk: TypeAlias = bytes
+BodyChunk: TypeAlias = bytes | bytearray | memoryview
 
 
 class SyncByteStream(Protocol):

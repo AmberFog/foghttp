@@ -2,6 +2,7 @@ __all__ = ("Request",)
 
 from ._redaction import redact_url
 from ._request_body import RequestBody
+from ._upload_body import SyncRequestContent, normalize_content_body
 from .headers import Headers, HeaderSource
 from .url import URL
 
@@ -19,12 +20,12 @@ class Request:
         url: str | URL,
         *,
         headers: HeaderSource = None,
-        content: bytes | None = None,
+        content: SyncRequestContent | object | None = None,
     ) -> None:
         self.method = method.upper()
         self.url = str(URL(url))
         self.headers = Headers(headers)
-        self._body = RequestBody.replayable_body(content)
+        self._body = normalize_content_body(content)
 
     @property
     def content(self) -> bytes | None:

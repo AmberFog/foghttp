@@ -3,6 +3,7 @@ __all__ = ("RequestBuildOptions",)
 from dataclasses import dataclass
 from typing import Any
 
+from ..._upload_body import AsyncRequestContent, SyncRequestContent
 from ...headers import HeaderSource
 from ...types import QueryParams, RequestData
 from ...url import URL
@@ -14,6 +15,6 @@ class RequestBuildOptions:
     url: str | URL
     headers: HeaderSource = None
     params: QueryParams = None
-    content: bytes | str | None = None
+    content: SyncRequestContent | AsyncRequestContent | None = None
     data: RequestData = None
     json: Any = None

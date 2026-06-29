@@ -22,7 +22,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - query parameters from mappings, repeated pairs, and raw query strings
 - JSON bodies through `json=`
 - form-urlencoded bodies through mapping or repeated-pair `data=`
-- raw bytes/text bodies through `content=`
+- raw bytes/text, binary file-like, sync bytes-like iterable, and async bytes-like iterable
+  bodies through `content=`
 - buffered responses
 - transparent `gzip`, `deflate`, and `br` decoding for buffered responses
 - sync response streaming through `Client.stream()`
@@ -65,10 +66,10 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | Feature | Current behavior |
 |---|---|
 | Streaming response decompression | Not available; buffered responses support transparent decoding |
-| Streaming uploads | Not available; request bodies are buffered |
 | Multipart uploads | Not available |
 | `files=` | Reserved in the body matrix; not available yet |
-| Upload typing contracts | Public provider/factory and multipart aliases are available for planned upload APIs, but they do not enable runtime streaming uploads yet |
+| Streaming uploads | Available through `content=` for binary file-like objects, sync bytes-like iterables, zero-arg byte-stream factories, and async bytes-like iterables/factories on `AsyncClient`; direct stream/file bodies are non-replayable for method-preserving redirects, while factories can replay by returning a fresh stream |
+| Upload typing contracts | Public provider/factory and multipart aliases are available for streaming `content=` and planned multipart APIs |
 | Cookie jar | `cookies=True` is rejected |
 | Plain HTTP proxy routing | Available for `http://` targets through explicit `proxy=` or `trust_env=True` environment config |
 | HTTPS proxy `CONNECT` | Available for `https://` targets through explicit `proxy=` or `trust_env=True` when the proxy endpoint itself uses `http://`; TLS is validated against the target host |
@@ -83,7 +84,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | request body source conflicts | Only one body source can be passed today: `json=`, `data=`, or `content=` |
 | true active connection-level limits | `max_active_requests_per_origin` limits buffered request slots; socket lifecycle telemetry is observable, but FogHTTP does not yet expose separate physical connection limits |
 | per-request connect timeout changes | `Timeouts.connect` configures the Rust connector from client-level settings when transport state is created; per-request `timeout.connect` does not reconfigure the connector |
-| separate read/write timeout semantics | `Timeouts.read` is implemented as a buffered and streamed response body progress timeout; `Timeouts.write` is implemented for buffered request body write progress through an isolated no-idle transport path, while streaming upload remains future work |
+| separate read/write timeout semantics | `Timeouts.read` is implemented as a buffered and streamed response body progress timeout; `Timeouts.write` is implemented for buffered request body write progress and streaming upload chunk/write progress |
 | socket lifecycle telemetry granularity | `TransportStats` and `dump_transport_state()["origins"]` expose opened, open-failed, closed, reused, aborted, active, and idle tracked connection counters for the current HTTP/1 path; these are connector/lifecycle diagnostics, not a stable public view into Hyper's private pool internals |
 | telemetry hook granularity | `TelemetryConfig` currently dispatches Python-level request/response lifecycle events; lower-level Rust pool acquire and connection lifecycle event delivery is planned before Prometheus/OpenTelemetry exporters |
 | diagnostic snapshot transactionality | `stats()`, `dump_transport_state()`, and `dump_pool_diagnostics()` include `schema_version` and a monotonic `snapshot_sequence`, but the `dump_*` APIs remain diagnostic snapshots rather than lock-protected SLA transactions; use `stats()` for alert-oriented low-cardinality metrics |
@@ -96,7 +97,8 @@ Use FogHTTP today when:
 - responses are small enough to buffer in memory or can be consumed through the
   bytes/text/line streaming API; line streaming has a bounded per-line buffer by
   default
-- requests are JSON-heavy or use small form-urlencoded bodies
+- requests are JSON-heavy, use small form-urlencoded bodies, or need explicit
+  streaming upload bodies
 - redirects are simple and do not require cookie jar or auth helper integration
 - sync and async clients with explicit lifecycle are enough
 - async request cancellation and sync/async stream cleanup behavior are useful
@@ -108,12 +110,10 @@ Use FogHTTP today when:
 Wait before using FogHTTP when:
 
 - you need transparent streaming decompression
-- you upload large files
 - you need SOCKS, PAC, WPAD, or platform proxy discovery
 - you rely on cookies across requests
-- you need multipart form-data or large uploads
-- you need per-request connect timeout reconfiguration or streaming upload
-  write timeout semantics
+- you need multipart form-data
+- you need per-request connect timeout reconfiguration
 - you need automatic compression negotiation instead of manual
   `Accept-Encoding`
 - you need strict active per-host connection limits
@@ -123,10 +123,10 @@ Wait before using FogHTTP when:
 
 Network and protocol failures map to `RequestError`. Pool acquire timeout and
 queue-full conditions map to `PoolTimeout`. Response body progress timeout maps
-to `ReadTimeout` for buffered responses and streamed body chunks. Buffered
-request body write progress timeout maps to `WriteTimeout`. The broader
+to `ReadTimeout` for buffered responses and streamed body chunks. Buffered and
+streamed request body write progress timeout maps to `WriteTimeout`. The broader
 buffered transport deadline maps to the base `TimeoutError` with phase-aware
-diagnostics; for streaming it covers acquire, redirects, and response headers
-before the stream is returned. Dedicated connect timeout exception mapping is
+diagnostics; for streaming responses it covers acquire, redirects, and response
+headers before the stream is returned. Dedicated connect timeout exception mapping is
 reserved for later timeout work. See
 [Timeout model](./timeouts.md) for the current behavior.

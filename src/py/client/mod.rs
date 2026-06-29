@@ -9,6 +9,7 @@ mod runtime;
 mod streams;
 mod timeout_diagnostics;
 mod transport;
+mod upload_body;
 
 use crate::core::client::{build_client, build_write_timeout_client, ClientOptions};
 use crate::core::headers::HeaderPairs;
@@ -37,6 +38,7 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 
 pub use streams::RawStreamResponse;
+pub use upload_body::RawUploadBody;
 
 #[pyclass]
 pub struct RawClient {
@@ -168,6 +170,7 @@ impl RawClient {
         url: String,
         headers: HeaderPairs,
         body: Option<Vec<u8>>,
+        body_stream: Option<Py<RawUploadBody>>,
         body_replayable: bool,
         use_proxy_transport: bool,
         proxy_policy: String,
@@ -201,6 +204,7 @@ impl RawClient {
                         url,
                         headers,
                         body,
+                        body_stream,
                         body_replayable,
                         use_proxy_transport,
                         proxy_policy,
@@ -230,6 +234,7 @@ impl RawClient {
         url: String,
         headers: HeaderPairs,
         body: Option<Vec<u8>>,
+        body_stream: Option<Py<RawUploadBody>>,
         body_replayable: bool,
         use_proxy_transport: bool,
         proxy_policy: String,
@@ -261,6 +266,7 @@ impl RawClient {
                     url,
                     headers,
                     body,
+                    body_stream,
                     body_replayable,
                     use_proxy_transport,
                     proxy_policy,
@@ -285,6 +291,7 @@ impl RawClient {
         url: String,
         headers: HeaderPairs,
         body: Option<Vec<u8>>,
+        body_stream: Option<Py<RawUploadBody>>,
         body_replayable: bool,
         use_proxy_transport: bool,
         proxy_policy: String,
@@ -324,6 +331,7 @@ impl RawClient {
                         url,
                         headers,
                         body,
+                        body_stream,
                         body_replayable,
                         use_proxy_transport,
                         proxy_policy,
@@ -356,6 +364,7 @@ impl RawClient {
         url: String,
         headers: HeaderPairs,
         body: Option<Vec<u8>>,
+        body_stream: Option<Py<RawUploadBody>>,
         body_replayable: bool,
         use_proxy_transport: bool,
         proxy_policy: String,
@@ -388,6 +397,7 @@ impl RawClient {
                     url,
                     headers,
                     body,
+                    body_stream,
                     body_replayable,
                     use_proxy_transport,
                     proxy_policy,

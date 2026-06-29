@@ -1,5 +1,6 @@
 __all__ = ("RequestBuilder",)
 
+from ..._request_body import RequestBody
 from ...body import encode_body
 from ...headers import Headers, HeaderSource
 from ...request import Request
@@ -23,11 +24,11 @@ class RequestBuilder:
         request_headers = self._build_headers(options.headers)
         validate_safe_request_headers(request_headers)
         body = self._build_body(options, request_headers)
-        return Request(
+        return Request._from_body(  # noqa: SLF001
             options.method,
             request_url,
             headers=request_headers,
-            content=body,
+            body=body,
         )
 
     def _build_url(self, url: str | URL, params: QueryParams) -> str:
@@ -36,7 +37,7 @@ class RequestBuilder:
     def _build_headers(self, headers: HeaderSource) -> Headers:
         return self._merge_contract.headers(headers)
 
-    def _build_body(self, options: RequestBuildOptions, headers: Headers) -> bytes | None:
+    def _build_body(self, options: RequestBuildOptions, headers: Headers) -> RequestBody:
         return encode_body(
             content=options.content,
             data=options.data,
