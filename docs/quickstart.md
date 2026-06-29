@@ -686,8 +686,8 @@ with foghttp.Client(telemetry=foghttp.TelemetryConfig(sink=Sink())) as client:
 ```
 
 `Timeouts.connect` is client-level connector configuration. Per-request
-`timeout=` currently affects `pool`, `read`, and `total`, not `connect` or
-`write`. See [Timeout model](./timeouts.md) for the detailed current contract
+`timeout=` currently affects `pool`, `read`, `write`, and `total`, not
+`connect`. See [Timeout model](./timeouts.md) for the detailed current contract
 and limitations.
 
 ## Runtime Workers

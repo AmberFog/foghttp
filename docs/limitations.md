@@ -53,8 +53,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - explicit `close()`/`aclose()` lifecycle for Rust runtime and pool resources;
   sync `close()` waits for in-flight sync requests, while async `aclose()`
   cancels in-flight async requests; see [Client lifecycle](./lifecycle.md)
-- documented current timeout model for client-level `connect`, per-request
-  `pool`/`read`/`total`, and reserved `write`; see
+- documented current timeout model for client-level `connect` and per-request
+  `pool`/`read`/`write`/`total`; see
   [Timeout model](./timeouts.md)
 - advanced `runtime_workers` tuning for the per-client Tokio runtime
 - reusable HTTP method constants through `foghttp.methods`
@@ -82,7 +82,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | request body source conflicts | Only one body source can be passed today: `json=`, `data=`, or `content=` |
 | true active connection-level limits | `max_active_requests_per_origin` limits buffered request slots; socket lifecycle telemetry is observable, but FogHTTP does not yet expose separate physical connection limits |
 | per-request connect timeout changes | `Timeouts.connect` configures the Rust connector from client-level settings when transport state is created; per-request `timeout.connect` does not reconfigure the connector |
-| separate read/write timeout semantics | `Timeouts.read` is implemented as a buffered and streamed response body progress timeout; `Timeouts.write` is reserved for later streaming upload/body work |
+| separate read/write timeout semantics | `Timeouts.read` is implemented as a buffered and streamed response body progress timeout; `Timeouts.write` is implemented for buffered request body write progress through an isolated no-idle transport path, while streaming upload remains future work |
 | socket lifecycle telemetry granularity | `TransportStats` and `dump_transport_state()["origins"]` expose opened, open-failed, closed, reused, aborted, active, and idle tracked connection counters for the current HTTP/1 path; these are connector/lifecycle diagnostics, not a stable public view into Hyper's private pool internals |
 | telemetry hook granularity | `TelemetryConfig` currently dispatches Python-level request/response lifecycle events; lower-level Rust pool acquire and connection lifecycle event delivery is planned before Prometheus/OpenTelemetry exporters |
 | diagnostic snapshot transactionality | `stats()`, `dump_transport_state()`, and `dump_pool_diagnostics()` include `schema_version` and a monotonic `snapshot_sequence`, but the `dump_*` APIs remain diagnostic snapshots rather than lock-protected SLA transactions; use `stats()` for alert-oriented low-cardinality metrics |
@@ -111,8 +111,8 @@ Wait before using FogHTTP when:
 - you need SOCKS, PAC, WPAD, or platform proxy discovery
 - you rely on cookies across requests
 - you need multipart form-data or large uploads
-- you need per-request connect timeout reconfiguration or request-body write
-  timeout semantics
+- you need per-request connect timeout reconfiguration or streaming upload
+  write timeout semantics
 - you need automatic compression negotiation instead of manual
   `Accept-Encoding`
 - you need strict active per-host connection limits
@@ -122,9 +122,10 @@ Wait before using FogHTTP when:
 
 Network and protocol failures map to `RequestError`. Pool acquire timeout and
 queue-full conditions map to `PoolTimeout`. Response body progress timeout maps
-to `ReadTimeout` for buffered responses and streamed body chunks. The broader
+to `ReadTimeout` for buffered responses and streamed body chunks. Buffered
+request body write progress timeout maps to `WriteTimeout`. The broader
 buffered transport deadline maps to the base `TimeoutError` with phase-aware
 diagnostics; for streaming it covers acquire, redirects, and response headers
-before the stream is returned. Dedicated connect/write timeout exception
-mappings are reserved for later timeout work. See
+before the stream is returned. Dedicated connect timeout exception mapping is
+reserved for later timeout work. See
 [Timeout model](./timeouts.md) for the current behavior.

@@ -207,6 +207,7 @@ def test_raw_client_sync_request_rejects_invalid_timeout_without_panic(faker: Fa
                 math.nan,
                 1.0,
                 1.0,
+                1.0,
             )
     finally:
         raw_client.close()
@@ -227,6 +228,31 @@ def test_raw_client_sync_request_rejects_invalid_read_timeout_without_panic(fake
                 REQUEST_BODY_REPLAYABLE,
                 USE_PROXY_TRANSPORT,
                 PROXY_TRANSPORT_POLICY,
+                1.0,
+                math.nan,
+                1.0,
+                1.0,
+            )
+    finally:
+        raw_client.close()
+
+
+def test_raw_client_sync_request_rejects_invalid_write_timeout_without_panic(faker: Faker) -> None:
+    raw_client = _raw_client()
+    try:
+        with pytest.raises(
+            ValueError,
+            match=r"Timeouts\.write must be a finite number between 0 and",
+        ):
+            raw_client.request(
+                GET,
+                faker.url(),
+                [],
+                None,
+                REQUEST_BODY_REPLAYABLE,
+                USE_PROXY_TRANSPORT,
+                PROXY_TRANSPORT_POLICY,
+                1.0,
                 1.0,
                 math.nan,
                 1.0,
@@ -252,6 +278,7 @@ async def test_raw_client_async_request_rejects_invalid_timeout_without_panic(
                 REQUEST_BODY_REPLAYABLE,
                 USE_PROXY_TRANSPORT,
                 PROXY_TRANSPORT_POLICY,
+                1.0,
                 1.0,
                 1.0,
                 math.inf,

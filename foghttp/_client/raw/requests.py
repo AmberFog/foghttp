@@ -44,6 +44,7 @@ def send_raw_request(
             request.proxy_policy.value,
             request.timeouts.pool,
             request.timeouts.read,
+            request.timeouts.write,
             request.timeouts.total,
         )
     except _foghttp.FogHttpError as exc:
@@ -66,6 +67,7 @@ def send_raw_stream_request(
             request.proxy_policy.value,
             request.timeouts.pool,
             request.timeouts.read,
+            request.timeouts.write,
             request.timeouts.total,
         )
     except _foghttp.FogHttpError as exc:
@@ -88,6 +90,7 @@ async def send_raw_request_async(
             request.proxy_policy.value,
             request.timeouts.pool,
             request.timeouts.read,
+            request.timeouts.write,
             request.timeouts.total,
         )
     except _foghttp.FogHttpError as exc:
@@ -110,6 +113,7 @@ async def send_raw_stream_request_async(
             request.proxy_policy.value,
             request.timeouts.pool,
             request.timeouts.read,
+            request.timeouts.write,
             request.timeouts.total,
         )
     except _foghttp.FogHttpError as exc:

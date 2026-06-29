@@ -10,7 +10,11 @@ from .constants import (
     RECOVERY_TOTAL_TIMEOUT,
     SENSITIVE_QUERY,
     SLOW_RESPONSE_PATH,
+    SLOW_UPLOAD_BODY_SIZE,
+    SLOW_UPLOAD_PATH,
     TOTAL_TIMEOUT,
+    WRITE_TIMEOUT,
+    WRITE_TIMEOUT_TOTAL,
 )
 from .helpers import (
     assert_timeout_diagnostic,
@@ -89,3 +93,29 @@ def test_sync_total_timeout_wins_over_longer_pool_timeout(
     assert final_stats.active_requests == 0
     assert final_stats.pending_requests == 0
     assert final_stats.pool_acquire_timeouts == 0
+
+
+def test_sync_request_body_write_timeout_maps_to_write_timeout(
+    sync_timeout_http_server: str,
+) -> None:
+    timeouts = foghttp.Timeouts(write=WRITE_TIMEOUT, total=WRITE_TIMEOUT_TOTAL)
+    body = b"x" * SLOW_UPLOAD_BODY_SIZE
+
+    with foghttp.Client(timeouts=timeouts) as client:
+        with pytest.raises(foghttp.WriteTimeout, match="request body write timeout expired") as exc_info:
+            client.post(sync_timeout_http_server + SLOW_UPLOAD_PATH, content=body)
+
+        stats_after_error = client.stats()
+        response = client.get(sync_timeout_http_server)
+        final_stats = client.stats()
+
+    assert_timeout_diagnostic(
+        exc_info.value,
+        phase="request_body",
+        origin=sync_timeout_http_server,
+        timeout=WRITE_TIMEOUT,
+    )
+    assert_timeout_error_stats(stats_after_error)
+    assert stats_after_error.connections_aborted == 1
+    assert response.status_code == OK
+    assert_timeout_recovery_stats(final_stats)

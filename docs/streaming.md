@@ -147,7 +147,8 @@ For streaming responses:
 - `total` covers acquire, redirect hops, and response headers before the
   streamed response is returned.
 - `read` controls progress while waiting for the next streamed body chunk.
-- `write` is still reserved for future streaming upload work.
+- `write` applies to buffered request body writes before the streamed response
+  is returned. Streaming uploads are still future work.
 
 `ReadTimeout` during `iter_bytes()` or `aiter_bytes()` aborts the streamed body
 and exposes `diagnostic.phase == "response_body"`.

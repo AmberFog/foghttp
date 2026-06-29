@@ -14,6 +14,7 @@ from foghttp.errors import (
     ResponseBodyBudgetExceededError,
     ResponseBodyTooLargeError,
     TimeoutError,
+    WriteTimeout,
 )
 from foghttp.limits import Limits
 from foghttp.methods import GET
@@ -23,6 +24,15 @@ from foghttp.timeouts import Timeouts
 READ_TIMEOUT_RAW_ARGS = (
     "response body read timeout expired",
     "response_body",
+    0.1,
+    0.1,
+    "https://example.com",
+    0,
+)
+
+WRITE_TIMEOUT_RAW_ARGS = (
+    "request body write timeout expired",
+    "request_body",
     0.1,
     0.1,
     "https://example.com",
@@ -109,6 +119,14 @@ class ReadTimeoutRawClient:
         raise _foghttp.FogHttpReadTimeoutError(READ_TIMEOUT_RAW_ARGS)
 
 
+class WriteTimeoutRawClient:
+    def request(self, *_args: object) -> object:
+        raise _foghttp.FogHttpWriteTimeoutError(WRITE_TIMEOUT_RAW_ARGS)
+
+    async def request_async(self, *_args: object) -> object:
+        raise _foghttp.FogHttpWriteTimeoutError(WRITE_TIMEOUT_RAW_ARGS)
+
+
 class MalformedReadTimeoutRawClient:
     def __init__(self, raw_args: tuple[object, ...]) -> None:
         self._raw_args = raw_args
@@ -190,6 +208,26 @@ async def test_async_raw_read_timeout_maps_to_public_read_timeout(faker: Faker) 
             raw_client=ReadTimeoutRawClient(),
             request=_raw_request(faker.url()),
         )
+
+
+def test_sync_raw_write_timeout_maps_to_public_write_timeout(faker: Faker) -> None:
+    with pytest.raises(WriteTimeout, match="request body write timeout expired") as exc_info:
+        send_raw_request(
+            raw_client=WriteTimeoutRawClient(),
+            request=_raw_request(faker.url()),
+        )
+
+    assert exc_info.value.phase == "request_body"
+
+
+async def test_async_raw_write_timeout_maps_to_public_write_timeout(faker: Faker) -> None:
+    with pytest.raises(WriteTimeout, match="request body write timeout expired") as exc_info:
+        await send_raw_request_async(
+            raw_client=WriteTimeoutRawClient(),
+            request=_raw_request(faker.url()),
+        )
+
+    assert exc_info.value.phase == "request_body"
 
 
 @pytest.mark.parametrize(

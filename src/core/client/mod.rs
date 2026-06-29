@@ -1,9 +1,14 @@
 mod proxy;
 mod telemetry;
+mod write_timeout;
 
 use proxy::parse_proxy_endpoint;
 pub(crate) use proxy::{HttpProxyConnector, HttpsTunnelConnector, ProxyTunnelTarget};
 pub(crate) use telemetry::{ConnectionTelemetry, ConnectionUseGuard, InstrumentedConnector};
+pub(crate) use write_timeout::{
+    request_write_timeout_from_error, with_request_write_timeout, RequestWriteTimeout,
+    RequestWriteTimeoutContext, RequestWriteTimeoutExecutor,
+};
 
 use crate::core::metrics::Metrics;
 use crate::core::numeric::duration_from_secs;
@@ -14,9 +19,12 @@ use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 pub type RequestBody = Full<Bytes>;
+type BoxSendFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
 type BaseConnector = HttpsConnector<HttpsTunnelConnector<HttpConnector>>;
 pub type HyperClient =
     Client<InstrumentedConnector<HttpProxyConnector<BaseConnector>>, RequestBody>;
@@ -35,6 +43,25 @@ pub struct ClientOptions {
 }
 
 pub fn build_client(options: &ClientOptions, metrics: Arc<Metrics>) -> Result<HyperClient, String> {
+    build_client_with_executor(options, metrics, TokioExecutor::new(), true)
+}
+
+pub fn build_write_timeout_client(
+    options: &ClientOptions,
+    metrics: Arc<Metrics>,
+) -> Result<HyperClient, String> {
+    build_client_with_executor(options, metrics, RequestWriteTimeoutExecutor, false)
+}
+
+fn build_client_with_executor<E>(
+    options: &ClientOptions,
+    metrics: Arc<Metrics>,
+    executor: E,
+    pool_idle_connections: bool,
+) -> Result<HyperClient, String>
+where
+    E: hyper::rt::Executor<BoxSendFuture> + Send + Sync + Clone + 'static,
+{
     let connect_timeout = duration_from_secs("Timeouts.connect", options.connect_timeout)?;
 
     let mut http = HttpConnector::new();
@@ -67,8 +94,8 @@ pub fn build_client(options: &ClientOptions, metrics: Arc<Metrics>) -> Result<Hy
     };
     let connector = InstrumentedConnector::new(proxy_connector, metrics);
 
-    let mut builder = Client::builder(TokioExecutor::new());
-    builder.pool_max_idle_per_host(if options.keepalive {
+    let mut builder = Client::builder(executor);
+    builder.pool_max_idle_per_host(if pool_idle_connections && options.keepalive {
         options.max_idle_connections_per_host
     } else {
         0

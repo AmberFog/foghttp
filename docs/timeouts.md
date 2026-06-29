@@ -2,8 +2,7 @@
 
 FogHTTP timeout settings are seconds as `float` values. The current timeout
 model covers buffered responses and sync/async response streaming. Streaming
-uploads, request-body write deadlines, and more specific connect/write timeout
-exception classes are planned later.
+uploads and more specific connect timeout exception mapping are planned later.
 
 ```python
 import foghttp
@@ -26,14 +25,14 @@ with foghttp.Client(timeouts=timeouts) as client:
 |---|---:|---|---|
 | `connect` | `2.0` | Client-level Rust connector TCP connect timeout. It is read when the lazy Rust transport is created from the client constructor settings. | No stable dedicated `ConnectTimeout` mapping yet; low-level connect failures can surface as `RequestError`, while the outer `total` deadline can raise `TimeoutError`. |
 | `pool` | `1.0` | Waiting for a global or per-origin active request slot. | `PoolTimeout` for acquire timeout or full pending queue. |
-| `total` | `30.0` | Buffered path: outer deadline for acquiring a request slot, waiting for response headers, and collecting the buffered response body for each transport hop. Stream path: acquire, redirect hops, and response headers before the stream is returned. The same budget is shared across redirect hops. | Base `TimeoutError`. |
+| `total` | `30.0` | Buffered path: outer deadline for acquiring a request slot, sending a buffered request body, waiting for response headers, and collecting the buffered response body for each transport hop. Stream path: acquire, redirect hops, request body send, and response headers before the stream is returned. The same budget is shared across redirect hops. | Base `TimeoutError`. |
 | `read` | `10.0` | Waiting for the next response body frame/chunk while collecting a buffered response body or consuming a streamed body. | `ReadTimeout`. |
-| `write` | `10.0` | Reserved for future request body write deadlines. | Not emitted separately today. |
+| `write` | `10.0` | Waiting for buffered request body write progress while the transport sends a non-empty request body. | `WriteTimeout`. |
 
-`PoolTimeout` and `ReadTimeout` are subclasses of `TimeoutError`. Catch the
-more specific subclasses first when application code wants to handle pool
-saturation or slow response bodies differently from the broader request
-deadline.
+`PoolTimeout`, `ReadTimeout`, and `WriteTimeout` are subclasses of
+`TimeoutError`. Catch the more specific subclasses first when application code
+wants to handle pool saturation, slow response bodies, or stalled request body
+uploads differently from the broader request deadline.
 
 ```python
 try:
@@ -43,6 +42,9 @@ except foghttp.PoolTimeout:
     raise
 except foghttp.ReadTimeout:
     # The upstream stopped making response body progress in time.
+    raise
+except foghttp.WriteTimeout:
+    # The transport stopped making request body write progress in time.
     raise
 except foghttp.TimeoutError:
     # The broader buffered transport deadline expired.
@@ -65,20 +67,20 @@ except foghttp.TimeoutError as exc:
         print(exc.elapsed, exc.timeout)
 ```
 
-Current diagnostic phases are `pool_acquire`, `response_headers`, and
-`response_body`; the exported `TimeoutPhase` type matches this current emitted
-set. The `origin` field is normalized and never includes path, query, userinfo,
-headers, or body data. `elapsed` and `timeout` are seconds, and `redirect_hop`
-is zero-based.
+Current diagnostic phases are `pool_acquire`, `response_headers`,
+`response_body`, and `request_body`; the exported `TimeoutPhase` type matches
+this current emitted set. The `origin` field is normalized and never includes
+path, query, userinfo, headers, or body data. `elapsed` and `timeout` are
+seconds, and `redirect_hop` is zero-based.
 
 ## Client Defaults And Request Overrides
 
 `Client(timeouts=...)` and `AsyncClient(timeouts=...)` define the default
 timeouts for requests sent by that client.
 
-Per-request `timeout=Timeouts(...)` currently affects `pool`, `read`, and
-`total` for that request. It does not change the Rust connector's `connect`
-timeout, and it does not activate separate `write` behavior.
+Per-request `timeout=Timeouts(...)` currently affects `pool`, `read`, `write`,
+and `total` for that request. It does not change the Rust connector's
+`connect` timeout.
 
 ```python
 default_timeouts = foghttp.Timeouts(
@@ -201,12 +203,14 @@ with foghttp.Client(limits=limits, timeouts=timeouts) as client:
 path. For buffered responses it wraps:
 
 - waiting for the acquire gate, together with `pool`
+- sending a buffered request body for the current hop, together with `write`
 - waiting for response headers for the current hop
 - collecting the buffered response body for the current hop
 - redirect hops as one shared budget
 
 For streaming responses, `total` wraps acquire, redirect hops, and response
-headers before the stream is returned. It does not cap the full
+headers before the stream is returned, including any buffered request body sent
+before those headers arrive. It does not cap the full
 application-level streaming consumption phase after headers. Async callers can
 use `asyncio.timeout()` around the streaming block when the whole download needs
 a wall-clock budget.
@@ -216,7 +220,10 @@ and FogHTTP raises the base `TimeoutError`, not `PoolTimeout`. The same base
 `TimeoutError` is raised when the shared total budget expires while reading the
 buffered response body. `TimeoutError.diagnostic.phase` identifies whether the
 deadline expired in `pool_acquire`, `response_headers`, or `response_body`; the
-diagnostic `timeout` value is the configured total timeout.
+diagnostic `timeout` value is the configured total timeout. If `total` expires
+while the request body is still being sent, the request has not reached response
+headers yet, so the current broader-total diagnostic phase remains
+`response_headers`; `WriteTimeout` is the dedicated stalled-write signal.
 
 ```python
 with foghttp.Client(timeouts=foghttp.Timeouts(pool=1.0, total=0.05)) as client:
@@ -307,22 +314,30 @@ guarantee a dedicated `ConnectTimeout` exception. Treat `Timeouts.total` as the
 public request budget and `Timeouts.connect` as lower-level connector
 configuration until the timeout exception split is expanded.
 
-## Reserved Write Timeout
+## Write Timeout
 
-`Timeouts.write` exists to preserve the public shape of the timeout model, but
-it is reserved today.
+`Timeouts.write` is a request body write progress timeout for buffered
+non-empty request bodies. When the underlying socket stops accepting write
+progress for longer than the configured value, FogHTTP aborts the connection
+and raises `WriteTimeout` with `diagnostic.phase == "request_body"`.
+Like other FogHTTP timeout values, `write=0.0` is a zero-duration timeout, not a
+disabled setting; it can fail immediately when request body write progress is
+blocked.
 
-It does not yet provide:
+The timeout is scoped to transport writes for the current request hop. It does
+not replace `Timeouts.total`; the broader total deadline still covers acquire,
+redirect hops, response headers, and buffered response body collection.
 
-- a request body upload write deadline
-- a write-specific exception
+To keep the per-request write deadline scoped to the request that owns the
+body, FogHTTP currently sends non-empty buffered request bodies through an
+isolated no-idle transport path. That avoids leaking one request's write
+deadline into a pooled connection reused by a later request. The observable
+tradeoff is that requests with non-empty buffered bodies are not currently a
+connection-reuse optimization path.
 
-`Timeouts.write` will become meaningful with the streaming upload work. Until
-then, use `Timeouts.total` as the shared buffered request deadline and async
-stream setup deadline, `Timeouts.read` as the response body progress deadline,
-`Limits.max_response_body_size` to bound one buffered response, and
-`Limits.max_buffered_response_bytes` to bound concurrent buffered response
-memory.
+Streaming uploads are still planned separately. Until streaming upload support
+lands, request bodies are buffered before they are sent, and `Timeouts.write`
+applies to writing that buffered body to the transport.
 
 ## Buffered Body Limit
 

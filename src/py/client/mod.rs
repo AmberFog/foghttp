@@ -10,7 +10,7 @@ mod streams;
 mod timeout_diagnostics;
 mod transport;
 
-use crate::core::client::{build_client, ClientOptions};
+use crate::core::client::{build_client, build_write_timeout_client, ClientOptions};
 use crate::core::headers::HeaderPairs;
 use crate::core::metrics::Metrics;
 use crate::core::response::BufferedBodyBudget;
@@ -107,17 +107,29 @@ impl RawClient {
         };
         let client =
             build_client(&client_options, Arc::clone(&metrics)).map_err(FogHttpError::new_err)?;
-        let proxy_client = if http_proxy_url.is_some() || https_proxy_url.is_some() {
-            let options = ClientOptions {
+        let write_timeout_client =
+            build_write_timeout_client(&client_options, Arc::clone(&metrics))
+                .map_err(FogHttpError::new_err)?;
+        let proxy_options = if http_proxy_url.is_some() || https_proxy_url.is_some() {
+            Some(ClientOptions {
                 http_proxy_url,
                 https_proxy_url,
                 https_proxy_authorization,
-                ..client_options
-            };
-            Some(build_client(&options, Arc::clone(&metrics)).map_err(FogHttpError::new_err)?)
+                ..client_options.clone()
+            })
         } else {
             None
         };
+        let proxy_client = proxy_options
+            .as_ref()
+            .map(|options| build_client(options, Arc::clone(&metrics)))
+            .transpose()
+            .map_err(FogHttpError::new_err)?;
+        let proxy_write_timeout_client = proxy_options
+            .as_ref()
+            .map(|options| build_write_timeout_client(options, Arc::clone(&metrics)))
+            .transpose()
+            .map_err(FogHttpError::new_err)?;
         let runtime = build_runtime(max_active_requests, runtime_workers)?;
         let buffered_body_budget =
             BufferedBodyBudget::new(max_buffered_response_bytes, Arc::clone(&metrics));
@@ -129,7 +141,12 @@ impl RawClient {
         );
 
         Ok(Self {
-            clients: Some(TransportClients::new(client, proxy_client)),
+            clients: Some(TransportClients::new(
+                client,
+                write_timeout_client,
+                proxy_client,
+                proxy_write_timeout_client,
+            )),
             runtime: Some(runtime),
             acquire_gate,
             metrics,
@@ -156,9 +173,10 @@ impl RawClient {
         proxy_policy: String,
         pool_timeout: f64,
         read_timeout: f64,
+        write_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<RawResponse> {
-        validate_request_timeouts(pool_timeout, read_timeout, total_timeout)?;
+        validate_request_timeouts(pool_timeout, read_timeout, write_timeout, total_timeout)?;
 
         let clients = self.clients()?.clone();
         let runtime = self.runtime()?;
@@ -189,6 +207,7 @@ impl RawClient {
                         proxy_authorization,
                         total_timeout,
                         read_timeout,
+                        write_timeout,
                         max_response_body_size,
                         buffered_body_budget,
                         follow_redirects,
@@ -216,9 +235,10 @@ impl RawClient {
         proxy_policy: String,
         pool_timeout: f64,
         read_timeout: f64,
+        write_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<Py<PyAny>> {
-        validate_request_timeouts(pool_timeout, read_timeout, total_timeout)?;
+        validate_request_timeouts(pool_timeout, read_timeout, write_timeout, total_timeout)?;
 
         let clients = self.clients()?.clone();
         let runtime = self.runtime()?;
@@ -247,6 +267,7 @@ impl RawClient {
                     proxy_authorization,
                     total_timeout,
                     read_timeout,
+                    write_timeout,
                     max_response_body_size,
                     buffered_body_budget,
                     follow_redirects,
@@ -269,9 +290,10 @@ impl RawClient {
         proxy_policy: String,
         pool_timeout: f64,
         read_timeout: f64,
+        write_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<RawStreamResponse> {
-        validate_request_timeouts(pool_timeout, read_timeout, total_timeout)?;
+        validate_request_timeouts(pool_timeout, read_timeout, write_timeout, total_timeout)?;
 
         let clients = self.clients()?.clone();
         let runtime = self.runtime()?;
@@ -308,6 +330,7 @@ impl RawClient {
                         proxy_authorization,
                         total_timeout,
                         read_timeout,
+                        write_timeout,
                         max_response_body_size,
                         buffered_body_budget,
                         follow_redirects,
@@ -338,9 +361,10 @@ impl RawClient {
         proxy_policy: String,
         pool_timeout: f64,
         read_timeout: f64,
+        write_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<Py<PyAny>> {
-        validate_request_timeouts(pool_timeout, read_timeout, total_timeout)?;
+        validate_request_timeouts(pool_timeout, read_timeout, write_timeout, total_timeout)?;
 
         let clients = self.clients()?.clone();
         let runtime = self.runtime()?;
@@ -370,6 +394,7 @@ impl RawClient {
                     proxy_authorization,
                     total_timeout,
                     read_timeout,
+                    write_timeout,
                     max_response_body_size,
                     buffered_body_budget,
                     follow_redirects,

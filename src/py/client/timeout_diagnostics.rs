@@ -1,5 +1,9 @@
+use crate::core::client::RequestWriteTimeout;
 use crate::core::numeric;
-use crate::errors::{FogHttpPoolTimeoutError, FogHttpReadTimeoutError, FogHttpTimeoutError};
+use crate::errors::{
+    FogHttpPoolTimeoutError, FogHttpReadTimeoutError, FogHttpTimeoutError, FogHttpWriteTimeoutError,
+};
+use crate::messages::REQUEST_BODY_WRITE_TIMEOUT;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::time::{Duration, Instant};
@@ -7,6 +11,7 @@ use std::time::{Duration, Instant};
 #[derive(Clone, Copy)]
 pub enum TimeoutPhase {
     PoolAcquire,
+    RequestBody,
     ResponseBody,
     ResponseHeaders,
 }
@@ -15,6 +20,7 @@ impl TimeoutPhase {
     fn as_str(self) -> &'static str {
         match self {
             Self::PoolAcquire => "pool_acquire",
+            Self::RequestBody => "request_body",
             Self::ResponseBody => "response_body",
             Self::ResponseHeaders => "response_headers",
         }
@@ -68,6 +74,17 @@ pub fn pool_timeout_error(context: &TimeoutContext<'_>, message: &'static str) -
 
 pub fn read_timeout_error(context: &TimeoutContext<'_>, message: &'static str) -> PyErr {
     FogHttpReadTimeoutError::new_err(context.args(message))
+}
+
+pub fn write_timeout_error(timeout: &RequestWriteTimeout) -> PyErr {
+    FogHttpWriteTimeoutError::new_err((
+        REQUEST_BODY_WRITE_TIMEOUT.to_owned(),
+        TimeoutPhase::RequestBody.as_str().to_owned(),
+        timeout.elapsed(),
+        timeout.timeout(),
+        timeout.origin().to_owned(),
+        timeout.redirect_hop(),
+    ))
 }
 
 pub fn remaining_duration(name: &str, context: &TimeoutContext<'_>) -> PyResult<Duration> {

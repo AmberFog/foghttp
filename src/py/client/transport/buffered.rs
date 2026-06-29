@@ -1,10 +1,12 @@
 use super::client::TransportClients;
 use super::context::RawResponseContext;
+use super::errors::transport_error;
 use super::request::{RequestState, TransportRequest};
 use super::response::raw_response;
+use crate::core::client::with_request_write_timeout;
 use crate::core::metrics::Metrics;
 use crate::core::request::build_request;
-use crate::errors::{transport_error_message, FogHttpError};
+use crate::errors::FogHttpError;
 use crate::messages::{redirect_limit_exceeded, REQUEST_TOTAL_TIMEOUT};
 use crate::py::client::acquire::AcquireGate;
 use crate::py::client::redirects::{redirect_decision, RedirectDecision};
@@ -47,7 +49,6 @@ pub async fn send_request(
             let origin_metrics = permit.origin_metrics();
             let request_info = state.request_info();
             let use_proxy_transport = state.use_proxy_transport_for_current_url()?;
-            let client = clients.select(use_proxy_transport)?;
             let request = build_request(state.request_parts(use_proxy_transport))?;
 
             let response_headers_timeout_context = TimeoutContext::new(
@@ -57,13 +58,15 @@ pub async fn send_request(
                 &origin,
                 redirect_hop,
             );
+            let write_timeout_context = state.write_timeout_context(&origin, redirect_hop);
+            let client = clients.select(use_proxy_transport, write_timeout_context.is_some())?;
             let response = tokio::time::timeout(
                 remaining_duration("Timeouts.total", &response_headers_timeout_context)?,
-                client.request(request),
+                with_request_write_timeout(write_timeout_context, client.request(request)),
             )
             .await
             .map_err(|_| timeout_error(&response_headers_timeout_context, REQUEST_TOTAL_TIMEOUT))?
-            .map_err(|err| FogHttpError::new_err(transport_error_message(&err)))?;
+            .map_err(|err| transport_error(&err))?;
 
             raw_response(
                 response,

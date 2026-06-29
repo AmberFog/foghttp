@@ -14,6 +14,7 @@ __all__ = (
     "ResponseError",
     "TimeoutError",
     "UnclosedClientError",
+    "WriteTimeout",
 )
 
 from .base import FogHTTPError, RequestError
@@ -24,4 +25,4 @@ from .response import (
     ResponseBodyTooLargeError,
     ResponseError,
 )
-from .timeout import ConnectTimeout, PoolTimeout, ReadTimeout, TimeoutError
+from .timeout import ConnectTimeout, PoolTimeout, ReadTimeout, TimeoutError, WriteTimeout

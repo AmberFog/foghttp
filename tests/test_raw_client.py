@@ -48,6 +48,7 @@ RAW_REQUEST_ARGUMENTS = (
     "proxy_policy",
     "pool_timeout",
     "read_timeout",
+    "write_timeout",
     "total_timeout",
 )
 
@@ -222,7 +223,7 @@ def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker:
             captured_options.update(dict(zip(RAW_REQUEST_ARGUMENTS, args, strict=True)))
             return raw_response
 
-    timeouts = Timeouts(connect=2.5, pool=3.5, read=4.5, total=5.5)
+    timeouts = Timeouts(connect=2.5, pool=3.5, read=4.5, write=5.5, total=6.5)
     url = faker.url()
     body = faker.binary(length=8)
     body_replayable = False
@@ -248,6 +249,7 @@ def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker:
         "proxy_policy": ProxyTransportPolicy.DIRECT.value,
         "pool_timeout": timeouts.pool,
         "read_timeout": timeouts.read,
+        "write_timeout": timeouts.write,
         "total_timeout": timeouts.total,
     }
 
@@ -261,7 +263,7 @@ async def test_send_raw_request_async_passes_request_timeouts_without_connect_ti
             captured_options.update(dict(zip(RAW_REQUEST_ARGUMENTS, args, strict=True)))
             return raw_response
 
-    timeouts = Timeouts(connect=2.5, pool=3.5, read=4.5, total=5.5)
+    timeouts = Timeouts(connect=2.5, pool=3.5, read=4.5, write=5.5, total=6.5)
     url = faker.url()
 
     response = await send_raw_request_async(
@@ -280,6 +282,7 @@ async def test_send_raw_request_async_passes_request_timeouts_without_connect_ti
         "proxy_policy": ProxyTransportPolicy.DIRECT.value,
         "pool_timeout": timeouts.pool,
         "read_timeout": timeouts.read,
+        "write_timeout": timeouts.write,
         "total_timeout": timeouts.total,
     }
 
