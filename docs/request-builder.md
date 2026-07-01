@@ -155,8 +155,11 @@ objects and streams passed through `content=` are request-scope body providers;
 FogHTTP closes them after the request attempt.
 
 FogHTTP manages the multipart boundary. If you provide a `content-type` for a
-multipart upload, it must be a `multipart/*` media type without a `boundary=`
+multipart upload, it must be `multipart/form-data` without a `boundary=`
 parameter; FogHTTP appends the boundary that matches the encoded body.
+Multipart field names, filenames, and part content types are currently limited
+to printable ASCII header values. Control characters, bidirectional formatting
+controls, and non-ASCII names are rejected before the request is sent.
 
 ## Prepared Requests
 
@@ -198,7 +201,8 @@ Rust client, or consume pool/request slots.
 | `data={}`, `data=[]` | empty form-urlencoded body |
 | `data=` mapping or repeated pairs | form-urlencoded body |
 | `data=` bytes or string | raw buffered body |
-| `files=` mapping or repeated pairs | multipart body |
+| `files={}`, `files=[]` | empty multipart/form-data body |
+| `files=` mapping or repeated pairs | multipart/form-data body |
 | `files=` plus mapping or repeated-pair `data=` | multipart body with form fields |
 | `files=` plus raw bytes/string `data=` | `TypeError` |
 | more than one incompatible source among `json=`, `data=`, `content=`, and `files=` | `ValueError` |

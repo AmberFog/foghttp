@@ -1,10 +1,12 @@
 import asyncio
 from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import replace
+from inspect import isawaitable
 from typing import cast
 
 from .._upload_body.feeders import close_async_source, close_sync_source
 from .._upload_body.predicates import is_async_stream
+from ..messages import MULTIPART_FILES_UNSUPPORTED
 from .constants import CRLF
 from .encoding import closing_boundary, file_header
 from .iterators import (
@@ -42,7 +44,7 @@ class AsyncMultipartStream:
         return self._iterate()
 
     async def aclose(self) -> None:
-        close_tasks = [close_async_source(file.content) for file in self._payload.files if file.close_source]
+        close_tasks = [_close_file_content(file) for file in self._payload.files if file.close_source]
         if close_tasks:
             await asyncio.gather(*close_tasks)
 
@@ -76,6 +78,13 @@ def multipart_buffer(payload: MultipartPayload) -> bytes:
     return b"".join(MultipartStream(payload))
 
 
+async def _close_file_content(file: MultipartFile) -> None:
+    if file.async_source:
+        await close_async_source(file.content)
+        return
+    close_sync_source(file.content)
+
+
 def _fresh_payload(payload: MultipartPayload) -> MultipartPayload:
     files = tuple(_fresh_file(file) for file in payload.files)
     return replace(payload, files=files)
@@ -86,6 +95,9 @@ def _fresh_file(file: MultipartFile) -> MultipartFile:
         return file
     source_factory = cast("Callable[[], object]", file.content)
     content = source_factory()
+    if isawaitable(content):
+        close_sync_source(content)
+        raise TypeError(MULTIPART_FILES_UNSUPPORTED)
     return replace(
         file,
         content=content,

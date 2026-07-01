@@ -70,6 +70,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | Streaming response decompression | Not available; buffered responses support transparent decoding |
 | Multipart uploads | Available through `files=` for bytes-like parts, binary file-like objects, direct byte streams, and byte-stream factories |
 | `files=` | Available; can be combined with mapping or repeated-pair `data=` form fields, but not with raw `data=`, `content=`, or `json=` |
+| Multipart header values | Field names, filenames, and part content types are currently limited to printable ASCII; non-ASCII filenames need a later compatibility design |
 | Streaming uploads | Available through `content=` for binary file-like objects, sync bytes-like iterables, zero-arg byte-stream factories, and async bytes-like iterables/factories on `AsyncClient`; direct stream/file bodies are non-replayable for method-preserving redirects, while factories can replay by returning a fresh stream |
 | Upload typing contracts | Public provider/factory and multipart aliases are available for streaming `content=` and multipart `files=` APIs |
 | Cookie jar | `cookies=True` is rejected |

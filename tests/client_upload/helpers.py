@@ -5,6 +5,7 @@ __all__ = (
     "FilenoOnly",
     "OversizedTellFile",
     "ReadOnlyFile",
+    "RecordingRawUploadBody",
     "RetryingAsyncRawBody",
 )
 
@@ -41,6 +42,21 @@ class RetryingAsyncRawBody:
 
     def is_closed(self) -> bool:
         return self._closed
+
+
+class RecordingRawUploadBody:
+    def __init__(
+        self,
+        _content_length: int | None,
+        start_callback: object,
+        _replayable: object,
+        _ready_callback: object,
+    ) -> None:
+        self.start_callback = start_callback
+        self.closed: bool = False
+
+    def close(self) -> None:
+        self.closed = True
 
 
 class FilenoOnly:

@@ -55,7 +55,7 @@ MULTIPART_FILES_UNSUPPORTED = (
 )
 MULTIPART_CONTENT_TYPE_BOUNDARY_UNSUPPORTED = "multipart content-type boundary is managed by FogHTTP"
 MULTIPART_CONTENT_TYPE_UNSUPPORTED = "files require a multipart content-type"
-MULTIPART_HEADER_VALUE_UNSUPPORTED = "multipart field names, filenames, and content types must be safe strings"
+MULTIPART_HEADER_VALUE_UNSUPPORTED = "multipart field names, filenames, and content types must be printable ASCII"
 POOL_ACQUIRE_QUEUE_FULL = "request acquire queue is full"
 POOL_ACQUIRE_TIMEOUT = "request acquire timeout expired"
 RUNTIME_WORKERS_ENV_INVALID = "FOGHTTP_RUNTIME_WORKERS must be an integer between 1 and 32"

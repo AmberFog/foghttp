@@ -112,6 +112,65 @@ def test_multipart_stream_closes_owned_sync_source() -> None:
     assert source.closed is True
 
 
+def test_multipart_stream_emits_exact_wire_bytes_for_field_and_file() -> None:
+    payload = MultipartPayload(
+        boundary="boundary",
+        fields=(MultipartField(name="description", content=b"avatar"),),
+        files=(
+            MultipartFile(
+                name="file",
+                filename="avatar.txt",
+                content=b"payload",
+                content_type="text/plain",
+                content_length=len(b"payload"),
+                replayable=True,
+                async_source=False,
+            ),
+        ),
+    )
+
+    assert b"".join(MultipartStream(payload)) == (
+        b"--boundary\r\n"
+        b'Content-Disposition: form-data; name="description"\r\n'
+        b"\r\n"
+        b"avatar\r\n"
+        b"--boundary\r\n"
+        b'Content-Disposition: form-data; name="file"; filename="avatar.txt"\r\n'
+        b"Content-Type: text/plain\r\n"
+        b"\r\n"
+        b"payload\r\n"
+        b"--boundary--\r\n"
+    )
+
+
+def test_multipart_stream_escapes_quoted_header_parameters() -> None:
+    payload = MultipartPayload(
+        boundary="boundary",
+        fields=(),
+        files=(
+            MultipartFile(
+                name='field"name',
+                filename='path\\file"name.txt',
+                content=b"",
+                content_type="application/octet-stream",
+                content_length=0,
+                replayable=True,
+                async_source=False,
+            ),
+        ),
+    )
+
+    assert b"".join(MultipartStream(payload)) == (
+        b"--boundary\r\n"
+        b'Content-Disposition: form-data; name="field\\"name"; '
+        b'filename="path\\\\file\\"name.txt"\r\n'
+        b"Content-Type: application/octet-stream\r\n"
+        b"\r\n"
+        b"\r\n"
+        b"--boundary--\r\n"
+    )
+
+
 async def test_async_multipart_stream_iterates_sync_and_async_sources() -> None:
     payload = MultipartPayload(
         boundary="boundary",
@@ -195,6 +254,31 @@ async def test_async_multipart_stream_closes_owned_async_source() -> None:
                     content_length=None,
                     replayable=False,
                     async_source=True,
+                    close_source=True,
+                ),
+            ),
+        ),
+    )
+
+    await stream.aclose()
+    assert source.closed is True
+
+
+async def test_async_multipart_stream_closes_owned_sync_source() -> None:
+    source = SyncChunks((b"payload",))
+    stream = AsyncMultipartStream(
+        MultipartPayload(
+            boundary="boundary",
+            fields=(),
+            files=(
+                MultipartFile(
+                    name="file",
+                    filename="payload.bin",
+                    content=source,
+                    content_type="application/octet-stream",
+                    content_length=None,
+                    replayable=False,
+                    async_source=False,
                     close_source=True,
                 ),
             ),

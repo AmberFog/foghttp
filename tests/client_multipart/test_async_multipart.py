@@ -1,8 +1,12 @@
 import asyncio
+from collections.abc import AsyncIterator
+import time
+from typing import Any, cast
 
 import pytest
 
 import foghttp
+from foghttp.messages import MULTIPART_FILES_UNSUPPORTED
 from foghttp.methods import POST
 from foghttp.status_codes.redirect import TEMPORARY_REDIRECT
 from foghttp.status_codes.success import OK
@@ -12,9 +16,17 @@ from tests.client_multipart.assertions import (
     parse_multipart_parts,
 )
 from tests.client_multipart.models import MultipartPart
-from tests.client_multipart.sources import AsyncChunks, BlockingSyncChunks, ClosingBytesFile
+from tests.client_multipart.sources import AsyncChunks, BlockingAsyncChunks, BlockingSyncChunks, ClosingBytesFile
 from tests.redirect_helpers import SECURITY_HEADERS_PATH
 from tests.support.transport_stats import wait_for_async_transport_stats
+
+
+EXPECTED_REPLAY_FACTORY_CALLS = 2
+CANCELLATION_TIMEOUT = 2.0
+MULTIPART_TOTAL_TIMEOUT = 3.0
+MULTIPART_WRITE_TIMEOUT = 0.05
+STALLED_PROVIDER_RETURN_LIMIT = 1.0
+STALLED_PROVIDER_SLEEP = 2.0
 
 
 async def test_async_client_sends_multipart_files_and_form_fields(http_server: str) -> None:
@@ -122,6 +134,40 @@ async def test_async_buffered_multipart_replays_method_preserving_redirect(http_
     )
 
 
+async def test_async_factory_multipart_replays_method_preserving_redirect(http_server: str) -> None:
+    sources: list[AsyncChunks] = []
+
+    def content() -> AsyncChunks:
+        source = AsyncChunks((b"factory",))
+        sources.append(source)
+        return source
+
+    async with foghttp.AsyncClient(follow_redirects=True) as client:
+        response = await client.post(
+            f"{http_server}/redirect/{TEMPORARY_REDIRECT}",
+            files={"file": ("factory.txt", content)},
+        )
+
+    assert response.status_code == OK
+    assert len(response.history) == 1
+    assert len(sources) == EXPECTED_REPLAY_FACTORY_CALLS
+    assert all(source.closed for source in sources)
+    assert_multipart_parts(
+        parse_multipart_parts(
+            content_type=response.request.headers["content-type"],
+            body=response.json()["body"].encode(),
+        ),
+        [
+            MultipartPart(
+                name="file",
+                filename="factory.txt",
+                content=b"factory",
+                content_type="application/octet-stream",
+            ),
+        ],
+    )
+
+
 async def test_async_stream_response_accepts_multipart_upload(http_server: str) -> None:
     async with (
         foghttp.AsyncClient() as client,
@@ -160,7 +206,7 @@ async def test_async_multipart_cancellation_closes_sync_source(http_server: str)
         assert await asyncio.to_thread(source.started.wait, 2.0)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
-            await task
+            await asyncio.wait_for(task, timeout=CANCELLATION_TIMEOUT)
 
         assert source.closed is True
         assert await asyncio.to_thread(source.finished.wait, 2.0)
@@ -168,4 +214,109 @@ async def test_async_multipart_cancellation_closes_sync_source(http_server: str)
             client,
             lambda stats: stats.active_requests == 0 and stats.pending_requests == 0,
             message="multipart upload cancellation did not release request slot",
+        )
+
+
+async def test_async_multipart_cancellation_keeps_direct_async_source_open(http_server: str) -> None:
+    source = BlockingAsyncChunks((b"first", b"second"))
+
+    async with foghttp.AsyncClient() as client:
+        task = asyncio.create_task(
+            client.post(
+                f"{http_server}{SECURITY_HEADERS_PATH}",
+                files={"file": ("slow.bin", source)},
+            ),
+        )
+
+        await asyncio.wait_for(source.started.wait(), timeout=2.0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=CANCELLATION_TIMEOUT)
+
+        assert source.closed is False
+        await asyncio.wait_for(source.finished.wait(), timeout=2.0)
+        await wait_for_async_transport_stats(
+            client,
+            lambda stats: stats.active_requests == 0 and stats.pending_requests == 0,
+            message="multipart upload cancellation did not release request slot",
+        )
+
+
+async def test_async_multipart_cancellation_closes_factory_async_source(http_server: str) -> None:
+    source_created = asyncio.Event()
+    sources: list[BlockingAsyncChunks] = []
+
+    def source_factory() -> BlockingAsyncChunks:
+        source = BlockingAsyncChunks((b"first", b"second"))
+        sources.append(source)
+        source_created.set()
+        return source
+
+    async with foghttp.AsyncClient() as client:
+        task = asyncio.create_task(
+            client.post(
+                f"{http_server}{SECURITY_HEADERS_PATH}",
+                files={"file": ("slow.bin", source_factory)},
+            ),
+        )
+
+        await asyncio.wait_for(source_created.wait(), timeout=2.0)
+        source = sources[0]
+        await asyncio.wait_for(source.started.wait(), timeout=2.0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=CANCELLATION_TIMEOUT)
+
+        assert source.closed is True
+        await asyncio.wait_for(source.finished.wait(), timeout=2.0)
+        await wait_for_async_transport_stats(
+            client,
+            lambda stats: stats.active_requests == 0 and stats.pending_requests == 0,
+            message="multipart upload cancellation did not release request slot",
+        )
+
+
+async def test_async_streaming_multipart_write_timeout_covers_stalled_provider(http_server: str) -> None:
+    async def content() -> AsyncIterator[bytes]:
+        yield b"first"
+        await asyncio.sleep(STALLED_PROVIDER_SLEEP)
+        yield b"second"
+
+    started = time.perf_counter()
+    async with foghttp.AsyncClient(
+        timeouts=foghttp.Timeouts(
+            write=MULTIPART_WRITE_TIMEOUT,
+            total=MULTIPART_TOTAL_TIMEOUT,
+        ),
+    ) as client:
+        with pytest.raises(foghttp.WriteTimeout, match="request body write timeout expired") as exc_info:
+            await client.post(
+                f"{http_server}{SECURITY_HEADERS_PATH}",
+                files={"file": ("slow.bin", content())},
+            )
+        await wait_for_async_transport_stats(
+            client,
+            lambda stats: stats.active_requests == 0 and stats.pending_requests == 0,
+            message="multipart write timeout did not release request slot",
+        )
+    elapsed = time.perf_counter() - started
+
+    assert exc_info.value.phase == "request_body"
+    assert elapsed < STALLED_PROVIDER_RETURN_LIMIT
+
+
+async def test_async_multipart_coroutine_factory_fails_cleanly(http_server: str) -> None:
+    async def invalid_part() -> AsyncChunks:
+        return AsyncChunks((b"invalid",))
+
+    async with foghttp.AsyncClient() as client:
+        with pytest.raises(TypeError, match=MULTIPART_FILES_UNSUPPORTED):
+            await client.post(
+                f"{http_server}{SECURITY_HEADERS_PATH}",
+                files=cast("Any", {"file": ("invalid.bin", invalid_part)}),
+            )
+        await wait_for_async_transport_stats(
+            client,
+            lambda stats: stats.active_requests == 0 and stats.pending_requests == 0,
+            message="multipart factory failure did not release request slot",
         )

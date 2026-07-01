@@ -5,6 +5,13 @@ from ..messages import MULTIPART_HEADER_VALUE_UNSUPPORTED, STREAMING_BODY_CHUNK_
 
 BACKSLASH = "\\"
 QUOTE = '"'
+_PRINTABLE_ASCII_START = 0x20
+_DEL = 0x7F
+
+
+def _is_header_value_char(char: str) -> bool:
+    codepoint = ord(char)
+    return _PRINTABLE_ASCII_START <= codepoint < _DEL
 
 
 def body_chunk(content: object) -> bytes:
@@ -18,7 +25,7 @@ def body_chunk(content: object) -> bytes:
 
 
 def header_value(value: str) -> str:
-    if "\r" in value or "\n" in value:
+    if not all(_is_header_value_char(char) for char in value):
         raise ValueError(MULTIPART_HEADER_VALUE_UNSUPPORTED)
     return value
 

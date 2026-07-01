@@ -54,6 +54,48 @@ def test_build_request_creates_buffered_replayable_multipart_body() -> None:
     )
 
 
+@pytest.mark.parametrize("files", [{}, []])
+def test_build_request_empty_files_creates_empty_multipart_body(files: object) -> None:
+    with foghttp.Client() as client:
+        request = client.build_request(
+            POST,
+            "https://api.example/upload",
+            files=cast("Any", files),
+        )
+
+    body = request_body(request)
+    assert body.content is not None
+    assert body.stream is None
+    assert body.replayable is True
+    assert (
+        parse_multipart_parts(
+            content_type=request.headers["content-type"],
+            body=body.content,
+        )
+        == []
+    )
+
+
+def test_build_request_empty_files_with_data_creates_multipart_fields() -> None:
+    with foghttp.Client() as client:
+        request = client.build_request(
+            POST,
+            "https://api.example/upload",
+            data={"field": "value"},
+            files={},
+        )
+
+    body = request_body(request)
+    assert body.content is not None
+    assert_multipart_parts(
+        parse_multipart_parts(
+            content_type=request.headers["content-type"],
+            body=body.content,
+        ),
+        [MultipartPart(name="field", content=b"value")],
+    )
+
+
 def test_build_request_keeps_file_multipart_streaming_and_non_replayable() -> None:
     file_obj = ClosingBytesFile(b"file payload", name="reports/report.txt")
 
@@ -135,11 +177,29 @@ def test_build_request_rejects_raw_data_with_files(data: object) -> None:
     "files",
     [
         {"field\r\nx": b"payload"},
+        {"field\x00x": b"payload"},
+        {"field\x1fx": b"payload"},
+        {"field\x7fx": b"payload"},
+        {"field\u202ex": b"payload"},
         {"field": ("name\r\nx.txt", b"payload")},
+        {"field": ("name.txt", b"payload", "text/plain\x00")},
         {"field": ("name.txt", b"payload", "text/plain\r\nx: y")},
     ],
 )
 def test_build_request_rejects_multipart_header_injection(files: object) -> None:
+    with foghttp.Client() as client, pytest.raises(TypeError, match=MULTIPART_FILES_UNSUPPORTED):
+        client.build_request(POST, "https://api.example/upload", files=cast("Any", files))
+
+
+@pytest.mark.parametrize(
+    "files",
+    [
+        {"fiéld": b"payload"},
+        {"field": ("café.txt", b"payload")},
+        {"field": ("name.txt", b"payload", "text/pläin")},
+    ],
+)
+def test_rejects_non_ascii_multipart_headers(files: object) -> None:
     with foghttp.Client() as client, pytest.raises(TypeError, match=MULTIPART_FILES_UNSUPPORTED):
         client.build_request(POST, "https://api.example/upload", files=cast("Any", files))
 
@@ -154,9 +214,21 @@ def test_build_request_rejects_unsafe_data_field_name() -> None:
         )
 
 
-def test_build_request_appends_boundary_to_explicit_multipart_content_type() -> None:
+def test_build_request_rejects_custom_multipart_content_type() -> None:
     content_type = "multipart/custom"
 
+    with foghttp.Client() as client, pytest.raises(ValueError, match=MULTIPART_CONTENT_TYPE_UNSUPPORTED):
+        client.build_request(
+            POST,
+            "https://api.example/upload",
+            headers={"content-type": content_type},
+            files={"file": b"payload"},
+        )
+
+
+def test_build_request_preserves_explicit_form_data_parameters_with_quoted_semicolon() -> None:
+    content_type = 'multipart/form-data; charset="a;b"'
+
     with foghttp.Client() as client:
         request = client.build_request(
             POST,
@@ -165,11 +237,11 @@ def test_build_request_appends_boundary_to_explicit_multipart_content_type() -> 
             files={"file": b"payload"},
         )
 
-    assert request.headers["content-type"].startswith("multipart/custom; boundary=foghttp-")
+    assert request.headers["content-type"].startswith('multipart/form-data; charset="a;b"; boundary=foghttp-')
 
 
-def test_build_request_preserves_explicit_multipart_content_type_parameters() -> None:
-    content_type = "multipart/mixed; charset=utf-8"
+def test_build_request_preserves_escaped_explicit_form_data_parameter() -> None:
+    content_type = 'multipart/form-data; note="a\\"b"'
 
     with foghttp.Client() as client:
         request = client.build_request(
@@ -179,7 +251,7 @@ def test_build_request_preserves_explicit_multipart_content_type_parameters() ->
             files={"file": b"payload"},
         )
 
-    assert request.headers["content-type"].startswith("multipart/mixed; charset=utf-8; boundary=foghttp-")
+    assert request.headers["content-type"].startswith('multipart/form-data; note="a\\"b"; boundary=foghttp-')
 
 
 def test_build_request_rejects_non_multipart_content_type_with_files() -> None:
@@ -204,6 +276,42 @@ def test_build_request_rejects_explicit_multipart_boundary() -> None:
             POST,
             "https://api.example/upload",
             headers={"content-type": "multipart/form-data; boundary=caller"},
+            files={"file": b"payload"},
+        )
+
+
+def test_build_request_rejects_quoted_explicit_multipart_boundary() -> None:
+    with (
+        foghttp.Client() as client,
+        pytest.raises(
+            ValueError,
+            match=MULTIPART_CONTENT_TYPE_BOUNDARY_UNSUPPORTED,
+        ),
+    ):
+        client.build_request(
+            POST,
+            "https://api.example/upload",
+            headers={"content-type": 'multipart/form-data; boundary="caller"'},
+            files={"file": b"payload"},
+        )
+
+
+def test_build_request_rejects_malformed_multipart_content_type_parameter() -> None:
+    with foghttp.Client() as client, pytest.raises(ValueError, match=MULTIPART_CONTENT_TYPE_UNSUPPORTED):
+        client.build_request(
+            POST,
+            "https://api.example/upload",
+            headers={"content-type": 'multipart/form-data; charset="unterminated'},
+            files={"file": b"payload"},
+        )
+
+
+def test_build_request_rejects_multipart_content_type_trailing_escape() -> None:
+    with foghttp.Client() as client, pytest.raises(ValueError, match=MULTIPART_CONTENT_TYPE_UNSUPPORTED):
+        client.build_request(
+            POST,
+            "https://api.example/upload",
+            headers={"content-type": 'multipart/form-data; note="unterminated\\'},
             files={"file": b"payload"},
         )
 

@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import AsyncIterable, AsyncIterator, Iterable, Iterator
 from typing import cast
 
+from ..messages import MULTIPART_FILES_UNSUPPORTED
 from .constants import CRLF
 from .encoding import field_header
 from .models import MultipartField, MultipartFile
@@ -22,11 +23,15 @@ def iter_file_content(file: MultipartFile) -> Iterator[bytes]:
     if isinstance(file.content, bytes):
         yield file.content
         return
+    if not isinstance(file.content, Iterable):
+        raise TypeError(MULTIPART_FILES_UNSUPPORTED)
     for chunk in cast("Iterable[object]", file.content):
         yield body_chunk(chunk)
 
 
 async def aiter_file_content(file: MultipartFile) -> "AsyncIterator[bytes]":
+    if not isinstance(file.content, AsyncIterable):
+        raise TypeError(MULTIPART_FILES_UNSUPPORTED)
     async for chunk in cast("AsyncIterable[object]", file.content):
         yield body_chunk(chunk)
 

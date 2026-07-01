@@ -15,7 +15,7 @@ async def run_sync_upload_feeder(
     done: asyncio.Future[None] = loop.create_future()
     thread = threading.Thread(
         target=_run_feeder,
-        args=(feeder, loop, done),
+        args=(feeder, cancel, loop, done),
         daemon=True,
     )
     thread.start()
@@ -29,15 +29,24 @@ async def run_sync_upload_feeder(
 
 def _run_feeder(
     feeder: Callable[[], None],
+    cancel: Callable[[], None],
     loop: asyncio.AbstractEventLoop,
     done: asyncio.Future[None],
 ) -> None:
+    completed = False
     try:
         feeder()
-    except BaseException as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        completed = True
         loop.call_soon_threadsafe(_set_future_exception, done, exc)
     else:
+        completed = True
         loop.call_soon_threadsafe(_set_future_result, done)
+    finally:
+        if not completed:
+            with suppress(Exception):
+                cancel()
+            loop.call_soon_threadsafe(_set_future_result, done)
 
 
 def _set_future_result(future: asyncio.Future[None]) -> None:
@@ -45,7 +54,7 @@ def _set_future_result(future: asyncio.Future[None]) -> None:
         future.set_result(None)
 
 
-def _set_future_exception(future: asyncio.Future[None], exc: BaseException) -> None:
+def _set_future_exception(future: asyncio.Future[None], exc: Exception) -> None:
     if not future.done():
         future.set_exception(exc)
 

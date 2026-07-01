@@ -1,5 +1,6 @@
 __all__ = (
     "AsyncChunks",
+    "BlockingAsyncChunks",
     "BlockingSyncChunks",
     "ClosingBytesFile",
     "NonRegularFilenoFile",
@@ -70,6 +71,33 @@ class BlockingSyncChunks:
             self.finished.set()
 
     def close(self) -> None:
+        self.closed = True
+        self.release.set()
+
+
+class BlockingAsyncChunks:
+    def __init__(self, chunks: tuple[bytes, ...]) -> None:
+        self._chunks = chunks
+        self.started = asyncio.Event()
+        self.finished = asyncio.Event()
+        self.release = asyncio.Event()
+        self.closed: bool = False
+
+    def __aiter__(self) -> "AsyncIterator[bytes]":
+        return self._iterate()
+
+    async def _iterate(self) -> "AsyncIterator[bytes]":
+        try:
+            self.started.set()
+            for chunk in self._chunks:
+                yield chunk
+                await self.release.wait()
+                if self.closed:
+                    return
+        finally:
+            self.finished.set()
+
+    async def aclose(self) -> None:
         self.closed = True
         self.release.set()
 
