@@ -273,6 +273,22 @@ class RawUrl:
     def join(self, location: str) -> RawUrl: ...
     def is_same_origin(self, other: RawUrl) -> bool: ...
 
+class RawUploadBody:
+    def __init__(
+        self,
+        content_length: int | None,
+        start_callback: object,
+        replayable: bool,
+        ready_callback: object | None,
+    ) -> None: ...
+    def send(self, chunk: bytes) -> bool: ...
+    def send_nowait(self, chunk: bytes) -> bool: ...
+    def is_closed(self) -> bool: ...
+    def finish(self) -> None: ...
+    def fail(self, message: str) -> None: ...
+    def fail_nowait(self, message: str) -> bool: ...
+    def close(self) -> None: ...
+
 class RawClient:
     def __init__(
         self,
@@ -301,6 +317,7 @@ class RawClient:
         url: str,
         headers: HeaderPairs,
         body: bytes | None,
+        body_stream: RawUploadBody | None,
         body_replayable: bool,
         use_proxy_transport: bool,
         proxy_policy: str,
@@ -315,6 +332,7 @@ class RawClient:
         url: str,
         headers: HeaderPairs,
         body: bytes | None,
+        body_stream: RawUploadBody | None,
         body_replayable: bool,
         use_proxy_transport: bool,
         proxy_policy: str,
@@ -329,6 +347,7 @@ class RawClient:
         url: str,
         headers: HeaderPairs,
         body: bytes | None,
+        body_stream: RawUploadBody | None,
         body_replayable: bool,
         use_proxy_transport: bool,
         proxy_policy: str,
@@ -343,6 +362,7 @@ class RawClient:
         url: str,
         headers: HeaderPairs,
         body: bytes | None,
+        body_stream: RawUploadBody | None,
         body_replayable: bool,
         use_proxy_transport: bool,
         proxy_policy: str,

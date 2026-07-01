@@ -1,20 +1,23 @@
+mod body;
 mod proxy;
 mod telemetry;
 mod write_timeout;
 
+pub(crate) use body::{
+    buffered_request_body, streaming_request_body, upload_body_channel, RequestBody,
+    UploadBodyReceiver, UploadBodySendError, UploadBodySender,
+};
 use proxy::parse_proxy_endpoint;
 pub(crate) use proxy::{HttpProxyConnector, HttpsTunnelConnector, ProxyTunnelTarget};
 pub(crate) use telemetry::{ConnectionTelemetry, ConnectionUseGuard, InstrumentedConnector};
 pub(crate) use write_timeout::{
-    request_write_timeout_from_error, with_request_write_timeout, RequestWriteTimeout,
-    RequestWriteTimeoutContext, RequestWriteTimeoutExecutor,
+    current_request_write_timeout, request_write_timeout_from_error, with_request_write_timeout,
+    RequestWriteTimeout, RequestWriteTimeoutContext, RequestWriteTimeoutExecutor,
 };
 
 use crate::core::metrics::Metrics;
 use crate::core::numeric::duration_from_secs;
 use crate::core::tls::build_tls_config;
-use bytes::Bytes;
-use http_body_util::Full;
 use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
@@ -23,7 +26,6 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-pub type RequestBody = Full<Bytes>;
 type BoxSendFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
 type BaseConnector = HttpsConnector<HttpsTunnelConnector<HttpConnector>>;
 pub type HyperClient =

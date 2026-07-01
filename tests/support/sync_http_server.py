@@ -3,7 +3,7 @@ __all__ = ("secondary_sync_http_server", "sync_http_server")
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
-from typing import Any
+from typing import Any, BinaryIO
 from urllib.parse import urlsplit
 
 import pytest
@@ -54,7 +54,10 @@ class SyncHTTPHandler(BaseHTTPRequestHandler):
 
     def _write_response(self) -> None:
         length = int(self.headers.get("content-length", "0"))
-        body = self.rfile.read(length) if length else b""
+        if self.headers.get("transfer-encoding", "").lower() == "chunked":
+            body = _read_chunked_body(self.rfile)
+        else:
+            body = self.rfile.read(length) if length else b""
         path = urlsplit(self.path).path
 
         handled = any(
@@ -257,6 +260,25 @@ def _start_sync_http_server() -> tuple[ThreadingHTTPServer, threading.Thread, st
     thread.start()
     host, port = server.server_address
     return server, thread, f"http://{host}:{port}"
+
+
+def _read_chunked_body(reader: BinaryIO) -> bytes:
+    body = bytearray()
+    while True:
+        size_line = reader.readline()
+        size = int(size_line.split(b";", maxsplit=1)[0].strip(), 16)
+        if size == 0:
+            _read_trailers(reader)
+            return bytes(body)
+        body.extend(reader.read(size))
+        reader.read(2)
+
+
+def _read_trailers(reader: BinaryIO) -> None:
+    while True:
+        line = reader.readline()
+        if line in (b"\r\n", b""):
+            return
 
 
 @pytest.fixture

@@ -149,7 +149,7 @@ with foghttp.Client() as client:
             process_event(line)
 ```
 
-Streaming decompression and streaming uploads are planned separately.
+Streaming decompression is planned separately.
 
 ### Redirect-Aware APIs
 
@@ -239,12 +239,14 @@ repeating the same header at every call site.
 For token refresh, retries after `401`, request signing, or OAuth flows, wait
 for the planned auth/hooks layer or keep that logic outside FogHTTP.
 
-### Small Buffered Uploads
+### Buffered And Streaming Uploads
 
 `json=` works for JSON, `data=` works for small form-urlencoded bodies, and
-`content=` works for buffered bytes and strings. Pass only one body source per
-request. Large file uploads, streaming bodies, and `files=` should wait for the
-planned body support.
+`content=` works for buffered bytes/strings, binary file-like objects, sync
+bytes-like iterables, zero-arg byte-stream factories, and async bytes-like
+iterables or
+factories on `AsyncClient`. Pass only one body source per request. Multipart
+`files=` should wait for the planned multipart support.
 
 ```python
 response = client.post(
@@ -281,7 +283,7 @@ except foghttp.HTTPStatusError as exc:
 |---|---|
 | Streaming text/line helpers | Available for sync and async response streams |
 | Streaming decompression | Not implemented; buffered responses support transparent decoding |
-| Streaming uploads | Not implemented |
+| Streaming uploads | Available through `content=`; streaming bodies are non-replayable for method-preserving redirects |
 | Multipart files | Not implemented |
 | Cookies/session jar | Not implemented |
 | Proxy routing | HTTP proxy routing and HTTPS `CONNECT` tunnelling through `http://` proxy endpoints are available; SOCKS, PAC, TLS-to-proxy endpoints and platform proxy discovery are not implemented |

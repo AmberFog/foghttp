@@ -44,7 +44,7 @@ fn method_rewriting_redirect_drops_non_replayable_body() {
         .apply_redirect(redirect_action(GET, false))
         .expect("method-rewriting redirect should drop non-replayable body");
 
-    assert!(state.body.is_none());
+    assert!(!state.has_request_body());
     assert!(state.body_replayability.can_replay());
 }
 
@@ -73,11 +73,12 @@ fn write_timeout_context_exists_only_for_non_empty_request_body() {
 
 #[test]
 fn request_info_excludes_transport_proxy_authorization() {
-    let state = RequestState::try_from(TransportRequest {
+    let mut state = RequestState::try_from(TransportRequest {
         method: GET.to_owned(),
         url: INITIAL_URL.to_owned(),
         headers: HeaderPairs::new(),
         body: None,
+        body_stream: None,
         body_replayable: true,
         use_proxy_transport: true,
         proxy_policy: "explicit_proxy".to_owned(),
@@ -94,7 +95,10 @@ fn request_info_excludes_transport_proxy_authorization() {
 
     assert!(state.request_info().headers.is_empty());
     assert_eq!(
-        state.request_parts(true).proxy_authorization,
+        state
+            .take_request_parts(true)
+            .expect("valid request parts")
+            .proxy_authorization,
         Some("Basic secret".to_owned()),
     );
 }
@@ -106,6 +110,7 @@ fn explicit_proxy_tunnels_https_redirect_via_connect() {
         url: INITIAL_URL.to_owned(),
         headers: HeaderPairs::new(),
         body: None,
+        body_stream: None,
         body_replayable: true,
         use_proxy_transport: true,
         proxy_policy: "explicit_proxy".to_owned(),
@@ -133,7 +138,13 @@ fn explicit_proxy_tunnels_https_redirect_via_connect() {
     assert!(state
         .use_proxy_transport_for_current_url()
         .expect("explicit proxy routes https targets through the proxy"));
-    assert_eq!(state.request_parts(true).proxy_authorization, None);
+    assert_eq!(
+        state
+            .take_request_parts(true)
+            .expect("valid request parts")
+            .proxy_authorization,
+        None,
+    );
 }
 
 #[test]
@@ -143,6 +154,7 @@ fn environment_proxy_blocks_cross_origin_redirect_until_per_hop_decisions_exist(
         url: INITIAL_URL.to_owned(),
         headers: HeaderPairs::new(),
         body: None,
+        body_stream: None,
         body_replayable: true,
         use_proxy_transport: true,
         proxy_policy: "environment_proxy".to_owned(),
@@ -177,6 +189,7 @@ fn request_state(body: Option<Vec<u8>>, body_replayable: bool) -> RequestState {
         url: INITIAL_URL.to_owned(),
         headers: HeaderPairs::new(),
         body,
+        body_stream: None,
         body_replayable,
         use_proxy_transport: false,
         proxy_policy: "direct".to_owned(),

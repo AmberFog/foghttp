@@ -7,7 +7,9 @@ from urllib.parse import urlencode
 
 import orjson
 
-from .messages import BODY_CONTENT_UNSUPPORTED, BODY_DATA_UNSUPPORTED, BODY_PARAMETER_CONFLICT
+from ._request_body import RequestBody
+from ._upload_body import SyncRequestContent, normalize_content_body
+from .messages import BODY_DATA_UNSUPPORTED, BODY_PARAMETER_CONFLICT
 from .types import RequestData
 
 
@@ -25,21 +27,21 @@ class BodyParameter(StrEnum):
 
 def encode_body(
     *,
-    content: bytes | str | None,
+    content: SyncRequestContent | object | None,
     data: RequestData,
     json: Any,
     headers: MutableMapping[str, str],
-) -> bytes | None:
+) -> RequestBody:
     source = _body_parameter(content=content, data=data, json=json)
     match source:
         case None:
-            return None
+            return RequestBody.replayable_body(None)
         case BodyParameter.CONTENT:
-            return _encode_content_body(content)
+            return normalize_content_body(content)
         case BodyParameter.DATA:
-            return _encode_data_body(data, headers)
+            return RequestBody.replayable_body(_encode_data_body(data, headers))
         case BodyParameter.JSON:
-            return _encode_json_body(json, headers)
+            return RequestBody.replayable_body(_encode_json_body(json, headers))
 
 
 def _body_parameter(*, content: object, data: object, json: object) -> BodyParameter | None:
@@ -55,14 +57,6 @@ def _body_parameter(*, content: object, data: object, json: object) -> BodyParam
     if sources:
         return sources[0]
     return None
-
-
-def _encode_content_body(content: bytes | str | None) -> bytes:
-    if isinstance(content, bytes):
-        return content
-    if isinstance(content, str):
-        return content.encode("utf-8")
-    raise TypeError(BODY_CONTENT_UNSUPPORTED)
 
 
 def _encode_data_body(data: RequestData, headers: MutableMapping[str, str]) -> bytes:

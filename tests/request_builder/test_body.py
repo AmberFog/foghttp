@@ -5,6 +5,7 @@ import orjson
 import pytest
 
 import foghttp
+from foghttp._request_body import request_body
 from foghttp.messages import BODY_CONTENT_UNSUPPORTED, BODY_DATA_UNSUPPORTED, BODY_PARAMETER_CONFLICT
 from foghttp.methods import POST
 from foghttp.types import RequestData
@@ -56,6 +57,12 @@ def test_content_body_matrix(content: bytes | str | None, expected_body: bytes |
     assert "transfer-encoding" not in request.headers
 
 
+@pytest.mark.parametrize("content", [bytearray(b"body"), memoryview(b"body")])
+def test_build_request_rejects_bytes_like_iterables(content: object, faker: Faker) -> None:
+    with foghttp.Client() as client, pytest.raises(TypeError, match=BODY_CONTENT_UNSUPPORTED):
+        client.build_request(POST, faker.url(), content=content)
+
+
 def test_build_request_rejects_content_and_json(faker: Faker) -> None:
     content = faker.sentence().encode()
 
@@ -68,11 +75,29 @@ def test_build_request_rejects_content_and_json(faker: Faker) -> None:
         )
 
 
-def test_build_request_rejects_non_buffered_content(faker: Faker) -> None:
+def test_build_request_accepts_streaming_content(faker: Faker) -> None:
     content: Any = iter([faker.sentence().encode()])
 
-    with foghttp.Client() as client, pytest.raises(TypeError, match=BODY_CONTENT_UNSUPPORTED):
-        client.build_request(POST, faker.url(), content=content)
+    with foghttp.Client() as client:
+        request = client.build_request(POST, faker.url(), content=content)
+
+    body = request_body(request)
+    assert request.content is None
+    assert body.stream is content
+    assert body.replayable is False
+
+
+def test_build_request_accepts_replayable_streaming_factory(faker: Faker) -> None:
+    def content() -> Any:
+        return iter([faker.sentence().encode()])
+
+    with foghttp.Client() as client:
+        request = client.build_request(POST, faker.url(), content=content)
+
+    body = request_body(request)
+    assert request.content is None
+    assert body.stream is content
+    assert body.replayable is True
 
 
 async def test_async_build_request_rejects_content_and_json(faker: Faker) -> None:

@@ -420,9 +420,10 @@ if diagnostics["pending_requests"]:
 
 ## Current Boundaries
 
-The lifecycle contract currently applies to buffered requests/responses and
-sync/async streamed response bodies. Streaming uploads, cookies, proxies, and
-advanced auth helpers are planned later and may extend the lifecycle model.
+The lifecycle contract currently applies to buffered requests/responses,
+sync/async streamed response bodies, and streaming request bodies passed through
+`content=`. Cookies and advanced auth helpers are planned later and may extend
+the lifecycle model.
 
 FogHTTP exposes socket lifecycle telemetry for the current HTTP/1 path, but
 resource limits still describe request backpressure rather than strict raw TCP

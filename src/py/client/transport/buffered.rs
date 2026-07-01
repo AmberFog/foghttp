@@ -49,7 +49,6 @@ pub async fn send_request(
             let origin_metrics = permit.origin_metrics();
             let request_info = state.request_info();
             let use_proxy_transport = state.use_proxy_transport_for_current_url()?;
-            let request = build_request(state.request_parts(use_proxy_transport))?;
 
             let response_headers_timeout_context = TimeoutContext::new(
                 TimeoutPhase::ResponseHeaders,
@@ -59,6 +58,7 @@ pub async fn send_request(
                 redirect_hop,
             );
             let write_timeout_context = state.write_timeout_context(&origin, redirect_hop);
+            let request = build_request(state.take_request_parts(use_proxy_transport)?)?;
             let client = clients.select(use_proxy_transport, write_timeout_context.is_some())?;
             let response = tokio::time::timeout(
                 remaining_duration("Timeouts.total", &response_headers_timeout_context)?,

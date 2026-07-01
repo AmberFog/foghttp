@@ -364,7 +364,8 @@ body content and does not add `content-type` automatically.
 
 ## Raw Content
 
-Use `content=` for already encoded bytes or text.
+Use `content=` for already encoded bytes, text, binary file-like objects, or
+bytes-like iterables.
 
 ::: code-group
 
@@ -396,16 +397,18 @@ FogHTTP currently accepts one body source per request:
 |---|---|
 | `json=` | Encodes with `orjson` and adds `content-type: application/json` when no explicit content type is set |
 | `data=` | Encodes mappings and repeated pairs as `application/x-www-form-urlencoded`; raw `bytes` and `str` are sent as buffered body content |
-| `content=` | Accepts buffered `bytes` or `str`; strings are encoded as UTF-8 and no semantic content type is added |
+| `content=` | Accepts buffered `bytes` or `str`, binary file-like objects, sync bytes-like iterables, zero-arg byte-stream factories, and async bytes-like iterables/factories on `AsyncClient`; strings are encoded as UTF-8 and no semantic content type is added |
 | `files=` | Reserved for future multipart uploads |
 
 Passing more than one body source raises `ValueError`. `Content-Length` and
 `Transfer-Encoding` are transport-managed framing headers and are not accepted
-in request headers; the Rust transport owns them. Buffered `json=`, `data=`,
-and `content=` bodies are replayable for the current redirect policy. Iterator,
-async iterator, and streaming request bodies are not accepted yet and will need
-an explicit non-replayable body contract later. Public provider and multipart
-type aliases are available for that planned contract; see
+in request headers; the Rust transport owns them. Buffered `json=`, `data=`, and
+byte/string `content=` bodies are replayable for the current redirect policy.
+File-like and direct streaming `content=` bodies are non-replayable, so
+method-preserving redirects fail closed instead of replaying a consumed
+provider. Factory-backed streaming `content=` bodies are replayable because the
+factory returns a fresh stream per send attempt. Public provider and multipart
+type aliases are documented in
 [Upload typing contracts](./upload-types.md).
 
 ## Buffered Response Decoding

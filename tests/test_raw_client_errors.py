@@ -8,6 +8,7 @@ from foghttp._client.options import ClientOptions
 from foghttp._client.proxy import ProxyTransportPolicy
 from foghttp._client.raw.lifecycle import create_raw_client
 from foghttp._client.raw.requests import RawRequestOptions, send_raw_request, send_raw_request_async
+from foghttp._request_body import RequestBody
 from foghttp.errors import (
     PoolTimeout,
     ReadTimeout,
@@ -93,8 +94,7 @@ def _raw_request(url: str) -> RawRequestOptions:
         method=GET,
         url=url,
         headers=[],
-        body=None,
-        body_replayable=True,
+        body=RequestBody.replayable_body(None),
         use_proxy_transport=False,
         proxy_policy=ProxyTransportPolicy.DIRECT,
         timeouts=Timeouts(),

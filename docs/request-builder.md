@@ -20,7 +20,7 @@ the current FogHTTP API. The same flow is available as a runnable example in
 | `headers` | Supported | Accepts mappings, pairs, and `foghttp.Headers`. Lookups are case-insensitive and repeated values are preserved. |
 | client default `headers` | Supported | Passed as `Client(headers=...)` or `AsyncClient(headers=...)`. Per-request headers override defaults case-insensitively. |
 | `json` | Supported | Encoded with `orjson`. Adds `content-type: application/json` unless explicitly set. |
-| `content` | Supported | Accepts buffered `bytes` or `str`. Strings are encoded as UTF-8. No semantic content type is added. |
+| `content` | Supported | Accepts buffered `bytes` or `str`, binary file-like objects, sync bytes-like iterables, zero-arg byte-stream factories, and async bytes-like iterables/factories on `AsyncClient`. Strings are encoded as UTF-8. No semantic content type is added. |
 | `data` | Supported | Mappings and repeated pairs are encoded as `application/x-www-form-urlencoded`. Raw `bytes` or `str` are sent as buffered body content without adding a semantic content type. |
 | `files` | Reserved | Planned for multipart uploads. Not accepted yet. |
 | `auth` | Planned | Use explicit `Authorization` headers for simple static tokens. |
@@ -168,7 +168,9 @@ Rust client, or consume pool/request slots.
 | `data=` mapping or repeated pairs | form-urlencoded body |
 | `data=` bytes or string | raw buffered body |
 | more than one of `json=`, `data=`, `content=` | `ValueError` |
-| iterator or async iterator `content=` | `TypeError` |
+| sync bytes-like iterator `content=` | streamed request body; non-replayable |
+| async bytes-like iterator `content=` with `AsyncClient` | streamed request body; non-replayable |
+| async byte iterator `content=` with sync `Client` | `TypeError` |
 | iterator `data=` | `TypeError` |
 | `files=` | not accepted yet |
 
@@ -177,24 +179,27 @@ and cannot be set manually. `Content-Type` is semantic and can be set by the
 caller; FogHTTP only adds `application/json` for `json=` when the caller did not
 already provide a content type.
 
-Buffered `json=`, `data=`, and `content=` request bodies are replayable for the
-current redirect policy. Future streaming uploads will need an explicit
-non-replayable body contract. The public provider and multipart aliases that
-future upload APIs will use are documented in
-[Upload typing contracts](./upload-types.md).
+Buffered `json=`, `data=`, and byte/string `content=` request bodies are
+replayable for the current redirect policy. Streaming and file-backed
+`content=` bodies are non-replayable, so method-preserving redirects such as
+`307` and `308` fail closed instead of replaying a consumed provider.
+
+Unknown-length streaming bodies use transport-managed HTTP/1.1 framing. Binary
+file-like bodies use a known `Content-Length` when FogHTTP can determine the
+remaining length safely from regular-file metadata or seek/tell metadata on
+objects without a non-regular file descriptor.
 
 ## Intentional Differences
 
 FogHTTP is not trying to clone the full `requests`, `httpx`, or `zapros`
-surface. Today it is best for buffered JSON/API clients with explicit lifecycle
-and observable request limits.
+surface. Today it is best for JSON/API clients and explicit streaming
+upload/download workflows with observable request limits.
 
 Current intentional gaps:
 
 - no `files=` multipart uploads yet
 - no cookie jar
 - no `auth=` helper
-- no streaming request body API yet
 - no streaming decompression helpers yet
 - no disabling TLS verification
 

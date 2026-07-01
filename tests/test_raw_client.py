@@ -11,6 +11,7 @@ from foghttp._client.options import ClientOptions
 from foghttp._client.proxy import ProxyTransportPolicy
 from foghttp._client.raw.lifecycle import create_raw_client
 from foghttp._client.raw.requests import RawRequestOptions, send_raw_request, send_raw_request_async
+from foghttp._request_body import RequestBody
 from foghttp.limits import Limits
 from foghttp.methods import GET
 from foghttp.timeouts import Timeouts
@@ -43,6 +44,7 @@ RAW_REQUEST_ARGUMENTS = (
     "url",
     "headers",
     "body",
+    "body_stream",
     "body_replayable",
     "use_proxy_transport",
     "proxy_policy",
@@ -96,8 +98,7 @@ def _raw_request(
         method=GET,
         url=url,
         headers=[],
-        body=body,
-        body_replayable=body_replayable,
+        body=RequestBody(content=body, stream=None, content_length=None, replayable=body_replayable),
         use_proxy_transport=False,
         proxy_policy=ProxyTransportPolicy.DIRECT,
         timeouts=timeouts,
@@ -244,6 +245,7 @@ def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker:
         "url": url,
         "headers": [],
         "body": body,
+        "body_stream": None,
         "body_replayable": body_replayable,
         "use_proxy_transport": False,
         "proxy_policy": ProxyTransportPolicy.DIRECT.value,
@@ -277,6 +279,7 @@ async def test_send_raw_request_async_passes_request_timeouts_without_connect_ti
         "url": url,
         "headers": [],
         "body": None,
+        "body_stream": None,
         "body_replayable": True,
         "use_proxy_transport": False,
         "proxy_policy": ProxyTransportPolicy.DIRECT.value,
