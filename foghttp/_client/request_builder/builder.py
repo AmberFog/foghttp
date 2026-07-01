@@ -41,6 +41,7 @@ class RequestBuilder:
         return encode_body(
             content=options.content,
             data=options.data,
+            files=options.files,
             json=options.json,
             headers=headers,
         )

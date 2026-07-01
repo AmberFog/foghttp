@@ -19,6 +19,7 @@ uv run examples/async_lifecycle_debug.py
 uv run examples/async_streaming.py
 uv run examples/compressed_response.py
 uv run examples/http_proxy.py
+uv run examples/multipart_uploads.py
 uv run examples/redirects.py
 uv run examples/prepared_requests.py
 uv run examples/request_builder_compatibility.py
@@ -45,6 +46,8 @@ uv run examples/telemetry_hooks.py
   routing / HTTPS `CONNECT` tunnelling with
   `FOGHTTP_HTTP_PROXY=http://proxy:port`; set `FOGHTTP_PROXY_TARGET_URL` to
   choose the target URL.
+- [multipart_uploads.py](./multipart_uploads.py): multipart `files=` uploads
+  with direct file objects and replayable stream factories.
 - [redirects.py](./redirects.py): GET and POST redirects, final URL, and
   history.
 - [prepared_requests.py](./prepared_requests.py): build, inspect, adjust, and
@@ -59,6 +62,6 @@ uv run examples/telemetry_hooks.py
 
 FogHTTP supports sync and async response streaming for bytes, text, and lines,
 plus plain HTTP proxy routing and HTTPS proxy `CONNECT` through `http://` proxy
-endpoints. Uploads are still buffered. Do not use these examples as templates
-for large uploads, multipart forms, cookie sessions, SOCKS/PAC proxy clients,
-TLS-to-proxy endpoints, or streaming decompression yet.
+endpoints. Streaming request uploads and multipart `files=` uploads are
+available. Do not use these examples as templates for cookie sessions,
+SOCKS/PAC proxy clients, TLS-to-proxy endpoints, or streaming decompression yet.

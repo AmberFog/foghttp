@@ -22,7 +22,7 @@ the current FogHTTP API. The same flow is available as a runnable example in
 | `json` | Supported | Encoded with `orjson`. Adds `content-type: application/json` unless explicitly set. |
 | `content` | Supported | Accepts buffered `bytes` or `str`, binary file-like objects, sync bytes-like iterables, zero-arg byte-stream factories, and async bytes-like iterables/factories on `AsyncClient`. Strings are encoded as UTF-8. No semantic content type is added. |
 | `data` | Supported | Mappings and repeated pairs are encoded as `application/x-www-form-urlencoded`. Raw `bytes` or `str` are sent as buffered body content without adding a semantic content type. |
-| `files` | Reserved | Planned for multipart uploads. Not accepted yet. |
+| `files` | Supported | Builds `multipart/form-data` uploads. Accepts bytes-like file parts, binary file-like objects, sync byte streams, byte-stream factories, and async byte streams/factories on `AsyncClient`. Can be combined with mapping or repeated-pair `data=` form fields. |
 | `auth` | Planned | Use explicit `Authorization` headers for simple static tokens. |
 | cookies/session jar | Planned | `cookies=True` is rejected today. |
 | proxy / `trust_env` | Supported | HTTP proxy routing and HTTPS `CONNECT` tunnelling through client-level `proxy=` or `trust_env=True` when the proxy endpoint uses `http://`. |
@@ -38,7 +38,7 @@ FogHTTP applies request values in this order:
 |---|---|
 | URL | `base_url` resolution, request URL query, client params, per-request params |
 | Headers | client headers, future auth-managed headers, per-request headers |
-| Body | exactly one body source: `json=`, `data=`, or `content=` |
+| Body | one body source: `json=`, `data=`, `content=`, or `files=`; `files=` may include form fields from mapping or repeated-pair `data=` |
 
 Repeated query keys are preserved. Per-request params are appended after client
 defaults instead of replacing them, which keeps API-version, tenant, locale, and
@@ -127,6 +127,37 @@ Raw `bytes` or `str` passed through `data=` are treated as already encoded
 buffered body content, so FogHTTP does not add a semantic content type for
 those values.
 
+## Multipart Files
+
+Use `files=` for `multipart/form-data` uploads. `data=` can be combined with
+`files=` only when it is a mapping or repeated pairs of form fields.
+
+```python
+import foghttp
+
+
+with foghttp.Client(base_url="https://api.example.com") as client:
+    with open("avatar.png", "rb") as avatar:
+        response = client.post(
+            "profile/avatar",
+            data={"description": "profile"},
+            files={"file": ("avatar.png", avatar, "image/png")},
+        )
+    response.raise_for_status()
+```
+
+Direct file-like objects and direct stream parts are non-replayable for
+method-preserving redirects. Buffered bytes-like file parts are replayable.
+Zero-argument stream factories are replayable because FogHTTP asks the factory
+for a fresh part for each send attempt. Direct file-like objects passed through
+`files=` remain caller-owned and are not closed by FogHTTP. Direct file-like
+objects and streams passed through `content=` are request-scope body providers;
+FogHTTP closes them after the request attempt.
+
+FogHTTP manages the multipart boundary. If you provide a `content-type` for a
+multipart upload, it must be a `multipart/*` media type without a `boundary=`
+parameter; FogHTTP appends the boundary that matches the encoded body.
+
 ## Prepared Requests
 
 Use `build_request()` when application code needs to inspect or adjust a request
@@ -167,22 +198,28 @@ Rust client, or consume pool/request slots.
 | `data={}`, `data=[]` | empty form-urlencoded body |
 | `data=` mapping or repeated pairs | form-urlencoded body |
 | `data=` bytes or string | raw buffered body |
-| more than one of `json=`, `data=`, `content=` | `ValueError` |
+| `files=` mapping or repeated pairs | multipart body |
+| `files=` plus mapping or repeated-pair `data=` | multipart body with form fields |
+| `files=` plus raw bytes/string `data=` | `TypeError` |
+| more than one incompatible source among `json=`, `data=`, `content=`, and `files=` | `ValueError` |
 | sync bytes-like iterator `content=` | streamed request body; non-replayable |
 | async bytes-like iterator `content=` with `AsyncClient` | streamed request body; non-replayable |
 | async byte iterator `content=` with sync `Client` | `TypeError` |
 | iterator `data=` | `TypeError` |
-| `files=` | not accepted yet |
 
 `Content-Length` and `Transfer-Encoding` are transport-managed framing headers
 and cannot be set manually. `Content-Type` is semantic and can be set by the
-caller; FogHTTP only adds `application/json` for `json=` when the caller did not
-already provide a content type.
+caller. FogHTTP adds `application/json` for `json=`, form-urlencoded content
+type for encoded `data=`, and multipart content type with a managed boundary for
+`files=` when the caller did not already provide a compatible content type.
 
 Buffered `json=`, `data=`, and byte/string `content=` request bodies are
 replayable for the current redirect policy. Streaming and file-backed
 `content=` bodies are non-replayable, so method-preserving redirects such as
 `307` and `308` fail closed instead of replaying a consumed provider.
+Multipart bodies follow the same replayability rule: bytes-like file parts are
+replayable, direct file/stream parts are non-replayable, and factory-backed
+stream parts are replayable.
 
 Unknown-length streaming bodies use transport-managed HTTP/1.1 framing. Binary
 file-like bodies use a known `Content-Length` when FogHTTP can determine the
@@ -197,7 +234,6 @@ upload/download workflows with observable request limits.
 
 Current intentional gaps:
 
-- no `files=` multipart uploads yet
 - no cookie jar
 - no `auth=` helper
 - no streaming decompression helpers yet

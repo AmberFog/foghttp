@@ -22,6 +22,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - query parameters from mappings, repeated pairs, and raw query strings
 - JSON bodies through `json=`
 - form-urlencoded bodies through mapping or repeated-pair `data=`
+- multipart file uploads through `files=`, optionally combined with mapping or
+  repeated-pair `data=` form fields
 - raw bytes/text, binary file-like, sync bytes-like iterable, and async bytes-like iterable
   bodies through `content=`
 - buffered responses
@@ -66,10 +68,10 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | Feature | Current behavior |
 |---|---|
 | Streaming response decompression | Not available; buffered responses support transparent decoding |
-| Multipart uploads | Not available |
-| `files=` | Reserved in the body matrix; not available yet |
+| Multipart uploads | Available through `files=` for bytes-like parts, binary file-like objects, direct byte streams, and byte-stream factories |
+| `files=` | Available; can be combined with mapping or repeated-pair `data=` form fields, but not with raw `data=`, `content=`, or `json=` |
 | Streaming uploads | Available through `content=` for binary file-like objects, sync bytes-like iterables, zero-arg byte-stream factories, and async bytes-like iterables/factories on `AsyncClient`; direct stream/file bodies are non-replayable for method-preserving redirects, while factories can replay by returning a fresh stream |
-| Upload typing contracts | Public provider/factory and multipart aliases are available for streaming `content=` and planned multipart APIs |
+| Upload typing contracts | Public provider/factory and multipart aliases are available for streaming `content=` and multipart `files=` APIs |
 | Cookie jar | `cookies=True` is rejected |
 | Plain HTTP proxy routing | Available for `http://` targets through explicit `proxy=` or `trust_env=True` environment config |
 | HTTPS proxy `CONNECT` | Available for `https://` targets through explicit `proxy=` or `trust_env=True` when the proxy endpoint itself uses `http://`; TLS is validated against the target host |
@@ -81,7 +83,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | HTTP/2 | Not available |
 | automatic `Accept-Encoding` negotiation | Not implemented; send `Accept-Encoding` manually when you want compressed responses |
 | transport-managed request headers | Safe API rejects manual `Host`, `Content-Length`, `Transfer-Encoding`, `TE`, `Trailer`, `Connection`, `Upgrade`, `Keep-Alive`, `Proxy-Connection`, and `Proxy-Authorization` |
-| request body source conflicts | Only one body source can be passed today: `json=`, `data=`, or `content=` |
+| request body source conflicts | Use one body source among `json=`, `data=`, `content=`, and `files=`; `files=` can include form fields from mapping or repeated-pair `data=` |
 | true active connection-level limits | `max_active_requests_per_origin` limits buffered request slots; socket lifecycle telemetry is observable, but FogHTTP does not yet expose separate physical connection limits |
 | per-request connect timeout changes | `Timeouts.connect` configures the Rust connector from client-level settings when transport state is created; per-request `timeout.connect` does not reconfigure the connector |
 | separate read/write timeout semantics | `Timeouts.read` is implemented as a buffered and streamed response body progress timeout; `Timeouts.write` is implemented for buffered request body write progress and streaming upload chunk/write progress |
@@ -97,8 +99,8 @@ Use FogHTTP today when:
 - responses are small enough to buffer in memory or can be consumed through the
   bytes/text/line streaming API; line streaming has a bounded per-line buffer by
   default
-- requests are JSON-heavy, use small form-urlencoded bodies, or need explicit
-  streaming upload bodies
+- requests are JSON-heavy, use small form-urlencoded bodies, multipart file
+  uploads, or explicit streaming upload bodies
 - redirects are simple and do not require cookie jar or auth helper integration
 - sync and async clients with explicit lifecycle are enough
 - async request cancellation and sync/async stream cleanup behavior are useful
@@ -112,7 +114,6 @@ Wait before using FogHTTP when:
 - you need transparent streaming decompression
 - you need SOCKS, PAC, WPAD, or platform proxy discovery
 - you rely on cookies across requests
-- you need multipart form-data
 - you need per-request connect timeout reconfiguration
 - you need automatic compression negotiation instead of manual
   `Accept-Encoding`

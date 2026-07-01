@@ -12,6 +12,7 @@ from ..messages import STREAMING_BODY_CHUNK_UNSUPPORTED
 from .async_sending import fail_async_upload_body, send_async_upload_chunk
 from .file_source import FileUploadSource
 from .predicates import is_async_stream
+from .thread_bridge import run_sync_upload_feeder
 
 
 def feed_sync_upload_body(raw_body: "_foghttp.RawUploadBody", source: object) -> None:
@@ -33,7 +34,10 @@ async def feed_async_upload_body(
     ready: asyncio.Event,
 ) -> None:
     if not is_async_stream(source):
-        await asyncio.to_thread(feed_sync_upload_body, raw_body, source)
+        await run_sync_upload_feeder(
+            lambda: feed_sync_upload_body(raw_body, source),
+            lambda: _cancel_sync_upload_body(raw_body, source),
+        )
         return
 
     try:
@@ -55,10 +59,16 @@ async def feed_async_upload_body(
 
 
 def close_sync_source(source: object) -> None:
-    close = getattr(_source_close_target(source), "close", None)
+    target = source.file if isinstance(source, FileUploadSource) else source
+    close = getattr(target, "close", None)
     if callable(close):
         with suppress(Exception):
             close()
+
+
+def _cancel_sync_upload_body(raw_body: "_foghttp.RawUploadBody", source: object) -> None:
+    raw_body.close()
+    close_sync_source(source)
 
 
 async def close_async_source(source: object) -> None:
@@ -85,9 +95,3 @@ def _upload_source_error(error: BaseException) -> str:
     if message:
         return message
     return error.__class__.__name__
-
-
-def _source_close_target(source: object) -> object:
-    if isinstance(source, FileUploadSource):
-        return source.file
-    return source

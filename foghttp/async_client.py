@@ -40,7 +40,7 @@ from .stream_response.bindings import bind_stream_lifecycle_debug, bind_stream_t
 from .telemetry import TelemetryConfig, TelemetryRequestMode
 from .timeouts import Timeouts
 from .tls import TLSConfig
-from .types import HttpVersions, QueryParams, RequestData
+from .types import AsyncMultipartFiles, HttpVersions, QueryParams, RequestData
 from .url import URL
 
 
@@ -122,6 +122,7 @@ class AsyncClient(ClientCore):
         params: QueryParams = None,
         content: AsyncRequestContent | None = None,
         data: RequestData = None,
+        files: AsyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -133,6 +134,7 @@ class AsyncClient(ClientCore):
             params=params,
             content=content,
             data=data,
+            files=files,
             json=json,
         )
         return await self.send(request, timeout=timeout)
@@ -168,6 +170,7 @@ class AsyncClient(ClientCore):
         params: QueryParams = None,
         content: AsyncRequestContent | None = None,
         data: RequestData = None,
+        files: AsyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> AsyncStreamContext:
@@ -179,6 +182,7 @@ class AsyncClient(ClientCore):
             params=params,
             content=content,
             data=data,
+            files=files,
             json=json,
         )
         return AsyncStreamContext(self._send_stream(request, timeout=timeout))
@@ -191,6 +195,7 @@ class AsyncClient(ClientCore):
         params: QueryParams = None,
         content: AsyncRequestContent | None = None,
         data: RequestData = None,
+        files: AsyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -201,6 +206,7 @@ class AsyncClient(ClientCore):
             params=params,
             content=content,
             data=data,
+            files=files,
             json=json,
             timeout=timeout,
         )
@@ -213,6 +219,7 @@ class AsyncClient(ClientCore):
         params: QueryParams = None,
         content: AsyncRequestContent | None = None,
         data: RequestData = None,
+        files: AsyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -223,6 +230,7 @@ class AsyncClient(ClientCore):
             params=params,
             content=content,
             data=data,
+            files=files,
             json=json,
             timeout=timeout,
         )
@@ -235,6 +243,7 @@ class AsyncClient(ClientCore):
         params: QueryParams = None,
         content: AsyncRequestContent | None = None,
         data: RequestData = None,
+        files: AsyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -245,6 +254,7 @@ class AsyncClient(ClientCore):
             params=params,
             content=content,
             data=data,
+            files=files,
             json=json,
             timeout=timeout,
         )
@@ -257,6 +267,7 @@ class AsyncClient(ClientCore):
         params: QueryParams = None,
         content: AsyncRequestContent | None = None,
         data: RequestData = None,
+        files: AsyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -267,6 +278,7 @@ class AsyncClient(ClientCore):
             params=params,
             content=content,
             data=data,
+            files=files,
             json=json,
             timeout=timeout,
         )
@@ -279,6 +291,7 @@ class AsyncClient(ClientCore):
         params: QueryParams = None,
         content: AsyncRequestContent | None = None,
         data: RequestData = None,
+        files: AsyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -289,6 +302,7 @@ class AsyncClient(ClientCore):
             params=params,
             content=content,
             data=data,
+            files=files,
             json=json,
             timeout=timeout,
         )
@@ -301,6 +315,7 @@ class AsyncClient(ClientCore):
         params: QueryParams = None,
         content: AsyncRequestContent | None = None,
         data: RequestData = None,
+        files: AsyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -311,6 +326,7 @@ class AsyncClient(ClientCore):
             params=params,
             content=content,
             data=data,
+            files=files,
             json=json,
             timeout=timeout,
         )

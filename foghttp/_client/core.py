@@ -15,7 +15,7 @@ from ..request import Request
 from ..timeouts import Timeouts
 from ..transport_state import OriginPressureState, TransportState
 from ..transport_stats import TransportStats
-from ..types import QueryParams, RequestData
+from ..types import AsyncMultipartFiles, QueryParams, RequestData, SyncMultipartFiles
 from ..url import URL
 from .config import ClientConfig
 from .lifecycle_debug import AsyncLifecycleDebugTracker
@@ -66,6 +66,7 @@ class ClientCore:
         params: QueryParams = None,
         content: SyncRequestContent | AsyncRequestContent | None = None,
         data: RequestData = None,
+        files: SyncMultipartFiles | AsyncMultipartFiles | None = None,
         json: Any = None,
     ) -> Request:
         return self._request_builder.build(
@@ -76,6 +77,7 @@ class ClientCore:
                 params=params,
                 content=content,
                 data=data,
+                files=files,
                 json=json,
             ),
         )
