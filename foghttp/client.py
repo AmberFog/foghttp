@@ -203,10 +203,6 @@ class Client(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
-        content: SyncRequestContent | None = None,
-        data: RequestData = None,
-        files: SyncMultipartFiles | None = None,
-        json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
         return self.request(
@@ -214,10 +210,6 @@ class Client(ClientCore):
             url,
             headers=headers,
             params=params,
-            content=content,
-            data=data,
-            files=files,
-            json=json,
             timeout=timeout,
         )
 
@@ -227,10 +219,6 @@ class Client(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
-        content: SyncRequestContent | None = None,
-        data: RequestData = None,
-        files: SyncMultipartFiles | None = None,
-        json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
         return self.request(
@@ -238,10 +226,6 @@ class Client(ClientCore):
             url,
             headers=headers,
             params=params,
-            content=content,
-            data=data,
-            files=files,
-            json=json,
             timeout=timeout,
         )
 

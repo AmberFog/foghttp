@@ -30,6 +30,12 @@ the current FogHTTP API. The same flow is available as a runnable example in
 | `follow_redirects` | Supported | Client-level setting. GET/HEAD/POST redirects use conservative security rules. |
 | prepared request | Supported | Use `build_request()` and `send()`. Building a request does not create transport state. |
 
+`get()` and `head()` are bodyless convenience helpers: they expose `headers`,
+`params`, and `timeout`, but not `json=`, `data=`, `content=`, or `files=`.
+If application code intentionally needs an unusual GET or HEAD request body,
+use the explicit `request("GET", ..., content=...)` or
+`request("HEAD", ..., content=...)` form.
+
 ## Merge Order
 
 FogHTTP applies request values in this order:
@@ -210,6 +216,10 @@ Rust client, or consume pool/request slots.
 | async bytes-like iterator `content=` with `AsyncClient` | streamed request body; non-replayable |
 | async byte iterator `content=` with sync `Client` | `TypeError` |
 | iterator `data=` | `TypeError` |
+
+Body parameters are part of `request()`, `stream()`, and body-capable method
+helpers such as `post()`, `put()`, `patch()`, and `delete()`. The `get()` and
+`head()` helpers intentionally do not expose body parameters.
 
 `Content-Length` and `Transfer-Encoding` are transport-managed framing headers
 and cannot be set manually. `Content-Type` is semantic and can be set by the

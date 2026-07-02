@@ -193,10 +193,6 @@ class AsyncClient(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
-        content: AsyncRequestContent | None = None,
-        data: RequestData = None,
-        files: AsyncMultipartFiles | None = None,
-        json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
         return await self.request(
@@ -204,10 +200,6 @@ class AsyncClient(ClientCore):
             url,
             headers=headers,
             params=params,
-            content=content,
-            data=data,
-            files=files,
-            json=json,
             timeout=timeout,
         )
 
@@ -217,10 +209,6 @@ class AsyncClient(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
-        content: AsyncRequestContent | None = None,
-        data: RequestData = None,
-        files: AsyncMultipartFiles | None = None,
-        json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
         return await self.request(
@@ -228,10 +216,6 @@ class AsyncClient(ClientCore):
             url,
             headers=headers,
             params=params,
-            content=content,
-            data=data,
-            files=files,
-            json=json,
             timeout=timeout,
         )
 

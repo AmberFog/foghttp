@@ -412,6 +412,11 @@ replayable because the factory returns a fresh stream per send attempt. Public
 provider and multipart type aliases are documented in
 [Upload typing contracts](./upload-types.md).
 
+`get()` and `head()` are bodyless convenience helpers. Use `post()`, `put()`,
+`patch()`, `delete()`, `request()`, or `stream()` for body parameters. If you
+intentionally need a non-standard GET or HEAD body, use the explicit
+`request("GET", ..., content=...)` / `request("HEAD", ..., content=...)` form.
+
 ## Buffered Response Decoding
 
 Buffered responses with `content-encoding: gzip`, `deflate`, or `br` are
