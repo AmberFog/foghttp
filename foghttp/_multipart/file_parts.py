@@ -1,12 +1,13 @@
 from collections.abc import Mapping, Sequence
 from typing import TypeAlias, cast
 
+from .._upload_body.chunks import body_chunk
 from .._upload_body.file_source import FileUploadSource, file_content_length
 from .._upload_body.predicates import is_async_stream, is_binary_file, is_sync_stream
 from ..messages import MULTIPART_FILES_UNSUPPORTED
 from .constants import DEFAULT_FILE_CONTENT_TYPE
 from .models import MultipartFile
-from .values import body_chunk, filename_from_content, filename_value, text_value
+from .values import filename_from_content, filename_value, text_value
 
 
 FileItems: TypeAlias = Mapping[str, object] | Sequence[tuple[str, object]]

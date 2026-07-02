@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ..messages import MULTIPART_HEADER_VALUE_UNSUPPORTED, STREAMING_BODY_CHUNK_UNSUPPORTED
+from ..messages import MULTIPART_HEADER_VALUE_UNSUPPORTED
 
 
 BACKSLASH = "\\"
@@ -12,16 +12,6 @@ _DEL = 0x7F
 def _is_header_value_char(char: str) -> bool:
     codepoint = ord(char)
     return _PRINTABLE_ASCII_START <= codepoint < _DEL
-
-
-def body_chunk(content: object) -> bytes:
-    if isinstance(content, bytes):
-        return content
-    if isinstance(content, bytearray):
-        return bytes(content)
-    if isinstance(content, memoryview):
-        return content.tobytes()
-    raise TypeError(STREAMING_BODY_CHUNK_UNSUPPORTED)
 
 
 def header_value(value: str) -> str:
