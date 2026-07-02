@@ -33,8 +33,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
   diagnostic dump APIs
 - opt-in async lifecycle debug snapshots for staging and tests
 - advanced per-client Tokio runtime worker tuning
-- focused buffered HTTP surface for JSON and form APIs, internal services,
-  workers, and benchmarks
+- focused HTTP surface for JSON, form, streaming upload, and multipart API
+  workloads in internal services, workers, and benchmarks
 
 ## Install
 
@@ -88,8 +88,11 @@ async with foghttp.AsyncClient() as client:
 - `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`
 - `base_url` for reusable API clients and relative request paths
 - default client headers and query params for reusable API clients
-- query params with repeated keys, JSON, form-urlencoded data, and buffered
-  bytes/text bodies
+- query params with repeated keys, JSON, form-urlencoded data, buffered
+  bytes/text bodies, binary file-like request bodies, and streaming
+  bytes-like upload providers
+- multipart `files=` uploads with bytes-like parts, binary file-like objects,
+  direct byte streams, and replayable byte-stream factories
 - buffered `Response` with status flags, charset-aware `text`, `json()`,
   `raise_for_status()`, and request metadata
 - transparent `gzip`, `deflate`, and `br` decoding for buffered responses
@@ -142,10 +145,12 @@ async with foghttp.AsyncClient() as client:
 ## Current Limitations
 
 FogHTTP is currently focused on controlled HTTP workloads. Buffered responses
-are the broadest supported path; sync and async response streaming are available
-as bytes/text/line context-managed APIs. HTTP proxy routing and HTTPS proxy
-`CONNECT` tunnelling are available through `proxy=` and `trust_env=True` when
-the proxy endpoint itself uses `http://`.
+are the broadest supported response path; sync and async response streaming are
+available as bytes/text/line context-managed APIs. Streaming `content=` uploads
+and multipart `files=` uploads are available with explicit replayability and
+cleanup rules. HTTP proxy routing and HTTPS proxy `CONNECT` tunnelling are
+available through `proxy=` and `trust_env=True` when the proxy endpoint itself
+uses `http://`.
 Cookies, auth helpers, HTTP/2, automatic `Accept-Encoding` negotiation,
 streaming decompression, strict connection-level pool limits, and per-request
 connect timeout reconfiguration are planned for later versions.

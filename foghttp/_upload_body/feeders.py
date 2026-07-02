@@ -9,8 +9,8 @@ if TYPE_CHECKING:
 
     from foghttp import _foghttp
 
-from ..messages import STREAMING_BODY_CHUNK_UNSUPPORTED
 from .async_sending import fail_async_upload_body, send_async_upload_chunk
+from .chunks import body_chunk
 from .file_source import FileUploadSource
 from .predicates import is_async_stream
 from .thread_bridge import run_sync_upload_feeder
@@ -26,7 +26,7 @@ def feed_sync_upload_body(
         for chunk in cast("Iterable[object]", source):
             if is_cancelled():
                 return
-            if not raw_body.send(_validate_upload_chunk(chunk)):
+            if not raw_body.send(body_chunk(chunk)):
                 return
     except Exception as exc:  # noqa: BLE001
         if not is_cancelled():
@@ -57,7 +57,7 @@ async def feed_async_upload_body(
             if not await send_async_upload_chunk(
                 raw_body,
                 ready,
-                _validate_upload_chunk(chunk),
+                body_chunk(chunk),
             ):
                 return
     except asyncio.CancelledError:
@@ -97,16 +97,6 @@ async def close_async_source(source: object) -> None:
             await aclose()
         return
     await asyncio.to_thread(close_sync_source, source)
-
-
-def _validate_upload_chunk(chunk: object) -> bytes:
-    if isinstance(chunk, bytes):
-        return chunk
-    if isinstance(chunk, bytearray):
-        return bytes(chunk)
-    if isinstance(chunk, memoryview):
-        return chunk.tobytes()
-    raise TypeError(STREAMING_BODY_CHUNK_UNSUPPORTED)
 
 
 def _upload_source_error(error: BaseException) -> str:

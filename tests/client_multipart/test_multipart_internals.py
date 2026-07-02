@@ -11,7 +11,7 @@ from foghttp._multipart.stream import (
     MultipartStream,
     MultipartStreamFactory,
 )
-from foghttp._multipart.values import body_chunk
+from foghttp._upload_body.chunks import body_chunk
 from foghttp.messages import (
     MULTIPART_CONTENT_TYPE_UNSUPPORTED,
     MULTIPART_FILES_UNSUPPORTED,

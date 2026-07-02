@@ -2,11 +2,11 @@ import asyncio
 from collections.abc import AsyncIterable, AsyncIterator, Iterable, Iterator
 from typing import cast
 
+from .._upload_body.chunks import body_chunk
 from ..messages import MULTIPART_FILES_UNSUPPORTED
 from .constants import CRLF
 from .encoding import field_header
 from .models import MultipartField, MultipartFile
-from .values import body_chunk
 
 
 _ITER_DONE = object()

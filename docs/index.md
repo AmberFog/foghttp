@@ -4,7 +4,7 @@ layout: "home"
 hero:
   name: "FogHTTP"
   text: "Rust-powered HTTP client for Python"
-  tagline: "Buffered JSON and form requests, sync and async response streaming, transparent response decoding, base URL clients, default headers and params, sync and async APIs, redirects, custom CA certificates, cancellation, and observable request limits with pool diagnostics."
+  tagline: "Buffered JSON and form requests, streaming and multipart uploads, sync and async response streaming, transparent response decoding, base URL clients, default headers and params, sync and async APIs, redirects, custom CA certificates, cancellation, and observable request limits with pool diagnostics."
 
 features:
   - title: "Rust transport"
@@ -14,14 +14,14 @@ features:
     details: "Use Client in scripts and workers, or AsyncClient for high-concurrency asyncio workloads."
 
   - title: "Focused MVP"
-    details: "FogHTTP is intentionally small today: buffered responses with gzip/deflate/br decoding, sync and async bytes/text/line streaming, JSON, form-urlencoded data, base URL clients, default headers and params, redirects, prepared requests, async cancellation, global and per-origin request limits, and request metadata."
+    details: "FogHTTP is intentionally small today: buffered responses with gzip/deflate/br decoding, sync and async bytes/text/line streaming, JSON, form-urlencoded data, streaming and multipart uploads, base URL clients, default headers and params, redirects, prepared requests, async cancellation, global and per-origin request limits, and request metadata."
 ---
 
 # FogHTTP Documentation
 
 FogHTTP is currently an MVP. It is already useful for controlled HTTP workloads
-that use buffered request/response bodies, JSON and form APIs, explicit client
-lifecycle, and predictable redirect behavior.
+that use buffered request/response bodies, JSON and form APIs, streaming or
+multipart uploads, explicit client lifecycle, and predictable redirect behavior.
 
 ## Positioning
 
@@ -100,7 +100,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - `base_url` for reusable API clients and relative request paths
 - default client headers and query params for reusable API clients
 - query params with repeated keys, JSON, form-urlencoded data, buffered
-  bytes/text bodies, file-like bodies, and streaming bytes-like iterables
+  bytes/text bodies, file-like bodies, streaming bytes-like iterables, and
+  multipart `files=` uploads
 - transparent `gzip`, `deflate`, and `br` decoding for buffered responses
 - sync and async bytes/text/line response streaming with context-managed cleanup
 - response status flags for success, redirects, and client/server errors
