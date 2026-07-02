@@ -27,10 +27,11 @@ MULTIPART_TOTAL_TIMEOUT = 3.0
 MULTIPART_WRITE_TIMEOUT = 0.05
 STALLED_PROVIDER_RETURN_LIMIT = 1.0
 STALLED_PROVIDER_SLEEP = 2.0
+FAST_MULTIPART_TIMEOUTS = foghttp.Timeouts(connect=1.0, read=1.0, write=1.0, pool=0.5, total=3.0)
 
 
 async def test_async_client_sends_multipart_files_and_form_fields(http_server: str) -> None:
-    async with foghttp.AsyncClient() as client:
+    async with foghttp.AsyncClient(timeouts=FAST_MULTIPART_TIMEOUTS) as client:
         response = await client.post(
             f"{http_server}{SECURITY_HEADERS_PATH}",
             data={"description": "avatar"},
@@ -54,7 +55,7 @@ async def test_async_client_sends_multipart_files_and_form_fields(http_server: s
 async def test_async_client_streams_async_multipart_part(http_server: str) -> None:
     stream = AsyncChunks((b"async-", b"part"))
 
-    async with foghttp.AsyncClient() as client:
+    async with foghttp.AsyncClient(timeouts=FAST_MULTIPART_TIMEOUTS) as client:
         response = await client.post(
             f"{http_server}{SECURITY_HEADERS_PATH}",
             files={"stream": ("stream.bin", stream)},
@@ -80,7 +81,7 @@ async def test_async_client_streams_async_multipart_part(http_server: str) -> No
 async def test_async_client_streams_sync_file_multipart_without_closing_external_file(http_server: str) -> None:
     file_obj = ClosingBytesFile(b"file payload", name="reports/report.txt")
 
-    async with foghttp.AsyncClient() as client:
+    async with foghttp.AsyncClient(timeouts=FAST_MULTIPART_TIMEOUTS) as client:
         response = await client.post(
             f"{http_server}{SECURITY_HEADERS_PATH}",
             files={"report": file_obj},
@@ -101,7 +102,7 @@ async def test_async_client_streams_sync_file_multipart_without_closing_external
 
 
 async def test_async_stream_multipart_rejects_method_preserving_redirect(http_server: str) -> None:
-    async with foghttp.AsyncClient(follow_redirects=True) as client:
+    async with foghttp.AsyncClient(follow_redirects=True, timeouts=FAST_MULTIPART_TIMEOUTS) as client:
         with pytest.raises(foghttp.RequestError, match="non-replayable request body"):
             await client.post(
                 f"{http_server}/redirect/{TEMPORARY_REDIRECT}",
@@ -110,7 +111,7 @@ async def test_async_stream_multipart_rejects_method_preserving_redirect(http_se
 
 
 async def test_async_buffered_multipart_replays_method_preserving_redirect(http_server: str) -> None:
-    async with foghttp.AsyncClient(follow_redirects=True) as client:
+    async with foghttp.AsyncClient(follow_redirects=True, timeouts=FAST_MULTIPART_TIMEOUTS) as client:
         response = await client.post(
             f"{http_server}/redirect/{TEMPORARY_REDIRECT}",
             files={"file": ("payload.txt", b"replayable")},
@@ -142,7 +143,7 @@ async def test_async_factory_multipart_replays_method_preserving_redirect(http_s
         sources.append(source)
         return source
 
-    async with foghttp.AsyncClient(follow_redirects=True) as client:
+    async with foghttp.AsyncClient(follow_redirects=True, timeouts=FAST_MULTIPART_TIMEOUTS) as client:
         response = await client.post(
             f"{http_server}/redirect/{TEMPORARY_REDIRECT}",
             files={"file": ("factory.txt", content)},
@@ -170,7 +171,7 @@ async def test_async_factory_multipart_replays_method_preserving_redirect(http_s
 
 async def test_async_stream_response_accepts_multipart_upload(http_server: str) -> None:
     async with (
-        foghttp.AsyncClient() as client,
+        foghttp.AsyncClient(timeouts=FAST_MULTIPART_TIMEOUTS) as client,
         client.stream(
             POST,
             f"{http_server}{SECURITY_HEADERS_PATH}",
@@ -193,7 +194,7 @@ async def test_async_multipart_cancellation_closes_sync_source(http_server: str)
         loop.call_soon_threadsafe(source_created.set)
         return source
 
-    async with foghttp.AsyncClient() as client:
+    async with foghttp.AsyncClient(timeouts=FAST_MULTIPART_TIMEOUTS) as client:
         task = asyncio.create_task(
             client.post(
                 f"{http_server}{SECURITY_HEADERS_PATH}",
@@ -220,7 +221,7 @@ async def test_async_multipart_cancellation_closes_sync_source(http_server: str)
 async def test_async_multipart_cancellation_keeps_direct_async_source_open(http_server: str) -> None:
     source = BlockingAsyncChunks((b"first", b"second"))
 
-    async with foghttp.AsyncClient() as client:
+    async with foghttp.AsyncClient(timeouts=FAST_MULTIPART_TIMEOUTS) as client:
         task = asyncio.create_task(
             client.post(
                 f"{http_server}{SECURITY_HEADERS_PATH}",
@@ -252,7 +253,7 @@ async def test_async_multipart_cancellation_closes_factory_async_source(http_ser
         source_created.set()
         return source
 
-    async with foghttp.AsyncClient() as client:
+    async with foghttp.AsyncClient(timeouts=FAST_MULTIPART_TIMEOUTS) as client:
         task = asyncio.create_task(
             client.post(
                 f"{http_server}{SECURITY_HEADERS_PATH}",
@@ -309,7 +310,7 @@ async def test_async_multipart_coroutine_factory_fails_cleanly(http_server: str)
     async def invalid_part() -> AsyncChunks:
         return AsyncChunks((b"invalid",))
 
-    async with foghttp.AsyncClient() as client:
+    async with foghttp.AsyncClient(timeouts=FAST_MULTIPART_TIMEOUTS) as client:
         with pytest.raises(TypeError, match=MULTIPART_FILES_UNSUPPORTED):
             await client.post(
                 f"{http_server}{SECURITY_HEADERS_PATH}",

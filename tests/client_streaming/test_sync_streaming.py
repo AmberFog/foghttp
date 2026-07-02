@@ -123,10 +123,12 @@ def test_sync_stream_read_timeout_aborts_body(
 def test_sync_stream_does_not_use_async_ready_frame_coalescing(
     sync_streaming_server: SyncStreamingServer,
 ) -> None:
+    timeout = foghttp.Timeouts(read=READ_TIMEOUT_SECONDS, total=2.0)
     with foghttp.Client() as client:
         with client.stream(
             GET,
             f"{sync_streaming_server.base_url}{BROKEN_READY_TAIL_STREAM_PATH}",
+            timeout=timeout,
         ) as response:
             byte_stream = response.iter_bytes()
             assert next_sync_stream_chunk(byte_stream) == FIRST_CHUNK

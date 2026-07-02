@@ -40,6 +40,7 @@ dev = [
     "pre-commit>=4,<5",
     "pytest>=8",
     "pytest-asyncio>=0.23",
+    "pytest-timeout>=2,<3",
     "ruff>=0.15,<0.16",
     "trustme>=1.2",
 ]
@@ -54,6 +55,8 @@ python-source = "."
 addopts = ["-p", "no:anyio"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+timeout = 20
+timeout_method = "thread"
 
 [tool.coverage.run]
 branch = true
