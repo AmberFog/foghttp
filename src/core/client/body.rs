@@ -301,14 +301,45 @@ impl UploadBodyChannel {
         }
         state.closed = true;
         let waker = state.receive_waker.take();
-        let callback = state.ready_callback.clone();
         drop(state);
         self.send_ready.notify_all();
         if let Some(waker) = waker {
             waker.wake();
         }
-        if let Some(callback) = callback {
-            callback();
-        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::upload_body_channel;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    #[test]
+    fn upload_body_finish_does_not_call_ready_callback() {
+        let (sender, _receiver) = upload_body_channel(1);
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_for_callback = Arc::clone(&callback_count);
+        sender.set_ready_callback(Some(Arc::new(move || {
+            callback_count_for_callback.fetch_add(1, Ordering::SeqCst);
+        })));
+
+        sender.finish();
+
+        assert_eq!(callback_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn upload_body_abort_calls_ready_callback() {
+        let (sender, _receiver) = upload_body_channel(1);
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_for_callback = Arc::clone(&callback_count);
+        sender.set_ready_callback(Some(Arc::new(move || {
+            callback_count_for_callback.fetch_add(1, Ordering::SeqCst);
+        })));
+
+        sender.close();
+
+        assert_eq!(callback_count.load(Ordering::SeqCst), 1);
     }
 }

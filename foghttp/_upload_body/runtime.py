@@ -160,6 +160,15 @@ class _AsyncStreamingUploadBody:
             )
 
     def _notify_ready(self) -> None:
+        if self._loop.is_closed():
+            return
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+        if running_loop is self._loop:
+            self._ready.set()
+            return
         self._loop.call_soon_threadsafe(self._ready.set)
 
 

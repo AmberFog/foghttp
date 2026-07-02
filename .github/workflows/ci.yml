@@ -94,7 +94,7 @@ jobs:
         run: uv run --extra dev --with "maturin>=1.7,<2" maturin develop
 
       - name: Run tests with coverage
-        run: uv run --extra dev coverage run -m pytest
+        run: uv run --extra dev coverage run -m pytest -vv
 
       - name: Report coverage
         run: uv run --extra dev coverage report -m
