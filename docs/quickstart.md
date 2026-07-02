@@ -398,17 +398,18 @@ FogHTTP currently accepts one body source per request:
 | `json=` | Encodes with `orjson` and adds `content-type: application/json` when no explicit content type is set |
 | `data=` | Encodes mappings and repeated pairs as `application/x-www-form-urlencoded`; raw `bytes` and `str` are sent as buffered body content |
 | `content=` | Accepts buffered `bytes` or `str`, binary file-like objects, sync bytes-like iterables, zero-arg byte-stream factories, and async bytes-like iterables/factories on `AsyncClient`; strings are encoded as UTF-8 and no semantic content type is added |
-| `files=` | Reserved for future multipart uploads |
+| `files=` | Builds multipart uploads from bytes-like parts, binary file-like objects, byte streams, or byte-stream factories; can be combined with mapping or repeated-pair `data=` form fields |
 
-Passing more than one body source raises `ValueError`. `Content-Length` and
+Passing incompatible body sources raises `ValueError`; `files=` may be combined
+with form-field `data=` mappings or repeated pairs. `Content-Length` and
 `Transfer-Encoding` are transport-managed framing headers and are not accepted
-in request headers; the Rust transport owns them. Buffered `json=`, `data=`, and
-byte/string `content=` bodies are replayable for the current redirect policy.
-File-like and direct streaming `content=` bodies are non-replayable, so
-method-preserving redirects fail closed instead of replaying a consumed
-provider. Factory-backed streaming `content=` bodies are replayable because the
-factory returns a fresh stream per send attempt. Public provider and multipart
-type aliases are documented in
+in request headers; the Rust transport owns them. Buffered `json=`, `data=`,
+byte/string `content=`, and bytes-like multipart file parts are replayable for
+the current redirect policy. File-like and direct streaming `content=` or
+`files=` bodies are non-replayable, so method-preserving redirects fail closed
+instead of replaying a consumed provider. Factory-backed streaming bodies are
+replayable because the factory returns a fresh stream per send attempt. Public
+provider and multipart type aliases are documented in
 [Upload typing contracts](./upload-types.md).
 
 ## Buffered Response Decoding

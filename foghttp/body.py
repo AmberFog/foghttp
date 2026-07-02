@@ -7,6 +7,7 @@ from urllib.parse import urlencode
 
 import orjson
 
+from ._multipart import normalize_multipart_body
 from ._request_body import RequestBody
 from ._upload_body import SyncRequestContent, normalize_content_body
 from .messages import BODY_DATA_UNSUPPORTED, BODY_PARAMETER_CONFLICT
@@ -22,6 +23,7 @@ _UrlEncodeData: TypeAlias = Mapping[str, object] | Sequence[tuple[str, object]]
 class BodyParameter(StrEnum):
     CONTENT = "content"
     DATA = "data"
+    FILES = "files"
     JSON = "json"
 
 
@@ -29,10 +31,11 @@ def encode_body(
     *,
     content: SyncRequestContent | object | None,
     data: RequestData,
+    files: object | None,
     json: Any,
     headers: MutableMapping[str, str],
 ) -> RequestBody:
-    source = _body_parameter(content=content, data=data, json=json)
+    source = _body_parameter(content=content, data=data, files=files, json=json)
     match source:
         case None:
             return RequestBody.replayable_body(None)
@@ -40,16 +43,26 @@ def encode_body(
             return normalize_content_body(content)
         case BodyParameter.DATA:
             return RequestBody.replayable_body(_encode_data_body(data, headers))
+        case BodyParameter.FILES:
+            return normalize_multipart_body(data=data, files=files, headers=headers)
         case BodyParameter.JSON:
             return RequestBody.replayable_body(_encode_json_body(json, headers))
 
 
-def _body_parameter(*, content: object, data: object, json: object) -> BodyParameter | None:
+def _body_parameter(
+    *,
+    content: object,
+    data: object,
+    files: object,
+    json: object,
+) -> BodyParameter | None:
     sources = []
     if content is not None:
         sources.append(BodyParameter.CONTENT)
-    if data is not None:
+    if data is not None and files is None:
         sources.append(BodyParameter.DATA)
+    if files is not None:
+        sources.append(BodyParameter.FILES)
     if json is not None:
         sources.append(BodyParameter.JSON)
     if len(sources) > 1:

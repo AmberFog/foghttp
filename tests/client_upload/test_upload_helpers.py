@@ -4,11 +4,16 @@ import asyncio
 import io
 from typing import TYPE_CHECKING
 
+import pytest
+
 from foghttp._upload_body.async_sending import (
     fail_async_upload_body,
     send_async_upload_chunk,
 )
 from foghttp._upload_body.file_source import FileUploadSource, file_content_length
+import foghttp._upload_body.runtime as upload_runtime
+from foghttp._upload_body.thread_bridge import run_sync_upload_feeder
+from tests.client_multipart.sources import AsyncChunks
 from tests.client_upload.helpers import (
     FailingFilenoSeekableFile,
     FailingSeekFile,
@@ -16,6 +21,7 @@ from tests.client_upload.helpers import (
     FilenoOnly,
     OversizedTellFile,
     ReadOnlyFile,
+    RecordingRawUploadBody,
     RetryingAsyncRawBody,
 )
 
@@ -26,6 +32,7 @@ if TYPE_CHECKING:
 
 REGULAR_FILE_REMAINING_LENGTH = 4
 SEEKABLE_FALLBACK_REMAINING_LENGTH = 5
+UPLOAD_SOURCE_FAILURE = "upload source failed"
 
 
 async def test_send_async_upload_chunk_waits_for_ready_signal() -> None:
@@ -65,6 +72,47 @@ async def test_fail_async_upload_body_stops_when_body_is_closed() -> None:
     await fail_async_upload_body(raw_body, asyncio.Event(), "failed")
 
     assert raw_body.failures == ["failed"]
+
+
+async def test_run_sync_upload_feeder_propagates_source_error() -> None:
+    def feeder() -> None:
+        raise ValueError(UPLOAD_SOURCE_FAILURE)
+
+    with pytest.raises(ValueError, match=UPLOAD_SOURCE_FAILURE):
+        await run_sync_upload_feeder(feeder, lambda: None)
+
+
+async def test_async_streaming_upload_body_closes_factory_owned_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def feed_body(_raw_body: object, _source: object, _ready: asyncio.Event) -> None: ...
+
+    sources: list[AsyncChunks] = []
+
+    def source_factory() -> AsyncChunks:
+        source = AsyncChunks((b"payload",))
+        sources.append(source)
+        return source
+
+    monkeypatch.setattr(
+        "foghttp._upload_body.runtime._foghttp.RawUploadBody",
+        RecordingRawUploadBody,
+    )
+    monkeypatch.setattr(upload_runtime, "feed_async_upload_body", feed_body)
+
+    body = upload_runtime.prepare_async_upload_body(
+        upload_runtime.RequestBody.replayable_streaming_body(
+            source_factory,
+            content_length=None,
+        ),
+    )
+
+    body.raw_body.start_callback()
+    await body.aclose()
+
+    assert sources
+    assert sources[0].closed is True
+    assert body.raw_body.closed is True
 
 
 def test_file_upload_source_stops_on_empty_read() -> None:

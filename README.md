@@ -146,9 +146,9 @@ are the broadest supported path; sync and async response streaming are available
 as bytes/text/line context-managed APIs. HTTP proxy routing and HTTPS proxy
 `CONNECT` tunnelling are available through `proxy=` and `trust_env=True` when
 the proxy endpoint itself uses `http://`.
-Cookies, auth helpers, multipart uploads, HTTP/2, automatic `Accept-Encoding`
-negotiation, streaming decompression, strict connection-level pool limits, and
-per-request connect timeout reconfiguration are planned for later versions.
+Cookies, auth helpers, HTTP/2, automatic `Accept-Encoding` negotiation,
+streaming decompression, strict connection-level pool limits, and per-request
+connect timeout reconfiguration are planned for later versions.
 Response body read timeout is available for buffered and streaming response
 bodies; request body write timeout is available for buffered and streaming
 request bodies. Socket lifecycle telemetry is available for the current HTTP/1

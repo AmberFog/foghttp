@@ -10,6 +10,7 @@ import pytest
 
 import foghttp
 from foghttp.methods import GET
+from foghttp.status_codes.client_error import NOT_FOUND
 from foghttp.status_codes.success import OK
 from foghttp.timeouts import Timeouts
 from foghttp.tls import TLSConfig
@@ -109,6 +110,38 @@ async def test_async_https_request_tunnels_through_connect_proxy(
 
     assert response.status_code == OK
     assert response.content == TLS_OK_BODY
+    assert connect_proxy.connects[0].authority == urlsplit(server.url).netloc
+
+
+def test_sync_https_multipart_request_tunnels_through_connect_proxy(
+    connect_proxy: ConnectProxy,
+    tls_target: tuple[TLSServer, TLSCertificateBundle],
+) -> None:
+    server, bundle = tls_target
+
+    with foghttp.Client(proxy=connect_proxy.base_url, tls=_tls(bundle)) as client:
+        response = client.post(
+            _target_url(server),
+            files={"file": ("payload.txt", b"payload", "text/plain")},
+        )
+
+    assert response.status_code == NOT_FOUND
+    assert connect_proxy.connects[0].authority == urlsplit(server.url).netloc
+
+
+async def test_async_https_multipart_request_tunnels_through_connect_proxy(
+    connect_proxy: ConnectProxy,
+    tls_target: tuple[TLSServer, TLSCertificateBundle],
+) -> None:
+    server, bundle = tls_target
+
+    async with foghttp.AsyncClient(proxy=connect_proxy.base_url, tls=_tls(bundle)) as client:
+        response = await client.post(
+            _target_url(server),
+            files={"file": ("payload.txt", b"payload", "text/plain")},
+        )
+
+    assert response.status_code == NOT_FOUND
     assert connect_proxy.connects[0].authority == urlsplit(server.url).netloc
 
 

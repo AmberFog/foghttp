@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import suppress
 from dataclasses import dataclass
 import threading
 from typing import TYPE_CHECKING
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
 
 
 UPLOAD_FEEDER_JOIN_TIMEOUT = 0.1
+ASYNC_UPLOAD_FEEDER_JOIN_TIMEOUT = 1.0
 
 
 @dataclass(slots=True)
@@ -106,6 +108,7 @@ class _AsyncStreamingUploadBody:
         self._loop = asyncio.get_running_loop()
         self._ready = asyncio.Event()
         self._futures: list[Future[None]] = []
+        self._owned_sources: list[object] = []
         self._replayable = replayable
 
     def start(self) -> None:
@@ -120,24 +123,41 @@ class _AsyncStreamingUploadBody:
         self._futures.append(future)
 
     async def aclose(self) -> None:
-        if self.raw_body is not None:
-            self.raw_body.close()
         if not self._futures:
+            if self.raw_body is not None:
+                self.raw_body.close()
             if not self._replayable:
                 await close_async_source(self._source)
             return
         for pending_future in self._futures:
             if not pending_future.done():
                 pending_future.cancel()
-        await asyncio.gather(
-            *(asyncio.wrap_future(stored_future) for stored_future in self._futures),
-            return_exceptions=True,
-        )
+        await self._drain_futures()
+        await self._close_owned_sources()
+        if self.raw_body is not None:
+            self.raw_body.close()
 
     def _fresh_source(self) -> object:
         if self._replayable:
-            return _call_body_factory(self._source)
+            source = _call_body_factory(self._source)
+            self._owned_sources.append(source)
+            return source
         return self._source
+
+    async def _close_owned_sources(self) -> None:
+        close_tasks = [_close_owned_source(source) for source in self._owned_sources]
+        if close_tasks:
+            await asyncio.gather(*close_tasks, return_exceptions=True)
+
+    async def _drain_futures(self) -> None:
+        with suppress(TimeoutError):
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *(asyncio.wrap_future(stored_future) for stored_future in self._futures),
+                    return_exceptions=True,
+                ),
+                timeout=ASYNC_UPLOAD_FEEDER_JOIN_TIMEOUT,
+            )
 
     def _notify_ready(self) -> None:
         self._loop.call_soon_threadsafe(self._ready.set)
@@ -167,3 +187,10 @@ def prepare_async_upload_body(body: RequestBody) -> AsyncUploadBody:
 
 def _call_body_factory(source: object) -> object:
     return source()  # type: ignore[operator]
+
+
+async def _close_owned_source(source: object) -> None:
+    if is_async_stream(source):
+        await close_async_source(source)
+        return
+    close_sync_source(source)

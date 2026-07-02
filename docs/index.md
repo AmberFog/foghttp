@@ -105,8 +105,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - sync and async bytes/text/line response streaming with context-managed cleanup
 - response status flags for success, redirects, and client/server errors
 - prepared `Request` objects with `build_request()` and `send()`
-- public upload typing contracts for streaming request bodies and planned
-  multipart body providers
+- public upload typing contracts for streaming request bodies and multipart
+  `files=` providers
 - case-insensitive `Headers` with repeated value support
 - safe policy for transport-managed request headers
 - redacted repr/error surfaces for sensitive headers, URL credentials,
@@ -135,9 +135,9 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 
 ## Not Yet
 
-FogHTTP does not yet implement cookies, multipart uploads, HTTP/2, automatic
-`Accept-Encoding` negotiation, streaming decompression, or advanced
-authentication helpers. `trust_env` supports HTTP proxy routing, HTTPS
+FogHTTP does not yet implement cookies, HTTP/2, automatic `Accept-Encoding`
+negotiation, streaming decompression, or advanced authentication helpers.
+`trust_env` supports HTTP proxy routing, HTTPS
 `CONNECT` tunnelling through `http://` proxy endpoints, and `SSL_CERT_FILE`.
 Disabling TLS verification is intentionally not supported. See
 [Limitations](./limitations.md) for details.

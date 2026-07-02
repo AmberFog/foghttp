@@ -111,6 +111,14 @@ def test_async_multipart_file_aliases_accept_async_sources() -> None:
     assert file_pairs[0][1] == file_tuple
 
 
+def test_async_multipart_file_aliases_accept_sync_sources() -> None:
+    file_content: AsyncMultipartFileContent = sync_chunks
+    file_mapping = {"file": ("payload.bin", file_content)}
+    files: AsyncMultipartFiles = file_mapping
+
+    assert files == file_mapping
+
+
 def test_stream_contract_rejects_text_and_raw_buffers() -> None:
     text_stream: SyncByteStream = "payload"  # type: ignore[assignment]
     bytes_stream: SyncByteStream = b"payload"  # type: ignore[assignment]

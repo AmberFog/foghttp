@@ -30,7 +30,7 @@ from .stream_response.bindings import bind_stream_telemetry
 from .telemetry import TelemetryConfig, TelemetryRequestMode
 from .timeouts import Timeouts
 from .tls import TLSConfig
-from .types import HttpVersions, QueryParams, RequestData
+from .types import HttpVersions, QueryParams, RequestData, SyncMultipartFiles
 from .url import URL
 
 
@@ -132,6 +132,7 @@ class Client(ClientCore):
         params: QueryParams = None,
         content: SyncRequestContent | None = None,
         data: RequestData = None,
+        files: SyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -143,6 +144,7 @@ class Client(ClientCore):
             params=params,
             content=content,
             data=data,
+            files=files,
             json=json,
         )
         return self.send(request, timeout=timeout)
@@ -178,6 +180,7 @@ class Client(ClientCore):
         params: QueryParams = None,
         content: SyncRequestContent | None = None,
         data: RequestData = None,
+        files: SyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> StreamContext:
@@ -189,6 +192,7 @@ class Client(ClientCore):
             params=params,
             content=content,
             data=data,
+            files=files,
             json=json,
         )
         return StreamContext(lambda: self._send_stream(request, timeout=timeout))
@@ -201,6 +205,7 @@ class Client(ClientCore):
         params: QueryParams = None,
         content: SyncRequestContent | None = None,
         data: RequestData = None,
+        files: SyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -211,6 +216,7 @@ class Client(ClientCore):
             params=params,
             content=content,
             data=data,
+            files=files,
             json=json,
             timeout=timeout,
         )
@@ -223,6 +229,7 @@ class Client(ClientCore):
         params: QueryParams = None,
         content: SyncRequestContent | None = None,
         data: RequestData = None,
+        files: SyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -233,6 +240,7 @@ class Client(ClientCore):
             params=params,
             content=content,
             data=data,
+            files=files,
             json=json,
             timeout=timeout,
         )
@@ -245,6 +253,7 @@ class Client(ClientCore):
         params: QueryParams = None,
         content: SyncRequestContent | None = None,
         data: RequestData = None,
+        files: SyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -255,6 +264,7 @@ class Client(ClientCore):
             params=params,
             content=content,
             data=data,
+            files=files,
             json=json,
             timeout=timeout,
         )
@@ -267,6 +277,7 @@ class Client(ClientCore):
         params: QueryParams = None,
         content: SyncRequestContent | None = None,
         data: RequestData = None,
+        files: SyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -277,6 +288,7 @@ class Client(ClientCore):
             params=params,
             content=content,
             data=data,
+            files=files,
             json=json,
             timeout=timeout,
         )
@@ -289,6 +301,7 @@ class Client(ClientCore):
         params: QueryParams = None,
         content: SyncRequestContent | None = None,
         data: RequestData = None,
+        files: SyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -299,6 +312,7 @@ class Client(ClientCore):
             params=params,
             content=content,
             data=data,
+            files=files,
             json=json,
             timeout=timeout,
         )
@@ -311,6 +325,7 @@ class Client(ClientCore):
         params: QueryParams = None,
         content: SyncRequestContent | None = None,
         data: RequestData = None,
+        files: SyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
     ) -> Response:
@@ -321,6 +336,7 @@ class Client(ClientCore):
             params=params,
             content=content,
             data=data,
+            files=files,
             json=json,
             timeout=timeout,
         )

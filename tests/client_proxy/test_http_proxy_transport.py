@@ -8,6 +8,8 @@ import pytest
 import foghttp
 from foghttp.methods import GET, POST
 from foghttp.status_codes.redirect import FOUND
+from tests.client_multipart.assertions import assert_multipart_parts, parse_multipart_parts
+from tests.client_multipart.models import MultipartPart
 from tests.client_proxy.environment import clear_proxy_environment
 from tests.client_proxy.http_proxy_server import (
     PROXY_REDIRECT_PATH,
@@ -57,6 +59,38 @@ def test_sync_stream_routes_http_request_through_explicit_proxy(
     assert len(sync_http_proxy.requests) == 1
 
 
+def test_sync_client_routes_multipart_request_through_explicit_proxy(
+    sync_http_proxy: SyncHTTPProxy,
+    unused_tcp_port: int,
+) -> None:
+    target_url = _target_url(unused_tcp_port, "/multipart-via-proxy")
+
+    with foghttp.Client(proxy=sync_http_proxy.base_url) as client:
+        response = client.post(
+            target_url,
+            files={"file": ("proxy.txt", b"payload", "text/plain")},
+        )
+
+    payload = response.json()
+    assert payload["request_line"] == f"{POST} {target_url} HTTP/1.1"
+    assert "proxy-authorization" not in response.request.headers
+    assert_multipart_parts(
+        parse_multipart_parts(
+            content_type=payload["headers"]["content-type"][0],
+            body=payload["body"].encode(),
+        ),
+        [
+            MultipartPart(
+                name="file",
+                filename="proxy.txt",
+                content=b"payload",
+                content_type="text/plain",
+            ),
+        ],
+    )
+    assert len(sync_http_proxy.requests) == 1
+
+
 async def test_async_client_routes_http_request_through_explicit_proxy(
     async_http_proxy: AsyncHTTPProxy,
     unused_tcp_port: int,
@@ -70,6 +104,38 @@ async def test_async_client_routes_http_request_through_explicit_proxy(
     assert response.request.url == target_url
     assert payload["request_line"] == f"{GET} {target_url} HTTP/1.1"
     assert payload["headers"]["host"] == [urlsplit(target_url).netloc]
+    assert len(async_http_proxy.requests) == 1
+
+
+async def test_async_client_routes_multipart_request_through_explicit_proxy(
+    async_http_proxy: AsyncHTTPProxy,
+    unused_tcp_port: int,
+) -> None:
+    target_url = _target_url(unused_tcp_port, "/async-multipart-via-proxy")
+
+    async with foghttp.AsyncClient(proxy=async_http_proxy.base_url) as client:
+        response = await client.post(
+            target_url,
+            files={"file": ("proxy.txt", b"payload", "text/plain")},
+        )
+
+    payload = response.json()
+    assert payload["request_line"] == f"{POST} {target_url} HTTP/1.1"
+    assert "proxy-authorization" not in response.request.headers
+    assert_multipart_parts(
+        parse_multipart_parts(
+            content_type=payload["headers"]["content-type"][0],
+            body=payload["body"].encode(),
+        ),
+        [
+            MultipartPart(
+                name="file",
+                filename="proxy.txt",
+                content=b"payload",
+                content_type="text/plain",
+            ),
+        ],
+    )
     assert len(async_http_proxy.requests) == 1
 
 

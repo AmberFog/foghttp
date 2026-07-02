@@ -16,6 +16,7 @@ from typing import Protocol, TypeAlias
 from .streams import (
     AsyncByteStream,
     AsyncByteStreamFactory,
+    BodyChunk,
     SyncByteStream,
     SyncByteStreamFactory,
 )
@@ -25,12 +26,14 @@ class BinaryFile(Protocol):
     def read(self, size: int = -1, /) -> bytes: ...
 
 
-SyncMultipartFileContent: TypeAlias = bytes | BinaryFile | SyncByteStream | SyncByteStreamFactory
+SyncMultipartFileContent: TypeAlias = BodyChunk | BinaryFile | SyncByteStream | SyncByteStreamFactory
 SyncMultipartFileTuple: TypeAlias = tuple[str, SyncMultipartFileContent] | tuple[str, SyncMultipartFileContent, str]
 SyncMultipartFileValue: TypeAlias = SyncMultipartFileContent | SyncMultipartFileTuple
 SyncMultipartFiles: TypeAlias = Mapping[str, SyncMultipartFileValue] | Sequence[tuple[str, SyncMultipartFileValue]]
 
-AsyncMultipartFileContent: TypeAlias = bytes | BinaryFile | AsyncByteStream | AsyncByteStreamFactory
+AsyncMultipartFileContent: TypeAlias = (
+    BodyChunk | BinaryFile | SyncByteStream | AsyncByteStream | SyncByteStreamFactory | AsyncByteStreamFactory
+)
 AsyncMultipartFileTuple: TypeAlias = tuple[str, AsyncMultipartFileContent] | tuple[str, AsyncMultipartFileContent, str]
 AsyncMultipartFileValue: TypeAlias = AsyncMultipartFileContent | AsyncMultipartFileTuple
 AsyncMultipartFiles: TypeAlias = Mapping[str, AsyncMultipartFileValue] | Sequence[tuple[str, AsyncMultipartFileValue]]
