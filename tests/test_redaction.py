@@ -1,6 +1,7 @@
 import pytest
 
 import foghttp
+from foghttp._redaction import REDACTED_VALUE, redact_header_value, redact_url
 from foghttp.messages import http_status_error
 from foghttp.methods import GET, POST
 from foghttp.status_codes.client_error import NOT_FOUND
@@ -14,6 +15,34 @@ QUERY_VALUE = "redaction-query-value"
 FRAGMENT_VALUE = "redaction-fragment-value"
 SAFE_HEADER_VALUE = "trace-id"
 SAFE_QUERY_VALUE = "public"
+
+
+@pytest.mark.parametrize(
+    "header_name",
+    [
+        pytest.param("X-Amz-Security-Token", id="aws-security-token"),
+        pytest.param("X-Goog-Api-Key", id="google-api-key"),
+        pytest.param("X-Access-Token", id="access-token"),
+        pytest.param("X-Session-Token", id="session-token"),
+        pytest.param("X-Gitlab-Token", id="gitlab-token"),
+        pytest.param("Private-Token", id="private-token"),
+        pytest.param("Sentry-Auth", id="sentry-auth"),
+        pytest.param("Vendor-Api-Key", id="vendor-api-key"),
+    ],
+)
+def test_header_redaction_covers_common_cloud_and_vendor_secret_names(header_name: str) -> None:
+    assert redact_header_value(header_name, HEADER_VALUE) == REDACTED_VALUE
+
+
+@pytest.mark.parametrize(
+    "header_name",
+    [
+        pytest.param("X-Trace-Token", id="trace-token"),
+        pytest.param("X-Request-Id", id="request-id"),
+    ],
+)
+def test_header_redaction_keeps_non_secret_operational_values(header_name: str) -> None:
+    assert redact_header_value(header_name, SAFE_HEADER_VALUE) == SAFE_HEADER_VALUE
 
 
 def test_headers_repr_redacts_sensitive_values() -> None:
@@ -56,6 +85,41 @@ def test_url_repr_redacts_userinfo_and_sensitive_query_and_fragment_params() -> 
     assert USERINFO_VALUE in str(url)
     assert QUERY_VALUE in str(url)
     assert FRAGMENT_VALUE in str(url)
+
+
+@pytest.mark.parametrize(
+    "query_name",
+    [
+        pytest.param("bearer", id="bearer"),
+        pytest.param("signature", id="signature"),
+        pytest.param("sig", id="sig"),
+        pytest.param("credential", id="credential"),
+        pytest.param("X-Amz-Signature", id="aws-signature"),
+        pytest.param("X-Amz-Credential", id="aws-credential"),
+        pytest.param("X-Amz-Security-Token", id="aws-security-token"),
+    ],
+)
+def test_url_redaction_covers_common_signature_and_credential_query_params(query_name: str) -> None:
+    url = f"https://example.com/users?{query_name}={QUERY_VALUE}&safe={SAFE_QUERY_VALUE}"
+
+    redacted_url = redact_url(url)
+
+    assert QUERY_VALUE not in redacted_url
+    assert f"{query_name}={REDACTED_VALUE}" in redacted_url
+    assert f"safe={SAFE_QUERY_VALUE}" in redacted_url
+
+
+@pytest.mark.parametrize(
+    "query_name",
+    [
+        pytest.param("page_token", id="page-token"),
+        pytest.param("trace_id", id="trace-id"),
+    ],
+)
+def test_url_redaction_keeps_non_secret_operational_query_params(query_name: str) -> None:
+    url = f"https://example.com/users?{query_name}={SAFE_QUERY_VALUE}"
+
+    assert redact_url(url) == url
 
 
 def test_request_repr_redacts_url_and_never_includes_body() -> None:

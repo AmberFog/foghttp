@@ -15,10 +15,25 @@ SENSITIVE_HEADER_NAMES = frozenset(
         "cookie",
         "proxy_authorization",
         "set_cookie",
+        "private_token",
+        "sentry_auth",
+        "x_access_token",
+        "x_amz_security_token",
         "x_api_key",
         "x_auth_token",
         "x_csrf_token",
+        "x_gitlab_token",
+        "x_goog_api_key",
+        "x_session_token",
     ),
+)
+
+SENSITIVE_HEADER_NAME_SUFFIXES = (
+    "_access_token",
+    "_api_key",
+    "_auth_token",
+    "_security_token",
+    "_session_token",
 )
 
 SENSITIVE_QUERY_PARAM_NAMES = frozenset(
@@ -28,7 +43,9 @@ SENSITIVE_QUERY_PARAM_NAMES = frozenset(
         "apikey",
         "auth",
         "authorization",
+        "bearer",
         "client_secret",
+        "credential",
         "id_token",
         "key",
         "password",
@@ -39,13 +56,25 @@ SENSITIVE_QUERY_PARAM_NAMES = frozenset(
         "session",
         "session_id",
         "sessionid",
+        "sig",
+        "signature",
         "token",
     ),
 )
 
+SENSITIVE_QUERY_PARAM_NAME_SUFFIXES = (
+    "_access_token",
+    "_auth_token",
+    "_credential",
+    "_security_token",
+    "_session_token",
+    "_signature",
+)
+
 
 def redact_header_value(name: str, value: str) -> str:
-    if _normalized_secret_name(name) in SENSITIVE_HEADER_NAMES:
+    normalized_name = _normalized_secret_name(name)
+    if normalized_name in SENSITIVE_HEADER_NAMES or normalized_name.endswith(SENSITIVE_HEADER_NAME_SUFFIXES):
         return REDACTED_VALUE
     return value
 
@@ -82,7 +111,10 @@ def _redact_fragment(fragment: str) -> str:
 
 def _redact_query_part(part: str) -> str:
     key, _separator, _value = part.partition("=")
-    if _normalized_secret_name(unquote_plus(key)) not in SENSITIVE_QUERY_PARAM_NAMES:
+    normalized_name = _normalized_secret_name(unquote_plus(key))
+    if normalized_name not in SENSITIVE_QUERY_PARAM_NAMES and not normalized_name.endswith(
+        SENSITIVE_QUERY_PARAM_NAME_SUFFIXES,
+    ):
         return part
     return f"{key}={REDACTED_VALUE}"
 
