@@ -7,6 +7,7 @@ from tests.client_streaming.constants import (
     FIRST_CHUNK,
     LATIN1_TEXT_STREAM_PATH,
     LATIN1_TEXT_VALUE,
+    READ_TIMEOUT_SECONDS,
     SECOND_CHUNK,
     TEXT_LINES,
     TEXT_LINES_BODY,
@@ -112,11 +113,13 @@ def test_sync_stream_iter_text_preserves_text_before_tail_error(
     sync_streaming_server: SyncStreamingServer,
 ) -> None:
     collected_text: list[str] = []
+    timeout = foghttp.Timeouts(read=READ_TIMEOUT_SECONDS, total=2.0)
     with (
         foghttp.Client() as client,
         client.stream(
             GET,
             f"{sync_streaming_server.base_url}{BROKEN_READY_TAIL_STREAM_PATH}",
+            timeout=timeout,
         ) as response,
         pytest.raises(foghttp.RequestError),
     ):
@@ -128,11 +131,13 @@ def test_sync_stream_iter_text_preserves_text_before_tail_error(
 def test_sync_stream_iter_lines_does_not_flush_partial_line_after_error(
     sync_streaming_server: SyncStreamingServer,
 ) -> None:
+    timeout = foghttp.Timeouts(read=READ_TIMEOUT_SECONDS, total=2.0)
     with (
         foghttp.Client() as client,
         client.stream(
             GET,
             f"{sync_streaming_server.base_url}{BROKEN_READY_TAIL_STREAM_PATH}",
+            timeout=timeout,
         ) as response,
         pytest.raises(foghttp.RequestError),
     ):
