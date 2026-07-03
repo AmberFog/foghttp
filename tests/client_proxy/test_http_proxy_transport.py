@@ -62,10 +62,16 @@ def test_sync_stream_routes_http_request_through_explicit_proxy(
 
 
 def test_explicit_proxy_per_host_connection_limit_is_target_origin_keyed(
+    faker: Faker,
     sync_http_proxy: SyncHTTPProxy,
 ) -> None:
-    slow_url = f"http://first.example{PROXY_STREAM_EARLY_CLOSE_PATH}"
-    fast_url = "http://second.example/via-same-proxy"
+    slow_origin = _fake_http_origin(faker)
+    fast_origin = _fake_http_origin(faker)
+    while fast_origin == slow_origin:
+        fast_origin = _fake_http_origin(faker)
+
+    slow_url = f"{slow_origin}{PROXY_STREAM_EARLY_CLOSE_PATH}"
+    fast_url = f"{fast_origin}/via-same-proxy"
     limits = foghttp.Limits(
         max_active_requests=2,
         max_connections=2,
@@ -96,8 +102,8 @@ def test_explicit_proxy_per_host_connection_limit_is_target_origin_keyed(
         f"{GET} {slow_url} HTTP/1.1",
         f"{GET} {fast_url} HTTP/1.1",
     }
-    assert "http://first.example" in state["origins"]
-    assert "http://second.example" in state["origins"]
+    assert _origin_from_url(slow_url) in state["origins"]
+    assert _origin_from_url(fast_url) in state["origins"]
 
 
 def test_sync_client_routes_multipart_request_through_explicit_proxy(
@@ -453,6 +459,15 @@ def test_proxy_protocol_failure_cleans_up_request_stats(
 
 def _target_url(port: int, path: str) -> str:
     return f"http://127.0.0.1:{port}{path}"
+
+
+def _fake_http_origin(faker: Faker) -> str:
+    return f"http://{faker.domain_name()}"
+
+
+def _origin_from_url(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
 
 
 def _proxy_redirect_url(port: int, location: str) -> str:
