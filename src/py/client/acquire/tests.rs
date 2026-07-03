@@ -7,7 +7,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Once;
-use std::task::{Context, Poll, Wake, Waker};
+use std::task::{Context, Poll};
 use std::thread;
 use std::time::Duration;
 use tokio::runtime::Builder;
@@ -15,12 +15,6 @@ use tokio::runtime::Builder;
 const ORIGIN: &str = "http://example.com";
 const SECONDARY_ORIGIN: &str = "http://api.example.com";
 const ACQUIRE_READY_TIMEOUT: Duration = Duration::from_secs(1);
-
-struct NoopWake;
-
-impl Wake for NoopWake {
-    fn wake(self: Arc<Self>) {}
-}
 
 fn initialize_python() {
     static PYTHON: Once = Once::new();
@@ -54,8 +48,8 @@ fn assert_acquire_waits<F, T>(mut future: Pin<&mut F>)
 where
     F: Future<Output = T>,
 {
-    let waker = Waker::from(Arc::new(NoopWake));
-    let mut context = Context::from_waker(&waker);
+    let waker = std::task::Waker::noop();
+    let mut context = Context::from_waker(waker);
     assert!(matches!(future.as_mut().poll(&mut context), Poll::Pending));
 }
 
