@@ -1,14 +1,20 @@
 use super::AcquireGate;
-use crate::core::metrics::Metrics;
+use crate::core::metrics::{
+    Metrics, MetricsSnapshot, OriginMetricsSnapshot, PendingRequestBlockingReason,
+};
 use pyo3::Python;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::Once;
+use std::task::{Context, Poll};
 use std::thread;
 use std::time::Duration;
 use tokio::runtime::Builder;
 
 const ORIGIN: &str = "http://example.com";
 const SECONDARY_ORIGIN: &str = "http://api.example.com";
+const ACQUIRE_READY_TIMEOUT: Duration = Duration::from_secs(1);
 
 fn initialize_python() {
     static PYTHON: Once = Once::new();
@@ -19,15 +25,60 @@ fn test_runtime() -> tokio::runtime::Runtime {
     Builder::new_current_thread().enable_time().build().unwrap()
 }
 
-fn find_origin_snapshot(
-    metrics: &Metrics,
-    origin: &str,
-) -> crate::core::metrics::OriginMetricsSnapshot {
+fn find_origin_snapshot(metrics: &Metrics, origin: &str) -> OriginMetricsSnapshot {
     metrics
         .origin_snapshots()
         .into_iter()
         .find(|snapshot| snapshot.origin == origin)
         .unwrap()
+}
+
+fn find_origin_diagnostics(
+    gate: &AcquireGate,
+    origin: &str,
+) -> crate::core::metrics::OriginPoolDiagnosticsSnapshot {
+    gate.diagnostics()
+        .origins
+        .into_iter()
+        .find(|snapshot| snapshot.origin == origin)
+        .unwrap()
+}
+
+fn assert_acquire_waits<F, T>(mut future: Pin<&mut F>)
+where
+    F: Future<Output = T>,
+{
+    let waker = std::task::Waker::noop();
+    let mut context = Context::from_waker(waker);
+    assert!(matches!(future.as_mut().poll(&mut context), Poll::Pending));
+}
+
+async fn acquire_before_deadline<F, T>(future: Pin<&mut F>) -> T
+where
+    F: Future<Output = T>,
+{
+    tokio::time::timeout(ACQUIRE_READY_TIMEOUT, future)
+        .await
+        .expect("acquire did not complete before deadline")
+}
+
+fn assert_request_pressure(metrics: &Metrics, active: usize, pending: usize) -> MetricsSnapshot {
+    let snapshot = metrics.snapshot();
+    assert_eq!(snapshot.active_requests, active);
+    assert_eq!(snapshot.pending_requests, pending);
+    snapshot
+}
+
+fn assert_origin_pressure(
+    metrics: &Metrics,
+    origin: &str,
+    active: usize,
+    pending: usize,
+) -> OriginMetricsSnapshot {
+    let snapshot = find_origin_snapshot(metrics, origin);
+    assert_eq!(snapshot.active_requests, active);
+    assert_eq!(snapshot.pending_requests, pending);
+    snapshot
 }
 
 #[test]
@@ -323,5 +374,183 @@ fn dropped_waiting_global_acquire_releases_origin_slot() {
         assert_eq!(metrics.snapshot().active_requests, 1);
         drop(permit);
         assert_eq!(metrics.snapshot().active_requests, 0);
+    });
+}
+
+#[test]
+fn global_limit_wakes_waiters_fifo_across_origins() {
+    let metrics = Arc::new(Metrics::default());
+    let gate = AcquireGate::new(1, None, 2, Arc::clone(&metrics));
+    let runtime = test_runtime();
+
+    runtime.block_on(async {
+        let blocker = gate.acquire(ORIGIN, 0.1, 0).await.unwrap();
+
+        let first_waiter = gate.acquire(SECONDARY_ORIGIN, 60.0, 0);
+        tokio::pin!(first_waiter);
+        assert_acquire_waits(first_waiter.as_mut());
+
+        let second_waiter = gate.acquire(ORIGIN, 60.0, 0);
+        tokio::pin!(second_waiter);
+        assert_acquire_waits(second_waiter.as_mut());
+
+        let snapshot = assert_request_pressure(&metrics, 1, 2);
+        assert_eq!(snapshot.peak_pending_requests, 2);
+        assert_origin_pressure(&metrics, ORIGIN, 1, 1);
+        assert_origin_pressure(&metrics, SECONDARY_ORIGIN, 0, 1);
+
+        drop(blocker);
+
+        let first_permit = acquire_before_deadline(first_waiter.as_mut())
+            .await
+            .unwrap();
+        assert_request_pressure(&metrics, 1, 1);
+        assert_origin_pressure(&metrics, ORIGIN, 0, 1);
+        assert_origin_pressure(&metrics, SECONDARY_ORIGIN, 1, 0);
+
+        drop(first_permit);
+
+        let second_permit = acquire_before_deadline(second_waiter.as_mut())
+            .await
+            .unwrap();
+        assert_request_pressure(&metrics, 1, 0);
+        assert_origin_pressure(&metrics, ORIGIN, 1, 0);
+
+        drop(second_permit);
+        assert_request_pressure(&metrics, 0, 0);
+    });
+}
+
+#[test]
+fn origin_limit_wakes_same_origin_waiters_fifo() {
+    let metrics = Arc::new(Metrics::default());
+    let gate = AcquireGate::new(2, Some(1), 2, Arc::clone(&metrics));
+    let runtime = test_runtime();
+
+    runtime.block_on(async {
+        let blocker = gate.acquire(ORIGIN, 0.1, 0).await.unwrap();
+
+        let first_waiter = gate.acquire(ORIGIN, 60.0, 0);
+        tokio::pin!(first_waiter);
+        assert_acquire_waits(first_waiter.as_mut());
+
+        let second_waiter = gate.acquire(ORIGIN, 60.0, 0);
+        tokio::pin!(second_waiter);
+        assert_acquire_waits(second_waiter.as_mut());
+
+        let snapshot = assert_request_pressure(&metrics, 1, 2);
+        assert_eq!(snapshot.peak_pending_requests, 2);
+        assert_origin_pressure(&metrics, ORIGIN, 1, 2);
+
+        drop(blocker);
+
+        let first_permit = acquire_before_deadline(first_waiter.as_mut())
+            .await
+            .unwrap();
+        assert_request_pressure(&metrics, 1, 1);
+        assert_origin_pressure(&metrics, ORIGIN, 1, 1);
+
+        drop(first_permit);
+
+        let second_permit = acquire_before_deadline(second_waiter.as_mut())
+            .await
+            .unwrap();
+        assert_request_pressure(&metrics, 1, 0);
+        assert_origin_pressure(&metrics, ORIGIN, 1, 0);
+
+        drop(second_permit);
+        assert_request_pressure(&metrics, 0, 0);
+    });
+}
+
+#[test]
+fn origin_then_global_order_preserves_same_origin_queue_position() {
+    let metrics = Arc::new(Metrics::default());
+    let gate = AcquireGate::new(1, Some(1), 2, Arc::clone(&metrics));
+    let runtime = test_runtime();
+
+    runtime.block_on(async {
+        let global_blocker = gate.acquire(SECONDARY_ORIGIN, 0.1, 0).await.unwrap();
+
+        let first_origin_waiter = gate.acquire(ORIGIN, 60.0, 0);
+        tokio::pin!(first_origin_waiter);
+        assert_acquire_waits(first_origin_waiter.as_mut());
+
+        let diagnostics = find_origin_diagnostics(&gate, ORIGIN);
+        assert_eq!(
+            diagnostics.blocked_by,
+            PendingRequestBlockingReason::GlobalActiveRequests
+        );
+        assert_eq!(diagnostics.active_requests, 0);
+        assert_eq!(diagnostics.pending_requests, 1);
+
+        let second_origin_waiter = gate.acquire(ORIGIN, 60.0, 0);
+        tokio::pin!(second_origin_waiter);
+        assert_acquire_waits(second_origin_waiter.as_mut());
+
+        let snapshot = assert_request_pressure(&metrics, 1, 2);
+        assert_eq!(snapshot.peak_pending_requests, 2);
+        let diagnostics = find_origin_diagnostics(&gate, ORIGIN);
+        assert_eq!(diagnostics.blocked_by, PendingRequestBlockingReason::Mixed);
+        assert_eq!(diagnostics.active_requests, 0);
+        assert_eq!(diagnostics.pending_requests, 2);
+
+        drop(global_blocker);
+
+        let first_permit = acquire_before_deadline(first_origin_waiter.as_mut())
+            .await
+            .unwrap();
+        assert_request_pressure(&metrics, 1, 1);
+        assert_origin_pressure(&metrics, ORIGIN, 1, 1);
+
+        drop(first_permit);
+
+        let second_permit = acquire_before_deadline(second_origin_waiter.as_mut())
+            .await
+            .unwrap();
+        assert_request_pressure(&metrics, 1, 0);
+        assert_origin_pressure(&metrics, ORIGIN, 1, 0);
+
+        drop(second_permit);
+        assert_request_pressure(&metrics, 0, 0);
+        assert_origin_pressure(&metrics, ORIGIN, 0, 0);
+    });
+}
+
+#[test]
+fn global_wait_timeout_releases_origin_slot() {
+    initialize_python();
+
+    let metrics = Arc::new(Metrics::default());
+    let gate = AcquireGate::new(1, Some(1), 2, Arc::clone(&metrics));
+    let runtime = test_runtime();
+
+    runtime.block_on(async {
+        let global_blocker = gate.acquire(SECONDARY_ORIGIN, 0.1, 0).await.unwrap();
+
+        let error = match gate.acquire(ORIGIN, 0.001, 0).await {
+            Ok(_permit) => panic!("acquire unexpectedly succeeded"),
+            Err(err) => err,
+        };
+        assert!(error
+            .to_string()
+            .contains("request acquire timeout expired"));
+
+        let snapshot = assert_request_pressure(&metrics, 1, 0);
+        assert_eq!(snapshot.peak_pending_requests, 1);
+        assert_eq!(snapshot.pool_acquire_timeouts, 1);
+        let origin_snapshot = assert_origin_pressure(&metrics, ORIGIN, 0, 0);
+        assert_eq!(origin_snapshot.peak_pending_requests, 1);
+        assert_eq!(origin_snapshot.pool_acquire_timeouts, 1);
+
+        drop(global_blocker);
+
+        let permit = gate.acquire(ORIGIN, 0.1, 0).await.unwrap();
+        assert_request_pressure(&metrics, 1, 0);
+        assert_origin_pressure(&metrics, ORIGIN, 1, 0);
+
+        drop(permit);
+        assert_request_pressure(&metrics, 0, 0);
+        assert_origin_pressure(&metrics, ORIGIN, 0, 0);
     });
 }
