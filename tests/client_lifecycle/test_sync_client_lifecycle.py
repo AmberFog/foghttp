@@ -8,6 +8,7 @@ import pytest
 
 import foghttp
 
+from .constants import SHORT_LIVED_CLIENT_COUNT
 from .helpers import (
     CloseTrackingRawClient,
     RawClientFactory,
@@ -113,6 +114,21 @@ def test_sync_context_manager_without_request_does_not_create_raw_client(
 ) -> None:
     with sync_client_factory():
         pass
+
+    assert raw_client_factory.calls == 0
+    assert raw_client.close_calls == 0
+
+
+@pytest.mark.parametrize("client_options", [{}, {"runtime": "dedicated"}])
+def test_sync_short_lived_clients_without_requests_do_not_create_raw_client(
+    sync_client_factory: type[foghttp.Client],
+    raw_client: CloseTrackingRawClient,
+    raw_client_factory: RawClientFactory,
+    client_options: dict[str, object],
+) -> None:
+    for _index in range(SHORT_LIVED_CLIENT_COUNT):
+        client = sync_client_factory(**client_options)
+        client.close()
 
     assert raw_client_factory.calls == 0
     assert raw_client.close_calls == 0

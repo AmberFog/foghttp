@@ -2,7 +2,7 @@ __all__ = ("Client",)
 
 import threading
 from types import TracebackType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from ._client.config import ClientConfig
 from ._client.constants import DEFAULT_MAX_REDIRECTS
@@ -56,6 +56,7 @@ class Client(ClientCore):
         trust_env: bool = False,
         proxy: str | URL | None = None,
         tls: TLSConfig | None = None,
+        runtime: Literal["shared", "dedicated"] | None = None,
         runtime_workers: int | None = None,
         telemetry: TelemetryConfig | None = None,
     ) -> None:
@@ -74,6 +75,7 @@ class Client(ClientCore):
                     trust_env=trust_env,
                     proxy=proxy,
                     tls=tls,
+                    runtime=runtime,
                     runtime_workers=runtime_workers,
                     telemetry=telemetry,
                     lifecycle_debug=None,

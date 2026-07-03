@@ -306,6 +306,7 @@ class RawClient:
         max_redirects: int,
         ca_certificates: Sequence[bytes],
         trust_webpki_roots: bool,
+        runtime: str,
         runtime_workers: int | None,
         http_proxy_url: str | None,
         http_proxy_authorization: str | None,

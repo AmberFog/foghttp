@@ -24,6 +24,7 @@ def client_options(
         trust_env=trust_env,
         proxy=proxy,
         tls=tls,
+        runtime=None,
         runtime_workers=None,
         telemetry=None,
         lifecycle_debug=None,

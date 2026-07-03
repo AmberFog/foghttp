@@ -5,6 +5,7 @@ import pytest
 
 import foghttp
 
+from .constants import SHORT_LIVED_CLIENT_COUNT
 from .helpers import CloseTrackingRawClient, RawClientFactory
 
 
@@ -129,6 +130,21 @@ async def test_async_context_manager_without_request_does_not_create_raw_client(
 ) -> None:
     async with async_client_factory():
         pass
+
+    assert raw_client_factory.calls == 0
+    assert raw_client.close_calls == 0
+
+
+@pytest.mark.parametrize("client_options", [{}, {"runtime": "dedicated"}])
+async def test_async_short_lived_clients_without_requests_do_not_create_raw_client(
+    async_client_factory: type[foghttp.AsyncClient],
+    raw_client: CloseTrackingRawClient,
+    raw_client_factory: RawClientFactory,
+    client_options: dict[str, object],
+) -> None:
+    for _index in range(SHORT_LIVED_CLIENT_COUNT):
+        client = async_client_factory(**client_options)
+        await client.aclose()
 
     assert raw_client_factory.calls == 0
     assert raw_client.close_calls == 0

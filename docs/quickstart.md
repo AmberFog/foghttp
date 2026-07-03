@@ -703,20 +703,32 @@ and limitations.
 
 ## Runtime Workers
 
-FogHTTP creates a Tokio runtime per client. By default, the runtime worker count
-is selected from `Limits.max_active_requests` and capped at `16` workers.
+FogHTTP uses a shared Tokio runtime by default. Client construction and
+closing a never-used client do not create Rust transport or runtime resources.
+The shared runtime is initialized lazily when the first shared-runtime client
+actually opens transport state.
 
-Most applications should keep the default and reuse long-lived clients. For
-advanced tuning, pass `runtime_workers=` explicitly:
+Most applications should keep the default shared runtime and reuse long-lived
+clients. For isolation or benchmarking, pass `runtime="dedicated"` to give a
+client its own Tokio runtime:
 
 ```python
-with foghttp.Client(runtime_workers=4) as client:
+with foghttp.Client(runtime="dedicated") as client:
     response = client.get("https://httpbin.org/get")
 ```
 
-`runtime_workers` must be between `1` and `32`. If the argument is not provided,
-FogHTTP also accepts the `FOGHTTP_RUNTIME_WORKERS` environment variable for
-benchmarking and operational overrides.
+For advanced dedicated-runtime tuning, pass `runtime_workers=` explicitly:
+
+```python
+with foghttp.Client(runtime="dedicated", runtime_workers=4) as client:
+    response = client.get("https://httpbin.org/get")
+```
+
+`runtime_workers` must be between `1` and `32` and requires a dedicated
+runtime. If `runtime=` is omitted and `runtime_workers` or the
+`FOGHTTP_RUNTIME_WORKERS` environment variable is set, FogHTTP uses a dedicated
+runtime to preserve the worker-count contract without making the shared runtime
+depend on first-client initialization order.
 
 ## Status Codes
 

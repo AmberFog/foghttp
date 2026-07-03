@@ -17,6 +17,7 @@ from .proxy import (
     tls_from_trusted_environment,
 )
 from .request_builder.defaults import DEFAULT_REQUEST_BUILD_DEFAULTS, RequestBuildDefaults
+from .runtime.mode import RuntimeMode, runtime_mode
 
 
 _DEFAULT_LIMITS = Limits()
@@ -34,6 +35,7 @@ class ClientConfig:
     proxy_resolver: ProxyResolver
     http_proxy: ProxyUrl | None
     https_proxy: ProxyUrl | None
+    runtime: RuntimeMode
     runtime_workers: int | None
     telemetry: TelemetryConfig | None
     lifecycle_debug: AsyncLifecycleDebugConfig | None
@@ -65,6 +67,7 @@ class ClientConfig:
             proxy_resolver=proxy_resolver,
             http_proxy=proxy_resolver.routing_proxy("http"),
             https_proxy=proxy_resolver.routing_proxy("https"),
+            runtime=runtime_mode(options.runtime, options.runtime_workers),
             runtime_workers=options.runtime_workers,
             telemetry=options.telemetry,
             lifecycle_debug=options.lifecycle_debug,

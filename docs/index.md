@@ -43,7 +43,8 @@ FogHTTP is designed around a few engineering priorities:
 ## Key Advantages
 
 - one API shape for sync scripts, workers, and asyncio services
-- Rust-backed HTTP/1.1 transport with explicit runtime ownership
+- Rust-backed HTTP/1.1 transport with explicit lifecycle and runtime-mode control
+- shared Tokio runtime by default, with opt-in dedicated runtime worker tuning
 - buffered JSON, form, and bytes workflows that are simple to reason about
 - transparent `gzip`, `deflate`, and `br` decoding for buffered responses
 - sync and async bytes/text/line response streaming with explicit

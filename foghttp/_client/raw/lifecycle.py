@@ -31,6 +31,7 @@ def create_raw_client(
             max_redirects=config.max_redirects,
             ca_certificates=ca_certificate_bytes(config.tls),
             trust_webpki_roots=trust_webpki_roots(config.tls),
+            runtime=config.runtime,
             runtime_workers=config.runtime_workers,
             http_proxy_url=None if config.http_proxy is None else config.http_proxy.endpoint_url,
             http_proxy_authorization=basic_proxy_authorization(config.http_proxy),

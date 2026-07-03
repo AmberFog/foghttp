@@ -82,6 +82,7 @@ def _default_client_config() -> ClientConfig:
             trust_env=False,
             proxy=None,
             tls=None,
+            runtime="dedicated",
             runtime_workers=1,
             telemetry=None,
             lifecycle_debug=None,

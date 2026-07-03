@@ -24,7 +24,7 @@ use crate::py::client::async_requests::{
 use crate::py::client::options::{
     validate_numeric_client_options, validate_request_timeouts, NumericClientOptions,
 };
-use crate::py::client::runtime::build_runtime;
+use crate::py::client::runtime::{parse_runtime_mode, ClientRuntime};
 use crate::py::client::streams::StreamRegistry;
 use crate::py::client::transport::{
     send_request, send_stream_request, TransportClients, TransportRequest,
@@ -35,7 +35,6 @@ use crate::py::{RawPoolDiagnostics, RawTransportState};
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 use std::sync::Arc;
-use tokio::runtime::Runtime;
 
 pub use streams::RawStreamResponse;
 pub use upload_body::RawUploadBody;
@@ -43,7 +42,7 @@ pub use upload_body::RawUploadBody;
 #[pyclass]
 pub struct RawClient {
     clients: Option<TransportClients>,
-    runtime: Option<Runtime>,
+    runtime: Option<ClientRuntime>,
     acquire_gate: AcquireGate,
     metrics: Arc<Metrics>,
     active_async_requests: AsyncRequestRegistry,
@@ -73,6 +72,7 @@ impl RawClient {
         max_redirects,
         ca_certificates,
         trust_webpki_roots,
+        runtime,
         runtime_workers,
         http_proxy_url,
         http_proxy_authorization,
@@ -99,6 +99,7 @@ impl RawClient {
         max_redirects: usize,
         ca_certificates: Vec<Vec<u8>>,
         trust_webpki_roots: bool,
+        runtime: &str,
         runtime_workers: Option<usize>,
         http_proxy_url: Option<String>,
         http_proxy_authorization: Option<String>,
@@ -116,6 +117,7 @@ impl RawClient {
             connect_timeout,
         })?;
 
+        let runtime_mode = parse_runtime_mode(runtime)?;
         let metrics = Arc::new(Metrics::default());
         let client_options = ClientOptions {
             max_idle_connections_per_host,
@@ -153,7 +155,6 @@ impl RawClient {
             .map(|options| build_write_timeout_client(options, Arc::clone(&metrics)))
             .transpose()
             .map_err(FogHttpError::new_err)?;
-        let runtime = build_runtime(max_active_requests, runtime_workers)?;
         let buffered_body_budget =
             BufferedBodyBudget::new(max_buffered_response_bytes, Arc::clone(&metrics));
         let acquire_gate = AcquireGate::new(
@@ -162,6 +163,7 @@ impl RawClient {
             max_pending_requests,
             Arc::clone(&metrics),
         );
+        let runtime = ClientRuntime::build(max_active_requests, runtime_mode, runtime_workers)?;
 
         Ok(Self {
             clients: Some(TransportClients::new(
@@ -519,9 +521,10 @@ impl RawClient {
             .ok_or_else(|| FogHttpError::new_err("client is closed"))
     }
 
-    fn runtime(&self) -> PyResult<&Runtime> {
+    fn runtime(&self) -> PyResult<&tokio::runtime::Runtime> {
         self.runtime
             .as_ref()
+            .map(ClientRuntime::runtime)
             .ok_or_else(|| FogHttpError::new_err("client runtime is closed"))
     }
 

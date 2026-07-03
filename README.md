@@ -24,7 +24,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 
 - Rust `hyper` transport with a Python-first API
 - sync and asyncio clients with the same request model
-- explicit `close()`/`aclose()` lifecycle for Rust runtime resources
+- explicit `close()`/`aclose()` lifecycle for Rust transport resources
 - graceful sync `close()` for in-flight requests and cancellable async requests
 - global/per-origin request backpressure, per-origin acquire pressure stats, and
   stuck request diagnostics
@@ -32,7 +32,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - versioned telemetry snapshots that separate alert-oriented stats from
   diagnostic dump APIs
 - opt-in async lifecycle debug snapshots for staging and tests
-- advanced per-client Tokio runtime worker tuning
+- shared Tokio runtime by default, with opt-in dedicated runtime worker tuning
 - focused HTTP surface for JSON, form, streaming upload, and multipart API
   workloads in internal services, workers, and benchmarks
 
@@ -121,7 +121,7 @@ async with foghttp.AsyncClient() as client:
   checks, and unclosed-client diagnostics
 - default per-response and aggregate buffered response body limits for memory
   safety
-- advanced per-client Tokio runtime worker tuning
+- shared Tokio runtime by default, with opt-in dedicated runtime worker tuning
 - grouped HTTP status constants and reusable HTTP method constants
 
 ## Documentation

@@ -90,6 +90,22 @@ def test_raw_client_rejects_invalid_idle_timeout_without_panic() -> None:
         _foghttp.RawClient(**_raw_client_options(idle_timeout=math.nan))
 
 
+def test_raw_client_rejects_invalid_runtime_without_panic() -> None:
+    with pytest.raises(
+        _foghttp.FogHttpError,
+        match="runtime must be 'shared' or 'dedicated'",
+    ):
+        _foghttp.RawClient(**_raw_client_options(runtime="global"))
+
+
+def test_raw_client_rejects_runtime_workers_with_shared_runtime_without_panic() -> None:
+    with pytest.raises(
+        _foghttp.FogHttpError,
+        match="runtime_workers requires runtime='dedicated'",
+    ):
+        _foghttp.RawClient(**_raw_client_options(runtime="shared", runtime_workers=1))
+
+
 def test_raw_client_rejects_too_large_active_request_limit_without_panic() -> None:
     with pytest.raises(
         ValueError,
@@ -203,6 +219,7 @@ def _raw_client_options(**overrides: object) -> dict[str, object]:
         "max_redirects": 20,
         "ca_certificates": (),
         "trust_webpki_roots": TRUST_WEBPKI_ROOTS,
+        "runtime": "dedicated",
         "runtime_workers": None,
         "http_proxy_url": None,
         "http_proxy_authorization": None,
