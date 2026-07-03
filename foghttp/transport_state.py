@@ -14,6 +14,13 @@ class OriginPressureState(TypedDict):
     pool_acquire_wait_time_total_ns: int
     pool_acquire_wait_time_max_ns: int
     pool_acquire_wait_time_last_ns: int
+    connection_acquire_attempts: int
+    connection_acquire_immediate: int
+    connection_acquire_waited: int
+    connection_acquire_timeouts: int
+    connection_acquire_wait_time_total_ns: int
+    connection_acquire_wait_time_max_ns: int
+    connection_acquire_wait_time_last_ns: int
     response_body_reuse_eligible: int
     response_body_closed: int
     response_body_aborted: int
@@ -40,6 +47,13 @@ class TransportState(TypedDict):
     pool_acquire_wait_time_total_ns: int
     pool_acquire_wait_time_max_ns: int
     pool_acquire_wait_time_last_ns: int
+    connection_acquire_attempts: int
+    connection_acquire_immediate: int
+    connection_acquire_waited: int
+    connection_acquire_timeouts: int
+    connection_acquire_wait_time_total_ns: int
+    connection_acquire_wait_time_max_ns: int
+    connection_acquire_wait_time_last_ns: int
     response_body_reuse_eligible: int
     response_body_closed: int
     response_body_aborted: int

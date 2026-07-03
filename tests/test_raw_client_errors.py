@@ -39,6 +39,14 @@ WRITE_TIMEOUT_RAW_ARGS = (
     "https://example.com",
     0,
 )
+CONNECTION_ACQUIRE_TIMEOUT_RAW_ARGS = (
+    "connection acquire timeout expired",
+    "connection_acquire",
+    0.1,
+    0.1,
+    "https://example.com",
+    0,
+)
 
 
 INVALID_PHASE_RAW_ARGS = (
@@ -144,6 +152,11 @@ class PoolTimeoutRawClient:
     async def request_async(self, **_kwargs: object) -> object:
         msg = "request acquire timeout expired"
         raise _foghttp.FogHttpPoolTimeoutError(msg)
+
+
+class ConnectionAcquireTimeoutRawClient:
+    def request(self, **_kwargs: object) -> object:
+        raise _foghttp.FogHttpPoolTimeoutError(CONNECTION_ACQUIRE_TIMEOUT_RAW_ARGS)
 
 
 class BodyTooLargeRawClient:
@@ -266,6 +279,17 @@ async def test_async_raw_pool_timeout_maps_to_public_pool_timeout(faker: Faker) 
             raw_client=PoolTimeoutRawClient(),
             request=_raw_request(faker.url()),
         )
+
+
+def test_raw_connection_acquire_timeout_preserves_public_diagnostic(faker: Faker) -> None:
+    with pytest.raises(PoolTimeout, match="connection acquire timeout expired") as exc_info:
+        send_raw_request(
+            raw_client=ConnectionAcquireTimeoutRawClient(),
+            request=_raw_request(faker.url()),
+        )
+
+    assert exc_info.value.phase == "connection_acquire"
+    assert exc_info.value.origin == "https://example.com"
 
 
 def test_sync_raw_body_limit_error_maps_to_public_response_error(faker: Faker) -> None:

@@ -3,7 +3,7 @@ use super::context::{RawResponseContext, RawStreamResponseContext};
 use super::errors::transport_error;
 use super::request::{RequestState, TransportRequest};
 use super::response::{raw_response, raw_stream_response};
-use crate::core::client::with_request_write_timeout;
+use crate::core::client::{with_connection_limit_timeout, with_request_write_timeout};
 use crate::core::headers::response_headers;
 use crate::core::metrics::Metrics;
 use crate::core::request::build_request;
@@ -16,7 +16,8 @@ use crate::py::client::streams::{RawStreamResponse, StreamRegistry};
 use crate::py::client::timeout_diagnostics::{
     remaining_duration, timeout_error, TimeoutContext, TimeoutPhase,
 };
-use hyper::HeaderMap;
+use hyper::body::Incoming;
+use hyper::{HeaderMap, Response};
 use pyo3::prelude::*;
 use std::sync::Arc;
 use std::time::Instant;
@@ -54,26 +55,15 @@ pub async fn send_stream_request(
         .await
         .map_err(|_| timeout_error(&acquire_timeout_context, REQUEST_TOTAL_TIMEOUT))??;
         let origin_metrics = permit.origin_metrics();
-        let request_info = state.request_info();
-        let use_proxy_transport = state.use_proxy_transport_for_current_url()?;
-
-        let response_headers_timeout_context = TimeoutContext::new(
-            TimeoutPhase::ResponseHeaders,
-            started,
-            state.total_timeout,
+        let (response, request_info) = send_current_hop(
+            &clients,
+            &mut state,
             &origin,
             redirect_hop,
-        );
-        let write_timeout_context = state.write_timeout_context(&origin, redirect_hop);
-        let request = build_request(state.take_request_parts(use_proxy_transport)?)?;
-        let client = clients.select(use_proxy_transport, write_timeout_context.is_some())?;
-        let response = tokio::time::timeout(
-            remaining_duration("Timeouts.total", &response_headers_timeout_context)?,
-            with_request_write_timeout(write_timeout_context, client.request(request)),
+            pool_timeout,
+            started,
         )
-        .await
-        .map_err(|_| timeout_error(&response_headers_timeout_context, REQUEST_TOTAL_TIMEOUT))?
-        .map_err(|err| transport_error(&err))?;
+        .await?;
 
         let redirect = stream_redirect_decision(
             &state,
@@ -135,6 +125,44 @@ pub async fn send_stream_request(
             }
         }
     }
+}
+
+async fn send_current_hop(
+    clients: &TransportClients,
+    state: &mut RequestState,
+    origin: &str,
+    redirect_hop: usize,
+    pool_timeout: f64,
+    started: Instant,
+) -> PyResult<(Response<Incoming>, crate::py::response::RawRequestInfo)> {
+    let request_info = state.request_info();
+    let use_proxy_transport = state.use_proxy_transport_for_current_url()?;
+    let response_headers_timeout_context = TimeoutContext::new(
+        TimeoutPhase::ResponseHeaders,
+        started,
+        state.total_timeout,
+        origin,
+        redirect_hop,
+    );
+    let write_timeout_context = state.write_timeout_context(origin, redirect_hop);
+    let connection_limit_context =
+        RequestState::connection_limit_context(origin, redirect_hop, pool_timeout)?;
+    let request = build_request(state.take_request_parts(use_proxy_transport)?)?;
+    let use_write_timeout_transport = write_timeout_context.is_some();
+    debug_assert_eq!(use_write_timeout_transport, state.has_request_body());
+    let client = clients.select(use_proxy_transport, use_write_timeout_transport)?;
+    let response = tokio::time::timeout(
+        remaining_duration("Timeouts.total", &response_headers_timeout_context)?,
+        with_connection_limit_timeout(
+            Some(connection_limit_context),
+            with_request_write_timeout(write_timeout_context, client.request(request)),
+        ),
+    )
+    .await
+    .map_err(|_| timeout_error(&response_headers_timeout_context, REQUEST_TOTAL_TIMEOUT))?
+    .map_err(|err| transport_error(&err))?;
+
+    Ok((response, request_info))
 }
 
 fn stream_redirect_decision(

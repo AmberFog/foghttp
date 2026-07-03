@@ -85,7 +85,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | automatic `Accept-Encoding` negotiation | Not implemented; send `Accept-Encoding` manually when you want compressed responses |
 | transport-managed request headers | Safe API rejects manual `Host`, `Content-Length`, `Transfer-Encoding`, `TE`, `Trailer`, `Connection`, `Upgrade`, `Keep-Alive`, `Proxy-Connection`, and `Proxy-Authorization` |
 | request body source conflicts | Use one body source among `json=`, `data=`, `content=`, and `files=`; `files=` can include form fields from mapping or repeated-pair `data=` |
-| true active connection-level limits | `max_active_requests_per_origin` limits buffered request slots; socket lifecycle telemetry is observable, but FogHTTP does not yet expose separate physical connection limits |
+| HTTP/2 stream-level connection limits | Physical connection caps apply to the current HTTP/1 connector path; HTTP/2 multiplexed stream limits are planned separately with HTTP/2 support |
+| explicit physical connection caps and idle sockets | `Limits.max_connections` defaults to `None`; when explicitly set, tracked idle keep-alive connections count against the cap until reused, closed, or removed by transport pool cleanup |
 | per-request connect timeout changes | `Timeouts.connect` configures the Rust connector from client-level settings when transport state is created; per-request `timeout.connect` does not reconfigure the connector |
 | separate read/write timeout semantics | `Timeouts.read` is implemented as a buffered and streamed response body progress timeout; `Timeouts.write` is implemented for buffered request body write progress and streaming upload chunk/write progress |
 | socket lifecycle telemetry granularity | `TransportStats` and `dump_transport_state()["origins"]` expose opened, open-failed, closed, reused, aborted, active, and idle tracked connection counters for the current HTTP/1 path; these are connector/lifecycle diagnostics, not a stable public view into Hyper's private pool internals |
@@ -105,8 +106,8 @@ Use FogHTTP today when:
 - redirects are simple and do not require cookie jar or auth helper integration
 - sync and async clients with explicit lifecycle are enough
 - async request cancellation and sync/async stream cleanup behavior are useful
-- global and per-origin request-slot backpressure is enough for your
-  resource control needs
+- global/per-origin request-slot backpressure and opt-in global/per-host
+  physical connection caps are enough for your resource control needs
 - you can reuse clients instead of creating many short-lived transport and pool
   instances once requests start flowing
 
@@ -118,7 +119,7 @@ Wait before using FogHTTP when:
 - you need per-request connect timeout reconfiguration
 - you need automatic compression negotiation instead of manual
   `Accept-Encoding`
-- you need strict active per-host connection limits
+- you need HTTP/2 multiplexed stream limits
 - you need to share one async client across multiple event loops
 
 ## Error Surface

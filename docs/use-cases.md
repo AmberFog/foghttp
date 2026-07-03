@@ -62,6 +62,7 @@ async def fetch_many(urls: list[str]) -> list[dict]:
     limits = foghttp.Limits(
         max_active_requests=100,
         max_active_requests_per_origin=20,
+        max_connections_per_host=20,
         max_pending_requests=1000,
         max_buffered_response_bytes=100 * 1024 * 1024,
     )

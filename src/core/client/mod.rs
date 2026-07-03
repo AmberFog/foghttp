@@ -1,4 +1,5 @@
 mod body;
+mod connection_limit;
 mod proxy;
 mod telemetry;
 mod write_timeout;
@@ -7,12 +8,16 @@ pub(crate) use body::{
     buffered_request_body, streaming_request_body, upload_body_channel, RequestBody,
     UploadBodyReceiver, UploadBodySendError, UploadBodySender,
 };
+pub(crate) use connection_limit::{
+    connection_acquire_timeout_from_error, with_connection_limit_timeout, ConnectionGate,
+    ConnectionLimitContext,
+};
 use proxy::parse_proxy_endpoint;
 pub(crate) use proxy::{HttpProxyConnector, HttpsTunnelConnector, ProxyTunnelTarget};
 pub(crate) use telemetry::{ConnectionTelemetry, ConnectionUseGuard, InstrumentedConnector};
 pub(crate) use write_timeout::{
     current_request_write_timeout, request_write_timeout_from_error, with_request_write_timeout,
-    RequestWriteTimeout, RequestWriteTimeoutContext, RequestWriteTimeoutExecutor,
+    RequestTaskContextExecutor, RequestWriteTimeout, RequestWriteTimeoutContext,
 };
 
 use crate::core::metrics::Metrics;
@@ -21,7 +26,6 @@ use crate::core::tls::build_tls_config;
 use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
-use hyper_util::rt::TokioExecutor;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -44,20 +48,38 @@ pub struct ClientOptions {
     pub https_proxy_authorization: Option<String>,
 }
 
-pub fn build_client(options: &ClientOptions, metrics: Arc<Metrics>) -> Result<HyperClient, String> {
-    build_client_with_executor(options, metrics, TokioExecutor::new(), true)
-}
-
-pub fn build_write_timeout_client(
+pub fn build_client_with_connection_gate(
     options: &ClientOptions,
     metrics: Arc<Metrics>,
+    connection_gate: ConnectionGate,
 ) -> Result<HyperClient, String> {
-    build_client_with_executor(options, metrics, RequestWriteTimeoutExecutor, false)
+    build_client_with_executor(
+        options,
+        metrics,
+        connection_gate,
+        RequestTaskContextExecutor,
+        true,
+    )
+}
+
+pub fn build_write_timeout_client_with_connection_gate(
+    options: &ClientOptions,
+    metrics: Arc<Metrics>,
+    connection_gate: ConnectionGate,
+) -> Result<HyperClient, String> {
+    build_client_with_executor(
+        options,
+        metrics,
+        connection_gate,
+        RequestTaskContextExecutor,
+        false,
+    )
 }
 
 fn build_client_with_executor<E>(
     options: &ClientOptions,
     metrics: Arc<Metrics>,
+    connection_gate: ConnectionGate,
     executor: E,
     pool_idle_connections: bool,
 ) -> Result<HyperClient, String>
@@ -94,7 +116,7 @@ where
         }
         None => HttpProxyConnector::direct(connector),
     };
-    let connector = InstrumentedConnector::new(proxy_connector, metrics);
+    let connector = InstrumentedConnector::new(proxy_connector, metrics, connection_gate);
 
     let mut builder = Client::builder(executor);
     builder.pool_max_idle_per_host(if pool_idle_connections && options.keepalive {

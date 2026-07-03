@@ -28,6 +28,8 @@ from foghttp.tls import TLSConfig
 RAW_CLIENT_INIT_ARGUMENTS = (
     "max_active_requests",
     "max_active_requests_per_origin",
+    "max_connections",
+    "max_connections_per_host",
     "max_idle_connections_per_host",
     "max_pending_requests",
     "max_response_body_size",
@@ -128,6 +130,8 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
     limits = Limits(
         max_active_requests=11,
         max_active_requests_per_origin=17,
+        max_connections=29,
+        max_connections_per_host=31,
         max_pending_requests=13,
         max_response_body_size=19,
         max_buffered_response_bytes=23,
@@ -155,6 +159,8 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
     assert captured_options == {
         "max_active_requests": limits.max_active_requests,
         "max_active_requests_per_origin": limits.max_active_requests_per_origin,
+        "max_connections": limits.max_connections,
+        "max_connections_per_host": limits.max_connections_per_host,
         "max_idle_connections_per_host": limits.max_idle_connections_per_host,
         "max_pending_requests": limits.max_pending_requests,
         "max_response_body_size": limits.max_response_body_size,

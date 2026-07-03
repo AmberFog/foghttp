@@ -93,8 +93,14 @@ jobs:
       - name: Install editable package
         run: uv run --extra dev --with "maturin>=1.7,<2" maturin develop
 
+      - name: Run tests
+        if: matrix.python-version != '3.14'
+        run: uv run --extra dev pytest -vv
+
       - name: Run tests with coverage
+        if: matrix.python-version == '3.14'
         run: uv run --extra dev coverage run -m pytest -vv
 
       - name: Report coverage
+        if: matrix.python-version == '3.14'
         run: uv run --extra dev coverage report -m

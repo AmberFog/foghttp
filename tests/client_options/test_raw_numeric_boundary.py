@@ -114,6 +114,19 @@ def test_raw_client_rejects_too_large_active_request_limit_without_panic() -> No
         _foghttp.RawClient(**_raw_client_options(max_active_requests=2**31))
 
 
+def test_raw_client_rejects_too_large_connection_limit_without_panic() -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"Limits\.max_connections must be an integer between 0 and",
+    ):
+        _foghttp.RawClient(**_raw_client_options(max_connections=2**31))
+
+
+def test_raw_client_accepts_unbounded_connection_limit_without_panic() -> None:
+    raw_client = _foghttp.RawClient(**_raw_client_options(max_connections=None))
+    raw_client.close()
+
+
 def test_raw_client_sync_request_rejects_positional_arguments(faker: Faker) -> None:
     raw_client = _raw_client()
     try:
@@ -208,6 +221,8 @@ def _raw_client_options(**overrides: object) -> dict[str, object]:
     options: dict[str, object] = {
         "max_active_requests": 1,
         "max_active_requests_per_origin": None,
+        "max_connections": 1,
+        "max_connections_per_host": None,
         "max_idle_connections_per_host": 1,
         "max_pending_requests": 1,
         "max_response_body_size": None,

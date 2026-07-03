@@ -63,6 +63,35 @@ impl Metrics {
             .store(elapsed_ns, Ordering::Relaxed);
     }
 
+    pub fn connection_acquire_timeout(&self) {
+        self.connection_acquire_timeouts
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn connection_acquire_started(&self) {
+        self.connection_acquire_attempts
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn connection_acquire_finished_immediately(&self) {
+        self.connection_acquire_immediate
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn connection_acquire_waited(&self) {
+        self.connection_acquire_waited
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn connection_acquire_wait_finished(&self, elapsed: Duration) {
+        let elapsed_ns = duration_as_nanos(elapsed);
+
+        saturating_atomic_u64_add(&self.connection_acquire_wait_time_total_ns, elapsed_ns);
+        update_atomic_u64_max(&self.connection_acquire_wait_time_max_ns, elapsed_ns);
+        self.connection_acquire_wait_time_last_ns
+            .store(elapsed_ns, Ordering::Relaxed);
+    }
+
     pub fn response_body_finished(&self, outcome: ResponseBodyLifecycleOutcome) {
         match outcome {
             ResponseBodyLifecycleOutcome::ReuseEligible => {
@@ -139,6 +168,19 @@ impl Metrics {
                 .load(Ordering::Relaxed),
             pool_acquire_wait_time_last_ns: self
                 .pool_acquire_wait_time_last_ns
+                .load(Ordering::Relaxed),
+            connection_acquire_attempts: self.connection_acquire_attempts.load(Ordering::Relaxed),
+            connection_acquire_immediate: self.connection_acquire_immediate.load(Ordering::Relaxed),
+            connection_acquire_waited: self.connection_acquire_waited.load(Ordering::Relaxed),
+            connection_acquire_timeouts: self.connection_acquire_timeouts.load(Ordering::Relaxed),
+            connection_acquire_wait_time_total_ns: self
+                .connection_acquire_wait_time_total_ns
+                .load(Ordering::Relaxed),
+            connection_acquire_wait_time_max_ns: self
+                .connection_acquire_wait_time_max_ns
+                .load(Ordering::Relaxed),
+            connection_acquire_wait_time_last_ns: self
+                .connection_acquire_wait_time_last_ns
                 .load(Ordering::Relaxed),
             response_body_reuse_eligible: self.response_body_reuse_eligible.load(Ordering::Relaxed),
             response_body_closed: self.response_body_closed.load(Ordering::Relaxed),

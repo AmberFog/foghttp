@@ -12,6 +12,8 @@ TIMEOUT_FIELDS = ("connect", "read", "write", "pool", "total")
 INTEGER_LIMIT_FIELDS = (
     "max_active_requests",
     "max_active_requests_per_origin",
+    "max_connections",
+    "max_connections_per_host",
     "max_pending_requests",
     "max_response_body_size",
     "max_buffered_response_bytes",
@@ -20,6 +22,7 @@ INTEGER_LIMIT_FIELDS = (
 
 
 def test_limits_use_safe_default_response_body_size() -> None:
+    assert foghttp.Limits().max_connections is None
     assert foghttp.Limits().max_response_body_size == DEFAULT_MAX_RESPONSE_BODY_SIZE
     assert foghttp.Limits().max_buffered_response_bytes == DEFAULT_MAX_BUFFERED_RESPONSE_BYTES
 
@@ -83,6 +86,8 @@ def test_limits_accept_zero_for_explicit_backpressure_edges() -> None:
     limits = foghttp.Limits(
         max_active_requests=0,
         max_active_requests_per_origin=0,
+        max_connections=0,
+        max_connections_per_host=0,
         max_pending_requests=0,
         max_response_body_size=0,
         max_buffered_response_bytes=0,
@@ -92,6 +97,8 @@ def test_limits_accept_zero_for_explicit_backpressure_edges() -> None:
 
     assert limits.max_active_requests == 0
     assert limits.max_active_requests_per_origin == 0
+    assert limits.max_connections == 0
+    assert limits.max_connections_per_host == 0
     assert limits.max_pending_requests == 0
     assert limits.max_response_body_size == 0
     assert limits.max_buffered_response_bytes == 0
@@ -102,10 +109,14 @@ def test_limits_accept_zero_for_explicit_backpressure_edges() -> None:
 def test_optional_limit_fields_accept_none() -> None:
     limits = foghttp.Limits(
         max_active_requests_per_origin=None,
+        max_connections=None,
+        max_connections_per_host=None,
         max_response_body_size=None,
         max_buffered_response_bytes=None,
     )
 
     assert limits.max_active_requests_per_origin is None
+    assert limits.max_connections is None
+    assert limits.max_connections_per_host is None
     assert limits.max_response_body_size is None
     assert limits.max_buffered_response_bytes is None

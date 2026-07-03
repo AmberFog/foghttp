@@ -1,5 +1,6 @@
 pub const POOL_ACQUIRE_QUEUE_FULL: &str = "request acquire queue is full";
 pub const POOL_ACQUIRE_TIMEOUT: &str = "request acquire timeout expired";
+pub const CONNECTION_ACQUIRE_TIMEOUT: &str = "connection acquire timeout expired";
 pub const REQUEST_BODY_WRITE_TIMEOUT: &str = "request body write timeout expired";
 pub const RESPONSE_BODY_READ_TIMEOUT: &str = "response body read timeout expired";
 pub const STREAM_REQUEST_TASK_START_FAILED: &str = "async stream request task failed to start";

@@ -5,6 +5,7 @@ from typing import Literal, TypeAlias
 
 
 TimeoutPhase: TypeAlias = Literal[
+    "connection_acquire",
     "pool_acquire",
     "request_body",
     "response_headers",

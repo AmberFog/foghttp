@@ -1,4 +1,4 @@
-use crate::core::client::RequestWriteTimeoutContext;
+use crate::core::client::{ConnectionLimitContext, RequestWriteTimeoutContext};
 use crate::core::headers::HeaderPairs;
 use crate::core::numeric::duration_from_secs;
 use crate::core::request::{RequestBodyParts, RequestParts};
@@ -104,6 +104,21 @@ impl RequestState {
         Some(RequestWriteTimeoutContext::new(
             self.write_timeout,
             self.write_timeout_secs,
+            origin.to_owned(),
+            redirect_hop,
+        ))
+    }
+
+    pub(super) fn connection_limit_context(
+        origin: &str,
+        redirect_hop: usize,
+        pool_timeout: f64,
+    ) -> PyResult<ConnectionLimitContext> {
+        let timeout = duration_from_secs("Timeouts.pool", pool_timeout)
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        Ok(ConnectionLimitContext::new(
+            timeout,
+            pool_timeout,
             origin.to_owned(),
             redirect_hop,
         ))

@@ -3,7 +3,7 @@ use super::context::RawResponseContext;
 use super::errors::transport_error;
 use super::request::{RequestState, TransportRequest};
 use super::response::raw_response;
-use crate::core::client::with_request_write_timeout;
+use crate::core::client::{with_connection_limit_timeout, with_request_write_timeout};
 use crate::core::metrics::Metrics;
 use crate::core::request::build_request;
 use crate::errors::FogHttpError;
@@ -58,11 +58,18 @@ pub async fn send_request(
                 redirect_hop,
             );
             let write_timeout_context = state.write_timeout_context(&origin, redirect_hop);
+            let connection_limit_context =
+                RequestState::connection_limit_context(&origin, redirect_hop, pool_timeout)?;
             let request = build_request(state.take_request_parts(use_proxy_transport)?)?;
-            let client = clients.select(use_proxy_transport, write_timeout_context.is_some())?;
+            let use_write_timeout_transport = write_timeout_context.is_some();
+            debug_assert_eq!(use_write_timeout_transport, state.has_request_body());
+            let client = clients.select(use_proxy_transport, use_write_timeout_transport)?;
             let response = tokio::time::timeout(
                 remaining_duration("Timeouts.total", &response_headers_timeout_context)?,
-                with_request_write_timeout(write_timeout_context, client.request(request)),
+                with_connection_limit_timeout(
+                    Some(connection_limit_context),
+                    with_request_write_timeout(write_timeout_context, client.request(request)),
+                ),
             )
             .await
             .map_err(|_| timeout_error(&response_headers_timeout_context, REQUEST_TOTAL_TIMEOUT))?

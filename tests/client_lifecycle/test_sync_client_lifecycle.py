@@ -7,6 +7,7 @@ from faker import Faker
 import pytest
 
 import foghttp
+from foghttp._telemetry import TELEMETRY_SNAPSHOT_SCHEMA_VERSION
 
 from .constants import SHORT_LIVED_CLIENT_COUNT
 from .helpers import (
@@ -65,6 +66,13 @@ def test_sync_dump_transport_state_before_first_request_do_not_create_raw_client
         "active_requests": 0,
         "buffered_response_bytes": 0,
         "buffered_response_budget_rejections": 0,
+        "connection_acquire_attempts": 0,
+        "connection_acquire_immediate": 0,
+        "connection_acquire_timeouts": 0,
+        "connection_acquire_wait_time_last_ns": 0,
+        "connection_acquire_wait_time_max_ns": 0,
+        "connection_acquire_wait_time_total_ns": 0,
+        "connection_acquire_waited": 0,
         "connections_aborted": 0,
         "connections_closed": 0,
         "connections_open_failed": 0,
@@ -83,7 +91,7 @@ def test_sync_dump_transport_state_before_first_request_do_not_create_raw_client
         "response_body_aborted": 0,
         "response_body_closed": 0,
         "response_body_reuse_eligible": 0,
-        "schema_version": 1,
+        "schema_version": TELEMETRY_SNAPSHOT_SCHEMA_VERSION,
         "snapshot_sequence": 0,
         "origins": {},
     }

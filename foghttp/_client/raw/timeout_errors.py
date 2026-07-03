@@ -8,6 +8,15 @@ from ...timeout_diagnostics import TimeoutDiagnostic, TimeoutPhase
 
 
 _TIMEOUT_DIAGNOSTIC_ARG_COUNT = 6
+_TIMEOUT_PHASES: frozenset[TimeoutPhase] = frozenset(
+    (
+        "connection_acquire",
+        "pool_acquire",
+        "request_body",
+        "response_headers",
+        "response_body",
+    ),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,15 +78,9 @@ def _raw_exception_message(exc: BaseException) -> str:
 
 
 def _coerce_timeout_phase(value: object) -> TimeoutPhase | None:
-    match str(value):
-        case "pool_acquire":
-            return "pool_acquire"
-        case "request_body":
-            return "request_body"
-        case "response_headers":
-            return "response_headers"
-        case "response_body":
-            return "response_body"
+    phase = str(value)
+    if phase in _TIMEOUT_PHASES:
+        return phase
     return None
 
 

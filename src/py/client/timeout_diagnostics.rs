@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy)]
 pub enum TimeoutPhase {
+    ConnectionAcquire,
     PoolAcquire,
     RequestBody,
     ResponseBody,
@@ -19,6 +20,7 @@ pub enum TimeoutPhase {
 impl TimeoutPhase {
     fn as_str(self) -> &'static str {
         match self {
+            Self::ConnectionAcquire => "connection_acquire",
             Self::PoolAcquire => "pool_acquire",
             Self::RequestBody => "request_body",
             Self::ResponseBody => "response_body",
@@ -70,6 +72,23 @@ pub fn timeout_error(context: &TimeoutContext<'_>, message: &'static str) -> PyE
 
 pub fn pool_timeout_error(context: &TimeoutContext<'_>, message: &'static str) -> PyErr {
     FogHttpPoolTimeoutError::new_err(context.args(message))
+}
+
+pub fn connection_acquire_timeout_error(
+    message: &'static str,
+    elapsed: f64,
+    timeout: f64,
+    origin: &str,
+    redirect_hop: usize,
+) -> PyErr {
+    FogHttpPoolTimeoutError::new_err((
+        message.to_owned(),
+        TimeoutPhase::ConnectionAcquire.as_str().to_owned(),
+        elapsed,
+        timeout,
+        origin.to_owned(),
+        redirect_hop,
+    ))
 }
 
 pub fn read_timeout_error(context: &TimeoutContext<'_>, message: &'static str) -> PyErr {
