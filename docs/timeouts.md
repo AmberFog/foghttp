@@ -25,7 +25,7 @@ with foghttp.Client(timeouts=timeouts) as client:
 | Field | Default | Applies Today | Public Error |
 |---|---:|---|---|
 | `connect` | `2.0` | Client-level Rust connector TCP connect timeout. It is read when the lazy Rust transport is created from the client constructor settings. | No stable dedicated `ConnectTimeout` mapping yet; low-level connect failures can surface as `RequestError`, while the outer `total` deadline can raise `TimeoutError`. |
-| `pool` | `1.0` | Waiting for a global or per-origin active request slot. | `PoolTimeout` for acquire timeout or full pending queue. |
+| `pool` | `1.0` | Waiting for a global/per-origin active request slot or an opt-in global/per-host physical connection slot. Each acquire phase gets its own `pool` budget; `total` bounds the whole request hop. | `PoolTimeout` for acquire timeout or full pending queue. |
 | `total` | `30.0` | Buffered path: outer deadline for acquiring a request slot, sending the request body, waiting for response headers, and collecting the buffered response body for each transport hop. Stream path: acquire, redirect hops, streaming upload send, and response headers before the response stream is returned. The same budget is shared across redirect hops. | Base `TimeoutError`. |
 | `read` | `10.0` | Waiting for the next response body frame/chunk while collecting a buffered response body or consuming a streamed body. | `ReadTimeout`. |
 | `write` | `10.0` | Waiting for buffered request body write progress, streaming upload provider chunks, and streaming upload socket write progress while sending a non-empty request body. | `WriteTimeout`. |
@@ -68,11 +68,11 @@ except foghttp.TimeoutError as exc:
         print(exc.elapsed, exc.timeout)
 ```
 
-Current diagnostic phases are `pool_acquire`, `response_headers`,
-`response_body`, and `request_body`; the exported `TimeoutPhase` type matches
-this current emitted set. The `origin` field is normalized and never includes
-path, query, userinfo, headers, or body data. `elapsed` and `timeout` are
-seconds, and `redirect_hop` is zero-based.
+Current diagnostic phases are `pool_acquire`, `connection_acquire`,
+`response_headers`, `response_body`, and `request_body`; the exported
+`TimeoutPhase` type matches this current emitted set. The `origin` field is
+normalized and never includes path, query, userinfo, headers, or body data.
+`elapsed` and `timeout` are seconds, and `redirect_hop` is zero-based.
 
 ## Client Defaults And Request Overrides
 
@@ -117,16 +117,28 @@ acquire gates:
   slots for one normalized origin.
 - `Limits.max_pending_requests` limits how many requests may wait in the
   Rust-side FIFO pending queue for an active slot.
+- `Limits.max_connections` optionally limits concurrent physical connection
+  opens and active tracked physical connections for the whole client.
+- `Limits.max_connections_per_host` optionally limits tracked physical
+  connections for one normalized origin.
 
 If the pending queue is full, FogHTTP fails fast with `PoolTimeout` and the
 message `request acquire queue is full`.
 
-If a request waits longer than `Timeouts.pool` for a slot, FogHTTP raises
-`PoolTimeout` with the message `request acquire timeout expired`.
+If a request waits longer than `Timeouts.pool` for a request slot, FogHTTP
+raises `PoolTimeout` with the message `request acquire timeout expired`.
+If it acquired a request slot but waits longer than `Timeouts.pool` for a
+physical connection slot, FogHTTP raises `PoolTimeout` with the message
+`connection acquire timeout expired`.
 
-Both cases increment `TransportStats.pool_acquire_timeouts`. Waiting requests
-are not counted as `active_requests`. `PoolTimeout.diagnostic.phase` is
-`pool_acquire`; the diagnostic `timeout` value is the configured pool timeout.
+Request-slot acquire failures increment `TransportStats.pool_acquire_timeouts`.
+Connection-limit acquire failures increment
+`TransportStats.connection_acquire_timeouts`. Waiting for a request slot is not
+counted as `active_requests`; waiting for a connection slot happens after a
+request has acquired an active request slot. `PoolTimeout.diagnostic.phase` is
+`pool_acquire` for request-slot waits and `connection_acquire` for
+physical-connection waits. The diagnostic `timeout` value is the configured
+pool timeout for that acquire phase.
 When a request cannot acquire immediately, it enters one bounded FIFO queue.
 Queued requests are woken in registration order; a later request does not bypass
 an earlier queued request even if its own origin currently has free capacity.
@@ -146,7 +158,14 @@ FogHTTP also records Rust-side acquire pressure metrics:
   nanoseconds.
 
 These metrics describe request-slot pressure, not physical TCP connection
-limits. `TransportStats` also exposes socket lifecycle diagnostics:
+limits. Connection-limit acquire pressure is reported separately through
+`connection_acquire_attempts`, `connection_acquire_immediate`,
+`connection_acquire_waited`, `connection_acquire_timeouts`,
+`connection_acquire_wait_time_total_ns`,
+`connection_acquire_wait_time_max_ns`, and
+`connection_acquire_wait_time_last_ns`.
+
+`TransportStats` also exposes socket lifecycle diagnostics:
 `connections_opened`, `connections_open_failed`, `connections_closed`,
 `connections_reused`, `connections_aborted`, `active_connections`, and
 `idle_connections`. `dump_transport_state()["origins"]` exposes the same
@@ -201,6 +220,8 @@ in [Telemetry contract](./telemetry.md).
 limits = foghttp.Limits(
     max_active_requests=10,
     max_active_requests_per_origin=5,
+    max_connections=10,
+    max_connections_per_host=5,
     max_pending_requests=100,
 )
 timeouts = foghttp.Timeouts(pool=0.2, total=5.0)

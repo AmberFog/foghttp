@@ -6,6 +6,8 @@ from foghttp import _foghttp
 RAW_CLIENT_KEYWORD_ONLY_PARAMETERS = (
     "max_active_requests",
     "max_active_requests_per_origin",
+    "max_connections",
+    "max_connections_per_host",
     "max_idle_connections_per_host",
     "max_pending_requests",
     "max_response_body_size",

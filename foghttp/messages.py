@@ -4,6 +4,7 @@ __all__ = (
     "BODY_DATA_UNSUPPORTED",
     "BODY_PARAMETER_CONFLICT",
     "CLIENT_CLOSED",
+    "CONNECTION_ACQUIRE_TIMEOUT",
     "COOKIES_UNSUPPORTED",
     "HTTP_VERSION_UNSUPPORTED",
     "MAX_REDIRECTS_INVALID",
@@ -44,6 +45,7 @@ BODY_PARAMETER_CONFLICT = (
     "body source conflict: use content, data, json, or files; files may be combined with form fields"
 )
 CLIENT_CLOSED = "FogHTTP client is closed"
+CONNECTION_ACQUIRE_TIMEOUT = "connection acquire timeout expired"
 COOKIES_UNSUPPORTED = "cookies are planned after the MVP"
 HTTP_VERSION_UNSUPPORTED = "only HTTP/1.1 is supported in the MVP"
 MAX_REDIRECTS_INVALID = "max_redirects must be greater than or equal to 0"

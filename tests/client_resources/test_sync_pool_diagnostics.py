@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 import foghttp
+from foghttp._telemetry import TELEMETRY_SNAPSHOT_SCHEMA_VERSION
 from foghttp.status_codes.success import OK
 from tests.client_timeouts.helpers import assert_timeout_diagnostic
 
@@ -30,7 +31,7 @@ def test_dump_pool_diagnostics_reports_empty_state_before_transport_creation() -
         "pending_queue_full": True,
         "oldest_pending_request_wait_ns": 0,
         "blocked_by": NO_POOL_BLOCK,
-        "schema_version": 1,
+        "schema_version": TELEMETRY_SNAPSHOT_SCHEMA_VERSION,
         "snapshot_sequence": 0,
         "origins": {},
     }

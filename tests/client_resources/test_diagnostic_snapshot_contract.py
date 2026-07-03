@@ -2,6 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 import foghttp
+from foghttp._telemetry import TELEMETRY_SNAPSHOT_SCHEMA_VERSION
 from foghttp.status_codes.success import OK
 
 
@@ -11,7 +12,7 @@ if TYPE_CHECKING:
 
 CONCURRENT_SNAPSHOT_ROUNDS = 10
 SYNTHETIC_SNAPSHOT_SEQUENCE = 0
-TELEMETRY_SCHEMA_VERSION = 1
+TELEMETRY_SCHEMA_VERSION = TELEMETRY_SNAPSHOT_SCHEMA_VERSION
 
 Snapshot = foghttp.TransportStats | foghttp.TransportState | foghttp.PoolDiagnostics
 

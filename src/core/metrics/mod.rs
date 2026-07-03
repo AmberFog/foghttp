@@ -18,7 +18,7 @@ pub use telemetry::TelemetrySnapshotMetadata;
 use origin::OriginMetricsRegistry;
 use std::sync::atomic::{AtomicU64, AtomicUsize};
 
-pub const TELEMETRY_SNAPSHOT_SCHEMA_VERSION: u64 = 1;
+pub const TELEMETRY_SNAPSHOT_SCHEMA_VERSION: u64 = 2;
 
 #[derive(Default)]
 pub struct Metrics {
@@ -34,6 +34,13 @@ pub struct Metrics {
     pool_acquire_wait_time_total_ns: AtomicU64,
     pool_acquire_wait_time_max_ns: AtomicU64,
     pool_acquire_wait_time_last_ns: AtomicU64,
+    connection_acquire_attempts: AtomicUsize,
+    connection_acquire_immediate: AtomicUsize,
+    connection_acquire_waited: AtomicUsize,
+    connection_acquire_timeouts: AtomicUsize,
+    connection_acquire_wait_time_total_ns: AtomicU64,
+    connection_acquire_wait_time_max_ns: AtomicU64,
+    connection_acquire_wait_time_last_ns: AtomicU64,
     response_body_reuse_eligible: AtomicUsize,
     response_body_closed: AtomicUsize,
     response_body_aborted: AtomicUsize,

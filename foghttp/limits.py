@@ -21,6 +21,8 @@ DEFAULT_MAX_BUFFERED_RESPONSE_BYTES = 100 * 1024 * 1024
 class Limits:
     max_active_requests: int = 100
     max_active_requests_per_origin: int | None = None
+    max_connections: int | None = None
+    max_connections_per_host: int | None = None
     max_pending_requests: int = 1000
     max_response_body_size: int | None = DEFAULT_MAX_RESPONSE_BODY_SIZE
     max_buffered_response_bytes: int | None = DEFAULT_MAX_BUFFERED_RESPONSE_BYTES
@@ -40,6 +42,22 @@ class Limits:
             validate_optional_non_negative_int(
                 "Limits.max_active_requests_per_origin",
                 self.max_active_requests_per_origin,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "max_connections",
+            validate_optional_non_negative_int(
+                "Limits.max_connections",
+                self.max_connections,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "max_connections_per_host",
+            validate_optional_non_negative_int(
+                "Limits.max_connections_per_host",
+                self.max_connections_per_host,
             ),
         )
         object.__setattr__(

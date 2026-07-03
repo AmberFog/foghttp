@@ -65,9 +65,9 @@ maps to a stable `RequestError`, releases the request slot, and does not return
 a poisoned connection to the pool. The tunnelled request itself is sent in
 origin-form, exactly like a direct HTTPS request.
 
-Connection and pool telemetry for HTTPS CONNECT is keyed by the target origin
-whose TLS session is tunnelled. FogHTTP does not yet expose separate proxy
-endpoint connection telemetry.
+Connection limits, pool telemetry, and socket telemetry for HTTPS CONNECT are
+keyed by the target origin whose TLS session is tunnelled. FogHTTP does not yet
+expose separate proxy endpoint connection telemetry.
 
 `Timeouts.connect` bounds the whole connect phase, including the `CONNECT`
 handshake, so a proxy that accepts the socket but never answers `CONNECT` fails

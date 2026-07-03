@@ -59,7 +59,7 @@ client = foghttp.Client()
 
 assert client.stats() == foghttp.TransportStats()
 assert client.dump_transport_state() == {
-    "schema_version": 1,
+    "schema_version": 2,
     "snapshot_sequence": 0,
     "active_requests": 0,
     "pending_requests": 0,
@@ -71,6 +71,13 @@ assert client.dump_transport_state() == {
     "pool_acquire_wait_time_total_ns": 0,
     "pool_acquire_wait_time_max_ns": 0,
     "pool_acquire_wait_time_last_ns": 0,
+    "connection_acquire_attempts": 0,
+    "connection_acquire_immediate": 0,
+    "connection_acquire_waited": 0,
+    "connection_acquire_timeouts": 0,
+    "connection_acquire_wait_time_total_ns": 0,
+    "connection_acquire_wait_time_max_ns": 0,
+    "connection_acquire_wait_time_last_ns": 0,
     "response_body_reuse_eligible": 0,
     "response_body_closed": 0,
     "response_body_aborted": 0,
@@ -378,6 +385,18 @@ connection counters.
 - `pool_acquire_wait_time_total_ns`, `pool_acquire_wait_time_max_ns`, and
   `pool_acquire_wait_time_last_ns` describe completed acquire wait intervals in
   nanoseconds
+- `connection_acquire_attempts` means attempts to open a new physical
+  connection after request-slot acquire
+- `connection_acquire_immediate` means new physical connection opens that did
+  not wait for `Limits.max_connections` or `Limits.max_connections_per_host`
+- `connection_acquire_waited` means a new physical connection waited for one of
+  those connection caps
+- `connection_acquire_timeouts` means a new physical connection could not
+  acquire capacity within `Timeouts.pool`
+- `connection_acquire_wait_time_total_ns`,
+  `connection_acquire_wait_time_max_ns`, and
+  `connection_acquire_wait_time_last_ns` describe completed connection-cap wait
+  intervals in nanoseconds
 - per-origin `last_activity_at_ns` is a monotonic timestamp in nanoseconds
   relative to the current transport metrics lifetime; it is not a Unix epoch
   timestamp
@@ -411,6 +430,22 @@ For buffered responses, the active request slot is released after the body has
 been collected or aborted. For streamed responses, the active request slot is
 held until the streamed body reaches EOF, the stream context is closed, the body
 read is cancelled or aborted, or the client is closed.
+
+`Limits.max_connections` defaults to `None`; set it only when the client needs
+an explicit global cap on tracked physical connections. `Limits.max_connections_per_host`
+can cap tracked physical connections for one normalized origin. These limits
+gate new physical connections after a request has already acquired its request
+slot. A request waiting on these connection caps is counted as `active_requests`,
+but its pressure is reported through `connection_acquire_*` rather than
+`pool_acquire_*`. The connection permit is held by the tracked connector I/O
+handle and is released when Hyper drops that physical connection. Idle
+keep-alive connections therefore count against explicit connection caps until
+they are reused, closed, or removed by transport pool cleanup.
+`Limits.idle_timeout` configures idle pool expiry, but it should not be treated
+as a precise cross-origin release timer. Idle keep-alive capacity remains
+controlled separately by `Limits.max_idle_connections_per_host`; if the idle
+pool setting is larger than an explicit connection cap, the connection cap is
+still the hard upper bound on tracked physical connections.
 
 The response body lifecycle counters describe FogHTTP's Rust-side body
 contract for buffered and streamed response bodies. Socket lifecycle
@@ -466,5 +501,5 @@ sync/async streamed response bodies, and streaming request bodies passed through
 the lifecycle model.
 
 FogHTTP exposes socket lifecycle telemetry for the current HTTP/1 path, but
-resource limits still describe request backpressure rather than strict raw TCP
-connection caps.
+HTTP/2 stream-level connection limits are planned with HTTP/2 support rather
+than retrofitted onto the current HTTP/1 connection counters.

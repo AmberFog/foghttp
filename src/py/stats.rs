@@ -27,6 +27,20 @@ pub struct RawOriginPressure {
     #[pyo3(get)]
     pool_acquire_wait_time_last_ns: u64,
     #[pyo3(get)]
+    connection_acquire_attempts: usize,
+    #[pyo3(get)]
+    connection_acquire_immediate: usize,
+    #[pyo3(get)]
+    connection_acquire_waited: usize,
+    #[pyo3(get)]
+    connection_acquire_timeouts: usize,
+    #[pyo3(get)]
+    connection_acquire_wait_time_total_ns: u64,
+    #[pyo3(get)]
+    connection_acquire_wait_time_max_ns: u64,
+    #[pyo3(get)]
+    connection_acquire_wait_time_last_ns: u64,
+    #[pyo3(get)]
     response_body_reuse_eligible: usize,
     #[pyo3(get)]
     response_body_closed: usize,
@@ -81,6 +95,20 @@ pub struct RawStats {
     #[pyo3(get)]
     pool_acquire_wait_time_last_ns: u64,
     #[pyo3(get)]
+    connection_acquire_attempts: usize,
+    #[pyo3(get)]
+    connection_acquire_immediate: usize,
+    #[pyo3(get)]
+    connection_acquire_waited: usize,
+    #[pyo3(get)]
+    connection_acquire_timeouts: usize,
+    #[pyo3(get)]
+    connection_acquire_wait_time_total_ns: u64,
+    #[pyo3(get)]
+    connection_acquire_wait_time_max_ns: u64,
+    #[pyo3(get)]
+    connection_acquire_wait_time_last_ns: u64,
+    #[pyo3(get)]
     response_body_reuse_eligible: usize,
     #[pyo3(get)]
     response_body_closed: usize,
@@ -125,6 +153,13 @@ impl From<StatsSnapshot> for RawStats {
             pool_acquire_wait_time_total_ns: metrics.pool_acquire_wait_time_total_ns,
             pool_acquire_wait_time_max_ns: metrics.pool_acquire_wait_time_max_ns,
             pool_acquire_wait_time_last_ns: metrics.pool_acquire_wait_time_last_ns,
+            connection_acquire_attempts: metrics.connection_acquire_attempts,
+            connection_acquire_immediate: metrics.connection_acquire_immediate,
+            connection_acquire_waited: metrics.connection_acquire_waited,
+            connection_acquire_timeouts: metrics.connection_acquire_timeouts,
+            connection_acquire_wait_time_total_ns: metrics.connection_acquire_wait_time_total_ns,
+            connection_acquire_wait_time_max_ns: metrics.connection_acquire_wait_time_max_ns,
+            connection_acquire_wait_time_last_ns: metrics.connection_acquire_wait_time_last_ns,
             response_body_reuse_eligible: metrics.response_body_reuse_eligible,
             response_body_closed: metrics.response_body_closed,
             response_body_aborted: metrics.response_body_aborted,
@@ -155,6 +190,13 @@ impl From<OriginMetricsSnapshot> for RawOriginPressure {
             pool_acquire_wait_time_total_ns: snapshot.pool_acquire_wait_time_total_ns,
             pool_acquire_wait_time_max_ns: snapshot.pool_acquire_wait_time_max_ns,
             pool_acquire_wait_time_last_ns: snapshot.pool_acquire_wait_time_last_ns,
+            connection_acquire_attempts: snapshot.connection_acquire_attempts,
+            connection_acquire_immediate: snapshot.connection_acquire_immediate,
+            connection_acquire_waited: snapshot.connection_acquire_waited,
+            connection_acquire_timeouts: snapshot.connection_acquire_timeouts,
+            connection_acquire_wait_time_total_ns: snapshot.connection_acquire_wait_time_total_ns,
+            connection_acquire_wait_time_max_ns: snapshot.connection_acquire_wait_time_max_ns,
+            connection_acquire_wait_time_last_ns: snapshot.connection_acquire_wait_time_last_ns,
             response_body_reuse_eligible: snapshot.response_body_reuse_eligible,
             response_body_closed: snapshot.response_body_closed,
             response_body_aborted: snapshot.response_body_aborted,

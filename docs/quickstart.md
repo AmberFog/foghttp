@@ -609,6 +609,7 @@ import foghttp
 limits = foghttp.Limits(
     max_active_requests=100,
     max_active_requests_per_origin=20,
+    max_connections_per_host=20,
     max_pending_requests=1000,
     max_response_body_size=10 * 1024 * 1024,
     max_buffered_response_bytes=100 * 1024 * 1024,
@@ -641,6 +642,14 @@ the phase, elapsed time, configured budget, normalized origin, and redirect hop.
 buffered requests for one normalized origin. `Limits.max_pending_requests` caps
 requests waiting in the Rust-side FIFO acquire queue. `Limits.max_response_body_size`
 defaults to `10 * 1024 * 1024` bytes and protects one response.
+`Limits.max_connections` defaults to `None`; set it to add an explicit global
+cap on tracked physical connections for the whole client. `Limits.max_connections_per_host`
+defaults to `None`; set it to cap tracked physical connections for one
+normalized origin. Connection-limit waits use `Timeouts.pool`, report
+`PoolTimeout.diagnostic.phase == "connection_acquire"`, and are reported
+through separate `connection_acquire_*` transport stats. Idle keep-alive
+connections count against explicit connection caps until they are reused,
+closed, or removed by transport pool cleanup.
 `Limits.max_buffered_response_bytes` defaults to `100 * 1024 * 1024` bytes and
 protects aggregate in-flight buffered response bodies across concurrent
 requests. Set smaller or larger explicit limits for your workload, or pass
@@ -650,8 +659,8 @@ encoded wire body and the decoded buffered body. The aggregate buffered budget
 also covers bytes held while decoding, so compressed responses remain bounded
 under concurrency.
 `Limits.max_idle_connections_per_host` controls idle keep-alive pool capacity;
-it is not an active request limit and is separate from per-origin request
-backpressure.
+it is not an active connection cap and is separate from request-slot and
+connection-slot backpressure.
 
 `TransportStats.buffered_response_bytes` reports currently reserved in-flight
 buffered body bytes. `TransportStats.buffered_response_budget_rejections`
@@ -664,9 +673,11 @@ body handling.
 `connections_closed`, `connections_reused`, `connections_aborted`,
 `active_connections`, and `idle_connections` report Rust-side socket lifecycle
 telemetry observed around the connector and buffered response lifecycle.
-`client.dump_transport_state()["origins"]` shows request-slot pressure grouped
-by normalized origin without path, query, userinfo, headers, or body data and
-includes the same socket lifecycle fields per origin.
+`TransportStats.connection_acquire_attempts`, `connection_acquire_waited`, and
+`connection_acquire_timeouts` report pressure from physical connection caps.
+`client.dump_transport_state()["origins"]` shows request-slot pressure,
+connection-limit pressure, and socket lifecycle fields grouped by normalized
+origin without path, query, userinfo, headers, or body data.
 Default ports are omitted from origin keys; non-default ports are preserved.
 Each origin also exposes `last_activity_at_ns`, a monotonic timestamp relative
 to the current transport metrics lifetime, not a Unix epoch timestamp.

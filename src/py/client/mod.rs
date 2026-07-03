@@ -11,7 +11,10 @@ mod timeout_diagnostics;
 mod transport;
 mod upload_body;
 
-use crate::core::client::{build_client, build_write_timeout_client, ClientOptions};
+use crate::core::client::{
+    build_client_with_connection_gate, build_write_timeout_client_with_connection_gate,
+    ClientOptions, ConnectionGate,
+};
 use crate::core::headers::HeaderPairs;
 use crate::core::metrics::Metrics;
 use crate::core::response::BufferedBodyBudget;
@@ -61,6 +64,8 @@ impl RawClient {
         *,
         max_active_requests,
         max_active_requests_per_origin,
+        max_connections,
+        max_connections_per_host,
         max_idle_connections_per_host,
         max_pending_requests,
         max_response_body_size,
@@ -88,6 +93,8 @@ impl RawClient {
     fn new(
         max_active_requests: usize,
         max_active_requests_per_origin: Option<usize>,
+        max_connections: Option<usize>,
+        max_connections_per_host: Option<usize>,
         max_idle_connections_per_host: usize,
         max_pending_requests: usize,
         max_response_body_size: Option<usize>,
@@ -109,6 +116,8 @@ impl RawClient {
         validate_numeric_client_options(NumericClientOptions {
             max_active_requests,
             max_active_requests_per_origin,
+            max_connections,
+            max_connections_per_host,
             max_idle_connections_per_host,
             max_pending_requests,
             max_response_body_size,
@@ -119,6 +128,7 @@ impl RawClient {
 
         let runtime_mode = parse_runtime_mode(runtime)?;
         let metrics = Arc::new(Metrics::default());
+        let connection_gate = ConnectionGate::new(max_connections, max_connections_per_host);
         let client_options = ClientOptions {
             max_idle_connections_per_host,
             idle_timeout,
@@ -130,11 +140,18 @@ impl RawClient {
             https_proxy_url: None,
             https_proxy_authorization: None,
         };
-        let client =
-            build_client(&client_options, Arc::clone(&metrics)).map_err(FogHttpError::new_err)?;
-        let write_timeout_client =
-            build_write_timeout_client(&client_options, Arc::clone(&metrics))
-                .map_err(FogHttpError::new_err)?;
+        let client = build_client_with_connection_gate(
+            &client_options,
+            Arc::clone(&metrics),
+            connection_gate.clone(),
+        )
+        .map_err(FogHttpError::new_err)?;
+        let write_timeout_client = build_write_timeout_client_with_connection_gate(
+            &client_options,
+            Arc::clone(&metrics),
+            connection_gate.clone(),
+        )
+        .map_err(FogHttpError::new_err)?;
         let proxy_options = if http_proxy_url.is_some() || https_proxy_url.is_some() {
             Some(ClientOptions {
                 http_proxy_url,
@@ -147,12 +164,24 @@ impl RawClient {
         };
         let proxy_client = proxy_options
             .as_ref()
-            .map(|options| build_client(options, Arc::clone(&metrics)))
+            .map(|options| {
+                build_client_with_connection_gate(
+                    options,
+                    Arc::clone(&metrics),
+                    connection_gate.clone(),
+                )
+            })
             .transpose()
             .map_err(FogHttpError::new_err)?;
         let proxy_write_timeout_client = proxy_options
             .as_ref()
-            .map(|options| build_write_timeout_client(options, Arc::clone(&metrics)))
+            .map(|options| {
+                build_write_timeout_client_with_connection_gate(
+                    options,
+                    Arc::clone(&metrics),
+                    connection_gate.clone(),
+                )
+            })
             .transpose()
             .map_err(FogHttpError::new_err)?;
         let buffered_body_budget =

@@ -22,6 +22,13 @@ class TransportStats:
     pool_acquire_wait_time_total_ns: int = 0
     pool_acquire_wait_time_max_ns: int = 0
     pool_acquire_wait_time_last_ns: int = 0
+    connection_acquire_attempts: int = 0
+    connection_acquire_immediate: int = 0
+    connection_acquire_waited: int = 0
+    connection_acquire_timeouts: int = 0
+    connection_acquire_wait_time_total_ns: int = 0
+    connection_acquire_wait_time_max_ns: int = 0
+    connection_acquire_wait_time_last_ns: int = 0
     response_body_reuse_eligible: int = 0
     response_body_closed: int = 0
     response_body_aborted: int = 0

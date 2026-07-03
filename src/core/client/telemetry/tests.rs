@@ -1,7 +1,7 @@
 use super::{ConnectionTelemetry, InstrumentedConnection, WriteTimeoutState};
 use crate::core::client::{
-    request_write_timeout_from_error, with_request_write_timeout, InstrumentedConnector,
-    RequestWriteTimeoutContext, RequestWriteTimeoutExecutor,
+    request_write_timeout_from_error, with_request_write_timeout, ConnectionGate,
+    InstrumentedConnector, RequestTaskContextExecutor, RequestWriteTimeoutContext,
 };
 use crate::core::metrics::{Metrics, OriginMetricsSnapshot, ResponseBodyLifecycleOutcome};
 use bytes::Bytes;
@@ -117,8 +117,12 @@ fn pending_socket_write_expires_request_write_timeout() {
 fn hyper_dispatcher_sees_write_timeout_context_on_isolated_client() {
     runtime().block_on(async {
         let metrics = Arc::new(Metrics::default());
-        let connector = InstrumentedConnector::new(PendingConnector, Arc::clone(&metrics));
-        let client = Client::builder(RequestWriteTimeoutExecutor)
+        let connector = InstrumentedConnector::new(
+            PendingConnector,
+            Arc::clone(&metrics),
+            ConnectionGate::new(Some(1), None),
+        );
+        let client = Client::builder(RequestTaskContextExecutor)
             .pool_max_idle_per_host(0)
             .build(connector);
         let request = Request::builder()
@@ -227,6 +231,7 @@ fn instrumented_connection(
         inner,
         telemetry: ConnectionTelemetry::new(metrics, Some(origin_metrics)),
         write_timeout: WriteTimeoutState::default(),
+        _connection_permit: crate::core::client::connection_limit::ConnectionPermit::default(),
     }
 }
 

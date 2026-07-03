@@ -152,8 +152,8 @@ cleanup rules. HTTP proxy routing and HTTPS proxy `CONNECT` tunnelling are
 available through `proxy=` and `trust_env=True` when the proxy endpoint itself
 uses `http://`.
 Cookies, auth helpers, HTTP/2, automatic `Accept-Encoding` negotiation,
-streaming decompression, strict connection-level pool limits, and per-request
-connect timeout reconfiguration are planned for later versions.
+streaming decompression, and per-request connect timeout reconfiguration are
+planned for later versions.
 Response body read timeout is available for buffered and streaming response
 bodies; request body write timeout is available for buffered and streaming
 request bodies. Socket lifecycle telemetry is available for the current HTTP/1

@@ -20,6 +20,8 @@ def create_raw_client(
         return _foghttp.RawClient(
             max_active_requests=limits.max_active_requests,
             max_active_requests_per_origin=limits.max_active_requests_per_origin,
+            max_connections=limits.max_connections,
+            max_connections_per_host=limits.max_connections_per_host,
             max_idle_connections_per_host=limits.max_idle_connections_per_host,
             max_pending_requests=limits.max_pending_requests,
             max_response_body_size=limits.max_response_body_size,

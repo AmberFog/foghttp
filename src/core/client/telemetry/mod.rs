@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests;
 
+use super::connection_limit::{ConnectionGate, ConnectionPermit};
 use super::write_timeout::{current_request_write_timeout, RequestWriteTimeoutContext};
 use crate::core::metrics::{Metrics, OriginMetrics, ResponseBodyLifecycleOutcome};
 use crate::core::url::HttpUrl;
@@ -17,10 +18,13 @@ use std::time::Instant;
 use tokio::time::Sleep;
 use tower_service::Service;
 
+type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
 #[derive(Clone)]
 pub(crate) struct InstrumentedConnector<C> {
     inner: C,
     metrics: Arc<Metrics>,
+    connection_gate: ConnectionGate,
 }
 
 #[derive(Clone)]
@@ -37,6 +41,7 @@ pub(crate) struct InstrumentedConnection<T> {
     inner: T,
     telemetry: ConnectionTelemetry,
     write_timeout: WriteTimeoutState,
+    _connection_permit: ConnectionPermit,
 }
 
 struct ConnectionTelemetryInner {
@@ -56,8 +61,12 @@ struct WriteTimeoutState {
 }
 
 impl<C> InstrumentedConnector<C> {
-    pub(crate) fn new(inner: C, metrics: Arc<Metrics>) -> Self {
-        Self { inner, metrics }
+    pub(crate) fn new(inner: C, metrics: Arc<Metrics>, connection_gate: ConnectionGate) -> Self {
+        Self {
+            inner,
+            metrics,
+            connection_gate,
+        }
     }
 }
 
@@ -66,21 +75,31 @@ where
     C: Service<Uri>,
     C::Response: Read + Write + Connection + Unpin + Send + 'static,
     C::Future: Send + 'static,
+    C::Error: Into<BoxError>,
 {
     type Response = InstrumentedConnection<C::Response>;
-    type Error = C::Error;
+    type Error = BoxError;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn poll_ready(&mut self, context: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(context)
+        self.inner.poll_ready(context).map_err(Into::into)
     }
 
     fn call(&mut self, uri: Uri) -> Self::Future {
         let metrics = Arc::clone(&self.metrics);
-        let origin_metrics = origin_from_uri(&uri).map(|origin| metrics.origin_metrics(&origin));
+        let connection_gate = self.connection_gate.clone();
+        let origin = origin_from_uri(&uri);
+        let origin_metrics = origin.as_ref().map(|origin| metrics.origin_metrics(origin));
         let future = self.inner.call(uri);
 
         Box::pin(async move {
+            let connection_permit = connection_gate
+                .acquire(
+                    origin.as_deref(),
+                    Arc::clone(&metrics),
+                    origin_metrics.clone(),
+                )
+                .await?;
             match future.await {
                 Ok(inner) => {
                     let telemetry = ConnectionTelemetry::new(metrics, origin_metrics);
@@ -88,6 +107,7 @@ where
                         inner,
                         telemetry,
                         write_timeout: WriteTimeoutState::default(),
+                        _connection_permit: connection_permit,
                     })
                 }
                 Err(error) => {
@@ -95,7 +115,7 @@ where
                     if let Some(origin_metrics) = origin_metrics {
                         origin_metrics.connection_open_failed();
                     }
-                    Err(error)
+                    Err(error.into())
                 }
             }
         })

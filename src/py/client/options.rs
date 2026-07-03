@@ -8,6 +8,8 @@ use pyo3::prelude::*;
 pub struct NumericClientOptions {
     pub max_active_requests: usize,
     pub max_active_requests_per_origin: Option<usize>,
+    pub max_connections: Option<usize>,
+    pub max_connections_per_host: Option<usize>,
     pub max_idle_connections_per_host: usize,
     pub max_pending_requests: usize,
     pub max_response_body_size: Option<usize>,
@@ -22,6 +24,13 @@ pub fn validate_numeric_client_options(options: NumericClientOptions) -> PyResul
     validate_optional_usize_option(
         "Limits.max_active_requests_per_origin",
         options.max_active_requests_per_origin,
+    )
+    .map_err(PyValueError::new_err)?;
+    validate_optional_usize_option("Limits.max_connections", options.max_connections)
+        .map_err(PyValueError::new_err)?;
+    validate_optional_usize_option(
+        "Limits.max_connections_per_host",
+        options.max_connections_per_host,
     )
     .map_err(PyValueError::new_err)?;
     validate_usize_option(

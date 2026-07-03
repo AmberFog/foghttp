@@ -1,3 +1,4 @@
+use super::connection_limit::{current_connection_limit_context, with_connection_limit_timeout};
 use crate::messages::REQUEST_BODY_WRITE_TIMEOUT;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -26,7 +27,7 @@ pub(crate) struct RequestWriteTimeout {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct RequestWriteTimeoutExecutor;
+pub(crate) struct RequestTaskContextExecutor;
 
 impl RequestWriteTimeoutContext {
     pub(crate) fn new(
@@ -100,22 +101,20 @@ pub(crate) fn current_request_write_timeout() -> Option<RequestWriteTimeoutConte
     REQUEST_WRITE_TIMEOUT.try_with(Clone::clone).ok()
 }
 
-impl<Fut> hyper::rt::Executor<Fut> for RequestWriteTimeoutExecutor
+impl<Fut> hyper::rt::Executor<Fut> for RequestTaskContextExecutor
 where
     Fut: Future + Send + 'static,
     Fut::Output: Send + 'static,
 {
     fn execute(&self, future: Fut) {
-        match current_request_write_timeout() {
-            Some(context) => {
-                tokio::spawn(async move {
-                    REQUEST_WRITE_TIMEOUT.scope(context, future).await;
-                });
-            }
-            None => {
-                tokio::spawn(future);
-            }
-        }
+        let connection_context = current_connection_limit_context();
+        let write_context = current_request_write_timeout();
+        tokio::spawn(async move {
+            with_connection_limit_timeout(connection_context, async {
+                with_request_write_timeout(write_context, future).await
+            })
+            .await;
+        });
     }
 }
 

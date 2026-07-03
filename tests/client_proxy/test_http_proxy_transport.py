@@ -1,4 +1,5 @@
 from base64 import b64encode
+from concurrent.futures import ThreadPoolExecutor
 import json
 from urllib.parse import urlsplit
 
@@ -8,6 +9,7 @@ import pytest
 import foghttp
 from foghttp.methods import GET, POST
 from foghttp.status_codes.redirect import FOUND
+from foghttp.status_codes.success import OK
 from tests.client_multipart.assertions import assert_multipart_parts, parse_multipart_parts
 from tests.client_multipart.models import MultipartPart
 from tests.client_proxy.environment import clear_proxy_environment
@@ -57,6 +59,51 @@ def test_sync_stream_routes_http_request_through_explicit_proxy(
     payload = json.loads(content)
     assert payload["request_line"] == f"{GET} {target_url} HTTP/1.1"
     assert len(sync_http_proxy.requests) == 1
+
+
+def test_explicit_proxy_per_host_connection_limit_is_target_origin_keyed(
+    faker: Faker,
+    sync_http_proxy: SyncHTTPProxy,
+) -> None:
+    slow_origin = _fake_http_origin(faker)
+    fast_origin = _fake_http_origin(faker)
+    while fast_origin == slow_origin:
+        fast_origin = _fake_http_origin(faker)
+
+    slow_url = f"{slow_origin}{PROXY_STREAM_EARLY_CLOSE_PATH}"
+    fast_url = f"{fast_origin}/via-same-proxy"
+    limits = foghttp.Limits(
+        max_active_requests=2,
+        max_connections=2,
+        max_connections_per_host=1,
+        max_pending_requests=0,
+        keepalive=False,
+    )
+    timeouts = foghttp.Timeouts(pool=0.05, total=2.0)
+
+    with (
+        foghttp.Client(proxy=sync_http_proxy.base_url, limits=limits, timeouts=timeouts) as client,
+        ThreadPoolExecutor(max_workers=1) as executor,
+    ):
+        slow = executor.submit(client.get, slow_url)
+        wait_for_sync_transport_stats(
+            client,
+            lambda stats: stats.active_connections == 1,
+            message="expected first proxied target to hold one connection",
+        )
+
+        fast_response = client.get(fast_url)
+        slow_response = slow.result(timeout=2.0)
+        state = client.dump_transport_state()
+
+    assert fast_response.status_code == OK
+    assert slow_response.status_code == OK
+    assert set(_request_lines(sync_http_proxy.requests)) == {
+        f"{GET} {slow_url} HTTP/1.1",
+        f"{GET} {fast_url} HTTP/1.1",
+    }
+    assert _origin_from_url(slow_url) in state["origins"]
+    assert _origin_from_url(fast_url) in state["origins"]
 
 
 def test_sync_client_routes_multipart_request_through_explicit_proxy(
@@ -412,6 +459,15 @@ def test_proxy_protocol_failure_cleans_up_request_stats(
 
 def _target_url(port: int, path: str) -> str:
     return f"http://127.0.0.1:{port}{path}"
+
+
+def _fake_http_origin(faker: Faker) -> str:
+    return f"http://{faker.domain_name()}"
+
+
+def _origin_from_url(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
 
 
 def _proxy_redirect_url(port: int, location: str) -> str:
