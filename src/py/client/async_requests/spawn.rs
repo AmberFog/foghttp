@@ -3,7 +3,7 @@ use super::callback::PythonFutureCancellation;
 use super::registry::AsyncRequestRegistry;
 use crate::core::metrics::Metrics;
 use crate::py::client::acquire::AcquireGate;
-use crate::py::client::future::complete_python_future;
+use crate::py::client::future::{complete_python_future, PythonFutureSetters};
 use crate::py::client::transport::{send_request, TransportClients, TransportRequest};
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
@@ -15,6 +15,7 @@ pub struct AsyncRequestSpawn {
     pub clients: TransportClients,
     pub metrics: Arc<Metrics>,
     pub pool_timeout: f64,
+    pub future_setters: PythonFutureSetters,
     pub request: TransportRequest,
 }
 
@@ -29,6 +30,7 @@ pub fn spawn_async_request(
         clients,
         metrics,
         pool_timeout,
+        future_setters,
         request,
     } = spawn;
     let loop_ = py
@@ -41,6 +43,7 @@ pub fn spawn_async_request(
 
     let task_loop = loop_.clone_ref(py);
     let task_future = future.clone_ref(py);
+    let task_future_setters = future_setters.clone_ref(py);
     let task_registry = registry.clone();
     let task_metrics = Arc::clone(&metrics);
     let task_completion = completion.clone();
@@ -58,7 +61,7 @@ pub fn spawn_async_request(
         if task_completion.finish() {
             task_registry.remove(request_id);
             task_metrics.request_finished(result.is_err());
-            complete_python_future(&task_loop, &task_future, result);
+            complete_python_future(&task_loop, &task_future, &task_future_setters, result);
         }
     });
 

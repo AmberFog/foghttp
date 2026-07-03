@@ -3,6 +3,7 @@ use crate::core::headers::HeaderPairs;
 use crate::core::metrics::{Metrics, ResponseBodyLifecycleOutcome};
 use crate::py::client::acquire::AcquirePermit;
 use crate::py::client::async_requests::RequestCompletion;
+use crate::py::client::future::PythonFutureSetters;
 use crate::py::client::lifecycle::ResponseBodyLifecycle;
 use crate::py::response::{RawRequestInfo, RawResponse};
 use hyper::body::Incoming;
@@ -27,6 +28,7 @@ pub(crate) struct RawStreamResponseParts {
     pub(crate) completion: RequestCompletion,
     pub(crate) registry: super::registry::StreamRegistry,
     pub(crate) runtime_handle: Handle,
+    pub(crate) future_setters: PythonFutureSetters,
     pub(crate) read_timeout: Duration,
     pub(crate) read_timeout_secs: f64,
     pub(crate) origin: String,

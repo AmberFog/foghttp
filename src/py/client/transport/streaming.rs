@@ -11,6 +11,7 @@ use crate::errors::FogHttpError;
 use crate::messages::{redirect_limit_exceeded, REQUEST_TOTAL_TIMEOUT};
 use crate::py::client::acquire::AcquireGate;
 use crate::py::client::async_requests::RequestCompletion;
+use crate::py::client::future::PythonFutureSetters;
 use crate::py::client::redirects::{redirect_decision, RedirectDecision};
 use crate::py::client::streams::{RawStreamResponse, StreamRegistry};
 use crate::py::client::timeout_diagnostics::{
@@ -31,6 +32,7 @@ pub async fn send_stream_request(
     active_streams: StreamRegistry,
     runtime_handle: Handle,
     pool_timeout: f64,
+    future_setters: PythonFutureSetters,
     parts: TransportRequest,
     completion: RequestCompletion,
 ) -> PyResult<RawStreamResponse> {
@@ -86,6 +88,7 @@ pub async fn send_stream_request(
                     runtime_handle,
                     completion,
                     permit,
+                    future_setters,
                     redirect_hop,
                     history,
                 },

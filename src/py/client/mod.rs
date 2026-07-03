@@ -24,6 +24,7 @@ use crate::py::client::async_requests::{
     spawn_async_request, spawn_async_stream_request, AsyncRequestRegistry, AsyncRequestSpawn,
     AsyncStreamRequestSpawn, RequestCompletion,
 };
+use crate::py::client::future::PythonFutureSetters;
 use crate::py::client::options::{
     validate_numeric_client_options, validate_request_timeouts, NumericClientOptions,
 };
@@ -50,6 +51,7 @@ pub struct RawClient {
     metrics: Arc<Metrics>,
     active_async_requests: AsyncRequestRegistry,
     active_streams: StreamRegistry,
+    future_setters: PythonFutureSetters,
     max_response_body_size: Option<usize>,
     buffered_body_budget: BufferedBodyBudget,
     follow_redirects: bool,
@@ -91,6 +93,7 @@ impl RawClient {
         reason = "PyO3 constructor mirrors Python client options before transport grouping."
     )]
     fn new(
+        py: Python<'_>,
         max_active_requests: usize,
         max_active_requests_per_origin: Option<usize>,
         max_connections: Option<usize>,
@@ -193,6 +196,7 @@ impl RawClient {
             Arc::clone(&metrics),
         );
         let runtime = ClientRuntime::build(max_active_requests, runtime_mode, runtime_workers)?;
+        let future_setters = PythonFutureSetters::new(py)?;
 
         Ok(Self {
             clients: Some(TransportClients::new(
@@ -206,6 +210,7 @@ impl RawClient {
             metrics,
             active_async_requests: AsyncRequestRegistry::default(),
             active_streams: StreamRegistry::default(),
+            future_setters,
             max_response_body_size,
             buffered_body_budget,
             follow_redirects,
@@ -343,6 +348,7 @@ impl RawClient {
                 clients,
                 metrics: Arc::clone(&self.metrics),
                 pool_timeout,
+                future_setters: self.future_setters.clone_ref(py),
                 request: TransportRequest {
                     method,
                     url,
@@ -412,6 +418,7 @@ impl RawClient {
         let proxy_authorization = self.proxy_authorization.clone();
         let completion = RequestCompletion::default();
         let request_completion = completion.clone();
+        let future_setters = self.future_setters.clone_ref(py);
         self.metrics.request_started();
 
         let result = py.detach(|| {
@@ -423,6 +430,7 @@ impl RawClient {
                     active_streams,
                     runtime_handle,
                     pool_timeout,
+                    future_setters,
                     TransportRequest {
                         method,
                         url,
@@ -504,6 +512,7 @@ impl RawClient {
                 metrics: Arc::clone(&self.metrics),
                 active_streams: self.active_streams.clone(),
                 pool_timeout,
+                future_setters: self.future_setters.clone_ref(py),
                 request: TransportRequest {
                     method,
                     url,

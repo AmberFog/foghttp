@@ -37,14 +37,21 @@ pub fn cancel_python_future(loop_: &Py<PyAny>, future: &Py<PyAny>) {
 pub fn complete_python_future(
     loop_: &Py<PyAny>,
     future: &Py<PyAny>,
+    setters: &PythonFutureSetters,
     result: PyResult<RawResponse>,
 ) {
     Python::attach(|py| {
         let call_result: PyResult<()> = match result {
-            Ok(response) => schedule_set_result(py, loop_, future, response),
+            Ok(response) => schedule_set_result(py, loop_, future, setters, response),
             Err(err) => {
                 let exception = err.into_value(py);
-                schedule_set_exception(py, loop_, future, exception)
+                schedule_set_exception_with_helper(
+                    py,
+                    loop_,
+                    future,
+                    &setters.set_exception_if_pending,
+                    exception,
+                )
             }
         };
 
@@ -57,14 +64,21 @@ pub fn complete_python_future(
 pub fn complete_python_stream_future(
     loop_: &Py<PyAny>,
     future: &Py<PyAny>,
+    setters: &PythonFutureSetters,
     result: PyResult<RawStreamResponse>,
 ) {
     Python::attach(|py| {
         let call_result: PyResult<()> = match result {
-            Ok(response) => schedule_set_stream_result(py, loop_, future, response),
+            Ok(response) => schedule_set_stream_result(py, loop_, future, setters, response),
             Err(err) => {
                 let exception = err.into_value(py);
-                schedule_set_exception(py, loop_, future, exception)
+                schedule_set_exception_with_helper(
+                    py,
+                    loop_,
+                    future,
+                    &setters.set_exception_if_pending,
+                    exception,
+                )
             }
         };
 
@@ -146,21 +160,6 @@ fn schedule_set_none_result(
     Ok(())
 }
 
-fn schedule_set_exception(
-    py: Python<'_>,
-    loop_: &Py<PyAny>,
-    future: &Py<PyAny>,
-    exception: Py<PyBaseException>,
-) -> PyResult<()> {
-    let helper = py
-        .import("foghttp._client.asyncio_futures")?
-        .getattr("set_exception_if_pending")?;
-    loop_
-        .bind(py)
-        .call_method1("call_soon_threadsafe", (helper, future.bind(py), exception))?;
-    Ok(())
-}
-
 fn schedule_set_exception_with_helper(
     py: Python<'_>,
     loop_: &Py<PyAny>,
@@ -179,15 +178,18 @@ fn schedule_set_stream_result(
     py: Python<'_>,
     loop_: &Py<PyAny>,
     future: &Py<PyAny>,
+    setters: &PythonFutureSetters,
     response: RawStreamResponse,
 ) -> PyResult<()> {
-    let helper = py
-        .import("foghttp._client.asyncio_futures")?
-        .getattr("set_result_if_pending")?;
     let response = Py::new(py, response)?;
-    loop_
-        .bind(py)
-        .call_method1("call_soon_threadsafe", (helper, future.bind(py), response))?;
+    loop_.bind(py).call_method1(
+        "call_soon_threadsafe",
+        (
+            setters.set_result_if_pending.bind(py),
+            future.bind(py),
+            response,
+        ),
+    )?;
     Ok(())
 }
 
@@ -195,14 +197,17 @@ fn schedule_set_result(
     py: Python<'_>,
     loop_: &Py<PyAny>,
     future: &Py<PyAny>,
+    setters: &PythonFutureSetters,
     response: RawResponse,
 ) -> PyResult<()> {
-    let helper = py
-        .import("foghttp._client.asyncio_futures")?
-        .getattr("set_result_if_pending")?;
     let response = Py::new(py, response)?;
-    loop_
-        .bind(py)
-        .call_method1("call_soon_threadsafe", (helper, future.bind(py), response))?;
+    loop_.bind(py).call_method1(
+        "call_soon_threadsafe",
+        (
+            setters.set_result_if_pending.bind(py),
+            future.bind(py),
+            response,
+        ),
+    )?;
     Ok(())
 }
