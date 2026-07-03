@@ -17,6 +17,7 @@ RAW_CLIENT_KEYWORD_ONLY_PARAMETERS = (
     "max_redirects",
     "ca_certificates",
     "trust_webpki_roots",
+    "runtime",
     "runtime_workers",
     "http_proxy_url",
     "http_proxy_authorization",

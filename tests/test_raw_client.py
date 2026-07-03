@@ -17,6 +17,7 @@ from foghttp._client.raw.requests import (
     send_raw_stream_request,
     send_raw_stream_request_async,
 )
+from foghttp._client.runtime.constants import RUNTIME_WORKERS_ENV
 from foghttp._request_body import RequestBody
 from foghttp.limits import Limits
 from foghttp.methods import GET
@@ -38,6 +39,7 @@ RAW_CLIENT_INIT_ARGUMENTS = (
     "max_redirects",
     "ca_certificates",
     "trust_webpki_roots",
+    "runtime",
     "runtime_workers",
     "http_proxy_url",
     "http_proxy_authorization",
@@ -67,6 +69,7 @@ def _client_config(
     timeouts: Timeouts | None = None,
     follow_redirects: bool = False,
     max_redirects: int = DEFAULT_MAX_REDIRECTS,
+    runtime: str | None = None,
     runtime_workers: int | None = None,
     trust_env: bool = False,
     proxy: str | None = None,
@@ -86,6 +89,7 @@ def _client_config(
             trust_env=trust_env,
             proxy=proxy,
             tls=tls,
+            runtime=runtime,
             runtime_workers=runtime_workers,
             telemetry=None,
             lifecycle_debug=None,
@@ -162,6 +166,7 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
         "max_redirects": max_redirects,
         "ca_certificates": (),
         "trust_webpki_roots": True,
+        "runtime": "dedicated",
         "runtime_workers": runtime_workers,
         "http_proxy_url": None,
         "http_proxy_authorization": None,
@@ -222,6 +227,64 @@ def test_create_raw_client_passes_tls_trust_boundary_to_rust_client(
     _assert_raw_client_argument_names(captured_options)
     assert captured_options["ca_certificates"] == (ca_body,)
     assert captured_options["trust_webpki_roots"] is False
+
+
+def test_create_raw_client_uses_shared_runtime_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_options: dict[str, object] = {}
+
+    class RawClientProbe:
+        def __init__(self, **kwargs: object) -> None:
+            captured_options.update(kwargs)
+
+    monkeypatch.setattr(_foghttp, "RawClient", RawClientProbe)
+
+    raw_client = create_raw_client(config=_client_config())
+
+    assert isinstance(raw_client, RawClientProbe)
+    _assert_raw_client_argument_names(captured_options)
+    assert captured_options["runtime"] == "shared"
+    assert captured_options["runtime_workers"] is None
+
+
+def test_create_raw_client_accepts_dedicated_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_options: dict[str, object] = {}
+
+    class RawClientProbe:
+        def __init__(self, **kwargs: object) -> None:
+            captured_options.update(kwargs)
+
+    monkeypatch.setattr(_foghttp, "RawClient", RawClientProbe)
+
+    raw_client = create_raw_client(config=_client_config(runtime="dedicated"))
+
+    assert isinstance(raw_client, RawClientProbe)
+    _assert_raw_client_argument_names(captured_options)
+    assert captured_options["runtime"] == "dedicated"
+    assert captured_options["runtime_workers"] is None
+
+
+def test_create_raw_client_uses_dedicated_runtime_when_env_workers_are_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_options: dict[str, object] = {}
+
+    class RawClientProbe:
+        def __init__(self, **kwargs: object) -> None:
+            captured_options.update(kwargs)
+
+    monkeypatch.setattr(_foghttp, "RawClient", RawClientProbe)
+    monkeypatch.setenv(RUNTIME_WORKERS_ENV, "1")
+
+    raw_client = create_raw_client(config=_client_config())
+
+    assert isinstance(raw_client, RawClientProbe)
+    _assert_raw_client_argument_names(captured_options)
+    assert captured_options["runtime"] == "dedicated"
+    assert captured_options["runtime_workers"] is None
 
 
 def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker: Faker) -> None:

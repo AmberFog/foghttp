@@ -53,13 +53,13 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - opt-in async lifecycle debug snapshots for active async request handles,
   pending transport pressure, strict test checks, and unclosed-client context
 - default per-response and aggregate buffered response memory limits
-- explicit `close()`/`aclose()` lifecycle for Rust runtime and pool resources;
+- explicit `close()`/`aclose()` lifecycle for Rust transport and pool resources;
   sync `close()` waits for in-flight sync requests, while async `aclose()`
   cancels in-flight async requests; see [Client lifecycle](./lifecycle.md)
 - documented current timeout model for client-level `connect` and per-request
   `pool`/`read`/`write`/`total`; see
   [Timeout model](./timeouts.md)
-- advanced `runtime_workers` tuning for the per-client Tokio runtime
+- shared Tokio runtime by default and opt-in dedicated runtime worker tuning
 - reusable HTTP method constants through `foghttp.methods`
 - HTTP/1.1 over HTTP and HTTPS
 
@@ -107,8 +107,8 @@ Use FogHTTP today when:
 - async request cancellation and sync/async stream cleanup behavior are useful
 - global and per-origin request-slot backpressure is enough for your
   resource control needs
-- you can reuse clients instead of creating many short-lived runtime instances
-  once requests start flowing
+- you can reuse clients instead of creating many short-lived transport and pool
+  instances once requests start flowing
 
 Wait before using FogHTTP when:
 

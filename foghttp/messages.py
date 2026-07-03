@@ -15,8 +15,10 @@ __all__ = (
     "MULTIPART_HEADER_VALUE_UNSUPPORTED",
     "POOL_ACQUIRE_QUEUE_FULL",
     "POOL_ACQUIRE_TIMEOUT",
+    "RUNTIME_INVALID",
     "RUNTIME_WORKERS_ENV_INVALID",
     "RUNTIME_WORKERS_INVALID",
+    "RUNTIME_WORKERS_SHARED_UNSUPPORTED",
     "STREAMING_BODY_CHUNK_UNSUPPORTED",
     "STREAM_CONTEXT_REENTERED",
     "STREAM_RESPONSE_BODY_CONSUMED",
@@ -58,8 +60,10 @@ MULTIPART_CONTENT_TYPE_UNSUPPORTED = "files require a multipart content-type"
 MULTIPART_HEADER_VALUE_UNSUPPORTED = "multipart field names, filenames, and content types must be printable ASCII"
 POOL_ACQUIRE_QUEUE_FULL = "request acquire queue is full"
 POOL_ACQUIRE_TIMEOUT = "request acquire timeout expired"
+RUNTIME_INVALID = "runtime must be 'shared' or 'dedicated'"
 RUNTIME_WORKERS_ENV_INVALID = "FOGHTTP_RUNTIME_WORKERS must be an integer between 1 and 32"
 RUNTIME_WORKERS_INVALID = "runtime_workers must be an integer between 1 and 32"
+RUNTIME_WORKERS_SHARED_UNSUPPORTED = "runtime_workers requires runtime='dedicated'"
 STREAM_CONTEXT_REENTERED = "stream context cannot be entered more than once"
 STREAM_RESPONSE_BODY_CONSUMED = "stream response body can be consumed only once"
 STREAM_RESPONSE_CLOSED = "stream response is closed"

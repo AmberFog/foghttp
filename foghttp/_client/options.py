@@ -9,15 +9,13 @@ from ..messages import (
     COOKIES_UNSUPPORTED,
     HTTP_VERSION_UNSUPPORTED,
     MAX_REDIRECTS_INVALID,
-    RUNTIME_WORKERS_ENV_INVALID,
-    RUNTIME_WORKERS_INVALID,
 )
 from ..telemetry import TelemetryConfig
 from ..timeouts import Timeouts
 from ..tls import TLSConfig
 from ..types import HttpVersions, QueryParams
 from ..url import URL
-from .runtime.workers import is_valid_runtime_workers, is_valid_runtime_workers_env
+from .runtime.validation import validate_runtime_options
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +32,7 @@ class ClientOptions:
     trust_env: bool
     proxy: str | URL | None
     tls: TLSConfig | None
+    runtime: str | None
     runtime_workers: int | None
     telemetry: TelemetryConfig | None
     lifecycle_debug: AsyncLifecycleDebugConfig | None
@@ -42,10 +41,10 @@ class ClientOptions:
 def validate_client_options(options: ClientOptions) -> None:
     if options.max_redirects < 0:
         raise ValueError(MAX_REDIRECTS_INVALID)
-    if not is_valid_runtime_workers(options.runtime_workers):
-        raise ValueError(RUNTIME_WORKERS_INVALID)
-    if options.runtime_workers is None and not is_valid_runtime_workers_env():
-        raise ValueError(RUNTIME_WORKERS_ENV_INVALID)
+    validate_runtime_options(
+        runtime=options.runtime,
+        runtime_workers=options.runtime_workers,
+    )
     if options.cookies:
         raise NotImplementedError(COOKIES_UNSUPPORTED)
     if options.http_versions and options.http_versions != ["HTTP/1.1"]:

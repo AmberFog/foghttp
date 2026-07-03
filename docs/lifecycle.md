@@ -1,8 +1,10 @@
 # Client Lifecycle
 
 FogHTTP clients own transport resources once the first request is sent. This
-includes the Rust client, the Tokio runtime used by that client, connection pool
-state, request limits, and in-flight async request handles.
+includes the Rust client, connection pool state, request limits, and in-flight
+async request handles. By default, clients use a shared Tokio runtime; a client
+can opt into a dedicated runtime when isolation or worker-count tuning is
+needed.
 
 Use context managers by default. They make ownership explicit and ensure that
 transport resources are released even when a request fails.
@@ -87,6 +89,42 @@ assert client.dump_pool_diagnostics()["origins"] == {}
 
 client.close()
 ```
+
+## Runtime Ownership
+
+By default, `Client` and `AsyncClient` use `runtime="shared"`. The shared Tokio
+runtime is process-wide and initialized lazily by the first client that opens
+transport state. Closing an individual client closes its Rust transport, pool
+state, streams, request handles, and diagnostics, but does not shut down the
+shared runtime used by other clients.
+
+The shared runtime uses the detected process parallelism capped at `16` worker
+threads. If parallelism cannot be detected, FogHTTP uses a conservative fallback
+of `4` shared runtime workers. `runtime_workers` and `FOGHTTP_RUNTIME_WORKERS`
+do not configure the shared runtime; use a dedicated runtime when a client needs
+an explicit worker count.
+
+Use `runtime="dedicated"` when a client needs runtime isolation:
+
+```python
+with foghttp.Client(runtime="dedicated") as client:
+    response = client.get("https://api.example.com/users")
+```
+
+`runtime_workers=` is only valid for dedicated runtimes:
+
+```python
+with foghttp.Client(runtime="dedicated", runtime_workers=4) as client:
+    response = client.get("https://api.example.com/users")
+```
+
+If `runtime=` is omitted and `runtime_workers` or `FOGHTTP_RUNTIME_WORKERS` is
+set, FogHTTP selects `runtime="dedicated"` automatically. This preserves
+worker-count tuning as a per-client contract and avoids hidden first-client-wins
+configuration for the shared runtime.
+
+Clients and runtime resources must not be shared across `fork()`. In pre-fork
+servers or process pools, create FogHTTP clients after the worker process starts.
 
 ## Manual Close
 
@@ -306,7 +344,9 @@ last-resort diagnostic; the application owner should still use `async with` or
 ## Sharing Clients
 
 Reuse clients. Creating a client for every request prevents connection reuse and
-can create extra Rust runtime and pool state once requests start flowing.
+creates extra Rust transport and pool state once requests start flowing. The
+default shared runtime avoids per-client runtime threads, but it does not make
+short-lived clients a good pooling strategy.
 
 For sync code, `Client` is designed to be shared by multiple Python threads for
 request sending. Lazy Rust transport creation is protected so concurrent first

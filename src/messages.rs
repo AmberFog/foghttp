@@ -21,6 +21,8 @@ pub const PROXY_ENDPOINT_PATH_OR_QUERY_UNSUPPORTED: &str =
     "proxy URL must not include path or query";
 pub const PROXY_ENDPOINT_SCHEME_UNSUPPORTED: &str = "proxy URL scheme must be http";
 pub const PROXY_ENDPOINT_USERINFO_UNSUPPORTED: &str = "proxy URL must not include userinfo";
+pub const RUNTIME_INVALID: &str = "runtime must be 'shared' or 'dedicated'";
+pub const RUNTIME_WORKERS_SHARED_UNSUPPORTED: &str = "runtime_workers requires runtime='dedicated'";
 
 pub fn proxy_connect_rejected(status: u16) -> String {
     format!("proxy rejected the CONNECT tunnel with status {status}")
