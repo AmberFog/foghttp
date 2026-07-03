@@ -102,28 +102,28 @@ def _raw_request(url: str) -> RawRequestOptions:
 
 
 class TimeoutRawClient:
-    def request(self, *_args: object) -> object:
+    def request(self, **_kwargs: object) -> object:
         msg = "request timed out"
         raise _foghttp.FogHttpTimeoutError(msg)
 
-    async def request_async(self, *_args: object) -> object:
+    async def request_async(self, **_kwargs: object) -> object:
         msg = "request timed out"
         raise _foghttp.FogHttpTimeoutError(msg)
 
 
 class ReadTimeoutRawClient:
-    def request(self, *_args: object) -> object:
+    def request(self, **_kwargs: object) -> object:
         raise _foghttp.FogHttpReadTimeoutError(READ_TIMEOUT_RAW_ARGS)
 
-    async def request_async(self, *_args: object) -> object:
+    async def request_async(self, **_kwargs: object) -> object:
         raise _foghttp.FogHttpReadTimeoutError(READ_TIMEOUT_RAW_ARGS)
 
 
 class WriteTimeoutRawClient:
-    def request(self, *_args: object) -> object:
+    def request(self, **_kwargs: object) -> object:
         raise _foghttp.FogHttpWriteTimeoutError(WRITE_TIMEOUT_RAW_ARGS)
 
-    async def request_async(self, *_args: object) -> object:
+    async def request_async(self, **_kwargs: object) -> object:
         raise _foghttp.FogHttpWriteTimeoutError(WRITE_TIMEOUT_RAW_ARGS)
 
 
@@ -131,36 +131,36 @@ class MalformedReadTimeoutRawClient:
     def __init__(self, raw_args: tuple[object, ...]) -> None:
         self._raw_args = raw_args
 
-    def request(self, *_args: object) -> object:
+    def request(self, **_kwargs: object) -> object:
         raise _foghttp.FogHttpReadTimeoutError(self._raw_args)
 
 
 class PoolTimeoutRawClient:
-    def request(self, *_args: object) -> object:
+    def request(self, **_kwargs: object) -> object:
         msg = "request acquire timeout expired"
         raise _foghttp.FogHttpPoolTimeoutError(msg)
 
-    async def request_async(self, *_args: object) -> object:
+    async def request_async(self, **_kwargs: object) -> object:
         msg = "request acquire timeout expired"
         raise _foghttp.FogHttpPoolTimeoutError(msg)
 
 
 class BodyTooLargeRawClient:
-    def request(self, *_args: object) -> object:
+    def request(self, **_kwargs: object) -> object:
         msg = "response body exceeded max_response_body_size"
         raise _foghttp.FogHttpResponseBodyTooLargeError(msg)
 
-    async def request_async(self, *_args: object) -> object:
+    async def request_async(self, **_kwargs: object) -> object:
         msg = "response body exceeded max_response_body_size"
         raise _foghttp.FogHttpResponseBodyTooLargeError(msg)
 
 
 class BodyBudgetExceededRawClient:
-    def request(self, *_args: object) -> object:
+    def request(self, **_kwargs: object) -> object:
         msg = "buffered response bodies exceeded max_buffered_response_bytes"
         raise _foghttp.FogHttpResponseBodyBudgetExceededError(msg)
 
-    async def request_async(self, *_args: object) -> object:
+    async def request_async(self, **_kwargs: object) -> object:
         msg = "buffered response bodies exceeded max_buffered_response_bytes"
         raise _foghttp.FogHttpResponseBodyBudgetExceededError(msg)
 
@@ -168,7 +168,7 @@ class BodyBudgetExceededRawClient:
 def test_raw_client_constructor_error_maps_to_value_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fail_raw_client(*_args: object) -> object:
+    def fail_raw_client(**_kwargs: object) -> object:
         msg = "runtime failed"
         raise _foghttp.FogHttpError(msg)
 

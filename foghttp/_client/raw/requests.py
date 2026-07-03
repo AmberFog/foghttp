@@ -37,18 +37,18 @@ def send_raw_request(
     body = prepare_sync_upload_body(request.body)
     try:
         return raw_client.request(
-            request.method.upper(),
-            request.url,
-            request.headers,
-            body.buffered_body,
-            body.raw_body,
-            request.body.replayable,
-            request.use_proxy_transport,
-            request.proxy_policy.value,
-            request.timeouts.pool,
-            request.timeouts.read,
-            request.timeouts.write,
-            request.timeouts.total,
+            method=request.method.upper(),
+            url=request.url,
+            headers=request.headers,
+            body=body.buffered_body,
+            body_stream=body.raw_body,
+            body_replayable=request.body.replayable,
+            use_proxy_transport=request.use_proxy_transport,
+            proxy_policy=request.proxy_policy.value,
+            pool_timeout=request.timeouts.pool,
+            read_timeout=request.timeouts.read,
+            write_timeout=request.timeouts.write,
+            total_timeout=request.timeouts.total,
         )
     except _foghttp.FogHttpError as exc:
         raise_public_raw_error(exc)
@@ -64,18 +64,18 @@ def send_raw_stream_request(
     body = prepare_sync_upload_body(request.body)
     try:
         return raw_client.request_stream(
-            request.method.upper(),
-            request.url,
-            request.headers,
-            body.buffered_body,
-            body.raw_body,
-            request.body.replayable,
-            request.use_proxy_transport,
-            request.proxy_policy.value,
-            request.timeouts.pool,
-            request.timeouts.read,
-            request.timeouts.write,
-            request.timeouts.total,
+            method=request.method.upper(),
+            url=request.url,
+            headers=request.headers,
+            body=body.buffered_body,
+            body_stream=body.raw_body,
+            body_replayable=request.body.replayable,
+            use_proxy_transport=request.use_proxy_transport,
+            proxy_policy=request.proxy_policy.value,
+            pool_timeout=request.timeouts.pool,
+            read_timeout=request.timeouts.read,
+            write_timeout=request.timeouts.write,
+            total_timeout=request.timeouts.total,
         )
     except _foghttp.FogHttpError as exc:
         raise_public_raw_error(exc)
@@ -91,18 +91,18 @@ async def send_raw_request_async(
     body = prepare_async_upload_body(request.body)
     try:
         return await raw_client.request_async(
-            request.method.upper(),
-            request.url,
-            request.headers,
-            body.buffered_body,
-            body.raw_body,
-            request.body.replayable,
-            request.use_proxy_transport,
-            request.proxy_policy.value,
-            request.timeouts.pool,
-            request.timeouts.read,
-            request.timeouts.write,
-            request.timeouts.total,
+            method=request.method.upper(),
+            url=request.url,
+            headers=request.headers,
+            body=body.buffered_body,
+            body_stream=body.raw_body,
+            body_replayable=request.body.replayable,
+            use_proxy_transport=request.use_proxy_transport,
+            proxy_policy=request.proxy_policy.value,
+            pool_timeout=request.timeouts.pool,
+            read_timeout=request.timeouts.read,
+            write_timeout=request.timeouts.write,
+            total_timeout=request.timeouts.total,
         )
     except _foghttp.FogHttpError as exc:
         raise_public_raw_error(exc)
@@ -118,18 +118,18 @@ async def send_raw_stream_request_async(
     body = prepare_async_upload_body(request.body)
     try:
         return await raw_client.request_stream_async(
-            request.method.upper(),
-            request.url,
-            request.headers,
-            body.buffered_body,
-            body.raw_body,
-            request.body.replayable,
-            request.use_proxy_transport,
-            request.proxy_policy.value,
-            request.timeouts.pool,
-            request.timeouts.read,
-            request.timeouts.write,
-            request.timeouts.total,
+            method=request.method.upper(),
+            url=request.url,
+            headers=request.headers,
+            body=body.buffered_body,
+            body_stream=body.raw_body,
+            body_replayable=request.body.replayable,
+            use_proxy_transport=request.use_proxy_transport,
+            proxy_policy=request.proxy_policy.value,
+            pool_timeout=request.timeouts.pool,
+            read_timeout=request.timeouts.read,
+            write_timeout=request.timeouts.write,
+            total_timeout=request.timeouts.total,
         )
     except _foghttp.FogHttpError as exc:
         raise_public_raw_error(exc)

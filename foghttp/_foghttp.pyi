@@ -292,6 +292,7 @@ class RawUploadBody:
 class RawClient:
     def __init__(
         self,
+        *,
         max_active_requests: int,
         max_active_requests_per_origin: int | None,
         max_idle_connections_per_host: int,
@@ -313,6 +314,7 @@ class RawClient:
     ) -> None: ...
     def request(
         self,
+        *,
         method: str,
         url: str,
         headers: HeaderPairs,
@@ -328,6 +330,7 @@ class RawClient:
     ) -> RawResponse: ...
     async def request_async(
         self,
+        *,
         method: str,
         url: str,
         headers: HeaderPairs,
@@ -343,6 +346,7 @@ class RawClient:
     ) -> RawResponse: ...
     def request_stream(
         self,
+        *,
         method: str,
         url: str,
         headers: HeaderPairs,
@@ -358,6 +362,7 @@ class RawClient:
     ) -> RawStreamResponse: ...
     async def request_stream_async(
         self,
+        *,
         method: str,
         url: str,
         headers: HeaderPairs,
