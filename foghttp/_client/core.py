@@ -13,7 +13,7 @@ from ..messages import CLIENT_CLOSED, UNCLOSED_CLIENT
 from ..pool_diagnostics import OriginPoolDiagnostics, PoolBlockingReason, PoolDiagnostics
 from ..request import Request
 from ..timeouts import Timeouts
-from ..transport_state import OriginPressureState, TransportState
+from ..transport_state import TransportState
 from ..transport_stats import TransportStats
 from ..types import AsyncMultipartFiles, QueryParams, RequestData, SyncMultipartFiles
 from ..url import URL
@@ -26,6 +26,7 @@ from .request_builder.merge import RequestMergeContract
 from .request_builder.models import RequestBuildOptions
 from .stats import stats_from_raw
 from .telemetry import TelemetryDispatcher
+from .transport_snapshot_mapping import empty_transport_state, transport_state_from_raw
 
 
 if TYPE_CHECKING:
@@ -100,41 +101,8 @@ class ClientCore:
             raw_state = None if raw_client is None else raw_client.transport_state()
 
         if raw_state is None:
-            return _empty_transport_state()
-        return {
-            "schema_version": raw_state.schema_version,
-            "snapshot_sequence": raw_state.snapshot_sequence,
-            "active_requests": raw_state.active_requests,
-            "pending_requests": raw_state.pending_requests,
-            "peak_pending_requests": raw_state.peak_pending_requests,
-            "pool_acquire_attempts": raw_state.pool_acquire_attempts,
-            "pool_acquire_immediate": raw_state.pool_acquire_immediate,
-            "pool_acquire_waited": raw_state.pool_acquire_waited,
-            "pool_acquire_timeouts": raw_state.pool_acquire_timeouts,
-            "pool_acquire_wait_time_total_ns": raw_state.pool_acquire_wait_time_total_ns,
-            "pool_acquire_wait_time_max_ns": raw_state.pool_acquire_wait_time_max_ns,
-            "pool_acquire_wait_time_last_ns": raw_state.pool_acquire_wait_time_last_ns,
-            "connection_acquire_attempts": raw_state.connection_acquire_attempts,
-            "connection_acquire_immediate": raw_state.connection_acquire_immediate,
-            "connection_acquire_waited": raw_state.connection_acquire_waited,
-            "connection_acquire_timeouts": raw_state.connection_acquire_timeouts,
-            "connection_acquire_wait_time_total_ns": raw_state.connection_acquire_wait_time_total_ns,
-            "connection_acquire_wait_time_max_ns": raw_state.connection_acquire_wait_time_max_ns,
-            "connection_acquire_wait_time_last_ns": raw_state.connection_acquire_wait_time_last_ns,
-            "response_body_reuse_eligible": raw_state.response_body_reuse_eligible,
-            "response_body_closed": raw_state.response_body_closed,
-            "response_body_aborted": raw_state.response_body_aborted,
-            "active_connections": raw_state.active_connections,
-            "idle_connections": raw_state.idle_connections,
-            "connections_opened": raw_state.connections_opened,
-            "connections_open_failed": raw_state.connections_open_failed,
-            "connections_closed": raw_state.connections_closed,
-            "connections_reused": raw_state.connections_reused,
-            "connections_aborted": raw_state.connections_aborted,
-            "buffered_response_bytes": raw_state.buffered_response_bytes,
-            "buffered_response_budget_rejections": raw_state.buffered_response_budget_rejections,
-            "origins": {origin.origin: _origin_pressure_state(origin) for origin in raw_state.origins},
-        }
+            return empty_transport_state()
+        return transport_state_from_raw(raw_state)
 
     def dump_pool_diagnostics(self) -> PoolDiagnostics:
         self._ensure_open()
@@ -175,76 +143,6 @@ class ClientCore:
 
     def _unclosed_client_message(self) -> str:
         return UNCLOSED_CLIENT
-
-
-def _origin_pressure_state(origin: "_foghttp.RawOriginPressure") -> OriginPressureState:
-    return {
-        "active_requests": origin.active_requests,
-        "pending_requests": origin.pending_requests,
-        "peak_pending_requests": origin.peak_pending_requests,
-        "pool_acquire_attempts": origin.pool_acquire_attempts,
-        "pool_acquire_immediate": origin.pool_acquire_immediate,
-        "pool_acquire_waited": origin.pool_acquire_waited,
-        "pool_acquire_timeouts": origin.pool_acquire_timeouts,
-        "pool_acquire_wait_time_total_ns": origin.pool_acquire_wait_time_total_ns,
-        "pool_acquire_wait_time_max_ns": origin.pool_acquire_wait_time_max_ns,
-        "pool_acquire_wait_time_last_ns": origin.pool_acquire_wait_time_last_ns,
-        "connection_acquire_attempts": origin.connection_acquire_attempts,
-        "connection_acquire_immediate": origin.connection_acquire_immediate,
-        "connection_acquire_waited": origin.connection_acquire_waited,
-        "connection_acquire_timeouts": origin.connection_acquire_timeouts,
-        "connection_acquire_wait_time_total_ns": origin.connection_acquire_wait_time_total_ns,
-        "connection_acquire_wait_time_max_ns": origin.connection_acquire_wait_time_max_ns,
-        "connection_acquire_wait_time_last_ns": origin.connection_acquire_wait_time_last_ns,
-        "response_body_reuse_eligible": origin.response_body_reuse_eligible,
-        "response_body_closed": origin.response_body_closed,
-        "response_body_aborted": origin.response_body_aborted,
-        "active_connections": origin.active_connections,
-        "idle_connections": origin.idle_connections,
-        "connections_opened": origin.connections_opened,
-        "connections_open_failed": origin.connections_open_failed,
-        "connections_closed": origin.connections_closed,
-        "connections_reused": origin.connections_reused,
-        "connections_aborted": origin.connections_aborted,
-        "last_activity_at_ns": origin.last_activity_at_ns,
-    }
-
-
-def _empty_transport_state() -> TransportState:
-    return {
-        "schema_version": TELEMETRY_SNAPSHOT_SCHEMA_VERSION,
-        "snapshot_sequence": SYNTHETIC_TELEMETRY_SNAPSHOT_SEQUENCE,
-        "active_requests": 0,
-        "pending_requests": 0,
-        "peak_pending_requests": 0,
-        "pool_acquire_attempts": 0,
-        "pool_acquire_immediate": 0,
-        "pool_acquire_waited": 0,
-        "pool_acquire_timeouts": 0,
-        "pool_acquire_wait_time_total_ns": 0,
-        "pool_acquire_wait_time_max_ns": 0,
-        "pool_acquire_wait_time_last_ns": 0,
-        "connection_acquire_attempts": 0,
-        "connection_acquire_immediate": 0,
-        "connection_acquire_waited": 0,
-        "connection_acquire_timeouts": 0,
-        "connection_acquire_wait_time_total_ns": 0,
-        "connection_acquire_wait_time_max_ns": 0,
-        "connection_acquire_wait_time_last_ns": 0,
-        "response_body_reuse_eligible": 0,
-        "response_body_closed": 0,
-        "response_body_aborted": 0,
-        "active_connections": 0,
-        "idle_connections": 0,
-        "connections_opened": 0,
-        "connections_open_failed": 0,
-        "connections_closed": 0,
-        "connections_reused": 0,
-        "connections_aborted": 0,
-        "buffered_response_bytes": 0,
-        "buffered_response_budget_rejections": 0,
-        "origins": {},
-    }
 
 
 def _empty_pool_diagnostics(limits: Limits) -> PoolDiagnostics:

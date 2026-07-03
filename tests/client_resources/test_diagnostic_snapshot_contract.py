@@ -50,6 +50,23 @@ def test_sync_synthetic_schema_version_matches_rust_schema_version(
     assert synthetic_diagnostics["schema_version"] == real_diagnostics["schema_version"]
 
 
+def test_sync_transport_state_contract_covers_synthetic_real_and_origin_fields(
+    sync_resource_http_server: str,
+) -> None:
+    with foghttp.Client() as client:
+        synthetic_state = client.dump_transport_state()
+        response = client.get(sync_resource_http_server)
+        real_state = client.dump_transport_state()
+
+    origin_state = real_state["origins"][sync_resource_http_server]
+
+    assert response.status_code == OK
+    assert set(synthetic_state) == _transport_state_contract_fields()
+    assert set(real_state) == _transport_state_contract_fields()
+    assert set(synthetic_state) == set(real_state)
+    assert set(origin_state) == _origin_pressure_contract_fields()
+
+
 def test_sync_diagnostic_snapshot_sequence_is_monotonic(
     sync_resource_http_server: str,
 ) -> None:
@@ -129,3 +146,11 @@ def _snapshot_sequence(snapshot: Snapshot) -> int:
     if isinstance(snapshot, foghttp.TransportStats):
         return snapshot.snapshot_sequence
     return snapshot["snapshot_sequence"]
+
+
+def _transport_state_contract_fields() -> set[str]:
+    return set(foghttp.TransportState.__annotations__)
+
+
+def _origin_pressure_contract_fields() -> set[str]:
+    return set(foghttp.OriginPressureState.__annotations__)
