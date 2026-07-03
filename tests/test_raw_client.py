@@ -10,7 +10,13 @@ from foghttp._client.constants import DEFAULT_MAX_REDIRECTS
 from foghttp._client.options import ClientOptions
 from foghttp._client.proxy import ProxyTransportPolicy
 from foghttp._client.raw.lifecycle import create_raw_client
-from foghttp._client.raw.requests import RawRequestOptions, send_raw_request, send_raw_request_async
+from foghttp._client.raw.requests import (
+    RawRequestOptions,
+    send_raw_request,
+    send_raw_request_async,
+    send_raw_stream_request,
+    send_raw_stream_request_async,
+)
 from foghttp._request_body import RequestBody
 from foghttp.limits import Limits
 from foghttp.methods import GET
@@ -111,8 +117,8 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
     captured_options: dict[str, object] = {}
 
     class RawClientProbe:
-        def __init__(self, *args: object) -> None:
-            captured_options.update(dict(zip(RAW_CLIENT_INIT_ARGUMENTS, args, strict=True)))
+        def __init__(self, **kwargs: object) -> None:
+            captured_options.update(kwargs)
 
     monkeypatch.setattr(_foghttp, "RawClient", RawClientProbe)
     limits = Limits(
@@ -141,6 +147,7 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
     )
 
     assert isinstance(raw_client, RawClientProbe)
+    _assert_raw_client_argument_names(captured_options)
     assert captured_options == {
         "max_active_requests": limits.max_active_requests,
         "max_active_requests_per_origin": limits.max_active_requests_per_origin,
@@ -170,8 +177,8 @@ def test_create_raw_client_passes_proxy_endpoint_and_auth_to_rust_client(
     captured_options: dict[str, object] = {}
 
     class RawClientProbe:
-        def __init__(self, *args: object) -> None:
-            captured_options.update(dict(zip(RAW_CLIENT_INIT_ARGUMENTS, args, strict=True)))
+        def __init__(self, **kwargs: object) -> None:
+            captured_options.update(kwargs)
 
     monkeypatch.setattr(_foghttp, "RawClient", RawClientProbe)
     username = faker.user_name()
@@ -182,6 +189,7 @@ def test_create_raw_client_passes_proxy_endpoint_and_auth_to_rust_client(
     )
 
     assert isinstance(raw_client, RawClientProbe)
+    _assert_raw_client_argument_names(captured_options)
     expected_auth = _basic_proxy_auth(username, password)
     assert captured_options["http_proxy_url"] == "http://proxy.example:8080"
     assert captured_options["http_proxy_authorization"] == expected_auth
@@ -197,8 +205,8 @@ def test_create_raw_client_passes_tls_trust_boundary_to_rust_client(
     captured_options: dict[str, object] = {}
 
     class RawClientProbe:
-        def __init__(self, *args: object) -> None:
-            captured_options.update(dict(zip(RAW_CLIENT_INIT_ARGUMENTS, args, strict=True)))
+        def __init__(self, **kwargs: object) -> None:
+            captured_options.update(kwargs)
 
     ca_body = faker.binary(length=16)
     ca_path = tmp_path / "ca.pem"
@@ -211,6 +219,7 @@ def test_create_raw_client_passes_tls_trust_boundary_to_rust_client(
     )
 
     assert isinstance(raw_client, RawClientProbe)
+    _assert_raw_client_argument_names(captured_options)
     assert captured_options["ca_certificates"] == (ca_body,)
     assert captured_options["trust_webpki_roots"] is False
 
@@ -220,8 +229,8 @@ def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker:
     raw_response = object()
 
     class RawClientProbe:
-        def request(self, *args: object) -> object:
-            captured_options.update(dict(zip(RAW_REQUEST_ARGUMENTS, args, strict=True)))
+        def request(self, **kwargs: object) -> object:
+            captured_options.update(kwargs)
             return raw_response
 
     timeouts = Timeouts(connect=2.5, pool=3.5, read=4.5, write=5.5, total=6.5)
@@ -240,7 +249,109 @@ def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker:
     )
 
     assert response is raw_response
-    assert captured_options == {
+    assert captured_options == _expected_raw_request_options(
+        url=url,
+        body=body,
+        body_replayable=body_replayable,
+        timeouts=timeouts,
+    )
+
+
+async def test_send_raw_request_async_passes_request_timeouts_without_connect_timeout(faker: Faker) -> None:
+    captured_options: dict[str, object] = {}
+    raw_response = object()
+
+    class RawClientProbe:
+        async def request_async(self, **kwargs: object) -> object:
+            captured_options.update(kwargs)
+            return raw_response
+
+    timeouts = Timeouts(connect=2.5, pool=3.5, read=4.5, write=5.5, total=6.5)
+    url = faker.url()
+
+    response = await send_raw_request_async(
+        raw_client=RawClientProbe(),
+        request=_raw_request(url=url, timeouts=timeouts),
+    )
+
+    assert response is raw_response
+    assert captured_options == _expected_raw_request_options(
+        url=url,
+        body=None,
+        body_replayable=True,
+        timeouts=timeouts,
+    )
+
+
+def test_send_raw_stream_request_passes_named_request_options(faker: Faker) -> None:
+    captured_options: dict[str, object] = {}
+    raw_response = object()
+
+    class RawClientProbe:
+        def request_stream(self, **kwargs: object) -> object:
+            captured_options.update(kwargs)
+            return raw_response
+
+    timeouts = Timeouts(connect=2.5, pool=3.5, read=4.5, write=5.5, total=6.5)
+    url = faker.url()
+
+    response = send_raw_stream_request(
+        raw_client=RawClientProbe(),
+        request=_raw_request(url=url, timeouts=timeouts),
+    )
+
+    assert response is raw_response
+    assert captured_options == _expected_raw_request_options(
+        url=url,
+        body=None,
+        body_replayable=True,
+        timeouts=timeouts,
+    )
+
+
+async def test_send_raw_stream_request_async_passes_named_request_options(faker: Faker) -> None:
+    captured_options: dict[str, object] = {}
+    raw_response = object()
+
+    class RawClientProbe:
+        async def request_stream_async(self, **kwargs: object) -> object:
+            captured_options.update(kwargs)
+            return raw_response
+
+    timeouts = Timeouts(connect=2.5, pool=3.5, read=4.5, write=5.5, total=6.5)
+    url = faker.url()
+
+    response = await send_raw_stream_request_async(
+        raw_client=RawClientProbe(),
+        request=_raw_request(url=url, timeouts=timeouts),
+    )
+
+    assert response is raw_response
+    assert captured_options == _expected_raw_request_options(
+        url=url,
+        body=None,
+        body_replayable=True,
+        timeouts=timeouts,
+    )
+
+
+def _basic_proxy_auth(username: str, password: str) -> str:
+    token = f"{username}:{password}".encode()
+    return f"Basic {b64encode(token).decode('ascii')}"
+
+
+def _assert_raw_client_argument_names(options: dict[str, object]) -> None:
+    assert set(options) == set(RAW_CLIENT_INIT_ARGUMENTS)
+
+
+def _expected_raw_request_options(
+    *,
+    url: str,
+    body: bytes | None,
+    body_replayable: bool,
+    timeouts: Timeouts,
+) -> dict[str, object]:
+    options: dict[str, object] = {
         "method": GET,
         "url": url,
         "headers": [],
@@ -254,42 +365,5 @@ def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker:
         "write_timeout": timeouts.write,
         "total_timeout": timeouts.total,
     }
-
-
-async def test_send_raw_request_async_passes_request_timeouts_without_connect_timeout(faker: Faker) -> None:
-    captured_options: dict[str, object] = {}
-    raw_response = object()
-
-    class RawClientProbe:
-        async def request_async(self, *args: object) -> object:
-            captured_options.update(dict(zip(RAW_REQUEST_ARGUMENTS, args, strict=True)))
-            return raw_response
-
-    timeouts = Timeouts(connect=2.5, pool=3.5, read=4.5, write=5.5, total=6.5)
-    url = faker.url()
-
-    response = await send_raw_request_async(
-        raw_client=RawClientProbe(),
-        request=_raw_request(url=url, timeouts=timeouts),
-    )
-
-    assert response is raw_response
-    assert captured_options == {
-        "method": GET,
-        "url": url,
-        "headers": [],
-        "body": None,
-        "body_stream": None,
-        "body_replayable": True,
-        "use_proxy_transport": False,
-        "proxy_policy": ProxyTransportPolicy.DIRECT.value,
-        "pool_timeout": timeouts.pool,
-        "read_timeout": timeouts.read,
-        "write_timeout": timeouts.write,
-        "total_timeout": timeouts.total,
-    }
-
-
-def _basic_proxy_auth(username: str, password: str) -> str:
-    token = f"{username}:{password}".encode()
-    return f"Basic {b64encode(token).decode('ascii')}"
+    assert set(options) == set(RAW_REQUEST_ARGUMENTS)
+    return options

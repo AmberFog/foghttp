@@ -58,6 +58,27 @@ pub struct RawClient {
 #[pymethods]
 impl RawClient {
     #[new]
+    #[pyo3(signature = (
+        *,
+        max_active_requests,
+        max_active_requests_per_origin,
+        max_idle_connections_per_host,
+        max_pending_requests,
+        max_response_body_size,
+        max_buffered_response_bytes,
+        idle_timeout,
+        keepalive,
+        connect_timeout,
+        follow_redirects,
+        max_redirects,
+        ca_certificates,
+        trust_webpki_roots,
+        runtime_workers,
+        http_proxy_url,
+        http_proxy_authorization,
+        https_proxy_url,
+        https_proxy_authorization
+    ))]
     #[allow(
         clippy::fn_params_excessive_bools,
         clippy::too_many_arguments,
@@ -162,6 +183,21 @@ impl RawClient {
         })
     }
 
+    #[pyo3(signature = (
+        *,
+        method,
+        url,
+        headers,
+        body,
+        body_stream,
+        body_replayable,
+        use_proxy_transport,
+        proxy_policy,
+        pool_timeout,
+        read_timeout,
+        write_timeout,
+        total_timeout
+    ))]
     #[allow(clippy::too_many_arguments)]
     fn request(
         &self,
@@ -226,6 +262,21 @@ impl RawClient {
         result
     }
 
+    #[pyo3(signature = (
+        *,
+        method,
+        url,
+        headers,
+        body,
+        body_stream,
+        body_replayable,
+        use_proxy_transport,
+        proxy_policy,
+        pool_timeout,
+        read_timeout,
+        write_timeout,
+        total_timeout
+    ))]
     #[allow(clippy::too_many_arguments)]
     fn request_async(
         &self,
@@ -283,6 +334,21 @@ impl RawClient {
         )
     }
 
+    #[pyo3(signature = (
+        *,
+        method,
+        url,
+        headers,
+        body,
+        body_stream,
+        body_replayable,
+        use_proxy_transport,
+        proxy_policy,
+        pool_timeout,
+        read_timeout,
+        write_timeout,
+        total_timeout
+    ))]
     #[allow(clippy::too_many_arguments)]
     fn request_stream(
         &self,
@@ -356,6 +422,21 @@ impl RawClient {
         result
     }
 
+    #[pyo3(signature = (
+        *,
+        method,
+        url,
+        headers,
+        body,
+        body_stream,
+        body_replayable,
+        use_proxy_transport,
+        proxy_policy,
+        pool_timeout,
+        read_timeout,
+        write_timeout,
+        total_timeout
+    ))]
     #[allow(clippy::too_many_arguments)]
     fn request_stream_async(
         &self,
