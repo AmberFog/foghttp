@@ -29,26 +29,9 @@ impl Metrics {
         self.active_requests.fetch_sub(1, Ordering::Relaxed);
     }
 
-    pub fn pending_request_started(&self, max_pending_requests: usize) -> bool {
-        let mut current = self.pending_requests.load(Ordering::Acquire);
-        loop {
-            if current >= max_pending_requests {
-                return false;
-            }
-
-            match self.pending_requests.compare_exchange_weak(
-                current,
-                current + 1,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_previous) => {
-                    update_atomic_usize_max(&self.peak_pending_requests, current + 1);
-                    return true;
-                }
-                Err(actual) => current = actual,
-            }
-        }
+    pub fn pending_request_registered(&self) {
+        let current = self.pending_requests.fetch_add(1, Ordering::AcqRel) + 1;
+        update_atomic_usize_max(&self.peak_pending_requests, current);
     }
 
     pub fn pending_request_finished(&self) {

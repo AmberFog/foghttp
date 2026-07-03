@@ -447,7 +447,7 @@ Use `dump_pool_diagnostics()` when the question is specifically why requests are
 waiting for capacity. It reports the current pending queue, the oldest pending
 wait age in nanoseconds, whether another pending waiter can be admitted, and
 whether current waiters are blocked by the global active request limit, the
-per-origin active request limit, or both.
+per-origin active request limit, FIFO pending queue order, or a mixed reason.
 Like transport state, this is a diagnostic snapshot with `schema_version` and a
 Rust-side `snapshot_sequence`; it is useful for ordering incident observations,
 not as a lock-protected SLA transaction.

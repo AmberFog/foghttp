@@ -11,6 +11,7 @@ PoolBlockingReason = Literal[
     "none",
     "global_active_requests",
     "per_origin_active_requests",
+    "pending_queue_order",
     "mixed",
 ]
 

@@ -35,7 +35,7 @@ fn buffered_response_release_does_not_underflow_reserved_bytes() {
 fn acquire_wait_metrics_track_duration_without_underflowing_pending() {
     let metrics = Metrics::default();
 
-    assert!(metrics.pending_request_started(1));
+    metrics.pending_request_registered();
     metrics.pool_acquire_started();
     metrics.pool_acquire_waited();
     metrics.pool_acquire_wait_finished(Duration::from_nanos(10));
