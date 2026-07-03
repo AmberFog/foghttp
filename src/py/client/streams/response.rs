@@ -8,7 +8,6 @@ use crate::py::client::future::{complete_python_bytes_future, PythonFutureSetter
 use crate::py::response::{RawRequestInfo, RawResponse};
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
-use std::sync::{Mutex, MutexGuard};
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 
@@ -29,7 +28,7 @@ pub struct RawStreamResponse {
     history: Vec<RawResponse>,
     state: StreamState,
     runtime_handle: Handle,
-    future_setters: Mutex<Option<PythonFutureSetters>>,
+    future_setters: PythonFutureSetters,
 }
 
 impl RawStreamResponse {
@@ -51,6 +50,7 @@ impl RawStreamResponse {
             completion,
             registry,
             runtime_handle,
+            future_setters,
             read_timeout,
             read_timeout_secs,
             origin,
@@ -79,7 +79,7 @@ impl RawStreamResponse {
                 redirect_hop,
             }),
             runtime_handle,
-            future_setters: Mutex::new(None),
+            future_setters,
         }
     }
 
@@ -87,41 +87,6 @@ impl RawStreamResponse {
         for response in &mut self.history {
             response.release_body_reservations();
         }
-    }
-
-    fn future_setters(&self, py: Python<'_>) -> PyResult<PythonFutureSetters> {
-        // PyO3 handle clones touch Python refcounts, so keep them outside the
-        // Rust mutex protecting the cached setters.
-        if let Some(cached_setters) = self.take_future_setters() {
-            let setters = cached_setters.clone_ref(py);
-            self.store_future_setters_if_empty(cached_setters);
-            return Ok(setters);
-        }
-
-        let setters = PythonFutureSetters::new(py)?;
-        let cached_setters = setters.clone_ref(py);
-        self.store_future_setters_if_empty(cached_setters);
-        Ok(setters)
-    }
-
-    fn take_future_setters(&self) -> Option<PythonFutureSetters> {
-        self.future_setters_guard().take()
-    }
-
-    fn store_future_setters_if_empty(&self, setters: PythonFutureSetters) {
-        let mut setters_to_store = Some(setters);
-        {
-            let mut guard = self.future_setters_guard();
-            if guard.is_none() {
-                *guard = setters_to_store.take();
-            }
-        }
-    }
-
-    fn future_setters_guard(&self) -> MutexGuard<'_, Option<PythonFutureSetters>> {
-        self.future_setters
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
@@ -176,7 +141,7 @@ impl RawStreamResponse {
         };
         let task_loop = loop_.clone_ref(py);
         let task_future = future.clone_ref(py);
-        let task_future_setters = self.future_setters(py)?;
+        let task_future_setters = self.future_setters.clone_ref(py);
         let (start_sender, start_receiver) = oneshot::channel();
 
         let handle = self.runtime_handle.spawn(async move {

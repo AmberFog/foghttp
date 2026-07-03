@@ -104,6 +104,7 @@ pub(super) fn raw_stream_response(
         completion: context.completion,
         registry: context.active_streams,
         runtime_handle: context.runtime_handle,
+        future_setters: context.future_setters,
         read_timeout,
         read_timeout_secs: context.read_timeout,
         origin: context.origin,

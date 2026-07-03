@@ -5,7 +5,7 @@ use crate::core::metrics::Metrics;
 use crate::errors::FogHttpError;
 use crate::messages::STREAM_REQUEST_TASK_START_FAILED;
 use crate::py::client::acquire::AcquireGate;
-use crate::py::client::future::complete_python_stream_future;
+use crate::py::client::future::{complete_python_stream_future, PythonFutureSetters};
 use crate::py::client::streams::StreamRegistry;
 use crate::py::client::transport::{send_stream_request, TransportClients, TransportRequest};
 use pyo3::prelude::*;
@@ -20,6 +20,7 @@ pub struct AsyncStreamRequestSpawn {
     pub metrics: Arc<Metrics>,
     pub active_streams: StreamRegistry,
     pub pool_timeout: f64,
+    pub future_setters: PythonFutureSetters,
     pub request: TransportRequest,
 }
 
@@ -35,6 +36,7 @@ pub fn spawn_async_stream_request(
         metrics,
         active_streams,
         pool_timeout,
+        future_setters,
         request,
     } = spawn;
     let loop_ = py
@@ -48,6 +50,7 @@ pub fn spawn_async_stream_request(
 
     let task_loop = loop_.clone_ref(py);
     let task_future = future.clone_ref(py);
+    let task_future_setters = future_setters.clone_ref(py);
     let task_registry = registry.clone();
     let task_metrics = Arc::clone(&metrics);
     let task_completion = completion.clone();
@@ -65,6 +68,7 @@ pub fn spawn_async_stream_request(
             active_streams,
             runtime_handle,
             pool_timeout,
+            future_setters,
             request,
             task_completion.clone(),
         )
@@ -73,7 +77,7 @@ pub fn spawn_async_stream_request(
         if result.is_err() && task_completion.finish() {
             task_metrics.request_finished(true);
         }
-        complete_python_stream_future(&task_loop, &task_future, result);
+        complete_python_stream_future(&task_loop, &task_future, &task_future_setters, result);
     });
 
     registry.insert(
