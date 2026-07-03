@@ -639,7 +639,7 @@ the phase, elapsed time, configured budget, normalized origin, and redirect hop.
 `Limits.max_active_requests` caps active buffered requests for the whole client.
 `Limits.max_active_requests_per_origin` defaults to `None`; set it to cap active
 buffered requests for one normalized origin. `Limits.max_pending_requests` caps
-requests waiting for a free acquire permit. `Limits.max_response_body_size`
+requests waiting in the Rust-side FIFO acquire queue. `Limits.max_response_body_size`
 defaults to `10 * 1024 * 1024` bytes and protects one response.
 `Limits.max_buffered_response_bytes` defaults to `100 * 1024 * 1024` bytes and
 protects aggregate in-flight buffered response bodies across concurrent

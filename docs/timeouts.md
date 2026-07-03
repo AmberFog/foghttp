@@ -115,8 +115,8 @@ acquire gates:
   client.
 - `Limits.max_active_requests_per_origin` optionally limits active request
   slots for one normalized origin.
-- `Limits.max_pending_requests` limits how many requests may wait for an active
-  slot.
+- `Limits.max_pending_requests` limits how many requests may wait in the
+  Rust-side FIFO pending queue for an active slot.
 
 If the pending queue is full, FogHTTP fails fast with `PoolTimeout` and the
 message `request acquire queue is full`.
@@ -127,14 +127,19 @@ If a request waits longer than `Timeouts.pool` for a slot, FogHTTP raises
 Both cases increment `TransportStats.pool_acquire_timeouts`. Waiting requests
 are not counted as `active_requests`. `PoolTimeout.diagnostic.phase` is
 `pool_acquire`; the diagnostic `timeout` value is the configured pool timeout.
+When a request cannot acquire immediately, it enters one bounded FIFO queue.
+Queued requests are woken in registration order; a later request does not bypass
+an earlier queued request even if its own origin currently has free capacity.
+With per-origin limits enabled, an earlier saturated origin can therefore delay
+later queued requests for other origins until capacity changes or their own pool
+timeout expires.
 
 FogHTTP also records Rust-side acquire pressure metrics:
 
 - `pool_acquire_attempts` counts acquire attempts for request slots.
 - `pool_acquire_immediate` counts successful acquires that did not enter the
   pending queue.
-- `pool_acquire_waited` counts requests that entered the pending queue at least
-  once.
+- `pool_acquire_waited` counts requests that entered the pending queue.
 - `peak_pending_requests` records the highest observed pending queue depth.
 - `pool_acquire_wait_time_total_ns`, `pool_acquire_wait_time_max_ns`, and
   `pool_acquire_wait_time_last_ns` record completed wait intervals in
@@ -167,6 +172,13 @@ updates. Historical acquire counters are compared with per-origin sums only
 while the origin registry still contains all historical origins; after idle
 origin pruning, the per-origin history can be incomplete. The snapshot remains
 diagnostic state rather than a lock-protected transport transaction.
+`dump_pool_diagnostics()["blocked_by"]` reports the current pressure reason as
+`none`, `global_active_requests`, `per_origin_active_requests`,
+`pending_queue_order`, or `mixed`. `pending_queue_order` means a request is
+waiting behind an earlier queued request rather than directly on an active-slot
+limit. `mixed` means current waiters have different pressure reasons or are
+blocked by both queue order and active-slot pressure.
+
 `TransportStats` and diagnostic snapshots include `schema_version` and a
 monotonic `snapshot_sequence` for ordering observations within one Rust
 transport lifetime. Use diagnostic snapshot sequence values for incident
@@ -178,9 +190,9 @@ For incident diagnostics, `dump_pool_diagnostics()` returns an on-demand snapsho
 focused on current acquire waits: active holders, pending waiters, the oldest
 pending wait age, whether another pending waiter can be admitted, and whether
 progress is blocked by the global active request limit or the per-origin active
-request limit. `blocked_by` is one of `none`, `global_active_requests`,
-`per_origin_active_requests`, or `mixed`; `mixed` means current waiters are
-blocked by more than one acquire limit. Origin keys are normalized origins only;
+request limit. `blocked_by` uses the same `none`, `global_active_requests`,
+`per_origin_active_requests`, `pending_queue_order`, or `mixed` values described
+above. Origin keys are normalized origins only;
 paths, queries, userinfo, headers, and bodies are not included.
 For alert-oriented metrics, prefer `stats()` and the field guarantees described
 in [Telemetry contract](./telemetry.md).

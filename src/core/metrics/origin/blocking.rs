@@ -3,5 +3,6 @@ pub enum PendingRequestBlockingReason {
     None,
     GlobalActiveRequests,
     PerOriginActiveRequests,
+    PendingQueueOrder,
     Mixed,
 }

@@ -1,4 +1,4 @@
-use super::AcquireGate;
+use super::{blocking_reason_name, AcquireGate};
 use crate::core::metrics::{
     Metrics, MetricsSnapshot, OriginMetricsSnapshot, PendingRequestBlockingReason,
 };
@@ -79,6 +79,30 @@ fn assert_origin_pressure(
     assert_eq!(snapshot.active_requests, active);
     assert_eq!(snapshot.pending_requests, pending);
     snapshot
+}
+
+#[test]
+fn blocking_reason_names_cover_public_diagnostic_values() {
+    let cases = [
+        (PendingRequestBlockingReason::None, "none"),
+        (
+            PendingRequestBlockingReason::GlobalActiveRequests,
+            "global_active_requests",
+        ),
+        (
+            PendingRequestBlockingReason::PerOriginActiveRequests,
+            "per_origin_active_requests",
+        ),
+        (
+            PendingRequestBlockingReason::PendingQueueOrder,
+            "pending_queue_order",
+        ),
+        (PendingRequestBlockingReason::Mixed, "mixed"),
+    ];
+
+    for (reason, expected_name) in cases {
+        assert_eq!(blocking_reason_name(reason), expected_name);
+    }
 }
 
 #[test]
@@ -514,6 +538,96 @@ fn origin_then_global_order_preserves_same_origin_queue_position() {
         drop(second_permit);
         assert_request_pressure(&metrics, 0, 0);
         assert_origin_pressure(&metrics, ORIGIN, 0, 0);
+    });
+}
+
+#[test]
+fn pending_queue_order_is_reported_for_fifo_head_of_line_waiter() {
+    let metrics = Arc::new(Metrics::default());
+    let gate = AcquireGate::new(2, Some(1), 2, Arc::clone(&metrics));
+    let runtime = test_runtime();
+
+    runtime.block_on(async {
+        let origin_blocker = gate.acquire(ORIGIN, 0.1, 0).await.unwrap();
+
+        let origin_waiter = gate.acquire(ORIGIN, 60.0, 0);
+        tokio::pin!(origin_waiter);
+        assert_acquire_waits(origin_waiter.as_mut());
+
+        let secondary_waiter = gate.acquire(SECONDARY_ORIGIN, 60.0, 0);
+        tokio::pin!(secondary_waiter);
+        assert_acquire_waits(secondary_waiter.as_mut());
+
+        let diagnostics = gate.diagnostics();
+        assert_eq!(diagnostics.blocked_by, PendingRequestBlockingReason::Mixed);
+        let origin_diagnostics = find_origin_diagnostics(&gate, ORIGIN);
+        assert_eq!(
+            origin_diagnostics.blocked_by,
+            PendingRequestBlockingReason::PerOriginActiveRequests
+        );
+        let secondary_diagnostics = find_origin_diagnostics(&gate, SECONDARY_ORIGIN);
+        assert_eq!(
+            secondary_diagnostics.blocked_by,
+            PendingRequestBlockingReason::PendingQueueOrder
+        );
+        assert_eq!(secondary_diagnostics.active_requests, 0);
+        assert_eq!(secondary_diagnostics.pending_requests, 1);
+
+        drop(origin_blocker);
+
+        let origin_permit = acquire_before_deadline(origin_waiter.as_mut())
+            .await
+            .unwrap();
+        assert_request_pressure(&metrics, 1, 1);
+
+        let secondary_permit = acquire_before_deadline(secondary_waiter.as_mut())
+            .await
+            .unwrap();
+        assert_request_pressure(&metrics, 2, 0);
+
+        drop(origin_permit);
+        drop(secondary_permit);
+        assert_request_pressure(&metrics, 0, 0);
+    });
+}
+
+#[test]
+fn full_pending_queue_rejects_new_waiter_without_dropping_existing_waiter() {
+    initialize_python();
+
+    let metrics = Arc::new(Metrics::default());
+    let gate = AcquireGate::new(1, None, 1, Arc::clone(&metrics));
+    let runtime = test_runtime();
+
+    runtime.block_on(async {
+        let blocker = gate.acquire(ORIGIN, 0.1, 0).await.unwrap();
+
+        let waiter = gate.acquire(ORIGIN, 60.0, 0);
+        tokio::pin!(waiter);
+        assert_acquire_waits(waiter.as_mut());
+
+        let error = match gate.acquire(SECONDARY_ORIGIN, 0.1, 0).await {
+            Ok(_permit) => panic!("acquire unexpectedly succeeded"),
+            Err(err) => err,
+        };
+        assert!(error.to_string().contains("request acquire queue is full"));
+
+        let snapshot = assert_request_pressure(&metrics, 1, 1);
+        assert_eq!(snapshot.peak_pending_requests, 1);
+        assert_eq!(snapshot.pool_acquire_timeouts, 1);
+        assert_origin_pressure(&metrics, ORIGIN, 1, 1);
+        let secondary_snapshot = find_origin_snapshot(&metrics, SECONDARY_ORIGIN);
+        assert_eq!(secondary_snapshot.active_requests, 0);
+        assert_eq!(secondary_snapshot.pending_requests, 0);
+        assert_eq!(secondary_snapshot.pool_acquire_timeouts, 1);
+
+        drop(blocker);
+
+        let permit = acquire_before_deadline(waiter.as_mut()).await.unwrap();
+        assert_request_pressure(&metrics, 1, 0);
+
+        drop(permit);
+        assert_request_pressure(&metrics, 0, 0);
     });
 }
 

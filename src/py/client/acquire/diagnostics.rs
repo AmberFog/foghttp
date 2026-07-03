@@ -61,6 +61,7 @@ pub fn blocking_reason_name(reason: PendingRequestBlockingReason) -> &'static st
         PendingRequestBlockingReason::None => "none",
         PendingRequestBlockingReason::GlobalActiveRequests => "global_active_requests",
         PendingRequestBlockingReason::PerOriginActiveRequests => "per_origin_active_requests",
+        PendingRequestBlockingReason::PendingQueueOrder => "pending_queue_order",
         PendingRequestBlockingReason::Mixed => "mixed",
     }
 }
