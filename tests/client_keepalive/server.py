@@ -50,9 +50,10 @@ class KeepAliveServer:
         self.close()
 
 
-def start_keepalive_server() -> KeepAliveServer:
+def start_keepalive_server(*, disconnect_after_response: bool = False) -> KeepAliveServer:
     state = KeepAliveState()
     server = KeepAliveTCPServer((SERVER_HOST, 0), KeepAliveHTTPHandler)
+    server.disconnect_after_response = disconnect_after_response
     server.state = state
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -62,6 +63,7 @@ def start_keepalive_server() -> KeepAliveServer:
 class KeepAliveTCPServer(ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
+    disconnect_after_response: bool
     state: "KeepAliveState"
 
 
@@ -99,7 +101,7 @@ class KeepAliveHTTPHandler(BaseRequestHandler):
                     close=close_after_response,
                 ),
             )
-            if close_after_response:
+            if close_after_response or server.disconnect_after_response:
                 return
 
 

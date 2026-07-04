@@ -94,6 +94,7 @@ async def test_async_dump_transport_state_before_first_request_do_not_create_raw
         "connections_open_failed": 0,
         "connections_opened": 0,
         "connections_reused": 0,
+        "idle_timeout_evictions": 0,
         "idle_connections": 0,
         "peak_pending_requests": 0,
         "pending_requests": 0,

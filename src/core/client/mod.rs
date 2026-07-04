@@ -87,6 +87,7 @@ where
     E: hyper::rt::Executor<BoxSendFuture> + Send + Sync + Clone + 'static,
 {
     let connect_timeout = duration_from_secs("Timeouts.connect", options.connect_timeout)?;
+    let idle_timeout = duration_from_secs("Limits.idle_timeout", options.idle_timeout)?;
 
     let mut http = HttpConnector::new();
     http.enforce_http(false);
@@ -116,7 +117,8 @@ where
         }
         None => HttpProxyConnector::direct(connector),
     };
-    let connector = InstrumentedConnector::new(proxy_connector, metrics, connection_gate);
+    let connector =
+        InstrumentedConnector::new(proxy_connector, metrics, connection_gate, idle_timeout);
 
     let mut builder = Client::builder(executor);
     builder.pool_max_idle_per_host(if pool_idle_connections && options.keepalive {
@@ -124,9 +126,6 @@ where
     } else {
         0
     });
-    builder.pool_idle_timeout(duration_from_secs(
-        "Limits.idle_timeout",
-        options.idle_timeout,
-    )?);
+    builder.pool_idle_timeout(idle_timeout);
     Ok(builder.build(connector))
 }

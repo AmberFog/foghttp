@@ -36,6 +36,7 @@ _TRANSPORT_PRESSURE_FIELDS = (
     "connections_closed",
     "connections_reused",
     "connections_aborted",
+    "idle_timeout_evictions",
 )
 _TRANSPORT_BUFFER_FIELDS = (
     "buffered_response_bytes",

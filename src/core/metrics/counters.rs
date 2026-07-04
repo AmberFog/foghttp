@@ -137,6 +137,10 @@ impl Metrics {
         self.connections_aborted.fetch_add(1, Ordering::Relaxed);
     }
 
+    pub fn idle_timeout_eviction(&self) {
+        self.idle_timeout_evictions.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub fn origin_metrics(&self, origin: &str) -> Arc<OriginMetrics> {
         self.origin_registry.metrics_for(origin)
     }
@@ -192,6 +196,7 @@ impl Metrics {
             connections_closed: self.connections_closed.load(Ordering::Relaxed),
             connections_reused: self.connections_reused.load(Ordering::Relaxed),
             connections_aborted: self.connections_aborted.load(Ordering::Relaxed),
+            idle_timeout_evictions: self.idle_timeout_evictions.load(Ordering::Relaxed),
             buffered_response_bytes: self.buffered_response_bytes.load(Ordering::Acquire),
             buffered_response_budget_rejections: self
                 .buffered_response_budget_rejections

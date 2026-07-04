@@ -183,6 +183,7 @@ def test_dump_transport_state(sync_http_server: str) -> None:
         "connections_open_failed",
         "connections_opened",
         "connections_reused",
+        "idle_timeout_evictions",
         "idle_connections",
         "peak_pending_requests",
         "pending_requests",

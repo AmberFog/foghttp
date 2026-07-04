@@ -182,6 +182,7 @@ fn connection_lifecycle_metrics_track_current_and_historical_counts() {
     metrics.connection_aborted();
     metrics.connection_closed();
     metrics.connection_open_failed();
+    metrics.idle_timeout_eviction();
 
     let snapshot = metrics.snapshot();
     assert_eq!(snapshot.active_connections, 0);
@@ -191,6 +192,7 @@ fn connection_lifecycle_metrics_track_current_and_historical_counts() {
     assert_eq!(snapshot.connections_closed, 1);
     assert_eq!(snapshot.connections_reused, 1);
     assert_eq!(snapshot.connections_aborted, 1);
+    assert_eq!(snapshot.idle_timeout_evictions, 1);
 }
 
 #[test]
@@ -214,7 +216,7 @@ fn transport_state_coherence_rejects_mismatched_connection_lifecycle() {
     let origin_metrics = metrics.origin_metrics("https://api.example.com");
     metrics.connection_opened();
     origin_metrics.connection_opened();
-    metrics.connection_reused();
+    metrics.idle_timeout_eviction();
 
     let snapshot = metrics.transport_state_snapshot_once(test_metadata());
 
