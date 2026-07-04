@@ -63,6 +63,10 @@ pub struct RawOriginPressure {
     #[pyo3(get)]
     idle_timeout_evictions: usize,
     #[pyo3(get)]
+    last_used_at_ns: u64,
+    #[pyo3(get)]
+    idle_age_ns: u64,
+    #[pyo3(get)]
     last_activity_at_ns: u64,
 }
 
@@ -213,6 +217,8 @@ impl From<OriginMetricsSnapshot> for RawOriginPressure {
             connections_reused: snapshot.connections_reused,
             connections_aborted: snapshot.connections_aborted,
             idle_timeout_evictions: snapshot.idle_timeout_evictions,
+            last_used_at_ns: snapshot.last_used_at_ns,
+            idle_age_ns: snapshot.idle_age_ns,
             last_activity_at_ns: snapshot.last_activity_at_ns,
         }
     }

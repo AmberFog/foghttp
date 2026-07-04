@@ -3,6 +3,7 @@ import json
 import foghttp
 from foghttp.methods import GET
 from foghttp.status_codes.success import OK
+from tests.support.transport_state import wait_for_async_transport_state
 from tests.support.transport_stats import wait_for_async_transport_stats
 
 from .assertions import (
@@ -10,6 +11,7 @@ from .assertions import (
     assert_distinct_connection_snapshot,
     assert_reused_connection_payloads,
     assert_reused_connection_snapshot,
+    has_idle_origin_detail,
     is_early_remote_idle_close_observed,
     is_idle_timeout_eviction_reported,
 )
@@ -92,6 +94,29 @@ async def test_async_request_body_write_timeout_path_does_not_reuse_connection(
     assert second_response.status_code == OK
     assert_distinct_connection_payloads(first_response.json(), second_response.json())
     assert_distinct_connection_snapshot(keepalive_http_server.snapshot())
+
+
+async def test_async_transport_state_reports_idle_connection_detail(
+    keepalive_http_server: KeepAliveServer,
+) -> None:
+    limits = foghttp.Limits(keepalive=True, max_idle_connections_per_host=1)
+
+    async with foghttp.AsyncClient(limits=limits) as client:
+        response = await client.get(keepalive_http_server.url + KEEPALIVE_PATH)
+        state = await wait_for_async_transport_state(
+            client,
+            lambda state: has_idle_origin_detail(state, keepalive_http_server.url),
+            message="expected per-origin idle connection detail",
+        )
+
+    origin_state = state["origins"][keepalive_http_server.url]
+
+    assert response.status_code == OK
+    assert set(state["origins"]) == {keepalive_http_server.url}
+    assert origin_state["active_requests"] == 0
+    assert origin_state["pending_requests"] == 0
+    assert origin_state["connections_reused"] == 0
+    assert origin_state["connections_closed"] == 0
 
 
 async def test_async_idle_timeout_eviction_is_reported(

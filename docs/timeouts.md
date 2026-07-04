@@ -175,6 +175,8 @@ default ports omitted and non-default ports preserved, so a service can see
 which upstream is holding active slots, opening sockets, reusing connections,
 timing out idle connections, or building a pending queue without logging
 request paths or query strings.
+Per-origin `idle_age_ns` reports diagnostic continuous idle-state age and is
+`0` when no idle connection is currently tracked for that origin.
 FogHTTP also records response body lifecycle counters for buffered and async
 streamed bodies. A clean end-of-body increments either
 `response_body_reuse_eligible` or `response_body_closed`, depending on whether

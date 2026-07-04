@@ -1,6 +1,8 @@
 use super::registry::ORIGIN_PRESSURE_CLEANUP_THRESHOLD;
 use super::{OriginMetricsRegistry, PendingRequestBlockingReason};
 use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 #[test]
 fn registry_reuses_metrics_for_same_origin() {
@@ -88,4 +90,68 @@ fn origin_pool_diagnostics_reports_mixed_pending_waiter_reasons() {
 
     metrics.pending_request_finished(global_waiter);
     metrics.pending_request_finished(origin_waiter);
+}
+
+#[test]
+fn origin_snapshot_reports_last_used_and_idle_age() {
+    let registry = OriginMetricsRegistry::default();
+    let metrics = registry.metrics_for("https://api.example.com");
+
+    metrics.connection_opened();
+    metrics.connection_became_idle();
+    thread::sleep(Duration::from_millis(1));
+
+    let idle_snapshot = metrics.snapshot();
+
+    assert_eq!(idle_snapshot.active_connections, 1);
+    assert_eq!(idle_snapshot.idle_connections, 1);
+    assert!(idle_snapshot.last_used_at_ns > 0);
+    assert!(idle_snapshot.idle_age_ns > 0);
+    assert_eq!(
+        idle_snapshot.last_activity_at_ns,
+        idle_snapshot.last_used_at_ns
+    );
+
+    metrics.connection_left_idle();
+    let active_snapshot = metrics.snapshot();
+
+    assert_eq!(active_snapshot.idle_connections, 0);
+    assert_eq!(active_snapshot.idle_age_ns, 0);
+    assert!(active_snapshot.last_used_at_ns >= idle_snapshot.last_used_at_ns);
+}
+
+#[test]
+fn origin_idle_age_survives_partial_idle_drain_and_restarts_after_full_drain() {
+    let registry = OriginMetricsRegistry::default();
+    let metrics = registry.metrics_for("https://api.example.com");
+
+    metrics.connection_opened();
+    metrics.connection_opened();
+    metrics.connection_became_idle();
+    thread::sleep(Duration::from_millis(1));
+    metrics.connection_became_idle();
+
+    let both_idle_snapshot = metrics.snapshot();
+
+    assert_eq!(both_idle_snapshot.idle_connections, 2);
+    assert!(both_idle_snapshot.idle_age_ns > 0);
+
+    metrics.connection_left_idle();
+    let partial_drain_snapshot = metrics.snapshot();
+
+    assert_eq!(partial_drain_snapshot.idle_connections, 1);
+    assert!(partial_drain_snapshot.idle_age_ns > 0);
+
+    metrics.connection_left_idle();
+    let drained_snapshot = metrics.snapshot();
+
+    assert_eq!(drained_snapshot.idle_connections, 0);
+    assert_eq!(drained_snapshot.idle_age_ns, 0);
+
+    metrics.connection_became_idle();
+    thread::sleep(Duration::from_millis(1));
+    let restarted_snapshot = metrics.snapshot();
+
+    assert_eq!(restarted_snapshot.idle_connections, 1);
+    assert!(restarted_snapshot.idle_age_ns > 0);
 }

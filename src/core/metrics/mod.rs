@@ -18,7 +18,7 @@ pub use telemetry::TelemetrySnapshotMetadata;
 use origin::OriginMetricsRegistry;
 use std::sync::atomic::{AtomicU64, AtomicUsize};
 
-pub const TELEMETRY_SNAPSHOT_SCHEMA_VERSION: u64 = 3;
+pub const TELEMETRY_SNAPSHOT_SCHEMA_VERSION: u64 = 4;
 
 #[derive(Default)]
 pub struct Metrics {

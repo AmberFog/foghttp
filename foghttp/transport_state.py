@@ -32,6 +32,8 @@ class OriginPressureState(TypedDict):
     connections_reused: int
     connections_aborted: int
     idle_timeout_evictions: int
+    last_used_at_ns: int
+    idle_age_ns: int
     last_activity_at_ns: int
 
 

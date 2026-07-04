@@ -92,7 +92,7 @@ include two contract fields:
 
 | field | meaning |
 | --- | --- |
-| `schema_version` | Version of the telemetry snapshot shape. The current version is `3`. |
+| `schema_version` | Version of the telemetry snapshot shape. The current version is `4`. |
 | `snapshot_sequence` | Monotonic Rust-side sequence for telemetry snapshots within one transport lifetime. |
 
 The sequence starts at `1` after the Rust transport exists and increases across
@@ -127,11 +127,16 @@ for low-cardinality operational monitoring when the field type is appropriate:
 | `active_requests`, `pending_requests`, `active_connections`, `idle_connections`, `buffered_response_bytes` | current gauges | Suitable for capacity and saturation alerts. |
 | `peak_pending_requests`, `buffered_response_budget_rejections` | peak gauge, cumulative counter | Useful for pressure and memory-budget alerting. |
 
-`dump_transport_state()` adds per-origin copies of many of those values. The
-aggregate and per-origin data are collected by Rust in one raw boundary call and
-the Rust side retries briefly if aggregate pressure counters are caught between
-matching per-origin updates. That makes the snapshot useful for debugging, but
-it is still an eventually coherent diagnostic view.
+`dump_transport_state()` adds per-origin copies of many of those values, plus
+`last_used_at_ns`, `idle_age_ns`, and legacy `last_activity_at_ns`.
+`last_used_at_ns` and `last_activity_at_ns` are monotonic timestamps relative to
+the current Rust transport metrics lifetime, not Unix epoch timestamps.
+`idle_age_ns` is `0` unless the origin currently has tracked idle connections;
+otherwise it reports the current continuous idle-state age for that origin.
+The aggregate and per-origin data are collected by Rust in one raw boundary call
+and the Rust side retries briefly if aggregate pressure counters are caught
+between matching per-origin updates. That makes the snapshot useful for
+debugging, but it is still an eventually coherent diagnostic view.
 
 Per-origin history can become incomplete after idle origin pruning. Per-origin
 labels also carry cardinality risk, even though FogHTTP only exposes normalized

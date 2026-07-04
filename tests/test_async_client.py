@@ -205,3 +205,19 @@ async def test_dump_transport_state(http_server: str) -> None:
     assert state["pending_requests"] == 0
     assert state["origins"][http_server]["active_requests"] == 0
     assert state["origins"][http_server]["last_activity_at_ns"] > 0
+
+
+async def test_dump_transport_state_origin_keys_exclude_request_target_details(
+    http_server: str,
+    faker: Faker,
+) -> None:
+    token = faker.uuid4()
+    request_url = f"{http_server}/users?token={token}"
+
+    async with foghttp.AsyncClient() as client:
+        response = await client.get(request_url)
+        state = client.dump_transport_state()
+
+    assert response.status_code == OK
+    assert set(state["origins"]) == {http_server}
+    assert token not in repr(state)
