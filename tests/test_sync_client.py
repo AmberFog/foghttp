@@ -210,7 +210,8 @@ def test_dump_transport_state_origin_keys_exclude_request_target_details(
     sync_http_server: str,
     faker: Faker,
 ) -> None:
-    request_url = f"{sync_http_server}/users?token={faker.uuid4()}"
+    token = faker.uuid4()
+    request_url = f"{sync_http_server}/users?token={token}"
 
     with foghttp.Client() as client:
         response = client.get(request_url)
@@ -218,3 +219,4 @@ def test_dump_transport_state_origin_keys_exclude_request_target_details(
 
     assert response.status_code == OK
     assert set(state["origins"]) == {sync_http_server}
+    assert token not in repr(state)

@@ -44,6 +44,8 @@ _TRANSPORT_BUFFER_FIELDS = (
 )
 _ORIGIN_PRESSURE_FIELDS = (
     *_TRANSPORT_PRESSURE_FIELDS,
+    "last_used_at_ns",
+    "idle_age_ns",
     "last_activity_at_ns",
 )
 _TRANSPORT_STATE_FIELDS = (

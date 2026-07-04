@@ -35,7 +35,7 @@ pub struct OriginMetrics {
     response_body_closed: AtomicUsize,
     response_body_aborted: AtomicUsize,
     active_connections: AtomicUsize,
-    idle_connections: AtomicUsize,
+    idle_state: Mutex<IdleState>,
     connections_opened: AtomicUsize,
     connections_open_failed: AtomicUsize,
     connections_closed: AtomicUsize,
@@ -44,6 +44,12 @@ pub struct OriginMetrics {
     idle_timeout_evictions: AtomicUsize,
     last_activity_at_ns: AtomicU64,
     pending_waiters: Mutex<PendingWaiters>,
+}
+
+#[derive(Default)]
+struct IdleState {
+    connections: usize,
+    started_at_ns: u64,
 }
 
 impl OriginMetrics {
@@ -72,7 +78,7 @@ impl OriginMetrics {
             response_body_closed: AtomicUsize::new(0),
             response_body_aborted: AtomicUsize::new(0),
             active_connections: AtomicUsize::new(0),
-            idle_connections: AtomicUsize::new(0),
+            idle_state: Mutex::new(IdleState::default()),
             connections_opened: AtomicUsize::new(0),
             connections_open_failed: AtomicUsize::new(0),
             connections_closed: AtomicUsize::new(0),
@@ -206,12 +212,22 @@ impl OriginMetrics {
     }
 
     pub fn connection_became_idle(&self) {
-        self.idle_connections.fetch_add(1, Ordering::Relaxed);
-        self.touch();
+        let idle_started_at_ns = self.touch();
+        let mut idle_state = self.lock_idle_state();
+        if idle_state.connections == 0 {
+            idle_state.started_at_ns = idle_started_at_ns;
+        }
+        idle_state.connections = idle_state.connections.saturating_add(1);
     }
 
     pub fn connection_left_idle(&self) {
-        saturating_atomic_usize_sub(&self.idle_connections, 1);
+        {
+            let mut idle_state = self.lock_idle_state();
+            idle_state.connections = idle_state.connections.saturating_sub(1);
+            if idle_state.connections == 0 {
+                idle_state.started_at_ns = 0;
+            }
+        }
         self.touch();
     }
 
@@ -231,6 +247,10 @@ impl OriginMetrics {
     }
 
     pub(super) fn snapshot(&self) -> OriginMetricsSnapshot {
+        let active_connections = self.active_connections.load(Ordering::Relaxed);
+        let (idle_connections, idle_age_ns) = self.idle_state_snapshot();
+        let last_used_at_ns = self.last_activity_at_ns.load(Ordering::Relaxed);
+
         OriginMetricsSnapshot {
             origin: self.origin.clone(),
             active_requests: self.active_requests.load(Ordering::Relaxed),
@@ -265,15 +285,17 @@ impl OriginMetrics {
             response_body_reuse_eligible: self.response_body_reuse_eligible.load(Ordering::Relaxed),
             response_body_closed: self.response_body_closed.load(Ordering::Relaxed),
             response_body_aborted: self.response_body_aborted.load(Ordering::Relaxed),
-            active_connections: self.active_connections.load(Ordering::Relaxed),
-            idle_connections: self.idle_connections.load(Ordering::Relaxed),
+            active_connections,
+            idle_connections,
             connections_opened: self.connections_opened.load(Ordering::Relaxed),
             connections_open_failed: self.connections_open_failed.load(Ordering::Relaxed),
             connections_closed: self.connections_closed.load(Ordering::Relaxed),
             connections_reused: self.connections_reused.load(Ordering::Relaxed),
             connections_aborted: self.connections_aborted.load(Ordering::Relaxed),
             idle_timeout_evictions: self.idle_timeout_evictions.load(Ordering::Relaxed),
-            last_activity_at_ns: self.last_activity_at_ns.load(Ordering::Relaxed),
+            last_used_at_ns,
+            idle_age_ns,
+            last_activity_at_ns: last_used_at_ns,
         }
     }
 
@@ -296,15 +318,36 @@ impl OriginMetrics {
             && self.active_connections.load(Ordering::Relaxed) == 0
     }
 
-    fn touch(&self) {
-        update_atomic_u64_max(
-            &self.last_activity_at_ns,
-            duration_as_nanos(self.started_at.elapsed()),
-        );
+    fn touch(&self) -> u64 {
+        let now_ns = self.now_ns();
+        update_atomic_u64_max(&self.last_activity_at_ns, now_ns);
+        now_ns
+    }
+
+    fn idle_state_snapshot(&self) -> (usize, u64) {
+        let idle_state = self.lock_idle_state();
+        if idle_state.connections == 0 || idle_state.started_at_ns == 0 {
+            return (0, 0);
+        }
+
+        (
+            idle_state.connections,
+            self.now_ns().saturating_sub(idle_state.started_at_ns),
+        )
+    }
+
+    fn now_ns(&self) -> u64 {
+        duration_as_nanos(self.started_at.elapsed())
     }
 
     fn lock_pending_waiters(&self) -> MutexGuard<'_, PendingWaiters> {
         self.pending_waiters
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn lock_idle_state(&self) -> MutexGuard<'_, IdleState> {
+        self.idle_state
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }

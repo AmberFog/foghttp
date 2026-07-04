@@ -59,7 +59,7 @@ client = foghttp.Client()
 
 assert client.stats() == foghttp.TransportStats()
 assert client.dump_transport_state() == {
-    "schema_version": 3,
+    "schema_version": 4,
     "snapshot_sequence": 0,
     "active_requests": 0,
     "pending_requests": 0,
@@ -401,6 +401,11 @@ connection counters.
 - per-origin `last_activity_at_ns` is a monotonic timestamp in nanoseconds
   relative to the current transport metrics lifetime; it is not a Unix epoch
   timestamp
+- per-origin `last_used_at_ns` is the current stable name for that same
+  monotonic last activity timestamp
+- per-origin `idle_age_ns` is the diagnostic age of the current continuous idle
+  state for that origin and is `0` when no tracked idle connection is currently
+  recorded
 - `response_body_reuse_eligible` means response bodies that reached a clean
   end-of-body and had no response-level close signal
 - `response_body_closed` means response bodies that reached a clean end-of-body
@@ -464,11 +469,11 @@ connection followed by a new opened connection when the next request proceeds;
 it does not expose a separate failed-reuse counter until close reasons can be
 distinguished without guessing.
 
-Use `dump_transport_state()` for a small debug snapshot when active, pending,
-acquire pressure, per-origin pressure, and buffered response budget state are
-needed. The `origins` entry is keyed by normalized origin (`scheme://host`, with
-`:port` only for non-default ports) and never includes path, query, userinfo,
-headers, or body data.
+Use `dump_transport_state()` for a small debug snapshot when active, idle,
+pending, acquire pressure, per-origin connection lifecycle, and buffered
+response budget state are needed. The `origins` entry is keyed by normalized
+origin (`scheme://host`, with `:port` only for non-default ports) and never
+includes path, query, userinfo, headers, or body data.
 The snapshot is collected by the Rust transport state layer in one raw boundary
 call; Python only formats the already collected aggregate and per-origin data.
 It includes `schema_version` and `snapshot_sequence`; the sequence is monotonic
@@ -485,6 +490,8 @@ diagnostic state, not a lock-protected transaction over the transport.
 ```python
 state = client.dump_transport_state()
 api_pressure = state["origins"].get("https://api.example.com")
+if api_pressure is not None:
+    print(api_pressure["idle_connections"], api_pressure["idle_age_ns"])
 ```
 
 Use `dump_pool_diagnostics()` when the question is specifically why requests are

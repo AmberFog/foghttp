@@ -3,6 +3,7 @@ __all__ = (
     "assert_distinct_connection_snapshot",
     "assert_reused_connection_payloads",
     "assert_reused_connection_snapshot",
+    "has_idle_origin_detail",
     "is_early_remote_idle_close_observed",
     "is_idle_timeout_eviction_reported",
 )
@@ -88,6 +89,21 @@ def is_early_remote_idle_close_observed(stats: "foghttp.TransportStats") -> bool
     distinct_connections_opened = stats.connections_opened == EXPECTED_DISTINCT_CONNECTIONS
     at_least_one_idle_connection_closed = stats.connections_closed >= 1
     return distinct_connections_opened and at_least_one_idle_connection_closed
+
+
+def has_idle_origin_detail(state: "foghttp.TransportState", origin: str) -> bool:
+    origin_state = state["origins"].get(origin)
+    if origin_state is None:
+        return False
+
+    return (
+        origin_state["active_connections"] == 1
+        and origin_state["idle_connections"] == 1
+        and origin_state["connections_opened"] == 1
+        and origin_state["last_used_at_ns"] > 0
+        and origin_state["idle_age_ns"] > 0
+        and origin_state["last_activity_at_ns"] == origin_state["last_used_at_ns"]
+    )
 
 
 def _payload_connection_id(payload: Mapping[str, object]) -> int:

@@ -40,5 +40,7 @@ pub struct OriginMetricsSnapshot {
     pub connections_reused: usize,
     pub connections_aborted: usize,
     pub idle_timeout_evictions: usize,
+    pub last_used_at_ns: u64,
+    pub idle_age_ns: u64,
     pub last_activity_at_ns: u64,
 }
