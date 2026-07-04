@@ -28,7 +28,7 @@ repos:
       - id: add-trailing-comma
 
   - repo: https://github.com/crate-ci/typos
-    rev: v1.47.2
+    rev: v1.48.0
     hooks:
       - id: typos
 
@@ -38,7 +38,7 @@ repos:
       - id: detect-secrets
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.11.25
+    rev: 0.11.26
     hooks:
       - id: uv-lock
 
