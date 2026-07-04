@@ -61,6 +61,8 @@ pub struct RawOriginPressure {
     #[pyo3(get)]
     connections_aborted: usize,
     #[pyo3(get)]
+    idle_timeout_evictions: usize,
+    #[pyo3(get)]
     last_activity_at_ns: u64,
 }
 
@@ -129,6 +131,8 @@ pub struct RawStats {
     #[pyo3(get)]
     connections_aborted: usize,
     #[pyo3(get)]
+    idle_timeout_evictions: usize,
+    #[pyo3(get)]
     buffered_response_bytes: usize,
     #[pyo3(get)]
     buffered_response_budget_rejections: usize,
@@ -170,6 +174,7 @@ impl From<StatsSnapshot> for RawStats {
             connections_closed: metrics.connections_closed,
             connections_reused: metrics.connections_reused,
             connections_aborted: metrics.connections_aborted,
+            idle_timeout_evictions: metrics.idle_timeout_evictions,
             buffered_response_bytes: metrics.buffered_response_bytes,
             buffered_response_budget_rejections: metrics.buffered_response_budget_rejections,
         }
@@ -207,6 +212,7 @@ impl From<OriginMetricsSnapshot> for RawOriginPressure {
             connections_closed: snapshot.connections_closed,
             connections_reused: snapshot.connections_reused,
             connections_aborted: snapshot.connections_aborted,
+            idle_timeout_evictions: snapshot.idle_timeout_evictions,
             last_activity_at_ns: snapshot.last_activity_at_ns,
         }
     }

@@ -167,12 +167,14 @@ limits. Connection-limit acquire pressure is reported separately through
 
 `TransportStats` also exposes socket lifecycle diagnostics:
 `connections_opened`, `connections_open_failed`, `connections_closed`,
-`connections_reused`, `connections_aborted`, `active_connections`, and
-`idle_connections`. `dump_transport_state()["origins"]` exposes the same
+`connections_reused`, `connections_aborted`, `idle_timeout_evictions`,
+`active_connections`, and `idle_connections`.
+`dump_transport_state()["origins"]` exposes the same
 acquire-pressure and socket lifecycle fields per normalized origin, with
 default ports omitted and non-default ports preserved, so a service can see
 which upstream is holding active slots, opening sockets, reusing connections,
-or building a pending queue without logging request paths or query strings.
+timing out idle connections, or building a pending queue without logging
+request paths or query strings.
 FogHTTP also records response body lifecycle counters for buffered and async
 streamed bodies. A clean end-of-body increments either
 `response_body_reuse_eligible` or `response_body_closed`, depending on whether

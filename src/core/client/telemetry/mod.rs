@@ -12,9 +12,9 @@ use std::future::Future;
 use std::io::{Error, ErrorKind, IoSlice};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::{Context, Poll};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::time::Sleep;
 use tower_service::Service;
 
@@ -25,6 +25,7 @@ pub(crate) struct InstrumentedConnector<C> {
     inner: C,
     metrics: Arc<Metrics>,
     connection_gate: ConnectionGate,
+    idle_timeout: Duration,
 }
 
 #[derive(Clone)]
@@ -48,7 +49,8 @@ struct ConnectionTelemetryInner {
     metrics: Arc<Metrics>,
     origin_metrics: Option<Arc<OriginMetrics>>,
     observed_uses: AtomicUsize,
-    idle: AtomicBool,
+    idle_since: Mutex<Option<Instant>>,
+    idle_timeout: Duration,
     closed: AtomicBool,
     aborted: AtomicBool,
 }
@@ -61,11 +63,17 @@ struct WriteTimeoutState {
 }
 
 impl<C> InstrumentedConnector<C> {
-    pub(crate) fn new(inner: C, metrics: Arc<Metrics>, connection_gate: ConnectionGate) -> Self {
+    pub(crate) fn new(
+        inner: C,
+        metrics: Arc<Metrics>,
+        connection_gate: ConnectionGate,
+        idle_timeout: Duration,
+    ) -> Self {
         Self {
             inner,
             metrics,
             connection_gate,
+            idle_timeout,
         }
     }
 }
@@ -88,6 +96,7 @@ where
     fn call(&mut self, uri: Uri) -> Self::Future {
         let metrics = Arc::clone(&self.metrics);
         let connection_gate = self.connection_gate.clone();
+        let idle_timeout = self.idle_timeout;
         let origin = origin_from_uri(&uri);
         let origin_metrics = origin.as_ref().map(|origin| metrics.origin_metrics(origin));
         let future = self.inner.call(uri);
@@ -102,7 +111,7 @@ where
                 .await?;
             match future.await {
                 Ok(inner) => {
-                    let telemetry = ConnectionTelemetry::new(metrics, origin_metrics);
+                    let telemetry = ConnectionTelemetry::new(metrics, origin_metrics, idle_timeout);
                     Ok(InstrumentedConnection {
                         inner,
                         telemetry,
@@ -123,7 +132,11 @@ where
 }
 
 impl ConnectionTelemetry {
-    fn new(metrics: Arc<Metrics>, origin_metrics: Option<Arc<OriginMetrics>>) -> Self {
+    fn new(
+        metrics: Arc<Metrics>,
+        origin_metrics: Option<Arc<OriginMetrics>>,
+        idle_timeout: Duration,
+    ) -> Self {
         metrics.connection_opened();
         if let Some(origin_metrics) = &origin_metrics {
             origin_metrics.connection_opened();
@@ -134,7 +147,8 @@ impl ConnectionTelemetry {
                 metrics,
                 origin_metrics,
                 observed_uses: AtomicUsize::new(0),
-                idle: AtomicBool::new(false),
+                idle_since: Mutex::new(None),
+                idle_timeout,
                 closed: AtomicBool::new(false),
                 aborted: AtomicBool::new(false),
             }),
@@ -142,7 +156,7 @@ impl ConnectionTelemetry {
     }
 
     pub(crate) fn response_started(&self) -> ConnectionUseGuard {
-        self.leave_idle();
+        let _ = self.leave_idle();
         let previous_uses = self.inner.observed_uses.fetch_add(1, Ordering::Relaxed);
         if previous_uses > 0 {
             self.inner.metrics.connection_reused();
@@ -166,40 +180,52 @@ impl ConnectionTelemetry {
     }
 
     fn connection_closed(&self) {
-        self.leave_idle();
+        let mut idle_since = self.lock_idle_since();
         if self.inner.closed.swap(true, Ordering::AcqRel) {
             return;
         }
+        let idle_for = self.leave_idle_locked(&mut idle_since);
 
         self.inner.metrics.connection_closed();
         if let Some(origin_metrics) = &self.inner.origin_metrics {
             origin_metrics.connection_closed();
         }
+        if idle_for.is_some_and(|elapsed| elapsed >= self.inner.idle_timeout) {
+            self.inner.metrics.idle_timeout_eviction();
+            if let Some(origin_metrics) = &self.inner.origin_metrics {
+                origin_metrics.idle_timeout_eviction();
+            }
+        }
     }
 
     fn enter_idle(&self) {
+        let mut idle_since = self.lock_idle_since();
         if self.inner.closed.load(Ordering::Acquire) {
             return;
         }
-        if self.inner.idle.swap(true, Ordering::AcqRel) {
+        if idle_since.is_some() {
             return;
         }
 
+        *idle_since = Some(Instant::now());
         self.inner.metrics.connection_became_idle();
         if let Some(origin_metrics) = &self.inner.origin_metrics {
             origin_metrics.connection_became_idle();
         }
     }
 
-    fn leave_idle(&self) {
-        if !self.inner.idle.swap(false, Ordering::AcqRel) {
-            return;
-        }
+    fn leave_idle(&self) -> Option<Duration> {
+        let mut idle_since = self.lock_idle_since();
+        self.leave_idle_locked(&mut idle_since)
+    }
 
+    fn leave_idle_locked(&self, idle_since: &mut Option<Instant>) -> Option<Duration> {
+        let idle_for = idle_since.take().map(|idle_since| idle_since.elapsed())?;
         self.inner.metrics.connection_left_idle();
         if let Some(origin_metrics) = &self.inner.origin_metrics {
             origin_metrics.connection_left_idle();
         }
+        Some(idle_for)
     }
 
     fn abort(&self) {
@@ -211,6 +237,13 @@ impl ConnectionTelemetry {
         if let Some(origin_metrics) = &self.inner.origin_metrics {
             origin_metrics.connection_aborted();
         }
+    }
+
+    fn lock_idle_since(&self) -> MutexGuard<'_, Option<Instant>> {
+        self.inner
+            .idle_since
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 }
 

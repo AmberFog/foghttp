@@ -41,6 +41,7 @@ pub struct OriginMetrics {
     connections_closed: AtomicUsize,
     connections_reused: AtomicUsize,
     connections_aborted: AtomicUsize,
+    idle_timeout_evictions: AtomicUsize,
     last_activity_at_ns: AtomicU64,
     pending_waiters: Mutex<PendingWaiters>,
 }
@@ -77,6 +78,7 @@ impl OriginMetrics {
             connections_closed: AtomicUsize::new(0),
             connections_reused: AtomicUsize::new(0),
             connections_aborted: AtomicUsize::new(0),
+            idle_timeout_evictions: AtomicUsize::new(0),
             last_activity_at_ns: AtomicU64::new(duration_as_nanos(started_at.elapsed())),
             pending_waiters: Mutex::new(PendingWaiters::default()),
         }
@@ -223,6 +225,11 @@ impl OriginMetrics {
         self.touch();
     }
 
+    pub fn idle_timeout_eviction(&self) {
+        self.idle_timeout_evictions.fetch_add(1, Ordering::Relaxed);
+        self.touch();
+    }
+
     pub(super) fn snapshot(&self) -> OriginMetricsSnapshot {
         OriginMetricsSnapshot {
             origin: self.origin.clone(),
@@ -265,6 +272,7 @@ impl OriginMetrics {
             connections_closed: self.connections_closed.load(Ordering::Relaxed),
             connections_reused: self.connections_reused.load(Ordering::Relaxed),
             connections_aborted: self.connections_aborted.load(Ordering::Relaxed),
+            idle_timeout_evictions: self.idle_timeout_evictions.load(Ordering::Relaxed),
             last_activity_at_ns: self.last_activity_at_ns.load(Ordering::Relaxed),
         }
     }

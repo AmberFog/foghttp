@@ -34,6 +34,7 @@ pub struct MetricsSnapshot {
     pub connections_closed: usize,
     pub connections_reused: usize,
     pub connections_aborted: usize,
+    pub idle_timeout_evictions: usize,
     pub buffered_response_bytes: usize,
     pub buffered_response_budget_rejections: usize,
 }
@@ -122,6 +123,7 @@ impl TransportStateSnapshot {
             && self.metrics.connections_closed == totals.connections_closed
             && self.metrics.connections_reused == totals.connections_reused
             && self.metrics.connections_aborted == totals.connections_aborted
+            && self.metrics.idle_timeout_evictions == totals.idle_timeout_evictions
     }
 }
 
@@ -151,6 +153,7 @@ struct OriginPressureTotals {
     connections_closed: usize,
     connections_reused: usize,
     connections_aborted: usize,
+    idle_timeout_evictions: usize,
 }
 
 impl OriginPressureTotals {
@@ -228,6 +231,9 @@ impl OriginPressureTotals {
             totals.connections_aborted = totals
                 .connections_aborted
                 .saturating_add(origin.connections_aborted);
+            totals.idle_timeout_evictions = totals
+                .idle_timeout_evictions
+                .saturating_add(origin.idle_timeout_evictions);
             totals
         })
     }

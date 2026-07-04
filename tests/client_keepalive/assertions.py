@@ -3,9 +3,16 @@ __all__ = (
     "assert_distinct_connection_snapshot",
     "assert_reused_connection_payloads",
     "assert_reused_connection_snapshot",
+    "is_early_remote_idle_close_observed",
+    "is_idle_timeout_eviction_reported",
 )
 
 from collections.abc import Mapping
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    import foghttp
 
 from .constants import (
     CONNECTION_ID_KEY,
@@ -68,6 +75,19 @@ def assert_distinct_connection_snapshot(snapshot: KeepAliveSnapshot) -> None:
     if sorted(snapshot.requests_by_connection.values()) != expected_requests_by_connection:
         msg = f"expected two single-request connections, got {snapshot.requests_by_connection}"
         raise AssertionError(msg)
+
+
+def is_idle_timeout_eviction_reported(stats: "foghttp.TransportStats") -> bool:
+    idle_eviction_recorded = stats.idle_timeout_evictions == 1
+    no_idle_connections_remain = stats.idle_connections == 0
+    no_active_connections_remain = stats.active_connections == 0
+    return idle_eviction_recorded and no_idle_connections_remain and no_active_connections_remain
+
+
+def is_early_remote_idle_close_observed(stats: "foghttp.TransportStats") -> bool:
+    distinct_connections_opened = stats.connections_opened == EXPECTED_DISTINCT_CONNECTIONS
+    at_least_one_idle_connection_closed = stats.connections_closed >= 1
+    return distinct_connections_opened and at_least_one_idle_connection_closed
 
 
 def _payload_connection_id(payload: Mapping[str, object]) -> int:

@@ -21,13 +21,15 @@ use tower_service::Service;
 
 const HTTP_ORIGIN: &str = "http://api.example.com";
 const ORIGIN: &str = "https://api.example.com";
+const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const WRITE_TIMEOUT: Duration = Duration::from_millis(10);
 
 #[test]
 fn telemetry_tracks_reuse_idle_abort_and_close_once() {
     let metrics = Arc::new(Metrics::default());
     let origin_metrics = metrics.origin_metrics(ORIGIN);
-    let telemetry = ConnectionTelemetry::new(Arc::clone(&metrics), Some(origin_metrics));
+    let telemetry =
+        ConnectionTelemetry::new(Arc::clone(&metrics), Some(origin_metrics), IDLE_TIMEOUT);
 
     telemetry
         .response_started()
@@ -43,6 +45,7 @@ fn telemetry_tracks_reuse_idle_abort_and_close_once() {
     assert_eq!(snapshot.connections_closed, 1);
     assert_eq!(snapshot.connections_reused, 1);
     assert_eq!(snapshot.connections_aborted, 1);
+    assert_eq!(snapshot.idle_timeout_evictions, 0);
 
     let origin_snapshot = origin_snapshot(&metrics);
     assert_eq!(origin_snapshot.active_connections, 0);
@@ -51,13 +54,15 @@ fn telemetry_tracks_reuse_idle_abort_and_close_once() {
     assert_eq!(origin_snapshot.connections_closed, 1);
     assert_eq!(origin_snapshot.connections_reused, 1);
     assert_eq!(origin_snapshot.connections_aborted, 1);
+    assert_eq!(origin_snapshot.idle_timeout_evictions, 0);
 }
 
 #[test]
 fn closed_connection_does_not_reenter_idle_after_successful_body_finish() {
     let metrics = Arc::new(Metrics::default());
     let origin_metrics = metrics.origin_metrics(ORIGIN);
-    let telemetry = ConnectionTelemetry::new(Arc::clone(&metrics), Some(origin_metrics));
+    let telemetry =
+        ConnectionTelemetry::new(Arc::clone(&metrics), Some(origin_metrics), IDLE_TIMEOUT);
     let connection_use = telemetry.response_started();
 
     telemetry.connection_closed();
@@ -70,6 +75,7 @@ fn closed_connection_does_not_reenter_idle_after_successful_body_finish() {
     assert_eq!(snapshot.connections_closed, 1);
     assert_eq!(snapshot.connections_reused, 0);
     assert_eq!(snapshot.connections_aborted, 0);
+    assert_eq!(snapshot.idle_timeout_evictions, 0);
 
     let origin_snapshot = origin_snapshot(&metrics);
     assert_eq!(origin_snapshot.active_connections, 0);
@@ -78,6 +84,56 @@ fn closed_connection_does_not_reenter_idle_after_successful_body_finish() {
     assert_eq!(origin_snapshot.connections_closed, 1);
     assert_eq!(origin_snapshot.connections_reused, 0);
     assert_eq!(origin_snapshot.connections_aborted, 0);
+    assert_eq!(origin_snapshot.idle_timeout_evictions, 0);
+}
+
+#[test]
+fn idle_connection_closed_after_timeout_records_idle_timeout_eviction() {
+    let metrics = Arc::new(Metrics::default());
+    let origin_metrics = metrics.origin_metrics(ORIGIN);
+    let telemetry =
+        ConnectionTelemetry::new(Arc::clone(&metrics), Some(origin_metrics), Duration::ZERO);
+
+    telemetry
+        .response_started()
+        .finish(ResponseBodyLifecycleOutcome::ReuseEligible);
+    telemetry.connection_closed();
+
+    let snapshot = metrics.snapshot();
+    assert_eq!(snapshot.active_connections, 0);
+    assert_eq!(snapshot.idle_connections, 0);
+    assert_eq!(snapshot.connections_closed, 1);
+    assert_eq!(snapshot.idle_timeout_evictions, 1);
+
+    let origin_snapshot = origin_snapshot(&metrics);
+    assert_eq!(origin_snapshot.active_connections, 0);
+    assert_eq!(origin_snapshot.idle_connections, 0);
+    assert_eq!(origin_snapshot.connections_closed, 1);
+    assert_eq!(origin_snapshot.idle_timeout_evictions, 1);
+}
+
+#[test]
+fn reused_idle_connection_does_not_record_idle_timeout_eviction() {
+    let metrics = Arc::new(Metrics::default());
+    let origin_metrics = metrics.origin_metrics(ORIGIN);
+    let telemetry =
+        ConnectionTelemetry::new(Arc::clone(&metrics), Some(origin_metrics), IDLE_TIMEOUT);
+
+    telemetry
+        .response_started()
+        .finish(ResponseBodyLifecycleOutcome::ReuseEligible);
+    drop(telemetry.response_started());
+    telemetry.connection_closed();
+
+    let snapshot = metrics.snapshot();
+    assert_eq!(snapshot.connections_reused, 1);
+    assert_eq!(snapshot.connections_aborted, 1);
+    assert_eq!(snapshot.idle_timeout_evictions, 0);
+
+    let origin_snapshot = origin_snapshot(&metrics);
+    assert_eq!(origin_snapshot.connections_reused, 1);
+    assert_eq!(origin_snapshot.connections_aborted, 1);
+    assert_eq!(origin_snapshot.idle_timeout_evictions, 0);
 }
 
 #[test]
@@ -121,6 +177,7 @@ fn hyper_dispatcher_sees_write_timeout_context_on_isolated_client() {
             PendingConnector,
             Arc::clone(&metrics),
             ConnectionGate::new(Some(1), None),
+            IDLE_TIMEOUT,
         );
         let client = Client::builder(RequestTaskContextExecutor)
             .pool_max_idle_per_host(0)
@@ -229,7 +286,7 @@ fn instrumented_connection(
     let origin_metrics = metrics.origin_metrics(ORIGIN);
     InstrumentedConnection {
         inner,
-        telemetry: ConnectionTelemetry::new(metrics, Some(origin_metrics)),
+        telemetry: ConnectionTelemetry::new(metrics, Some(origin_metrics), IDLE_TIMEOUT),
         write_timeout: WriteTimeoutState::default(),
         _connection_permit: crate::core::client::connection_limit::ConnectionPermit::default(),
     }

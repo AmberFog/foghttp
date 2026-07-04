@@ -39,6 +39,7 @@ class TransportStats:
     connections_closed: int = 0
     connections_reused: int = 0
     connections_aborted: int = 0
+    idle_timeout_evictions: int = 0
     buffered_response_bytes: int = 0
     buffered_response_budget_rejections: int = 0
     schema_version: int = TELEMETRY_SNAPSHOT_SCHEMA_VERSION

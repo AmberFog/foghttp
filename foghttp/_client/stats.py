@@ -41,6 +41,7 @@ def stats_from_raw(
         connections_closed=raw.connections_closed,
         connections_reused=raw.connections_reused,
         connections_aborted=raw.connections_aborted,
+        idle_timeout_evictions=raw.idle_timeout_evictions,
         buffered_response_bytes=raw.buffered_response_bytes,
         buffered_response_budget_rejections=raw.buffered_response_budget_rejections,
     )

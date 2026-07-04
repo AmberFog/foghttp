@@ -35,10 +35,11 @@ RAW_STATS_VALUES = {
     "connections_closed": 27,
     "connections_reused": 28,
     "connections_aborted": 29,
-    "buffered_response_bytes": 30,
-    "buffered_response_budget_rejections": 31,
-    "schema_version": 32,
-    "snapshot_sequence": 33,
+    "idle_timeout_evictions": 30,
+    "buffered_response_bytes": 31,
+    "buffered_response_budget_rejections": 32,
+    "schema_version": 33,
+    "snapshot_sequence": 34,
 }
 
 

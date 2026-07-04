@@ -31,6 +31,7 @@ class OriginPressureState(TypedDict):
     connections_closed: int
     connections_reused: int
     connections_aborted: int
+    idle_timeout_evictions: int
     last_activity_at_ns: int
 
 
@@ -64,6 +65,7 @@ class TransportState(TypedDict):
     connections_closed: int
     connections_reused: int
     connections_aborted: int
+    idle_timeout_evictions: int
     buffered_response_bytes: int
     buffered_response_budget_rejections: int
     origins: dict[str, OriginPressureState]

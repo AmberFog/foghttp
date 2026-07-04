@@ -59,7 +59,7 @@ client = foghttp.Client()
 
 assert client.stats() == foghttp.TransportStats()
 assert client.dump_transport_state() == {
-    "schema_version": 2,
+    "schema_version": 3,
     "snapshot_sequence": 0,
     "active_requests": 0,
     "pending_requests": 0,
@@ -88,6 +88,7 @@ assert client.dump_transport_state() == {
     "connections_closed": 0,
     "connections_reused": 0,
     "connections_aborted": 0,
+    "idle_timeout_evictions": 0,
     "buffered_response_bytes": 0,
     "buffered_response_budget_rejections": 0,
     "origins": {},
@@ -421,6 +422,8 @@ connection counters.
   after that same connection had already served an earlier response
 - `connections_aborted` means a tracked connection saw wire response body
   collection abort after response headers were received
+- `idle_timeout_evictions` means a tracked idle connection was closed after
+  reaching the configured `Limits.idle_timeout`
 - `buffered_response_bytes` means bytes currently reserved for in-flight
   buffered response bodies before they are returned to Python
 - `buffered_response_budget_rejections` means requests rejected by
@@ -451,9 +454,15 @@ The response body lifecycle counters describe FogHTTP's Rust-side body
 contract for buffered and streamed response bodies. Socket lifecycle
 counters describe tracked connector I/O lifecycle:
 opened/closed are physical connector events, while reused/idle/aborted are
-derived from responses observed on those tracked connections. `idle_connections`
-is diagnostic state for the current HTTP/1 path, not a public promise about
-Hyper's private pool internals.
+derived from responses observed on those tracked connections.
+`idle_timeout_evictions` is counted when a tracked idle connection closes after
+reaching `Limits.idle_timeout`. `idle_connections` is diagnostic state for the
+current HTTP/1 path, not a public promise about Hyper's private pool internals.
+If a server closes an idle keep-alive connection before the client-side idle
+timeout, FogHTTP currently exposes the observable lifecycle as a closed
+connection followed by a new opened connection when the next request proceeds;
+it does not expose a separate failed-reuse counter until close reasons can be
+distinguished without guessing.
 
 Use `dump_transport_state()` for a small debug snapshot when active, pending,
 acquire pressure, per-origin pressure, and buffered response budget state are

@@ -64,6 +64,8 @@ pub struct RawTransportState {
     #[pyo3(get)]
     connections_aborted: usize,
     #[pyo3(get)]
+    idle_timeout_evictions: usize,
+    #[pyo3(get)]
     buffered_response_bytes: usize,
     #[pyo3(get)]
     buffered_response_budget_rejections: usize,
@@ -105,6 +107,7 @@ impl From<TransportStateSnapshot> for RawTransportState {
             connections_closed: metrics.connections_closed,
             connections_reused: metrics.connections_reused,
             connections_aborted: metrics.connections_aborted,
+            idle_timeout_evictions: metrics.idle_timeout_evictions,
             buffered_response_bytes: metrics.buffered_response_bytes,
             buffered_response_budget_rejections: metrics.buffered_response_budget_rejections,
             origins: snapshot.origins.into_iter().map(Into::into).collect(),

@@ -671,8 +671,9 @@ clean reusable-eligible completion, clean non-reusable completion, and aborted
 body handling.
 `TransportStats.connections_opened`, `connections_open_failed`,
 `connections_closed`, `connections_reused`, `connections_aborted`,
-`active_connections`, and `idle_connections` report Rust-side socket lifecycle
-telemetry observed around the connector and buffered response lifecycle.
+`idle_timeout_evictions`, `active_connections`, and `idle_connections` report
+Rust-side socket lifecycle telemetry observed around the connector and buffered
+response lifecycle.
 `TransportStats.connection_acquire_attempts`, `connection_acquire_waited`, and
 `connection_acquire_timeouts` report pressure from physical connection caps.
 `client.dump_transport_state()["origins"]` shows request-slot pressure,
