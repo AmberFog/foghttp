@@ -196,7 +196,8 @@ recomputation is planned separately.
 ## Redirect Limit
 
 `max_redirects` defaults to `20`. If the limit is exceeded, FogHTTP raises
-`RequestError`.
+`RequestError`. The diagnostic identifies the normalized origin but omits URL
+userinfo, path, query parameters, and fragments.
 
 ```python
 with foghttp.Client(follow_redirects=True, max_redirects=5) as client:

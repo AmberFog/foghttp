@@ -1,11 +1,9 @@
 pub(crate) mod acquire;
 mod async_requests;
-mod body;
 mod future;
 mod lifecycle;
 mod options;
 mod process;
-mod redirects;
 mod runtime;
 mod streams;
 mod timeout_diagnostics;

@@ -152,8 +152,8 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
-      - name: Install editable package
-        run: uv run --extra dev --with "maturin>=1.7,<2" maturin develop --locked
+      - name: Build extension in place
+        run: uv run --extra dev --with "maturin>=1.7,<2" maturin develop --locked --skip-install
 
       - name: Run tests
         if: matrix.python-version != '3.14'

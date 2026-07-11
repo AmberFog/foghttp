@@ -1,14 +1,15 @@
+use super::errors::policy_error;
 use crate::core::client::{ConnectionLimitContext, RequestWriteTimeoutContext};
 use crate::core::headers::HeaderPairs;
 use crate::core::numeric::duration_from_secs;
+use crate::core::policy::{
+    redirect_headers, PolicyMutation, PolicyPipeline, PolicyRequest, RequestBodyMutation,
+    RequestBodyPolicy, ResponseHead, ResponsePolicyAction, TransportRoute,
+};
 use crate::core::request::{RequestBodyParts, RequestParts};
 use crate::core::response::BufferedBodyBudget;
 use crate::core::url::HttpUrl;
 use crate::errors::FogHttpError;
-use crate::messages::NON_REPLAYABLE_REQUEST_BODY_REDIRECT;
-use crate::py::client::body::BodyReplayability;
-use crate::py::client::redirects::{redirect_headers, RedirectAction, RedirectHeaderPolicy};
-use crate::py::client::transport::proxy::ProxyTransportPolicy;
 use crate::py::client::upload_body::RawUploadBody;
 use crate::py::response::RawRequestInfo;
 use pyo3::prelude::*;
@@ -35,13 +36,11 @@ pub struct TransportRequest {
 
 pub(super) struct RequestState {
     pub(super) method: String,
-    pub(super) url: String,
+    pub(super) url: HttpUrl,
     pub(super) headers: HeaderPairs,
     pub(super) body: RequestBodyState,
-    pub(super) body_replayability: BodyReplayability,
-    pub(super) use_proxy_transport: bool,
-    pub(super) proxy_policy: ProxyTransportPolicy,
-    pub(super) initial_origin: String,
+    pub(super) body_policy: RequestBodyPolicy,
+    policy: PolicyPipeline,
     pub(super) proxy_authorization: Option<String>,
     pub(super) total_timeout: f64,
     pub(super) read_timeout: f64,
@@ -49,27 +48,21 @@ pub(super) struct RequestState {
     pub(super) write_timeout_secs: f64,
     pub(super) max_response_body_size: Option<usize>,
     pub(super) buffered_body_budget: BufferedBodyBudget,
-    pub(super) follow_redirects: bool,
-    pub(super) max_redirects: usize,
 }
 
 impl RequestState {
-    pub(super) fn take_request_parts(
-        &mut self,
-        use_proxy_transport: bool,
-    ) -> PyResult<RequestParts> {
+    pub(super) fn take_request_parts(&mut self, route: TransportRoute) -> PyResult<RequestParts> {
         Ok(RequestParts {
             method: self.method.clone(),
-            url: self.url.clone(),
+            url: self.url.as_str().to_owned(),
             headers: self.headers.clone(),
             body: self.body.take_body_parts()?,
-            proxy_authorization: self.plain_http_proxy_authorization(use_proxy_transport),
+            proxy_authorization: self.plain_http_proxy_authorization(route),
         })
     }
 
-    fn plain_http_proxy_authorization(&self, use_proxy_transport: bool) -> Option<String> {
-        let is_plain_http = HttpUrl::parse(&self.url).is_ok_and(|url| url.scheme() == "http");
-        if use_proxy_transport && is_plain_http {
+    fn plain_http_proxy_authorization(&self, route: TransportRoute) -> Option<String> {
+        if route == TransportRoute::Proxy && self.url.scheme() == "http" {
             return self.proxy_authorization.clone();
         }
         None
@@ -78,15 +71,13 @@ impl RequestState {
     pub(super) fn request_info(&self) -> RawRequestInfo {
         RawRequestInfo {
             method: self.method.clone(),
-            url: self.url.clone(),
+            url: self.url.as_str().to_owned(),
             headers: self.headers.clone(),
         }
     }
 
-    pub(super) fn origin(&self) -> PyResult<String> {
-        HttpUrl::parse(&self.url)
-            .map(|url| url.origin())
-            .map_err(FogHttpError::new_err)
+    pub(super) fn origin(&self) -> String {
+        self.url.origin()
     }
 
     pub(super) fn has_request_body(&self) -> bool {
@@ -124,39 +115,60 @@ impl RequestState {
         ))
     }
 
-    pub(super) fn use_proxy_transport_for_current_url(&self) -> PyResult<bool> {
-        let url = HttpUrl::parse(&self.url).map_err(FogHttpError::new_err)?;
-        self.proxy_policy
-            .use_proxy_transport(self.use_proxy_transport, &self.initial_origin, &url)
+    pub(super) fn transport_route(&self) -> PyResult<TransportRoute> {
+        self.policy
+            .before_send(self.policy_request())
+            .map_err(|error| policy_error(&error))
     }
 
-    pub(super) fn apply_redirect(&mut self, redirect: RedirectAction) -> PyResult<()> {
-        if redirect.preserve_body
-            && self.has_request_body()
-            && !self.body_replayability.can_replay()
-        {
-            return Err(FogHttpError::new_err(NON_REPLAYABLE_REQUEST_BODY_REDIRECT));
-        }
+    pub(super) fn on_response_headers(
+        &self,
+        status_code: u16,
+        headers: &HeaderPairs,
+    ) -> Option<ResponsePolicyAction> {
+        self.policy.on_response_headers(
+            self.policy_request(),
+            ResponseHead::new(status_code, headers),
+        )
+    }
 
-        let next_url = HttpUrl::parse(&redirect.url).map_err(FogHttpError::new_err)?;
-        self.proxy_policy
-            .validate_redirect(&self.initial_origin, &next_url)?;
+    pub(super) fn after_response_body(
+        &mut self,
+        action: ResponsePolicyAction,
+        completed_redirects: usize,
+    ) -> PyResult<()> {
+        let mutation = self
+            .policy
+            .after_response_body(self.policy_request(), action, completed_redirects)
+            .map_err(|error| policy_error(&error))?;
+        self.apply_policy_mutation(mutation);
+        Ok(())
+    }
 
-        self.method = redirect.method;
-        next_url.as_str().clone_into(&mut self.url);
+    fn policy_request(&self) -> PolicyRequest<'_> {
+        PolicyRequest::new(&self.method, &self.url, self.body_policy)
+    }
+
+    fn apply_policy_mutation(&mut self, mutation: PolicyMutation) {
+        let PolicyMutation::Redirect {
+            body,
+            method,
+            remove_sensitive_headers,
+            url,
+        } = mutation;
+
+        self.method = method.to_owned();
+        self.url = url;
         self.headers = redirect_headers(
             std::mem::take(&mut self.headers),
-            RedirectHeaderPolicy {
-                preserve_body: redirect.preserve_body,
-                remove_sensitive_headers: redirect.remove_sensitive_headers,
-            },
+            body,
+            remove_sensitive_headers,
         );
 
-        if !redirect.preserve_body {
+        if body == RequestBodyMutation::Drop {
             self.body = RequestBodyState::Empty;
-            self.body_replayability = BodyReplayability::Replayable;
+            self.body_policy = RequestBodyPolicy::Empty;
         }
-        Ok(())
     }
 
     pub(super) fn try_from(parts: TransportRequest) -> PyResult<Self> {
@@ -164,22 +176,24 @@ impl RequestState {
         let write_timeout = duration_from_secs("Timeouts.write", parts.write_timeout)
             .map_err(pyo3::exceptions::PyValueError::new_err)?;
         let body = RequestBodyState::from_raw_parts(parts.body, parts.body_stream);
-        let body_replayability = if body.has_request_body() {
-            BodyReplayability::from_replayable(parts.body_replayable)
-        } else {
-            BodyReplayability::Replayable
-        };
-        let proxy_policy = ProxyTransportPolicy::parse(&parts.proxy_policy)?;
+        let body_policy =
+            RequestBodyPolicy::from_request(body.has_request_body(), parts.body_replayable);
+        let policy = PolicyPipeline::new(
+            &parts.proxy_policy,
+            parts.use_proxy_transport,
+            &url,
+            parts.follow_redirects,
+            parts.max_redirects,
+        )
+        .map_err(|error| policy_error(&error))?;
 
         Ok(Self {
             method: parts.method.to_uppercase(),
-            url: url.as_str().to_owned(),
+            url,
             headers: parts.headers,
             body,
-            body_replayability,
-            use_proxy_transport: parts.use_proxy_transport,
-            proxy_policy,
-            initial_origin: url.origin(),
+            body_policy,
+            policy,
             proxy_authorization: parts.proxy_authorization,
             total_timeout: parts.total_timeout,
             read_timeout: parts.read_timeout,
@@ -187,8 +201,6 @@ impl RequestState {
             write_timeout_secs: parts.write_timeout,
             max_response_body_size: parts.max_response_body_size,
             buffered_body_budget: parts.buffered_body_budget,
-            follow_redirects: parts.follow_redirects,
-            max_redirects: parts.max_redirects,
         })
     }
 }

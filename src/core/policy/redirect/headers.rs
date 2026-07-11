@@ -1,4 +1,5 @@
 use crate::core::headers::HeaderPairs;
+use crate::core::policy::request::RequestBodyMutation;
 
 const BODY_HEADERS: &[&str] = &[
     "content-encoding",
@@ -16,24 +17,24 @@ const CROSS_ORIGIN_HEADERS: &[&str] = &[
     "referer",
 ];
 
-#[derive(Clone, Copy)]
-pub struct RedirectHeaderPolicy {
-    pub preserve_body: bool,
-    pub remove_sensitive_headers: bool,
-}
-
-pub fn redirect_headers(headers: HeaderPairs, policy: RedirectHeaderPolicy) -> HeaderPairs {
+pub(crate) fn redirect_headers(
+    headers: HeaderPairs,
+    body: RequestBodyMutation,
+    remove_sensitive_headers: bool,
+) -> HeaderPairs {
     headers
         .into_iter()
-        .filter(|(name, _value)| {
-            keep_redirect_header(name, policy.preserve_body, policy.remove_sensitive_headers)
-        })
+        .filter(|(name, _value)| keep_redirect_header(name, body, remove_sensitive_headers))
         .collect()
 }
 
-fn keep_redirect_header(name: &str, preserve_body: bool, remove_sensitive_headers: bool) -> bool {
+fn keep_redirect_header(
+    name: &str,
+    body: RequestBodyMutation,
+    remove_sensitive_headers: bool,
+) -> bool {
     let name = name.to_ascii_lowercase();
-    if !preserve_body && BODY_HEADERS.contains(&name.as_str()) {
+    if body == RequestBodyMutation::Drop && BODY_HEADERS.contains(&name.as_str()) {
         return false;
     }
     if remove_sensitive_headers && CROSS_ORIGIN_HEADERS.contains(&name.as_str()) {

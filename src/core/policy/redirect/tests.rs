@@ -1,9 +1,11 @@
-use super::{
-    redirect_decision, redirect_headers, RedirectAction, RedirectDecision, RedirectHeaderPolicy,
-};
+use super::{redirect_decision, redirect_headers, RedirectAction, RedirectDecision};
 use crate::core::headers::HeaderPairs;
 use crate::core::method::{GET, POST, QUERY};
-use crate::messages::HTTPS_TO_HTTP_REDIRECT_BLOCKED;
+use crate::core::policy::error::PolicyError;
+use crate::core::policy::request::{
+    PolicyRequest, RequestBodyMutation, RequestBodyPolicy, ResponseHead,
+};
+use crate::core::url::HttpUrl;
 use hyper::StatusCode;
 
 fn header_names(headers: &HeaderPairs) -> Vec<String> {
@@ -13,20 +15,34 @@ fn header_names(headers: &HeaderPairs) -> Vec<String> {
         .collect()
 }
 
+fn decision(
+    method: &str,
+    url: &str,
+    status_code: StatusCode,
+    location: &str,
+) -> Option<RedirectDecision> {
+    let url = HttpUrl::parse(url).expect("valid URL");
+    let headers = vec![("location".to_owned(), location.to_owned())];
+    redirect_decision(
+        PolicyRequest::new(method, &url, RequestBodyPolicy::Replayable),
+        ResponseHead::new(status_code.as_u16(), &headers),
+    )
+}
+
 fn follow_action(decision: Option<RedirectDecision>) -> RedirectAction {
     match decision.expect("redirect decision") {
         RedirectDecision::Follow(action) => action,
-        RedirectDecision::Block(reason) => panic!("unexpected blocked redirect: {reason}"),
+        RedirectDecision::Block(error) => panic!("unexpected blocked redirect: {error}"),
     }
 }
 
 #[test]
 fn same_origin_redirect_keeps_sensitive_headers() {
-    let action = follow_action(redirect_decision(
+    let action = follow_action(decision(
         GET,
         "https://example.com/users",
-        StatusCode::FOUND.as_u16(),
-        &[("location".to_owned(), "/accounts".to_owned())],
+        StatusCode::FOUND,
+        "/accounts",
     ));
 
     let headers = redirect_headers(
@@ -37,10 +53,8 @@ fn same_origin_redirect_keeps_sensitive_headers() {
             ("Origin".to_owned(), "https://example.com".to_owned()),
             ("Referer".to_owned(), "https://example.com/users".to_owned()),
         ],
-        RedirectHeaderPolicy {
-            preserve_body: action.preserve_body,
-            remove_sensitive_headers: action.remove_sensitive_headers,
-        },
+        action.body,
+        action.remove_sensitive_headers,
     );
 
     assert_eq!(
@@ -51,14 +65,11 @@ fn same_origin_redirect_keeps_sensitive_headers() {
 
 #[test]
 fn cross_origin_redirect_strips_sensitive_headers() {
-    let action = follow_action(redirect_decision(
+    let action = follow_action(decision(
         GET,
         "https://example.com/users",
-        StatusCode::FOUND.as_u16(),
-        &[(
-            "location".to_owned(),
-            "https://api.example.org/final".to_owned(),
-        )],
+        StatusCode::FOUND,
+        "https://api.example.org/final",
     ));
 
     let headers = redirect_headers(
@@ -71,10 +82,8 @@ fn cross_origin_redirect_strips_sensitive_headers() {
             ("Referer".to_owned(), "https://example.com/users".to_owned()),
             ("Accept".to_owned(), "application/json".to_owned()),
         ],
-        RedirectHeaderPolicy {
-            preserve_body: action.preserve_body,
-            remove_sensitive_headers: action.remove_sensitive_headers,
-        },
+        action.body,
+        action.remove_sensitive_headers,
     );
 
     assert_eq!(header_names(&headers), vec!["Accept"]);
@@ -82,11 +91,11 @@ fn cross_origin_redirect_strips_sensitive_headers() {
 
 #[test]
 fn method_rewrite_strips_body_headers() {
-    let action = follow_action(redirect_decision(
+    let action = follow_action(decision(
         POST,
         "https://example.com/users",
-        StatusCode::SEE_OTHER.as_u16(),
-        &[("location".to_owned(), "/final".to_owned())],
+        StatusCode::SEE_OTHER,
+        "/final",
     ));
 
     let headers = redirect_headers(
@@ -97,23 +106,22 @@ fn method_rewrite_strips_body_headers() {
             ("Transfer-Encoding".to_owned(), "chunked".to_owned()),
             ("Authorization".to_owned(), "Bearer token".to_owned()),
         ],
-        RedirectHeaderPolicy {
-            preserve_body: action.preserve_body,
-            remove_sensitive_headers: action.remove_sensitive_headers,
-        },
+        action.body,
+        action.remove_sensitive_headers,
     );
 
     assert_eq!(action.method, GET);
+    assert_eq!(action.body, RequestBodyMutation::Drop);
     assert_eq!(header_names(&headers), vec!["Authorization"]);
 }
 
 #[test]
 fn method_preserving_redirect_keeps_body_headers() {
-    let action = follow_action(redirect_decision(
+    let action = follow_action(decision(
         POST,
         "https://example.com/users",
-        StatusCode::TEMPORARY_REDIRECT.as_u16(),
-        &[("location".to_owned(), "/final".to_owned())],
+        StatusCode::TEMPORARY_REDIRECT,
+        "/final",
     ));
 
     let headers = redirect_headers(
@@ -121,13 +129,12 @@ fn method_preserving_redirect_keeps_body_headers() {
             ("Content-Type".to_owned(), "application/json".to_owned()),
             ("Content-Length".to_owned(), "12".to_owned()),
         ],
-        RedirectHeaderPolicy {
-            preserve_body: action.preserve_body,
-            remove_sensitive_headers: action.remove_sensitive_headers,
-        },
+        action.body,
+        action.remove_sensitive_headers,
     );
 
     assert_eq!(action.method, POST);
+    assert_eq!(action.body, RequestBodyMutation::Preserve);
     assert_eq!(
         header_names(&headers),
         vec!["Content-Type", "Content-Length"]
@@ -142,38 +149,35 @@ fn query_redirects_preserve_method_except_for_see_other() {
         StatusCode::TEMPORARY_REDIRECT,
         StatusCode::PERMANENT_REDIRECT,
     ] {
-        let action = follow_action(redirect_decision(
+        let action = follow_action(decision(
             QUERY,
             "https://example.com/search",
-            status_code.as_u16(),
-            &[("location".to_owned(), "/results".to_owned())],
+            status_code,
+            "/results",
         ));
 
         assert_eq!(action.method, QUERY);
-        assert!(action.preserve_body);
+        assert_eq!(action.body, RequestBodyMutation::Preserve);
     }
 
-    let action = follow_action(redirect_decision(
+    let action = follow_action(decision(
         QUERY,
         "https://example.com/search",
-        StatusCode::SEE_OTHER.as_u16(),
-        &[("location".to_owned(), "/results".to_owned())],
+        StatusCode::SEE_OTHER,
+        "/results",
     ));
 
     assert_eq!(action.method, GET);
-    assert!(!action.preserve_body);
+    assert_eq!(action.body, RequestBodyMutation::Drop);
 }
 
 #[test]
 fn cross_origin_method_preserving_redirect_strips_body_headers() {
-    let action = follow_action(redirect_decision(
+    let action = follow_action(decision(
         POST,
         "https://example.com/users",
-        StatusCode::TEMPORARY_REDIRECT.as_u16(),
-        &[(
-            "location".to_owned(),
-            "https://api.example.org/final".to_owned(),
-        )],
+        StatusCode::TEMPORARY_REDIRECT,
+        "https://api.example.org/final",
     ));
 
     let headers = redirect_headers(
@@ -184,29 +188,29 @@ fn cross_origin_method_preserving_redirect_strips_body_headers() {
             ("Authorization".to_owned(), "Bearer token".to_owned()),
             ("Accept".to_owned(), "application/json".to_owned()),
         ],
-        RedirectHeaderPolicy {
-            preserve_body: action.preserve_body,
-            remove_sensitive_headers: action.remove_sensitive_headers,
-        },
+        action.body,
+        action.remove_sensitive_headers,
     );
 
     assert_eq!(action.method, POST);
-    assert!(!action.preserve_body);
+    assert_eq!(action.body, RequestBodyMutation::Drop);
     assert_eq!(header_names(&headers), vec!["Accept"]);
 }
 
 #[test]
 fn https_to_http_redirect_is_blocked() {
-    let decision = redirect_decision(
+    let decision = decision(
         POST,
         "https://example.com/users",
-        StatusCode::TEMPORARY_REDIRECT.as_u16(),
-        &[("location".to_owned(), "http://example.com/final".to_owned())],
+        StatusCode::TEMPORARY_REDIRECT,
+        "http://example.com/final",
     )
     .expect("redirect decision");
 
     match decision {
-        RedirectDecision::Block(reason) => assert_eq!(reason, HTTPS_TO_HTTP_REDIRECT_BLOCKED),
+        RedirectDecision::Block(error) => {
+            assert_eq!(error, PolicyError::HttpsToHttpRedirectBlocked);
+        }
         RedirectDecision::Follow(_) => panic!("expected blocked redirect"),
     }
 }

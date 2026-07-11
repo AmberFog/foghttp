@@ -1,7 +1,7 @@
 use super::body::{collect_response_body, response_body_can_be_decoded};
 use super::context::{RawResponseContext, RawStreamResponseContext};
 use crate::core::client::ConnectionTelemetry;
-use crate::core::headers::response_headers;
+use crate::core::headers::HeaderPairs;
 use crate::core::numeric::duration_from_secs;
 use crate::core::response::{decode_body, decoded_response_headers, response_body_decoding_plan};
 use crate::py::client::lifecycle::{successful_response_body_outcome, ResponseBodyLifecycle};
@@ -15,6 +15,7 @@ use std::sync::Arc;
 pub(super) async fn raw_response(
     response: Response<Incoming>,
     request: RawRequestInfo,
+    headers: HeaderPairs,
     context: RawResponseContext<'_>,
 ) -> PyResult<RawResponse> {
     let status = response.status();
@@ -24,7 +25,6 @@ pub(super) async fn raw_response(
         successful_response_body_outcome(response.version(), response.headers());
     let decoding_plan = response_body_can_be_decoded(&request.method, status)
         .then(|| response_body_decoding_plan(response.headers()));
-    let headers = response_headers(response.headers());
     let mut connection_use = response
         .extensions()
         .get::<ConnectionTelemetry>()
@@ -68,13 +68,13 @@ pub(super) async fn raw_response(
 pub(super) fn raw_stream_response(
     response: Response<Incoming>,
     request: RawRequestInfo,
+    headers: HeaderPairs,
     context: RawStreamResponseContext,
 ) -> PyResult<RawStreamResponse> {
     let status_code = response.status().as_u16();
     let http_version = format!("{:?}", response.version());
     let successful_body_outcome =
         successful_response_body_outcome(response.version(), response.headers());
-    let headers = response_headers(response.headers());
     let connection_use = response
         .extensions()
         .get::<ConnectionTelemetry>()

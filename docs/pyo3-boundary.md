@@ -44,6 +44,37 @@ buffered requests:
 - If a Rust stream state lock owns an active Python future handle, the lock must
   be released before scheduling cancellation or completion on the Python loop.
 
+## Internal Request/Response Policy Seam
+
+`src/core/policy/` is an internal, unstable seam for built-in transport
+policies. It is not a public middleware API and does not expose Python hooks.
+The default request path performs no Python callback, dynamic dispatch, or
+policy-list allocation.
+
+Policy stages run in this order:
+
+1. Before send, the pipeline selects the direct or proxy transport for the
+   normalized request URL.
+2. After response headers, it may produce an opaque pending redirect decision.
+3. After the redirect response body has been consumed, it validates the
+   redirect limit, request-body replayability, and environment-derived proxy
+   boundary before returning a typed request mutation.
+4. `RequestState` applies the mutation before the next send. The policy layer
+   never owns sockets, permits, response bodies, or Python objects.
+
+The current mutation surface can replace the method and URL, remove request
+headers, and either preserve or drop the request body. A non-replayable body is
+never resent. Environment-derived proxy decisions are not reused across
+origins and therefore fail closed until per-hop environment resolution exists.
+Responses are observed through immutable status and header views; the current
+seam does not mutate response status, headers, or body content.
+Policy diagnostics may include a normalized origin, but must not include URL
+userinfo, path, query parameters, or fragments.
+
+Error and timeout policy stages are intentionally absent until the retry work
+defines a Rust-owned failure taxonomy. Core policy code must not accept or
+return `PyErr` merely to reserve a future hook.
+
 ## Review Checklist
 
 For PRs touching PyO3, runtime, cancellation, close/aclose, streaming, or
