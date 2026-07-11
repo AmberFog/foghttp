@@ -417,6 +417,24 @@ provider and multipart type aliases are documented in
 intentionally need a non-standard GET or HEAD body, use the explicit
 `request("GET", ..., content=...)` / `request("HEAD", ..., content=...)` form.
 
+RFC 10008 `QUERY` requests are body-capable. Use the `query()` helper or the
+explicit `request(QUERY, ...)` API when method constants fit shared code better:
+
+```python
+import foghttp
+
+
+with foghttp.Client() as client:
+    response = client.query(
+        "https://api.example.com/search",
+        json={"filter": {"active": True}},
+    )
+```
+
+For raw `content=` or raw `data=`, provide the query's `Content-Type`
+explicitly. JSON and encoded form data retain their normal automatic media
+types.
+
 ## Buffered Response Decoding
 
 Buffered responses with `content-encoding: gzip`, `deflate`, or `br` are
@@ -759,5 +777,5 @@ HTTP method constants are available through `foghttp.methods` for code that
 shares method names across prepared requests or helper layers.
 
 ```python
-from foghttp.methods import GET, POST
+from foghttp.methods import GET, POST, QUERY
 ```

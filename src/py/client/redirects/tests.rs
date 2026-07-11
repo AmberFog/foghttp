@@ -2,7 +2,7 @@ use super::{
     redirect_decision, redirect_headers, RedirectAction, RedirectDecision, RedirectHeaderPolicy,
 };
 use crate::core::headers::HeaderPairs;
-use crate::core::method::{GET, POST};
+use crate::core::method::{GET, POST, QUERY};
 use crate::messages::HTTPS_TO_HTTP_REDIRECT_BLOCKED;
 use hyper::StatusCode;
 
@@ -132,6 +132,36 @@ fn method_preserving_redirect_keeps_body_headers() {
         header_names(&headers),
         vec!["Content-Type", "Content-Length"]
     );
+}
+
+#[test]
+fn query_redirects_preserve_method_except_for_see_other() {
+    for status_code in [
+        StatusCode::MOVED_PERMANENTLY,
+        StatusCode::FOUND,
+        StatusCode::TEMPORARY_REDIRECT,
+        StatusCode::PERMANENT_REDIRECT,
+    ] {
+        let action = follow_action(redirect_decision(
+            QUERY,
+            "https://example.com/search",
+            status_code.as_u16(),
+            &[("location".to_owned(), "/results".to_owned())],
+        ));
+
+        assert_eq!(action.method, QUERY);
+        assert!(action.preserve_body);
+    }
+
+    let action = follow_action(redirect_decision(
+        QUERY,
+        "https://example.com/search",
+        StatusCode::SEE_OTHER.as_u16(),
+        &[("location".to_owned(), "/results".to_owned())],
+    ));
+
+    assert_eq!(action.method, GET);
+    assert!(!action.preserve_body);
 }
 
 #[test]

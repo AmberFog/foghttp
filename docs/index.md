@@ -97,7 +97,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 ## Key Features
 
 - sync `Client` and async `AsyncClient`
-- `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`
+- `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, and RFC 10008 `QUERY`
 - `base_url` for reusable API clients and relative request paths
 - default client headers and query params for reusable API clients
 - query params with repeated keys, JSON, form-urlencoded data, buffered
@@ -114,7 +114,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - redacted repr/error surfaces for sensitive headers, URL credentials,
   token-like URL params, and buffered body bytes
 - normalized `URL` model with origin comparison and relative joins
-- GET/HEAD/POST redirects with final URL, history, and conservative replay policy
+- GET/HEAD/POST/QUERY redirects with final URL, history, and conservative replay policy
 - HTTPS with default WebPKI roots, explicit custom CA certificates, and
   custom-only CA trust
 - documented lazy transport creation, graceful sync close, async request

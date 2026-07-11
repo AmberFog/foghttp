@@ -101,6 +101,31 @@ print(response.request.method)
 
 :::
 
+## QUERY Method Rules
+
+FogHTTP follows the redirect semantics for `QUERY` defined by
+[RFC 10008](https://www.rfc-editor.org/rfc/rfc10008.html):
+
+| Status | Method behavior |
+|---|---|
+| `301` | `QUERY` and a replayable body are preserved for same-origin redirects |
+| `302` | `QUERY` and a replayable body are preserved for same-origin redirects |
+| `303` | `QUERY` becomes `GET`; body and body-specific headers are dropped |
+| `307` | `QUERY` and a replayable body are preserved for same-origin redirects |
+| `308` | `QUERY` and a replayable body are preserved for same-origin redirects |
+
+Unlike POST, QUERY does not become GET after `301` or `302`. Direct streams and
+other non-replayable bodies fail closed when a same-origin redirect would need
+to resend the query content. Factory-backed streams remain replayable because
+FogHTTP can request a fresh provider for each attempt.
+
+For cross-origin `301`, `302`, `307`, and `308`, FogHTTP preserves the QUERY
+method but does not forward the request content, sensitive headers, or
+body-specific headers to the new origin. A destination that requires a query
+body and `Content-Type` can therefore reject that sanitized request. This is a
+deliberate data-boundary rule rather than an attempt to recreate the original
+query at a different origin.
+
 ## Security Policy
 
 FogHTTP applies a conservative redirect security policy on every redirect hop.
@@ -122,8 +147,8 @@ cookies, origin metadata, and referrer metadata from being forwarded to a
 different origin by a redirect response. `Host` is transport-managed and cannot
 be set manually through the safe API.
 
-When a redirect rewrites `POST` to `GET`, FogHTTP drops the request body and
-strips body-specific headers:
+When a redirect rewrites `POST` or `QUERY` to `GET`, FogHTTP drops the request
+body and strips body-specific headers:
 
 - `Content-Encoding`
 - `Content-Length`
@@ -133,19 +158,21 @@ strips body-specific headers:
 `Content-Length` and `Transfer-Encoding` are transport-managed and cannot be set
 manually through the safe API.
 
-For same-origin `307` and `308`, FogHTTP preserves the method and resends the
-current buffered body. For cross-origin `307` and `308`, FogHTTP preserves the
-method but drops the body and body-specific headers before the next request.
-This prevents JSON payloads, tokens, form data, and other request bodies from
-being forwarded to a different origin by a redirect response.
+For same-origin method-preserving POST and QUERY redirects, FogHTTP resends a
+replayable body. For cross-origin method-preserving POST and QUERY redirects,
+FogHTTP preserves the method but drops the body and body-specific headers
+before the next request. This prevents JSON payloads, tokens, form data, and
+other request bodies from being forwarded to a different origin by a redirect
+response.
 
 FogHTTP also blocks `https -> http` redirects. Scheme downgrade redirects are
 too easy to misuse once credentials, cookies, body replay, or future auth helpers
 are involved, so the safe default is to fail the request instead of silently
 following the downgrade.
 
-Future streaming bodies will use an explicit replayability model because
-non-replayable streams must not be resent automatically.
+Direct streaming bodies use the explicit non-replayable path and are not resent
+automatically. Factory-backed streams are replayable because each attempt gets
+a fresh provider.
 
 ## Proxy Policy
 

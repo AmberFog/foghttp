@@ -35,7 +35,7 @@ from .lifecycle_debug import (
     AsyncLifecycleDebugSnapshot,
 )
 from .limits import Limits
-from .methods import DELETE, GET, HEAD, PATCH, POST, PUT
+from .methods import DELETE, GET, HEAD, PATCH, POST, PUT, QUERY
 from .request import Request
 from .response import Response
 from .stream_response import AsyncStreamResponse
@@ -240,6 +240,30 @@ class AsyncClient(ClientCore):
     ) -> Response:
         return await self.request(
             POST,
+            url,
+            headers=headers,
+            params=params,
+            content=content,
+            data=data,
+            files=files,
+            json=json,
+            timeout=timeout,
+        )
+
+    async def query(
+        self,
+        url: str | URL,
+        *,
+        headers: HeaderSource = None,
+        params: QueryParams = None,
+        content: AsyncRequestContent | None = None,
+        data: RequestData = None,
+        files: AsyncMultipartFiles | None = None,
+        json: Any = None,
+        timeout: Timeouts | None = None,
+    ) -> Response:
+        return await self.request(
+            QUERY,
             url,
             headers=headers,
             params=params,

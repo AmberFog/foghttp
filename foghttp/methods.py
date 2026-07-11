@@ -8,6 +8,7 @@ __all__ = (
     "PATCH",
     "POST",
     "PUT",
+    "QUERY",
     "TRACE",
 )
 
@@ -18,6 +19,7 @@ POST = "POST"
 PUT = "PUT"
 PATCH = "PATCH"
 DELETE = "DELETE"
+QUERY = "QUERY"
 OPTIONS = "OPTIONS"
 CONNECT = "CONNECT"
 TRACE = "TRACE"
@@ -29,6 +31,7 @@ HTTP_METHODS = (
     PUT,
     PATCH,
     DELETE,
+    QUERY,
     OPTIONS,
     CONNECT,
     TRACE,

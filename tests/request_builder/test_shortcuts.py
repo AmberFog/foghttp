@@ -2,13 +2,14 @@ from faker import Faker
 import pytest
 
 import foghttp
-from foghttp.methods import DELETE, GET, HEAD, PATCH, POST, PUT
+from foghttp.methods import DELETE, GET, HEAD, PATCH, POST, PUT, QUERY
 
 
 SHORTCUT_METHODS = [
     ("get", GET),
     ("head", HEAD),
     ("post", POST),
+    ("query", QUERY),
     ("put", PUT),
     ("patch", PATCH),
     ("delete", DELETE),

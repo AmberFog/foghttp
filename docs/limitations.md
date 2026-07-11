@@ -15,7 +15,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 
 - sync `Client`
 - async `AsyncClient`
-- `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`
+- `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, and RFC 10008 `QUERY`
 - `base_url` for reusable API clients and relative request paths
 - default client headers with per-request overrides
 - default client query params with per-request params appended after defaults
@@ -38,7 +38,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - response header bytes exposed as Latin-1 strings, including obs-text values
 - normalized `URL` with origin comparison and relative joins
 - redirect history
-- GET/HEAD/POST redirects
+- GET/HEAD/POST/QUERY redirects
 - HTTPS with default WebPKI roots, explicit custom CA certificate files, and
   custom-only CA trust through `TLSConfig(trust_webpki_roots=False)`
 - plain HTTP proxy routing and HTTPS proxy `CONNECT` through explicit `proxy=`

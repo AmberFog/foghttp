@@ -85,7 +85,7 @@ async with foghttp.AsyncClient() as client:
 ## What Works Today
 
 - sync `Client` and async `AsyncClient`
-- `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`
+- `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, and RFC 10008 `QUERY`
 - `base_url` for reusable API clients and relative request paths
 - default client headers and query params for reusable API clients
 - query params with repeated keys, JSON, form-urlencoded data, buffered
@@ -104,7 +104,7 @@ async with foghttp.AsyncClient() as client:
 - redacted repr/error surfaces for sensitive headers, URL credentials,
   token-like URL params, and buffered body bytes
 - normalized `URL` model with origin comparison and relative joins
-- GET/HEAD/POST redirects with final URL, history, and conservative replay policy
+- GET/HEAD/POST/QUERY redirects with final URL, history, and conservative replay policy
 - HTTP proxy routing and HTTPS proxy `CONNECT` tunnelling through explicit
   `proxy=` or `trust_env=True` when the proxy endpoint uses `http://`
 - HTTPS with default WebPKI roots, explicit custom CA certificates, and
