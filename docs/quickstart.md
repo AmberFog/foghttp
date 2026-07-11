@@ -5,7 +5,7 @@
 Development requires a Rust toolchain with `cargo` available in `PATH`.
 
 ```bash
-uv run --extra dev --with "maturin>=1.7,<2" maturin develop
+uv run --extra dev --with "maturin>=1.7,<2" maturin develop --locked --skip-install
 ```
 
 Runtime requirements:

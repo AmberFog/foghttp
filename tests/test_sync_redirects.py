@@ -66,6 +66,26 @@ def test_get_redirects_respect_limit(sync_http_server: str) -> None:
         client.get(f"{sync_http_server}/loop")
 
 
+def test_redirect_limit_error_does_not_expose_url_secrets(
+    sync_http_server: str,
+    faker: Faker,
+) -> None:
+    secret = faker.uuid4()
+    url = f"{sync_http_server}/redirect/{FOUND}?access_token={secret}"
+
+    with (
+        foghttp.Client(follow_redirects=True, max_redirects=0) as client,
+        pytest.raises(foghttp.RequestError) as exc_info,
+    ):
+        client.get(url)
+
+    message = str(exc_info.value)
+    assert "redirect limit exceeded" in message
+    assert sync_http_server in message
+    assert "access_token" not in message
+    assert secret not in message
+
+
 def test_post_redirects_rewrite_to_get(sync_http_server: str, faker: Faker) -> None:
     post_body = faker.sentence()
 

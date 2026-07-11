@@ -2,17 +2,16 @@ use super::request::{RequestState, TransportRequest};
 use crate::core::headers::HeaderPairs;
 use crate::core::method::{GET, POST};
 use crate::core::metrics::Metrics;
+use crate::core::policy::{ResponsePolicyAction, TransportRoute};
 use crate::core::response::BufferedBodyBudget;
 use crate::messages::{
     NON_REPLAYABLE_REQUEST_BODY_REDIRECT, PROXY_REDIRECT_POLICY_RECOMPUTE_UNSUPPORTED,
 };
-use crate::py::client::redirects::RedirectAction;
+use hyper::StatusCode;
 use pyo3::Python;
-use std::sync::Arc;
-use std::sync::Once;
+use std::sync::{Arc, Once};
 
 const INITIAL_URL: &str = "http://example.com/start";
-const REDIRECT_URL: &str = "http://example.com/next";
 const READ_TIMEOUT: f64 = 10.0;
 const TOTAL_TIMEOUT: f64 = 30.0;
 const WRITE_TIMEOUT: f64 = 2.0;
@@ -26,9 +25,10 @@ fn initialize_python() {
 fn method_preserving_redirect_rejects_non_replayable_body() {
     initialize_python();
     let mut state = request_state(Some(vec![1, 2, 3]), false);
+    let action = response_action(&state, StatusCode::TEMPORARY_REDIRECT, "/next");
 
     let error = state
-        .apply_redirect(redirect_action(POST, true))
+        .after_response_body(action, 0)
         .expect_err("non-replayable body should reject method-preserving redirect");
 
     assert!(error
@@ -39,27 +39,28 @@ fn method_preserving_redirect_rejects_non_replayable_body() {
 #[test]
 fn method_rewriting_redirect_drops_non_replayable_body() {
     let mut state = request_state(Some(vec![1, 2, 3]), false);
+    let action = response_action(&state, StatusCode::SEE_OTHER, "/next");
 
     state
-        .apply_redirect(redirect_action(GET, false))
+        .after_response_body(action, 0)
         .expect("method-rewriting redirect should drop non-replayable body");
 
     assert!(!state.has_request_body());
-    assert!(state.body_replayability.can_replay());
+    assert!(state.body_policy.can_replay());
 }
 
 #[test]
 fn empty_body_is_replayable_even_when_boundary_flag_is_false() {
     let state = request_state(None, false);
 
-    assert!(state.body_replayability.can_replay());
+    assert!(state.body_policy.can_replay());
 }
 
 #[test]
 fn empty_buffered_body_is_replayable_even_when_boundary_flag_is_false() {
     let state = request_state(Some(Vec::new()), false);
 
-    assert!(state.body_replayability.can_replay());
+    assert!(state.body_policy.can_replay());
 }
 
 #[test]
@@ -73,30 +74,19 @@ fn write_timeout_context_exists_only_for_non_empty_request_body() {
 
 #[test]
 fn request_info_excludes_transport_proxy_authorization() {
-    let mut state = RequestState::try_from(TransportRequest {
-        method: GET.to_owned(),
-        url: INITIAL_URL.to_owned(),
-        headers: HeaderPairs::new(),
-        body: None,
-        body_stream: None,
-        body_replayable: true,
-        use_proxy_transport: true,
-        proxy_policy: "explicit_proxy".to_owned(),
-        proxy_authorization: Some("Basic secret".to_owned()),
-        total_timeout: TOTAL_TIMEOUT,
-        read_timeout: READ_TIMEOUT,
-        write_timeout: WRITE_TIMEOUT,
-        max_response_body_size: None,
-        buffered_body_budget: BufferedBodyBudget::new(None, Arc::new(Metrics::default())),
-        follow_redirects: false,
-        max_redirects: 0,
-    })
-    .expect("valid request state");
+    let mut parts = transport_request(None, true);
+    parts.method = GET.to_owned();
+    parts.follow_redirects = false;
+    parts.max_redirects = 0;
+    parts.proxy_authorization = Some("Basic secret".to_owned());
+    parts.proxy_policy = "explicit_proxy".to_owned();
+    parts.use_proxy_transport = true;
+    let mut state = RequestState::try_from(parts).expect("valid request state");
 
     assert!(state.request_info().headers.is_empty());
     assert_eq!(
         state
-            .take_request_parts(true)
+            .take_request_parts(TransportRoute::Proxy)
             .expect("valid request parts")
             .proxy_authorization,
         Some("Basic secret".to_owned()),
@@ -105,42 +95,28 @@ fn request_info_excludes_transport_proxy_authorization() {
 
 #[test]
 fn explicit_proxy_tunnels_https_redirect_via_connect() {
-    let mut state = RequestState::try_from(TransportRequest {
-        method: GET.to_owned(),
-        url: INITIAL_URL.to_owned(),
-        headers: HeaderPairs::new(),
-        body: None,
-        body_stream: None,
-        body_replayable: true,
-        use_proxy_transport: true,
-        proxy_policy: "explicit_proxy".to_owned(),
-        proxy_authorization: Some("Basic secret".to_owned()),
-        total_timeout: TOTAL_TIMEOUT,
-        read_timeout: READ_TIMEOUT,
-        write_timeout: WRITE_TIMEOUT,
-        max_response_body_size: None,
-        buffered_body_budget: BufferedBodyBudget::new(None, Arc::new(Metrics::default())),
-        follow_redirects: true,
-        max_redirects: 20,
-    })
-    .expect("valid request state");
+    let mut parts = transport_request(None, true);
+    parts.method = GET.to_owned();
+    parts.proxy_authorization = Some("Basic secret".to_owned());
+    parts.proxy_policy = "explicit_proxy".to_owned();
+    parts.use_proxy_transport = true;
+    let mut state = RequestState::try_from(parts).expect("valid request state");
+    let action = response_action(&state, StatusCode::FOUND, "https://example.com/secure");
 
     state
-        .apply_redirect(RedirectAction {
-            method: GET.to_owned(),
-            preserve_body: false,
-            remove_sensitive_headers: true,
-            url: "https://example.com/secure".to_owned(),
-        })
+        .after_response_body(action, 0)
         .expect("explicit proxy should tunnel https redirects via CONNECT");
 
-    assert_eq!(state.url, "https://example.com/secure");
-    assert!(state
-        .use_proxy_transport_for_current_url()
-        .expect("explicit proxy routes https targets through the proxy"));
+    assert_eq!(state.url.as_str(), "https://example.com/secure");
     assert_eq!(
         state
-            .take_request_parts(true)
+            .transport_route()
+            .expect("explicit proxy routes https targets through the proxy"),
+        TransportRoute::Proxy
+    );
+    assert_eq!(
+        state
+            .take_request_parts(TransportRoute::Proxy)
             .expect("valid request parts")
             .proxy_authorization,
         None,
@@ -149,33 +125,16 @@ fn explicit_proxy_tunnels_https_redirect_via_connect() {
 
 #[test]
 fn environment_proxy_blocks_cross_origin_redirect_until_per_hop_decisions_exist() {
-    let mut state = RequestState::try_from(TransportRequest {
-        method: GET.to_owned(),
-        url: INITIAL_URL.to_owned(),
-        headers: HeaderPairs::new(),
-        body: None,
-        body_stream: None,
-        body_replayable: true,
-        use_proxy_transport: true,
-        proxy_policy: "environment_proxy".to_owned(),
-        proxy_authorization: None,
-        total_timeout: TOTAL_TIMEOUT,
-        read_timeout: READ_TIMEOUT,
-        write_timeout: WRITE_TIMEOUT,
-        max_response_body_size: None,
-        buffered_body_budget: BufferedBodyBudget::new(None, Arc::new(Metrics::default())),
-        follow_redirects: true,
-        max_redirects: 20,
-    })
-    .expect("valid request state");
+    initialize_python();
+    let mut parts = transport_request(None, true);
+    parts.method = GET.to_owned();
+    parts.proxy_policy = "environment_proxy".to_owned();
+    parts.use_proxy_transport = true;
+    let mut state = RequestState::try_from(parts).expect("valid request state");
+    let action = response_action(&state, StatusCode::FOUND, "http://api.example.com/next");
 
     let error = state
-        .apply_redirect(RedirectAction {
-            method: GET.to_owned(),
-            preserve_body: false,
-            remove_sensitive_headers: true,
-            url: "http://api.example.com/next".to_owned(),
-        })
+        .after_response_body(action, 0)
         .expect_err("cross-origin env proxy redirect should fail closed");
 
     assert!(error
@@ -184,7 +143,11 @@ fn environment_proxy_blocks_cross_origin_redirect_until_per_hop_decisions_exist(
 }
 
 fn request_state(body: Option<Vec<u8>>, body_replayable: bool) -> RequestState {
-    RequestState::try_from(TransportRequest {
+    RequestState::try_from(transport_request(body, body_replayable)).expect("valid request state")
+}
+
+fn transport_request(body: Option<Vec<u8>>, body_replayable: bool) -> TransportRequest {
+    TransportRequest {
         method: POST.to_owned(),
         url: INITIAL_URL.to_owned(),
         headers: HeaderPairs::new(),
@@ -201,15 +164,16 @@ fn request_state(body: Option<Vec<u8>>, body_replayable: bool) -> RequestState {
         buffered_body_budget: BufferedBodyBudget::new(None, Arc::new(Metrics::default())),
         follow_redirects: true,
         max_redirects: 20,
-    })
-    .expect("valid request state")
+    }
 }
 
-fn redirect_action(method: &str, preserve_body: bool) -> RedirectAction {
-    RedirectAction {
-        method: method.to_owned(),
-        preserve_body,
-        remove_sensitive_headers: false,
-        url: REDIRECT_URL.to_owned(),
-    }
+fn response_action(
+    state: &RequestState,
+    status: StatusCode,
+    location: &str,
+) -> ResponsePolicyAction {
+    let headers = vec![("location".to_owned(), location.to_owned())];
+    state
+        .on_response_headers(status.as_u16(), &headers)
+        .expect("redirect action")
 }

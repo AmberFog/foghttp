@@ -4,12 +4,11 @@ use super::errors::transport_error;
 use super::request::{RequestState, TransportRequest};
 use super::response::raw_response;
 use crate::core::client::{with_connection_limit_timeout, with_request_write_timeout};
+use crate::core::headers::response_headers;
 use crate::core::metrics::Metrics;
 use crate::core::request::build_request;
-use crate::errors::FogHttpError;
-use crate::messages::{redirect_limit_exceeded, REQUEST_TOTAL_TIMEOUT};
+use crate::messages::REQUEST_TOTAL_TIMEOUT;
 use crate::py::client::acquire::AcquireGate;
-use crate::py::client::redirects::{redirect_decision, RedirectDecision};
 use crate::py::client::timeout_diagnostics::{
     remaining_duration, timeout_error, TimeoutContext, TimeoutPhase,
 };
@@ -30,9 +29,9 @@ pub async fn send_request(
     let mut history = Vec::new();
 
     loop {
-        let mut raw = {
+        let (mut raw, response_action) = {
             let redirect_hop = history.len();
-            let origin = state.origin()?;
+            let origin = state.origin();
             let acquire_timeout_context = TimeoutContext::new(
                 TimeoutPhase::PoolAcquire,
                 started,
@@ -47,8 +46,8 @@ pub async fn send_request(
             .await
             .map_err(|_| timeout_error(&acquire_timeout_context, REQUEST_TOTAL_TIMEOUT))??;
             let origin_metrics = permit.origin_metrics();
+            let route = state.transport_route()?;
             let request_info = state.request_info();
-            let use_proxy_transport = state.use_proxy_transport_for_current_url()?;
 
             let response_headers_timeout_context = TimeoutContext::new(
                 TimeoutPhase::ResponseHeaders,
@@ -60,10 +59,10 @@ pub async fn send_request(
             let write_timeout_context = state.write_timeout_context(&origin, redirect_hop);
             let connection_limit_context =
                 RequestState::connection_limit_context(&origin, redirect_hop, pool_timeout)?;
-            let request = build_request(state.take_request_parts(use_proxy_transport)?)?;
+            let request = build_request(state.take_request_parts(route)?)?;
             let use_write_timeout_transport = write_timeout_context.is_some();
             debug_assert_eq!(use_write_timeout_transport, state.has_request_body());
-            let client = clients.select(use_proxy_transport, use_write_timeout_transport)?;
+            let client = clients.select(route, use_write_timeout_transport)?;
             let response = tokio::time::timeout(
                 remaining_duration("Timeouts.total", &response_headers_timeout_context)?,
                 with_connection_limit_timeout(
@@ -75,9 +74,12 @@ pub async fn send_request(
             .map_err(|_| timeout_error(&response_headers_timeout_context, REQUEST_TOTAL_TIMEOUT))?
             .map_err(|err| transport_error(&err))?;
 
-            raw_response(
+            let headers = response_headers(response.headers());
+            let response_action = state.on_response_headers(response.status().as_u16(), &headers);
+            let raw = raw_response(
                 response,
                 request_info,
+                headers,
                 RawResponseContext {
                     started,
                     total_timeout: state.total_timeout,
@@ -90,32 +92,15 @@ pub async fn send_request(
                     redirect_hop,
                 },
             )
-            .await?
+            .await?;
+            (raw, response_action)
         };
 
-        let response_url = raw.request.url.clone();
-        let redirect = if state.follow_redirects {
-            redirect_decision(&state.method, &response_url, raw.status_code, &raw.headers)
-        } else {
-            None
-        };
-
-        let Some(redirect) = redirect else {
+        let Some(action) = response_action else {
             raw.history = history;
             return Ok(raw);
         };
-        if history.len() >= state.max_redirects {
-            return Err(FogHttpError::new_err(redirect_limit_exceeded(
-                state.max_redirects,
-                &response_url,
-            )));
-        }
-        match redirect {
-            RedirectDecision::Block(reason) => return Err(FogHttpError::new_err(reason)),
-            RedirectDecision::Follow(action) => {
-                history.push(raw);
-                state.apply_redirect(action)?;
-            }
-        }
+        state.after_response_body(action, history.len())?;
+        history.push(raw);
     }
 }

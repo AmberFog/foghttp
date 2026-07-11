@@ -1,4 +1,4 @@
-pub fn header_value<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
+pub(super) fn header_value<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
     headers
         .iter()
         .rev()

@@ -1,6 +1,7 @@
 use crate::core::client::{
     connection_acquire_timeout_from_error, request_write_timeout_from_error,
 };
+use crate::core::policy::PolicyError;
 use crate::errors::{transport_error_message, FogHttpError};
 use crate::messages::CONNECTION_ACQUIRE_TIMEOUT;
 use crate::py::client::timeout_diagnostics::{
@@ -8,6 +9,10 @@ use crate::py::client::timeout_diagnostics::{
 };
 use pyo3::prelude::*;
 use std::error::Error;
+
+pub(super) fn policy_error(error: &PolicyError) -> PyErr {
+    FogHttpError::new_err(error.to_string())
+}
 
 pub(super) fn transport_error(error: &(dyn Error + 'static)) -> PyErr {
     if let Some(timeout) = request_write_timeout_from_error(error) {
