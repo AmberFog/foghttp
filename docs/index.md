@@ -14,7 +14,7 @@ features:
     details: "Use Client in scripts and workers, or AsyncClient for high-concurrency asyncio workloads."
 
   - title: "Focused MVP"
-    details: "FogHTTP is intentionally small today: buffered responses with gzip/deflate/br decoding, sync and async bytes/text/line streaming, JSON, form-urlencoded data, streaming and multipart uploads, base URL clients, default headers and params, redirects, prepared requests, async cancellation, global and per-origin request limits, and request metadata."
+    details: "FogHTTP is intentionally small today: buffered responses with gzip/deflate/br decoding, sync and async bytes/text/line streaming, JSON, form-urlencoded data, streaming and multipart uploads, base URL clients, redirects, async cancellation, bounded request queues, explicit HTTP/1.1 connection caps, and transport diagnostics."
 ---
 
 # FogHTTP Documentation
@@ -44,7 +44,8 @@ FogHTTP is designed around a few engineering priorities:
 
 - one API shape for sync scripts, workers, and asyncio services
 - Rust-backed HTTP/1.1 transport with explicit lifecycle and runtime-mode control
-- shared Tokio runtime by default, with opt-in dedicated runtime worker tuning
+- lazy process-wide shared Tokio runtime by default, opt-in dedicated runtime
+  tuning, and fail-closed client ownership across `fork()`
 - buffered JSON, form, and bytes workflows that are simple to reason about
 - transparent `gzip`, `deflate`, and `br` decoding for buffered responses
 - sync and async bytes/text/line response streaming with explicit
@@ -54,8 +55,9 @@ FogHTTP is designed around a few engineering priorities:
 - redirect history and final request metadata for debugging
 - HTTPS with default WebPKI roots, explicit custom CA certificates, and
   custom-only CA trust
-- global and per-origin request backpressure with per-origin acquire pressure
-  snapshots and stuck request diagnostics for operational visibility
+- bounded global and per-origin request slots with a bounded FIFO pending queue
+- opt-in global/per-origin HTTP/1.1 connection caps with separate acquire
+  pressure, idle lifecycle snapshots, and stuck request diagnostics
 - opt-in typed telemetry event hooks with redacted request/response lifecycle
   events
 - versioned telemetry snapshots that separate alert-oriented stats from
@@ -121,9 +123,10 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - documented lazy transport creation, graceful sync close, async request
   cancellation, and explicit client lifecycle
 - documented buffered timeout model with pool and total deadline behavior
-- global active request limits, per-origin active request limits, pending
-  acquire limits, per-origin acquire pressure snapshots, and stuck request
-  diagnostics
+- global/per-origin active request limits, a bounded FIFO pending acquire queue,
+  per-origin pressure snapshots, and stuck request diagnostics
+- opt-in global/per-origin HTTP/1.1 connection caps with separate connection
+  acquire and idle lifecycle telemetry
 - opt-in typed telemetry event hooks for request, redirect, response headers,
   response body, and request completion lifecycle
 - versioned telemetry snapshot metadata for `stats()`, `dump_transport_state()`,

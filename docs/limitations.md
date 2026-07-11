@@ -46,8 +46,10 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
   `SSL_CERT_FILE`; see
   [Proxy and trust_env](./proxies.md)
 - async request cancellation that aborts the in-flight Rust request
-- global active request limit, per-origin active request limit, pending acquire
-  limit, request stats, and stuck request pool diagnostics
+- global/per-origin active request limits, a bounded FIFO pending acquire queue,
+  request-slot pressure stats, and stuck request pool diagnostics
+- opt-in global/per-origin HTTP/1.1 physical connection caps with separate
+  connection-acquire pressure and idle lifecycle diagnostics
 - opt-in typed telemetry event hooks for request, redirect, response headers,
   response body, and request completion lifecycle
 - opt-in async lifecycle debug snapshots for active async request handles,

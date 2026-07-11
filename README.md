@@ -26,13 +26,14 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - sync and asyncio clients with the same request model
 - explicit `close()`/`aclose()` lifecycle for Rust transport resources
 - graceful sync `close()` for in-flight requests and cancellable async requests
-- global/per-origin request backpressure, per-origin acquire pressure stats, and
-  stuck request diagnostics
+- bounded global/per-origin request backpressure, FIFO pending-acquire limits,
+  explicit HTTP/1.1 connection caps, and per-origin pressure diagnostics
 - typed telemetry event hooks with redacted request/response lifecycle events
 - versioned telemetry snapshots that separate alert-oriented stats from
   diagnostic dump APIs
 - opt-in async lifecycle debug snapshots for staging and tests
-- shared Tokio runtime by default, with opt-in dedicated runtime worker tuning
+- lazy process-wide shared Tokio runtime by default, opt-in dedicated runtime
+  tuning, and fail-closed client ownership across `fork()`
 - focused HTTP surface for JSON, form, streaming upload, and multipart API
   workloads in internal services, workers, and benchmarks
 
@@ -117,8 +118,9 @@ async with foghttp.AsyncClient() as client:
   custom-only CA trust
 - graceful sync `close()` that waits for in-flight sync requests
 - async request cancellation that aborts the in-flight Rust request
-- global and per-origin request backpressure, per-origin acquire pressure
-  snapshots, stuck request diagnostics, and HTTP/1.1 over HTTP/HTTPS
+- bounded global and per-origin request slots with a bounded FIFO pending queue
+- opt-in global/per-origin HTTP/1.1 connection caps with separate connection
+  acquire pressure and idle lifecycle diagnostics
 - opt-in typed telemetry event hooks for request, redirect, response headers,
   response body, and request completion lifecycle
 - versioned telemetry snapshot metadata for `stats()`, `dump_transport_state()`,
@@ -160,7 +162,8 @@ available through `proxy=` and `trust_env=True` when the proxy endpoint itself
 uses `http://`.
 Cookies, auth helpers, HTTP/2, automatic `Accept-Encoding` negotiation,
 streaming decompression, and per-request connect timeout reconfiguration are
-planned for later versions.
+planned for later versions. Physical connection caps currently apply to the
+HTTP/1.1 connector path; HTTP/2 will require separate stream-level limits.
 Response body read timeout is available for buffered and streaming response
 bodies; request body write timeout is available for buffered and streaming
 request bodies. Socket lifecycle telemetry is available for the current HTTP/1
