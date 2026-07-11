@@ -67,6 +67,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 
 | Feature | Current behavior |
 |---|---|
+| CPython wheel ABI | Published wheels use `cp311-abi3`; the release pipeline validates the same native wheel on GIL-enabled CPython 3.11 through 3.14 for each natively runnable OS/architecture target |
+| Free-threaded CPython | Not supported by the current `abi3` wheels; PyO3's separate `abi3t` stable ABI starts at Python 3.15 and requires its own adoption and validation decision |
 | Streaming response decompression | Not available; buffered responses support transparent decoding |
 | Multipart uploads | Available through `files=` for bytes-like parts, binary file-like objects, direct byte streams, and byte-stream factories |
 | `files=` | Available; can be combined with mapping or repeated-pair `data=` form fields, but not with raw `data=`, `content=`, or `json=` |

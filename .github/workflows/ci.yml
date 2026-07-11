@@ -61,6 +61,68 @@ jobs:
       - name: Run Rust tests
         run: cargo test --all-targets
 
+  abi3-wheel:
+    name: Build and audit abi3 wheel
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          target: x86_64
+          args: --release --locked --out dist --interpreter python3.11
+          manylinux: "2014"
+          sccache: true
+
+      - name: Install abi3audit
+        run: python -m pip install --disable-pip-version-check "abi3audit==0.0.26"
+
+      - name: Audit stable ABI compatibility
+        run: python -m abi3audit --strict --summary dist/*.whl
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: abi3-wheel-linux-x86_64
+          path: dist/*.whl
+          if-no-files-found: error
+
+  abi3-wheel-smoke:
+    name: Smoke abi3 wheel (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    needs: abi3-wheel
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Download wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: abi3-wheel-linux-x86_64
+          path: dist
+
+      - name: Smoke test wheel install
+        run: python scripts/install_wheel_smoke.py --dist-dir dist
+
   tests:
     name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -91,7 +153,7 @@ jobs:
           cache-dependency-glob: uv.lock
 
       - name: Install editable package
-        run: uv run --extra dev --with "maturin>=1.7,<2" maturin develop
+        run: uv run --extra dev --with "maturin>=1.7,<2" maturin develop --locked
 
       - name: Run tests
         if: matrix.python-version != '3.14'
