@@ -1,4 +1,5 @@
 mod constants;
+mod shared;
 mod workers;
 
 #[cfg(test)]
@@ -7,12 +8,13 @@ mod tests;
 use crate::errors::FogHttpError;
 use crate::messages::{RUNTIME_INVALID, RUNTIME_WORKERS_SHARED_UNSUPPORTED};
 use pyo3::prelude::*;
-use std::sync::OnceLock;
+use shared::shared_runtime;
+use std::sync::Arc;
 use tokio::runtime::{Builder, Runtime};
 use workers::runtime_workers;
 
 pub enum ClientRuntime {
-    Shared(&'static Runtime),
+    Shared(Arc<Runtime>),
     Dedicated(Runtime),
 }
 
@@ -22,10 +24,9 @@ pub enum RuntimeMode {
     Dedicated,
 }
 
-static SHARED_RUNTIME: OnceLock<Runtime> = OnceLock::new();
-
 impl ClientRuntime {
     pub fn build(
+        py: Python<'_>,
         max_active_requests: usize,
         mode: RuntimeMode,
         explicit_workers: Option<usize>,
@@ -35,7 +36,7 @@ impl ClientRuntime {
                 if explicit_workers.is_some() {
                     return Err(FogHttpError::new_err(RUNTIME_WORKERS_SHARED_UNSUPPORTED));
                 }
-                shared_runtime().map(Self::Shared)
+                shared_runtime(py).map(Self::Shared)
             }
             RuntimeMode::Dedicated => {
                 build_dedicated_runtime(max_active_requests, explicit_workers).map(Self::Dedicated)
@@ -55,6 +56,10 @@ impl ClientRuntime {
             runtime.shutdown_background();
         }
     }
+
+    pub fn abandon_without_shutdown(self) {
+        std::mem::forget(self);
+    }
 }
 
 pub fn parse_runtime_mode(value: &str) -> PyResult<RuntimeMode> {
@@ -73,20 +78,7 @@ fn build_dedicated_runtime(
     build_multi_thread_runtime(worker_threads)
 }
 
-fn shared_runtime() -> PyResult<&'static Runtime> {
-    if let Some(runtime) = SHARED_RUNTIME.get() {
-        return Ok(runtime);
-    }
-
-    let worker_threads = shared_runtime_workers();
-    let runtime = build_multi_thread_runtime(worker_threads)?;
-    let _result = SHARED_RUNTIME.set(runtime);
-    SHARED_RUNTIME
-        .get()
-        .ok_or_else(|| FogHttpError::new_err("shared runtime initialization failed"))
-}
-
-fn build_multi_thread_runtime(worker_threads: usize) -> PyResult<Runtime> {
+pub(super) fn build_multi_thread_runtime(worker_threads: usize) -> PyResult<Runtime> {
     Builder::new_multi_thread()
         .worker_threads(worker_threads)
         .enable_all()
@@ -94,7 +86,7 @@ fn build_multi_thread_runtime(worker_threads: usize) -> PyResult<Runtime> {
         .map_err(|err| FogHttpError::new_err(err.to_string()))
 }
 
-fn shared_runtime_workers() -> usize {
+pub(super) fn shared_runtime_workers() -> usize {
     let parallelism = std::thread::available_parallelism().ok().map(usize::from);
     shared_runtime_workers_from_parallelism(parallelism)
 }

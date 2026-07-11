@@ -4,6 +4,7 @@ mod body;
 mod future;
 mod lifecycle;
 mod options;
+mod process;
 mod redirects;
 mod runtime;
 mod streams;
@@ -28,6 +29,7 @@ use crate::py::client::future::PythonFutureSetters;
 use crate::py::client::options::{
     validate_numeric_client_options, validate_request_timeouts, NumericClientOptions,
 };
+use crate::py::client::process::{client_used_after_fork, current_process_id, ProcessId};
 use crate::py::client::runtime::{parse_runtime_mode, ClientRuntime};
 use crate::py::client::streams::StreamRegistry;
 use crate::py::client::transport::{
@@ -57,6 +59,7 @@ pub struct RawClient {
     follow_redirects: bool,
     max_redirects: usize,
     proxy_authorization: Option<String>,
+    process_id: ProcessId,
 }
 
 #[pymethods]
@@ -195,7 +198,7 @@ impl RawClient {
             max_pending_requests,
             Arc::clone(&metrics),
         );
-        let runtime = ClientRuntime::build(max_active_requests, runtime_mode, runtime_workers)?;
+        let runtime = ClientRuntime::build(py, max_active_requests, runtime_mode, runtime_workers)?;
         let future_setters = PythonFutureSetters::new(py)?;
 
         Ok(Self {
@@ -216,6 +219,7 @@ impl RawClient {
             follow_redirects,
             max_redirects,
             proxy_authorization: http_proxy_authorization,
+            process_id: current_process_id(),
         })
     }
 
@@ -251,10 +255,11 @@ impl RawClient {
         write_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<RawResponse> {
+        self.ensure_current_process()?;
         validate_request_timeouts(pool_timeout, read_timeout, write_timeout, total_timeout)?;
 
-        let clients = self.clients()?.clone();
-        let runtime = self.runtime()?;
+        let clients = self.clients_unchecked()?.clone();
+        let runtime = self.runtime_unchecked()?;
         let acquire_gate = self.acquire_gate.clone();
         let metrics = Arc::clone(&self.metrics);
         let max_response_body_size = self.max_response_body_size;
@@ -330,10 +335,11 @@ impl RawClient {
         write_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<Py<PyAny>> {
+        self.ensure_current_process()?;
         validate_request_timeouts(pool_timeout, read_timeout, write_timeout, total_timeout)?;
 
-        let clients = self.clients()?.clone();
-        let runtime = self.runtime()?;
+        let clients = self.clients_unchecked()?.clone();
+        let runtime = self.runtime_unchecked()?;
         let max_response_body_size = self.max_response_body_size;
         let buffered_body_budget = self.buffered_body_budget.clone();
         let follow_redirects = self.follow_redirects;
@@ -403,10 +409,11 @@ impl RawClient {
         write_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<RawStreamResponse> {
+        self.ensure_current_process()?;
         validate_request_timeouts(pool_timeout, read_timeout, write_timeout, total_timeout)?;
 
-        let clients = self.clients()?.clone();
-        let runtime = self.runtime()?;
+        let clients = self.clients_unchecked()?.clone();
+        let runtime = self.runtime_unchecked()?;
         let acquire_gate = self.acquire_gate.clone();
         let metrics = Arc::clone(&self.metrics);
         let active_streams = self.active_streams.clone();
@@ -493,10 +500,11 @@ impl RawClient {
         write_timeout: f64,
         total_timeout: f64,
     ) -> PyResult<Py<PyAny>> {
+        self.ensure_current_process()?;
         validate_request_timeouts(pool_timeout, read_timeout, write_timeout, total_timeout)?;
 
-        let clients = self.clients()?.clone();
-        let runtime = self.runtime()?;
+        let clients = self.clients_unchecked()?.clone();
+        let runtime = self.runtime_unchecked()?;
         let max_response_body_size = self.max_response_body_size;
         let buffered_body_budget = self.buffered_body_budget.clone();
         let follow_redirects = self.follow_redirects;
@@ -535,16 +543,19 @@ impl RawClient {
         )
     }
 
-    fn stats(&self) -> RawStats {
-        self.metrics.stats_snapshot().into()
+    fn stats(&self) -> PyResult<RawStats> {
+        self.ensure_current_process()?;
+        Ok(self.metrics.stats_snapshot().into())
     }
 
-    fn transport_state(&self) -> RawTransportState {
-        self.metrics.transport_state_snapshot().into()
+    fn transport_state(&self) -> PyResult<RawTransportState> {
+        self.ensure_current_process()?;
+        Ok(self.metrics.transport_state_snapshot().into())
     }
 
-    fn pool_diagnostics(&self) -> RawPoolDiagnostics {
-        self.acquire_gate.diagnostics().into()
+    fn pool_diagnostics(&self) -> PyResult<RawPoolDiagnostics> {
+        self.ensure_current_process()?;
+        Ok(self.acquire_gate.diagnostics().into())
     }
 
     fn close(&mut self) {
@@ -553,26 +564,47 @@ impl RawClient {
 }
 
 impl RawClient {
-    fn clients(&self) -> PyResult<&TransportClients> {
+    fn clients_unchecked(&self) -> PyResult<&TransportClients> {
         self.clients
             .as_ref()
             .ok_or_else(|| FogHttpError::new_err("client is closed"))
     }
 
-    fn runtime(&self) -> PyResult<&tokio::runtime::Runtime> {
+    fn runtime_unchecked(&self) -> PyResult<&tokio::runtime::Runtime> {
         self.runtime
             .as_ref()
             .map(ClientRuntime::runtime)
             .ok_or_else(|| FogHttpError::new_err("client runtime is closed"))
     }
 
-    fn close_resources(&mut self) {
-        self.active_async_requests.abort_all();
-        self.active_streams.abort_all();
-        self.clients.take();
-        if let Some(runtime) = self.runtime.take() {
-            runtime.shutdown_background();
+    fn ensure_current_process(&self) -> PyResult<()> {
+        let current_process_id = current_process_id();
+        if self.process_id == current_process_id {
+            return Ok(());
         }
+        Err(client_used_after_fork(self.process_id, current_process_id))
+    }
+
+    fn close_resources(&mut self) {
+        let current_process = self.process_id == current_process_id();
+        if current_process {
+            self.active_async_requests.abort_all();
+            self.active_streams.abort_all();
+            self.clients.take();
+            if let Some(runtime) = self.runtime.take() {
+                runtime.shutdown_background();
+            }
+            return;
+        }
+
+        // Inherited transport state can reference threads that vanished at fork.
+        // The child copy is reclaimed by the OS when the child exits.
+        std::mem::forget(self.clients.take());
+        if let Some(runtime) = self.runtime.take() {
+            runtime.abandon_without_shutdown();
+        }
+        std::mem::forget(std::mem::take(&mut self.active_async_requests));
+        std::mem::forget(std::mem::take(&mut self.active_streams));
     }
 }
 

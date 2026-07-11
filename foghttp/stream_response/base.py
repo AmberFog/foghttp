@@ -3,6 +3,7 @@ __all__ = ("StreamResponseBase",)
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from foghttp._client.process import current_process_id, forked_process_error
 from foghttp._client.telemetry import TelemetryRequestContext
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 from foghttp._redaction import redact_url
@@ -42,6 +43,7 @@ class StreamResponseBase(
     _telemetry_finished: bool = field(default=False, init=False, repr=False)
     _lifecycle_debug_finish: Callable[[], None] | None = field(default=None, init=False, repr=False)
     _lifecycle_debug_finished: bool = field(default=False, init=False, repr=False)
+    _process_id: int = field(default_factory=current_process_id, init=False, repr=False)
 
     def __repr__(self) -> str:
         return (
@@ -74,6 +76,11 @@ class StreamResponseBase(
     ) -> None:
         if self._closed:
             return
+        if self._process_id != current_process_id():
+            self._closed = True
+            self._lifecycle_debug_finish = None
+            self._telemetry_context = None
+            return
         self._closed = True
         self._raw.close()
         self._finish_lifecycle_debug()
@@ -87,8 +94,19 @@ class StreamResponseBase(
         return self.encoding if encoding is None else encoding
 
     def _start_body_iteration(self) -> None:
+        self._ensure_current_process()
         if self._body_started:
             raise LifecycleError(STREAM_RESPONSE_BODY_CONSUMED)
         if self._closed:
             raise LifecycleError(STREAM_RESPONSE_CLOSED)
         self._body_started = True
+
+    def _ensure_current_process(self) -> None:
+        process_id = current_process_id()
+        if self._process_id == process_id:
+            return
+        raise forked_process_error(
+            resource="stream response",
+            created_process_id=self._process_id,
+            current_process_id=process_id,
+        )

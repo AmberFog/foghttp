@@ -11,9 +11,15 @@ import foghttp
 from foghttp._client.raw import requests as raw_requests
 from foghttp.status_codes.server_error import INTERNAL_SERVER_ERROR
 from foghttp.status_codes.success import OK
+from tests.client_streaming.server import SyncStreamingServer, start_sync_streaming_server
 
 from .constants import BLOCKING_RESPONSE_PATH, OK_BODY
-from .helpers import BlockingSyncHTTPServer, CloseTrackingRawClient, RawClientFactory
+from .helpers import (
+    BlockingSyncHTTPServer,
+    CloseTrackingRawClient,
+    LifecycleErrorRawClient,
+    RawClientFactory,
+)
 
 
 @pytest.fixture
@@ -24,6 +30,18 @@ def raw_client() -> CloseTrackingRawClient:
 @pytest.fixture
 def raw_client_factory(raw_client: CloseTrackingRawClient) -> RawClientFactory:
     return RawClientFactory(raw_client)
+
+
+@pytest.fixture
+def lifecycle_error_raw_client() -> LifecycleErrorRawClient:
+    return LifecycleErrorRawClient()
+
+
+@pytest.fixture
+def lifecycle_error_raw_client_factory(
+    lifecycle_error_raw_client: LifecycleErrorRawClient,
+) -> RawClientFactory:
+    return RawClientFactory(lifecycle_error_raw_client)
 
 
 @pytest.fixture
@@ -77,6 +95,12 @@ def sync_blocking_http_server() -> Iterator[BlockingSyncHTTPServer]:
 
 
 @pytest.fixture
+def sync_fork_streaming_server() -> Iterator[SyncStreamingServer]:
+    with start_sync_streaming_server() as server:
+        yield server
+
+
+@pytest.fixture
 def sync_client_factory(
     monkeypatch: pytest.MonkeyPatch,
     raw_client_factory: RawClientFactory,
@@ -93,6 +117,26 @@ def async_client_factory(
 ) -> type[foghttp.AsyncClient]:
     client_core_module = importlib.import_module("foghttp._client.core")
     monkeypatch.setattr(client_core_module, "create_raw_client", raw_client_factory.create)
+    return foghttp.AsyncClient
+
+
+@pytest.fixture
+def lifecycle_error_sync_client_factory(
+    monkeypatch: pytest.MonkeyPatch,
+    lifecycle_error_raw_client_factory: RawClientFactory,
+) -> type[foghttp.Client]:
+    client_core_module = importlib.import_module("foghttp._client.core")
+    monkeypatch.setattr(client_core_module, "create_raw_client", lifecycle_error_raw_client_factory.create)
+    return foghttp.Client
+
+
+@pytest.fixture
+def lifecycle_error_async_client_factory(
+    monkeypatch: pytest.MonkeyPatch,
+    lifecycle_error_raw_client_factory: RawClientFactory,
+) -> type[foghttp.AsyncClient]:
+    client_core_module = importlib.import_module("foghttp._client.core")
+    monkeypatch.setattr(client_core_module, "create_raw_client", lifecycle_error_raw_client_factory.create)
     return foghttp.AsyncClient
 
 

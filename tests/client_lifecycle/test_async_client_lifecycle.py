@@ -5,6 +5,8 @@ import pytest
 
 import foghttp
 from foghttp._telemetry import TELEMETRY_SNAPSHOT_SCHEMA_VERSION
+from foghttp.methods import GET
+from tests.client_telemetry.models import FailingTelemetrySink
 
 from .constants import SHORT_LIVED_CLIENT_COUNT
 from .helpers import CloseTrackingRawClient, RawClientFactory
@@ -56,6 +58,68 @@ async def test_async_lifecycle_debug_snapshot_without_debug_does_not_create_raw_
         pool_acquire_timeouts=0,
     )
     assert raw_client_factory.calls == 0
+
+
+async def test_async_lifecycle_debug_maps_raw_lifecycle_errors(
+    lifecycle_error_async_client_factory: type[foghttp.AsyncClient],
+    async_noop_transport: None,
+    faker: Faker,
+) -> None:
+    client = lifecycle_error_async_client_factory(
+        lifecycle_debug=foghttp.AsyncLifecycleDebugConfig(),
+    )
+    try:
+        await client.get(faker.url())
+
+        with pytest.raises(foghttp.LifecycleError, match="raw lifecycle failure"):
+            client.dump_lifecycle_debug()
+    finally:
+        await client.aclose()
+
+
+async def test_async_client_rejects_stale_process_owner_without_closing_raw_parent_copy(
+    async_client_factory: type[foghttp.AsyncClient],
+    async_noop_transport: None,
+    raw_client: CloseTrackingRawClient,
+    faker: Faker,
+) -> None:
+    client = async_client_factory()
+    await client.get(faker.url())
+    client._process_id = -1  # noqa: SLF001 - simulate inherited ownership deterministically.
+
+    try:
+        with pytest.raises(foghttp.LifecycleError, match="cannot be used in forked process"):
+            client.stats()
+    finally:
+        await client.aclose()
+
+    assert raw_client.close_calls == 0
+
+
+async def test_async_stream_context_rechecks_process_owner_on_enter(faker: Faker) -> None:
+    client = foghttp.AsyncClient()
+    stream_context = client.stream(GET, faker.url())
+    client._process_id = -1  # noqa: SLF001 - simulate ownership changing after context creation.
+
+    try:
+        with pytest.raises(foghttp.LifecycleError, match="cannot be used in forked process"):
+            await stream_context.__aenter__()
+    finally:
+        await client.aclose()
+
+
+async def test_async_send_checks_process_owner_before_telemetry(faker: Faker) -> None:
+    client = foghttp.AsyncClient(
+        telemetry=foghttp.TelemetryConfig(sink=FailingTelemetrySink()),
+    )
+    request = client.build_request(GET, faker.url())
+    client._process_id = -1  # noqa: SLF001 - simulate inherited ownership deterministically.
+
+    try:
+        with pytest.raises(foghttp.LifecycleError, match="cannot be used in forked process"):
+            await client.send(request)
+    finally:
+        await client.aclose()
 
 
 async def test_async_closed_client_rejects_stats(

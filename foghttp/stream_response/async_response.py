@@ -23,6 +23,7 @@ class AsyncStreamResponse(StreamResponseBase):
     __slots__ = ()
 
     async def __aenter__(self) -> "AsyncStreamResponse":
+        self._ensure_current_process()
         return self
 
     async def __aexit__(

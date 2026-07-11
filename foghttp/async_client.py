@@ -3,6 +3,8 @@ __all__ = ("AsyncClient",)
 from types import TracebackType
 from typing import Any, Literal
 
+import foghttp._foghttp as _foghttp  # noqa: PLR0402
+
 from ._client.config import ClientConfig
 from ._client.constants import DEFAULT_MAX_REDIRECTS
 from ._client.core import ClientCore
@@ -11,6 +13,7 @@ from ._client.lifecycle_debug import (
     async_lifecycle_debug_leak_message,
 )
 from ._client.options import ClientOptions
+from ._client.raw.errors import raise_public_raw_error
 from ._client.raw.lifecycle import close_raw_client
 from ._client.request_builder.header_policy import validate_safe_request_headers
 from ._client.stats import stats_from_raw
@@ -107,6 +110,7 @@ class AsyncClient(ClientCore):
         self._close(raise_strict_lifecycle_errors=True)
 
     def dump_lifecycle_debug(self) -> AsyncLifecycleDebugSnapshot:
+        self._ensure_current_process()
         with self._client_lock:
             return self._lifecycle_debug_snapshot_locked()
 
@@ -142,6 +146,7 @@ class AsyncClient(ClientCore):
         return await self.send(request, timeout=timeout)
 
     async def send(self, request: Request, *, timeout: Timeouts | None = None) -> Response:
+        self._ensure_open()
         telemetry_context = self._telemetry.request_context(request, mode=TelemetryRequestMode.BUFFERED)
         telemetry_started = False
         lifecycle_debug_token: LifecycleDebugRequestToken = None
@@ -321,6 +326,10 @@ class AsyncClient(ClientCore):
         return RawAsyncTransport(self._raw_client, proxy_resolver=self._config.proxy_resolver)
 
     def _close(self, *, raise_strict_lifecycle_errors: bool) -> None:
+        if not self._is_current_process():
+            self._close_after_fork()
+            return
+
         strict_snapshot = None
         raw_client = None
         with self._client_lock:
@@ -334,13 +343,16 @@ class AsyncClient(ClientCore):
         if raise_strict_lifecycle_errors and strict_snapshot is not None and strict_snapshot.has_leaks:
             raise LifecycleError(async_lifecycle_debug_leak_message(strict_snapshot))
 
+    def _close_after_fork(self) -> None:
+        self._closed = True
+        self._client = None
+
     def _begin_async_request_lifecycle_debug(
         self,
         request: Request,
         *,
         mode: AsyncLifecycleDebugRequestMode,
     ) -> LifecycleDebugRequestToken:
-        self._ensure_open()
         return self._lifecycle_debug.start_request(request, mode=mode)
 
     async def _send_stream(
@@ -349,6 +361,7 @@ class AsyncClient(ClientCore):
         *,
         timeout: Timeouts | None = None,
     ) -> AsyncStreamResponse:
+        self._ensure_open()
         telemetry_context = self._telemetry.request_context(request, mode=TelemetryRequestMode.STREAM)
         telemetry_started = False
         lifecycle_debug_bound = False
@@ -385,7 +398,11 @@ class AsyncClient(ClientCore):
 
     def _lifecycle_debug_snapshot_locked(self) -> AsyncLifecycleDebugSnapshot:
         raw_client = self._client
-        stats = None if raw_client is None else stats_from_raw(raw=raw_client.stats())
+        try:
+            raw_stats = None if raw_client is None else raw_client.stats()
+        except _foghttp.FogHttpError as exc:
+            raise_public_raw_error(exc)
+        stats = None if raw_stats is None else stats_from_raw(raw=raw_stats)
         return self._lifecycle_debug.snapshot(
             closed=self._closed,
             stats=stats,

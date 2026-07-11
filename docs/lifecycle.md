@@ -133,6 +133,21 @@ configuration for the shared runtime.
 
 Clients and runtime resources must not be shared across `fork()`. In pre-fork
 servers or process pools, create FogHTTP clients after the worker process starts.
+If a client created in a parent process is used for transport or diagnostics in
+a forked child, FogHTTP raises `LifecycleError` instead of reusing the parent's
+transport, sockets, or runtime state. Process ownership is recorded when the
+Python client is constructed, so the rule also applies before lazy Rust
+transport initialization. Pure `build_request()` calls remain transport-free.
+
+An open streaming response is process-bound as well. A child process cannot
+continue reading a response opened by its parent. Closing an inherited client or
+stream response is safe, but only abandons the child copy of parent-owned
+resources; it does not make that object reusable in the child.
+
+The process-wide shared runtime is also pid-aware. If a parent process has
+already initialized the default shared runtime, a freshly created child-process
+client initializes and uses a child-process runtime instead of inheriting the
+parent's Tokio worker state.
 
 ## Manual Close
 

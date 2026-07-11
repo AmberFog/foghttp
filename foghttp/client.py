@@ -100,6 +100,10 @@ class Client(ClientCore):
         self.close()
 
     def close(self) -> None:
+        if not self._is_current_process():
+            self._close_after_fork()
+            return
+
         raw_client = None
         with self._lifecycle_condition:
             if self._closed:
@@ -152,6 +156,7 @@ class Client(ClientCore):
         return self.send(request, timeout=timeout)
 
     def send(self, request: Request, *, timeout: Timeouts | None = None) -> Response:
+        self._ensure_open()
         sync_send_token = object()
         telemetry_context = self._telemetry.request_context(request, mode=TelemetryRequestMode.BUFFERED)
         telemetry_started = False
@@ -328,6 +333,7 @@ class Client(ClientCore):
         )
 
     def _send_stream(self, request: Request, *, timeout: Timeouts | None = None) -> StreamResponse:
+        self._ensure_open()
         sync_send_token = object()
         telemetry_context = self._telemetry.request_context(request, mode=TelemetryRequestMode.STREAM)
         telemetry_started = False
@@ -351,10 +357,11 @@ class Client(ClientCore):
 
     def _begin_sync_send(self, token: object) -> None:
         with self._lifecycle_condition:
-            self._ensure_open()
+            self._ensure_not_closed()
             self._active_sync_send_tokens.add(token)
 
     def _sync_send_raw_client(self) -> "_foghttp.RawClient":
+        self._ensure_current_process()
         with self._lifecycle_condition:
             return self._raw_client_locked()
 
@@ -369,6 +376,12 @@ class Client(ClientCore):
         self._active_sync_send_tokens.discard(token)
         if not self._active_sync_send_tokens:
             self._lifecycle_condition.notify_all()
+
+    def _close_after_fork(self) -> None:
+        self._closed = True
+        self._close_complete = True
+        self._active_sync_send_tokens.clear()
+        self._client = None
 
 
 def _bind_stream_response_telemetry(

@@ -1,8 +1,10 @@
 __all__ = ("ClientCore",)
 
 import threading
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 import warnings
+
+import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
 from .._telemetry import SYNTHETIC_TELEMETRY_SNAPSHOT_SEQUENCE, TELEMETRY_SNAPSHOT_SCHEMA_VERSION
 from .._upload_body import AsyncRequestContent, SyncRequestContent
@@ -19,6 +21,8 @@ from ..types import AsyncMultipartFiles, QueryParams, RequestData, SyncMultipart
 from ..url import URL
 from .config import ClientConfig
 from .lifecycle_debug import AsyncLifecycleDebugTracker
+from .process import current_process_id, forked_process_error
+from .raw.errors import raise_public_raw_error
 from .raw.lifecycle import create_raw_client
 from .request_builder.builder import RequestBuilder
 from .request_builder.defaults import DEFAULT_REQUEST_BUILD_DEFAULTS
@@ -27,10 +31,6 @@ from .request_builder.models import RequestBuildOptions
 from .stats import stats_from_raw
 from .telemetry import TelemetryDispatcher
 from .transport_snapshot_mapping import empty_transport_state, transport_state_from_raw
-
-
-if TYPE_CHECKING:
-    from foghttp import _foghttp
 
 
 _DEFAULT_REQUEST_BUILDER = RequestBuilder(
@@ -42,6 +42,7 @@ class ClientCore:
     def __init__(self, *, config: ClientConfig) -> None:
         self._config = config
         self._closed = False
+        self._process_id = current_process_id()
         self._client_lock = threading.Lock()
         self._client: _foghttp.RawClient | None = None
         self._telemetry = TelemetryDispatcher(config.telemetry)
@@ -55,8 +56,11 @@ class ClientCore:
         )
 
     def __del__(self) -> None:
-        if getattr(self, "_closed", True) is False:
-            warnings.warn(self._unclosed_client_message(), UnclosedClientError, stacklevel=2)
+        if getattr(self, "_closed", True):
+            return
+        if getattr(self, "_process_id", None) != current_process_id():
+            return
+        warnings.warn(self._unclosed_client_message(), UnclosedClientError, stacklevel=2)
 
     def build_request(
         self,
@@ -88,7 +92,10 @@ class ClientCore:
         with self._client_lock:
             self._ensure_open()
             raw_client = self._client
-            raw_stats = None if raw_client is None else raw_client.stats()
+            try:
+                raw_stats = None if raw_client is None else raw_client.stats()
+            except _foghttp.FogHttpError as exc:
+                raise_public_raw_error(exc)
         if raw_stats is None:
             return TransportStats()
         return stats_from_raw(raw=raw_stats)
@@ -98,7 +105,10 @@ class ClientCore:
         with self._client_lock:
             self._ensure_open()
             raw_client = self._client
-            raw_state = None if raw_client is None else raw_client.transport_state()
+            try:
+                raw_state = None if raw_client is None else raw_client.transport_state()
+            except _foghttp.FogHttpError as exc:
+                raise_public_raw_error(exc)
 
         if raw_state is None:
             return empty_transport_state()
@@ -109,15 +119,35 @@ class ClientCore:
         with self._client_lock:
             self._ensure_open()
             raw_client = self._client
-            raw_diagnostics = None if raw_client is None else raw_client.pool_diagnostics()
+            try:
+                raw_diagnostics = None if raw_client is None else raw_client.pool_diagnostics()
+            except _foghttp.FogHttpError as exc:
+                raise_public_raw_error(exc)
 
         if raw_diagnostics is None:
             return _empty_pool_diagnostics(self._config.limits)
         return _pool_diagnostics_state(raw_diagnostics)
 
     def _ensure_open(self) -> None:
+        self._ensure_not_closed()
+        self._ensure_current_process()
+
+    def _ensure_not_closed(self) -> None:
         if self._closed:
             raise ClientClosedError(CLIENT_CLOSED)
+
+    def _ensure_current_process(self) -> None:
+        process_id = current_process_id()
+        if self._process_id == process_id:
+            return
+        raise forked_process_error(
+            resource="client",
+            created_process_id=self._process_id,
+            current_process_id=process_id,
+        )
+
+    def _is_current_process(self) -> bool:
+        return self._process_id == current_process_id()
 
     def _raw_client(self) -> "_foghttp.RawClient":
         self._ensure_open()
