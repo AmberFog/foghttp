@@ -43,6 +43,9 @@ class SyncHTTPHandler(BaseHTTPRequestHandler):
     def do_PUT(self) -> None:
         self._write_response()
 
+    def do_QUERY(self) -> None:
+        self._write_response()
+
     def do_PATCH(self) -> None:
         self._write_response()
 

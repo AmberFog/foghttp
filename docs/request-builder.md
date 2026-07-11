@@ -27,7 +27,7 @@ the current FogHTTP API. The same flow is available as a runnable example in
 | cookies/session jar | Planned | `cookies=True` is rejected today. |
 | proxy / `trust_env` | Supported | HTTP proxy routing and HTTPS `CONNECT` tunnelling through client-level `proxy=` or `trust_env=True` when the proxy endpoint uses `http://`. |
 | `timeout` | Partly supported | Per-request `pool`, `read`, `write`, and `total` timeouts are supported. Per-request `connect` does not reconfigure the connector. |
-| `follow_redirects` | Supported | Client-level setting. GET/HEAD/POST redirects use conservative security rules. |
+| `follow_redirects` | Supported | Client-level setting. GET/HEAD/POST/QUERY redirects use conservative security rules. |
 | prepared request | Supported | Use `build_request()` and `send()`. Building a request does not create transport state. |
 
 `get()` and `head()` are bodyless convenience helpers: they expose `headers`,
@@ -35,6 +35,40 @@ the current FogHTTP API. The same flow is available as a runnable example in
 If application code intentionally needs an unusual GET or HEAD request body,
 use the explicit `request("GET", ..., content=...)` or
 `request("HEAD", ..., content=...)` form.
+
+## HTTP QUERY
+
+FogHTTP supports the safe, idempotent `QUERY` method defined by
+[RFC 10008](https://www.rfc-editor.org/rfc/rfc10008.html). Use `query(...)`,
+`request(QUERY, ...)`, `stream(QUERY, ...)`, `build_request(QUERY, ...)`, or a
+prepared request with `send()`. The sync and async `query()` helpers expose the
+same body-capable parameters as other body-capable method helpers.
+
+```python
+import foghttp
+
+
+with foghttp.Client() as client:
+    response = client.query(
+        "https://api.example.com/catalog",
+        json={"filter": {"available": True}},
+    )
+    response.raise_for_status()
+```
+
+The request content and its media type define a QUERY. `json=` and encoded
+mapping/pair `data=` add their normal semantic `Content-Type`. For opaque
+`content=` and raw `data=`, set `Content-Type` explicitly; FogHTTP does not
+sniff the body or invent a media type. `Accept-Query` response headers are
+available through the normal case-insensitive `response.headers` interface;
+FogHTTP does not yet parse that Structured Field value.
+
+RFC 10008 classifies QUERY as safe and idempotent. FogHTTP records the method
+name in request metadata and telemetry, but does not currently provide an
+automatic retry policy or an HTTP cache. RFC 10008 permits QUERY responses to
+be cached, but a QUERY cache key must incorporate the request content and
+related metadata, including `Content-Type`; a URL-only GET-style cache key is
+not valid for QUERY.
 
 ## Merge Order
 
@@ -218,8 +252,8 @@ Rust client, or consume pool/request slots.
 | iterator `data=` | `TypeError` |
 
 Body parameters are part of `request()`, `stream()`, and body-capable method
-helpers such as `post()`, `put()`, `patch()`, and `delete()`. The `get()` and
-`head()` helpers intentionally do not expose body parameters.
+helpers such as `post()`, `query()`, `put()`, `patch()`, and `delete()`. The
+`get()` and `head()` helpers intentionally do not expose body parameters.
 
 `Content-Length` and `Transfer-Encoding` are transport-managed framing headers
 and cannot be set manually. `Content-Type` is semantic and can be set by the

@@ -1,4 +1,5 @@
 import foghttp
+import foghttp.methods
 import foghttp.models
 import foghttp.stats
 
@@ -42,3 +43,10 @@ def test_compatibility_modules_reexport_models() -> None:
     assert foghttp.models.Timeouts is foghttp.Timeouts
     assert foghttp.models.URL is foghttp.URL
     assert foghttp.stats.TransportStats is foghttp.TransportStats
+
+
+def test_query_method_is_exported() -> None:
+    assert foghttp.methods.QUERY == "QUERY"
+    assert foghttp.methods.QUERY in foghttp.methods.HTTP_METHODS
+    assert foghttp.methods.HTTP_METHODS.count(foghttp.methods.QUERY) == 1
+    assert "QUERY" in foghttp.methods.__all__

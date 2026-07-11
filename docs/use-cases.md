@@ -154,8 +154,9 @@ Streaming decompression is planned separately.
 
 ### Redirect-Aware APIs
 
-FogHTTP can follow GET, HEAD, and POST redirects, preserve redirect history, and
-apply conservative cross-origin header stripping and body replay protection.
+FogHTTP can follow GET, HEAD, POST, and RFC 10008 QUERY redirects, preserve
+redirect history, and apply conservative cross-origin header stripping and
+body replay protection.
 
 ```python
 import foghttp

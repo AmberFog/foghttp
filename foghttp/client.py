@@ -22,7 +22,7 @@ from ._client.transport import RawSyncTransport, SyncTransport
 from ._upload_body import SyncRequestContent
 from .headers import HeaderSource
 from .limits import Limits
-from .methods import DELETE, GET, HEAD, PATCH, POST, PUT
+from .methods import DELETE, GET, HEAD, PATCH, POST, PUT, QUERY
 from .request import Request
 from .response import Response
 from .stream_response import StreamResponse
@@ -250,6 +250,30 @@ class Client(ClientCore):
     ) -> Response:
         return self.request(
             POST,
+            url,
+            headers=headers,
+            params=params,
+            content=content,
+            data=data,
+            files=files,
+            json=json,
+            timeout=timeout,
+        )
+
+    def query(
+        self,
+        url: str | URL,
+        *,
+        headers: HeaderSource = None,
+        params: QueryParams = None,
+        content: SyncRequestContent | None = None,
+        data: RequestData = None,
+        files: SyncMultipartFiles | None = None,
+        json: Any = None,
+        timeout: Timeouts | None = None,
+    ) -> Response:
+        return self.request(
+            QUERY,
             url,
             headers=headers,
             params=params,
