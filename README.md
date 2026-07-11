@@ -123,6 +123,8 @@ async with foghttp.AsyncClient() as client:
   acquire pressure and idle lifecycle diagnostics
 - opt-in typed telemetry event hooks for request, redirect, response headers,
   response body, and request completion lifecycle
+- opt-in typed transport policy hooks for lightweight request admission and
+  response-head checks without default-path Python callbacks
 - versioned telemetry snapshot metadata for `stats()`, `dump_transport_state()`,
   and `dump_pool_diagnostics()`
 - opt-in async lifecycle debug mode for active request snapshots, strict leak
@@ -141,6 +143,7 @@ async with foghttp.AsyncClient() as client:
 - [Packaging and Python compatibility](https://github.com/AmberFog/foghttp/blob/main/docs/packaging.md)
 - [Timeout model](https://github.com/AmberFog/foghttp/blob/main/docs/timeouts.md)
 - [Upload typing contracts](https://github.com/AmberFog/foghttp/blob/main/docs/upload-types.md)
+- [Transport policy hooks](https://github.com/AmberFog/foghttp/blob/main/docs/policy-hooks.md)
 - [Telemetry contract](https://github.com/AmberFog/foghttp/blob/main/docs/telemetry.md)
 - [Response streaming](https://github.com/AmberFog/foghttp/blob/main/docs/streaming.md)
 - [Proxy and trust_env](https://github.com/AmberFog/foghttp/blob/main/docs/proxies.md)

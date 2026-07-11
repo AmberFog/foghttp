@@ -25,6 +25,7 @@ RAW_CLIENT_KEYWORD_ONLY_PARAMETERS = (
     "http_proxy_authorization",
     "https_proxy_url",
     "https_proxy_authorization",
+    "policy_hooks",
 )
 
 RAW_REQUEST_KEYWORD_ONLY_PARAMETERS = (

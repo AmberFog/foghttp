@@ -1,4 +1,5 @@
 import math
+from types import SimpleNamespace
 
 from faker import Faker
 import pytest
@@ -127,6 +128,20 @@ def test_raw_client_accepts_unbounded_connection_limit_without_panic() -> None:
     raw_client.close()
 
 
+def test_raw_client_rejects_non_callable_policy_hook_without_panic() -> None:
+    policy_hooks = SimpleNamespace(
+        before_send=object(),
+        on_response_headers=None,
+        after_response_body=None,
+    )
+
+    with pytest.raises(
+        TypeError,
+        match="before_send transport policy hook must be callable or None",
+    ):
+        _foghttp.RawClient(**_raw_client_options(policy_hooks=policy_hooks))
+
+
 def test_raw_client_sync_request_rejects_positional_arguments(faker: Faker) -> None:
     raw_client = _raw_client()
     try:
@@ -240,6 +255,7 @@ def _raw_client_options(**overrides: object) -> dict[str, object]:
         "http_proxy_authorization": None,
         "https_proxy_url": None,
         "https_proxy_authorization": None,
+        "policy_hooks": None,
     }
     options.update(overrides)
     return options

@@ -47,9 +47,11 @@ buffered requests:
 ## Internal Request/Response Policy Seam
 
 `src/core/policy/` is an internal, unstable seam for built-in transport
-policies. It is not a public middleware API and does not expose Python hooks.
-The default request path performs no Python callback, dynamic dispatch, or
-policy-list allocation.
+policies. It is not a public middleware API. The optional
+`TransportPolicyHooks` bridge observes typed copies at selected stage edges;
+it does not expose the core pipeline or transport adapter. The default request
+path performs no Python callback, dynamic dispatch, policy-list allocation, or
+hook-snapshot construction.
 
 Policy stages run in this order:
 
@@ -74,6 +76,13 @@ userinfo, path, query parameters, or fragments.
 Error and timeout policy stages are intentionally absent until the retry work
 defines a Rust-owned failure taxonomy. Core policy code must not accept or
 return `PyErr` merely to reserve a future hook.
+
+The PyO3 bridge lives outside `src/core/policy/`. It invokes only callbacks
+resolved when `RawClient` is created, rejects non-`None` callback returns, and
+passes immutable Python snapshots without transport resources. Built-in
+validation runs before a Python hook can veto a redirect mutation. See
+[Transport policy hooks](./policy-hooks.md) for the public execution and
+threading contract.
 
 ## Review Checklist
 

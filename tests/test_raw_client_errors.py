@@ -92,6 +92,7 @@ def _default_client_config() -> ClientConfig:
             tls=None,
             runtime="dedicated",
             runtime_workers=1,
+            policy_hooks=None,
             telemetry=None,
             lifecycle_debug=None,
         ),

@@ -1,8 +1,8 @@
-use super::request::{RequestState, TransportRequest};
+use super::request::{PendingResponsePolicyAction, RequestState, TransportRequest};
 use crate::core::headers::HeaderPairs;
 use crate::core::method::{GET, POST};
 use crate::core::metrics::Metrics;
-use crate::core::policy::{ResponsePolicyAction, TransportRoute};
+use crate::core::policy::TransportRoute;
 use crate::core::response::BufferedBodyBudget;
 use crate::messages::{
     NON_REPLAYABLE_REQUEST_BODY_REDIRECT, PROXY_REDIRECT_POLICY_RECOMPUTE_UNSUPPORTED,
@@ -110,7 +110,7 @@ fn explicit_proxy_tunnels_https_redirect_via_connect() {
     assert_eq!(state.url.as_str(), "https://example.com/secure");
     assert_eq!(
         state
-            .transport_route()
+            .transport_route(1)
             .expect("explicit proxy routes https targets through the proxy"),
         TransportRoute::Proxy
     );
@@ -164,6 +164,7 @@ fn transport_request(body: Option<Vec<u8>>, body_replayable: bool) -> TransportR
         buffered_body_budget: BufferedBodyBudget::new(None, Arc::new(Metrics::default())),
         follow_redirects: true,
         max_redirects: 20,
+        policy_hooks: None,
     }
 }
 
@@ -171,9 +172,10 @@ fn response_action(
     state: &RequestState,
     status: StatusCode,
     location: &str,
-) -> ResponsePolicyAction {
+) -> PendingResponsePolicyAction {
     let headers = vec![("location".to_owned(), location.to_owned())];
     state
-        .on_response_headers(status.as_u16(), &headers)
+        .on_response_headers(status.as_u16(), &headers, 0)
+        .expect("valid response policy evaluation")
         .expect("redirect action")
 }

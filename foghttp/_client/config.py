@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from ..lifecycle_debug import AsyncLifecycleDebugConfig
 from ..limits import Limits
+from ..policy import TransportPolicyHooks
 from ..telemetry import TelemetryConfig
 from ..timeouts import Timeouts
 from ..tls import TLSConfig
@@ -37,6 +38,7 @@ class ClientConfig:
     https_proxy: ProxyUrl | None
     runtime: RuntimeMode
     runtime_workers: int | None
+    policy_hooks: TransportPolicyHooks | None
     telemetry: TelemetryConfig | None
     lifecycle_debug: AsyncLifecycleDebugConfig | None
     request_defaults: RequestBuildDefaults
@@ -69,6 +71,9 @@ class ClientConfig:
             https_proxy=proxy_resolver.routing_proxy("https"),
             runtime=runtime_mode(options.runtime, options.runtime_workers),
             runtime_workers=options.runtime_workers,
+            policy_hooks=(
+                options.policy_hooks if options.policy_hooks is not None and options.policy_hooks.enabled else None
+            ),
             telemetry=options.telemetry,
             lifecycle_debug=options.lifecycle_debug,
             request_defaults=(

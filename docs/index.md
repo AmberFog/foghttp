@@ -60,6 +60,8 @@ FogHTTP is designed around a few engineering priorities:
   pressure, idle lifecycle snapshots, and stuck request diagnostics
 - opt-in typed telemetry event hooks with redacted request/response lifecycle
   events
+- opt-in typed transport policy hooks for lightweight request admission and
+  response-head checks, with Rust-owned redirect safety
 - versioned telemetry snapshots that separate alert-oriented stats from
   diagnostic dump APIs
 - opt-in async lifecycle debug snapshots for tests, staging, and incident
@@ -76,6 +78,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - [Packaging and Python compatibility](./packaging.md)
 - [Timeout model](./timeouts.md)
 - [Upload typing contracts](./upload-types.md)
+- [Transport policy hooks](./policy-hooks.md)
 - [Telemetry contract](./telemetry.md)
 - [Response streaming](./streaming.md)
 - [TLS trust](./tls.md)
@@ -129,6 +132,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
   acquire and idle lifecycle telemetry
 - opt-in typed telemetry event hooks for request, redirect, response headers,
   response body, and request completion lifecycle
+- opt-in typed transport policy hooks with immutable request/response views and
+  no default-path Python callback
 - versioned telemetry snapshot metadata for `stats()`, `dump_transport_state()`,
   and `dump_pool_diagnostics()`
 - opt-in async lifecycle debug mode for active request snapshots and strict

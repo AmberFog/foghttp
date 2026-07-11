@@ -10,6 +10,7 @@ from ..messages import (
     HTTP_VERSION_UNSUPPORTED,
     MAX_REDIRECTS_INVALID,
 )
+from ..policy import TransportPolicyHooks
 from ..telemetry import TelemetryConfig
 from ..timeouts import Timeouts
 from ..tls import TLSConfig
@@ -34,6 +35,7 @@ class ClientOptions:
     tls: TLSConfig | None
     runtime: str | None
     runtime_workers: int | None
+    policy_hooks: TransportPolicyHooks | None
     telemetry: TelemetryConfig | None
     lifecycle_debug: AsyncLifecycleDebugConfig | None
 

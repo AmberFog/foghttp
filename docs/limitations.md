@@ -52,6 +52,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
   connection-acquire pressure and idle lifecycle diagnostics
 - opt-in typed telemetry event hooks for request, redirect, response headers,
   response body, and request completion lifecycle
+- opt-in synchronous transport policy hooks with immutable request/response
+  snapshots and Rust-owned redirect safety
 - opt-in async lifecycle debug snapshots for active async request handles,
   pending transport pressure, strict test checks, and unclosed-client context
 - default per-response and aggregate buffered response memory limits
@@ -95,6 +97,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | separate read/write timeout semantics | `Timeouts.read` is implemented as a buffered and streamed response body progress timeout; `Timeouts.write` is implemented for buffered request body write progress and streaming upload chunk/write progress |
 | socket lifecycle telemetry granularity | `TransportStats` and `dump_transport_state()["origins"]` expose opened, open-failed, closed, reused, aborted, idle-timeout eviction, active, and idle tracked connection counters for the current HTTP/1 path; dedicated failed-reuse and close-reason taxonomy are not exposed yet because current connector hooks do not provide a stable reason signal |
 | telemetry hook granularity | `TelemetryConfig` currently dispatches Python-level request/response lifecycle events; lower-level Rust pool acquire and connection lifecycle event delivery is planned before Prometheus/OpenTelemetry exporters |
+| transport policy hook execution | `TransportPolicyHooks` callbacks are synchronous, inline, non-reentrant, and may run on Rust transport worker threads; `after_response_body` observes only redirect bodies consumed internally, not the final response body returned to the caller |
 | diagnostic snapshot transactionality | `stats()`, `dump_transport_state()`, and `dump_pool_diagnostics()` include `schema_version` and a monotonic `snapshot_sequence`, but the `dump_*` APIs remain diagnostic snapshots rather than lock-protected SLA transactions; use `stats()` for alert-oriented low-cardinality metrics |
 
 ## Practical Guidance

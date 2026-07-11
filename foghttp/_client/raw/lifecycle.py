@@ -39,6 +39,7 @@ def create_raw_client(
             http_proxy_authorization=basic_proxy_authorization(config.http_proxy),
             https_proxy_url=None if config.https_proxy is None else config.https_proxy.endpoint_url,
             https_proxy_authorization=basic_proxy_authorization(config.https_proxy),
+            policy_hooks=config.policy_hooks,
         )
     except _foghttp.FogHttpError as exc:
         raise ValueError(str(exc)) from exc

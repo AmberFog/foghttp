@@ -21,6 +21,7 @@ from foghttp._client.runtime.constants import RUNTIME_WORKERS_ENV
 from foghttp._request_body import RequestBody
 from foghttp.limits import Limits
 from foghttp.methods import GET
+from foghttp.policy import TransportPolicyHooks, TransportPolicyRequest
 from foghttp.timeouts import Timeouts
 from foghttp.tls import TLSConfig
 
@@ -47,6 +48,7 @@ RAW_CLIENT_INIT_ARGUMENTS = (
     "http_proxy_authorization",
     "https_proxy_url",
     "https_proxy_authorization",
+    "policy_hooks",
 )
 
 RAW_REQUEST_ARGUMENTS = (
@@ -76,6 +78,7 @@ def _client_config(
     trust_env: bool = False,
     proxy: str | None = None,
     tls: TLSConfig | None = None,
+    policy_hooks: TransportPolicyHooks | None = None,
 ) -> ClientConfig:
     return ClientConfig.from_options(
         ClientOptions(
@@ -93,6 +96,7 @@ def _client_config(
             tls=tls,
             runtime=runtime,
             runtime_workers=runtime_workers,
+            policy_hooks=policy_hooks,
             telemetry=None,
             lifecycle_debug=None,
         ),
@@ -178,6 +182,7 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
         "http_proxy_authorization": None,
         "https_proxy_url": None,
         "https_proxy_authorization": None,
+        "policy_hooks": None,
     }
 
 
@@ -206,6 +211,31 @@ def test_create_raw_client_passes_proxy_endpoint_and_auth_to_rust_client(
     assert captured_options["http_proxy_authorization"] == expected_auth
     assert captured_options["https_proxy_url"] == "http://proxy.example:8080"
     assert captured_options["https_proxy_authorization"] == expected_auth
+
+
+def test_client_config_normalizes_empty_policy_hooks() -> None:
+    assert _client_config(policy_hooks=TransportPolicyHooks()).policy_hooks is None
+
+
+def test_create_raw_client_passes_enabled_policy_hooks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_options: dict[str, object] = {}
+
+    class RawClientProbe:
+        def __init__(self, **kwargs: object) -> None:
+            captured_options.update(kwargs)
+
+    def before_send(request: TransportPolicyRequest) -> None:
+        del request
+
+    hooks = TransportPolicyHooks(before_send=before_send)
+    monkeypatch.setattr(_foghttp, "RawClient", RawClientProbe)
+
+    raw_client = create_raw_client(config=_client_config(policy_hooks=hooks))
+
+    assert isinstance(raw_client, RawClientProbe)
+    assert captured_options["policy_hooks"] is hooks
 
 
 def test_create_raw_client_passes_tls_trust_boundary_to_rust_client(

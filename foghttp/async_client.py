@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
+from ._client import transport
 from ._client.config import ClientConfig
 from ._client.constants import DEFAULT_MAX_REDIRECTS
 from ._client.core import ClientCore
@@ -25,7 +26,6 @@ from ._client.telemetry import (
     emit_stream_response_headers_telemetry,
     start_request_telemetry,
 )
-from ._client.transport import AsyncTransport, RawAsyncTransport
 from ._upload_body import AsyncRequestContent
 from .errors import LifecycleError
 from .headers import HeaderSource
@@ -36,6 +36,7 @@ from .lifecycle_debug import (
 )
 from .limits import Limits
 from .methods import DELETE, GET, HEAD, PATCH, POST, PUT, QUERY
+from .policy import TransportPolicyHooks
 from .request import Request
 from .response import Response
 from .stream_response import AsyncStreamResponse
@@ -48,7 +49,7 @@ from .url import URL
 
 
 class AsyncClient(ClientCore):
-    _transport: AsyncTransport
+    _transport: transport.AsyncTransport
 
     def __init__(
         self,
@@ -67,6 +68,7 @@ class AsyncClient(ClientCore):
         tls: TLSConfig | None = None,
         runtime: Literal["shared", "dedicated"] | None = None,
         runtime_workers: int | None = None,
+        policy_hooks: TransportPolicyHooks | None = None,
         telemetry: TelemetryConfig | None = None,
         lifecycle_debug: AsyncLifecycleDebugConfig | None = None,
     ) -> None:
@@ -87,6 +89,7 @@ class AsyncClient(ClientCore):
                     tls=tls,
                     runtime=runtime,
                     runtime_workers=runtime_workers,
+                    policy_hooks=policy_hooks,
                     telemetry=telemetry,
                     lifecycle_debug=lifecycle_debug,
                 ),
@@ -346,8 +349,11 @@ class AsyncClient(ClientCore):
             timeout=timeout,
         )
 
-    def _create_transport(self) -> AsyncTransport:
-        return RawAsyncTransport(self._raw_client, proxy_resolver=self._config.proxy_resolver)
+    def _create_transport(self) -> transport.AsyncTransport:
+        return transport.RawAsyncTransport(
+            self._raw_client,
+            proxy_resolver=self._config.proxy_resolver,
+        )
 
     def _close(self, *, raise_strict_lifecycle_errors: bool) -> None:
         if not self._is_current_process():
