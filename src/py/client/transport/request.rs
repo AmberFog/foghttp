@@ -10,9 +10,11 @@ use crate::core::request::{RequestBodyParts, RequestParts};
 use crate::core::response::BufferedBodyBudget;
 use crate::core::url::HttpUrl;
 use crate::errors::FogHttpError;
+use crate::py::client::policy_hooks::PythonPolicyHooks;
 use crate::py::client::upload_body::RawUploadBody;
 use crate::py::response::RawRequestInfo;
 use pyo3::prelude::*;
+use std::sync::Arc;
 use std::time::Duration;
 
 pub struct TransportRequest {
@@ -32,6 +34,7 @@ pub struct TransportRequest {
     pub buffered_body_budget: BufferedBodyBudget,
     pub follow_redirects: bool,
     pub max_redirects: usize,
+    pub policy_hooks: Option<Arc<PythonPolicyHooks>>,
 }
 
 pub(super) struct RequestState {
@@ -41,6 +44,7 @@ pub(super) struct RequestState {
     pub(super) body: RequestBodyState,
     pub(super) body_policy: RequestBodyPolicy,
     policy: PolicyPipeline,
+    policy_hooks: Option<Arc<PythonPolicyHooks>>,
     pub(super) proxy_authorization: Option<String>,
     pub(super) total_timeout: f64,
     pub(super) read_timeout: f64,
@@ -115,34 +119,66 @@ impl RequestState {
         ))
     }
 
-    pub(super) fn transport_route(&self) -> PyResult<TransportRoute> {
-        self.policy
-            .before_send(self.policy_request())
-            .map_err(|error| policy_error(&error))
+    pub(super) fn transport_route(&self, redirect_hop: usize) -> PyResult<TransportRoute> {
+        let request = self.policy_request();
+        let route = self
+            .policy
+            .before_send(request)
+            .map_err(|error| policy_error(&error))?;
+        if let Some(hooks) = self.policy_hooks.as_ref() {
+            hooks.before_send(request, redirect_hop)?;
+        }
+        Ok(route)
     }
 
     pub(super) fn on_response_headers(
         &self,
         status_code: u16,
         headers: &HeaderPairs,
-    ) -> Option<ResponsePolicyAction> {
-        self.policy.on_response_headers(
-            self.policy_request(),
-            ResponseHead::new(status_code, headers),
-        )
+        redirect_hop: usize,
+    ) -> PyResult<Option<PendingResponsePolicyAction>> {
+        let request = self.policy_request();
+        let response = ResponseHead::new(status_code, headers);
+        let action = self.policy.on_response_headers(request, response);
+        if let Some(hooks) = self.policy_hooks.as_ref() {
+            hooks.on_response_headers(request, response, redirect_hop)?;
+        }
+        Ok(action.map(|action| PendingResponsePolicyAction {
+            action,
+            response: self.response_body_snapshot(status_code, headers),
+        }))
     }
 
     pub(super) fn after_response_body(
         &mut self,
-        action: ResponsePolicyAction,
+        pending: PendingResponsePolicyAction,
         completed_redirects: usize,
     ) -> PyResult<()> {
+        let PendingResponsePolicyAction { action, response } = pending;
+        let request = self.policy_request();
         let mutation = self
             .policy
-            .after_response_body(self.policy_request(), action, completed_redirects)
+            .after_response_body(request, action, completed_redirects)
             .map_err(|error| policy_error(&error))?;
+        if let (Some(hooks), Some(response)) = (self.policy_hooks.as_ref(), response.as_ref()) {
+            hooks.after_response_body(request, response.as_view(), completed_redirects)?;
+        }
         self.apply_policy_mutation(mutation);
         Ok(())
+    }
+
+    fn response_body_snapshot(
+        &self,
+        status_code: u16,
+        headers: &HeaderPairs,
+    ) -> Option<ResponseSnapshot> {
+        self.policy_hooks
+            .as_ref()
+            .filter(|hooks| hooks.observes_response_body())
+            .map(|_| ResponseSnapshot {
+                headers: headers.clone(),
+                status_code,
+            })
     }
 
     fn policy_request(&self) -> PolicyRequest<'_> {
@@ -194,6 +230,7 @@ impl RequestState {
             body,
             body_policy,
             policy,
+            policy_hooks: parts.policy_hooks,
             proxy_authorization: parts.proxy_authorization,
             total_timeout: parts.total_timeout,
             read_timeout: parts.read_timeout,
@@ -202,6 +239,22 @@ impl RequestState {
             max_response_body_size: parts.max_response_body_size,
             buffered_body_budget: parts.buffered_body_budget,
         })
+    }
+}
+
+pub(super) struct PendingResponsePolicyAction {
+    action: ResponsePolicyAction,
+    response: Option<ResponseSnapshot>,
+}
+
+struct ResponseSnapshot {
+    headers: HeaderPairs,
+    status_code: u16,
+}
+
+impl ResponseSnapshot {
+    fn as_view(&self) -> ResponseHead<'_> {
+        ResponseHead::new(self.status_code, &self.headers)
     }
 }
 

@@ -3,6 +3,7 @@ mod async_requests;
 mod future;
 mod lifecycle;
 mod options;
+mod policy_hooks;
 mod process;
 mod runtime;
 mod streams;
@@ -27,6 +28,7 @@ use crate::py::client::future::PythonFutureSetters;
 use crate::py::client::options::{
     validate_numeric_client_options, validate_request_timeouts, NumericClientOptions,
 };
+use crate::py::client::policy_hooks::PythonPolicyHooks;
 use crate::py::client::process::{client_used_after_fork, current_process_id, ProcessId};
 use crate::py::client::runtime::{parse_runtime_mode, ClientRuntime};
 use crate::py::client::streams::StreamRegistry;
@@ -57,6 +59,7 @@ pub struct RawClient {
     follow_redirects: bool,
     max_redirects: usize,
     proxy_authorization: Option<String>,
+    policy_hooks: Option<Arc<PythonPolicyHooks>>,
     process_id: ProcessId,
 }
 
@@ -85,13 +88,15 @@ impl RawClient {
         http_proxy_url,
         http_proxy_authorization,
         https_proxy_url,
-        https_proxy_authorization
+        https_proxy_authorization,
+        policy_hooks
     ))]
     #[allow(
         clippy::fn_params_excessive_bools,
         clippy::too_many_arguments,
+        clippy::too_many_lines,
         clippy::similar_names,
-        reason = "PyO3 constructor mirrors Python client options before transport grouping."
+        reason = "PyO3 constructor mirrors Python client options and resource construction."
     )]
     fn new(
         py: Python<'_>,
@@ -116,6 +121,7 @@ impl RawClient {
         http_proxy_authorization: Option<String>,
         https_proxy_url: Option<String>,
         https_proxy_authorization: Option<String>,
+        policy_hooks: Option<Py<PyAny>>,
     ) -> PyResult<Self> {
         validate_numeric_client_options(NumericClientOptions {
             max_active_requests,
@@ -129,6 +135,7 @@ impl RawClient {
             idle_timeout,
             connect_timeout,
         })?;
+        let policy_hooks = PythonPolicyHooks::from_config(py, policy_hooks)?;
 
         let runtime_mode = parse_runtime_mode(runtime)?;
         let metrics = Arc::new(Metrics::default());
@@ -217,6 +224,7 @@ impl RawClient {
             follow_redirects,
             max_redirects,
             proxy_authorization: http_proxy_authorization,
+            policy_hooks,
             process_id: current_process_id(),
         })
     }
@@ -265,6 +273,7 @@ impl RawClient {
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         let proxy_authorization = self.proxy_authorization.clone();
+        let policy_hooks = self.policy_hooks.clone();
         self.metrics.request_started();
 
         let result = py.detach(|| {
@@ -291,6 +300,7 @@ impl RawClient {
                         buffered_body_budget,
                         follow_redirects,
                         max_redirects,
+                        policy_hooks,
                     },
                 )
                 .await
@@ -343,6 +353,7 @@ impl RawClient {
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         let proxy_authorization = self.proxy_authorization.clone();
+        let policy_hooks = self.policy_hooks.clone();
         spawn_async_request(
             py,
             runtime,
@@ -370,6 +381,7 @@ impl RawClient {
                     buffered_body_budget,
                     follow_redirects,
                     max_redirects,
+                    policy_hooks,
                 },
             },
         )
@@ -421,6 +433,7 @@ impl RawClient {
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         let proxy_authorization = self.proxy_authorization.clone();
+        let policy_hooks = self.policy_hooks.clone();
         let completion = RequestCompletion::default();
         let request_completion = completion.clone();
         let future_setters = self.future_setters.clone_ref(py);
@@ -453,6 +466,7 @@ impl RawClient {
                         buffered_body_budget,
                         follow_redirects,
                         max_redirects,
+                        policy_hooks,
                     },
                     request_completion,
                 )
@@ -508,6 +522,7 @@ impl RawClient {
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         let proxy_authorization = self.proxy_authorization.clone();
+        let policy_hooks = self.policy_hooks.clone();
         spawn_async_stream_request(
             py,
             runtime,
@@ -536,6 +551,7 @@ impl RawClient {
                     buffered_body_budget,
                     follow_redirects,
                     max_redirects,
+                    policy_hooks,
                 },
             },
         )

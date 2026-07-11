@@ -713,6 +713,28 @@ monotonic `snapshot_sequence` within one Rust transport lifetime. Use
 `TransportStats` for dashboards and alert-oriented metrics; see
 [Telemetry contract](./telemetry.md) for the current guarantees.
 
+For trusted lightweight admission checks, configure synchronous transport
+policy hooks. The hook receives the full normalized target, may reject by
+raising, and cannot mutate transport state:
+
+```python
+def require_https(request: foghttp.TransportPolicyRequest) -> None:
+    if foghttp.URL(request.url).scheme != "https":
+        raise PermissionError("HTTPS is required")
+
+
+hooks = foghttp.TransportPolicyHooks(before_send=require_https)
+
+with foghttp.Client(policy_hooks=hooks) as client:
+    response = client.get("https://httpbin.org/get")
+```
+
+Hooks run inline and can execute on transport worker threads, so they must be
+fast, synchronous, thread-safe, and non-reentrant. Their snapshots are not
+telemetry-safe: full URLs and response header values may contain secrets. See
+[Transport policy hooks](./policy-hooks.md) for stage ordering, redirect-body
+scope, error propagation, and lifecycle constraints.
+
 For opt-in event hooks, pass a typed telemetry config. Hooks receive redacted
 `TelemetryEvent` objects and are intended for logging/tracing bridges, not for
 mutating requests or responses. Hooks run inline, so keep sinks fast and

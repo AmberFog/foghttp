@@ -1,7 +1,8 @@
 use super::body::{collect_response_body, response_body_can_be_decoded};
 use super::context::{RawResponseContext, RawStreamResponseContext};
-use crate::core::client::ConnectionTelemetry;
+use crate::core::client::{ConnectionTelemetry, ConnectionUseGuard};
 use crate::core::headers::HeaderPairs;
+use crate::core::metrics::{Metrics, OriginMetrics, ResponseBodyLifecycleOutcome};
 use crate::core::numeric::duration_from_secs;
 use crate::core::response::{decode_body, decoded_response_headers, response_body_decoding_plan};
 use crate::py::client::lifecycle::{successful_response_body_outcome, ResponseBodyLifecycle};
@@ -12,33 +13,58 @@ use hyper::Response;
 use pyo3::prelude::*;
 use std::sync::Arc;
 
+pub(super) struct ResponseLifecycleGuards {
+    body: ResponseBodyLifecycle,
+    connection_use: Option<ConnectionUseGuard>,
+    successful_body_outcome: ResponseBodyLifecycleOutcome,
+}
+
+impl ResponseLifecycleGuards {
+    pub(super) fn new(
+        response: &Response<Incoming>,
+        metrics: &Arc<Metrics>,
+        origin_metrics: &Arc<OriginMetrics>,
+    ) -> Self {
+        Self {
+            body: ResponseBodyLifecycle::new(Arc::clone(metrics), Arc::clone(origin_metrics)),
+            connection_use: response
+                .extensions()
+                .get::<ConnectionTelemetry>()
+                .map(ConnectionTelemetry::response_started),
+            successful_body_outcome: successful_response_body_outcome(
+                response.version(),
+                response.headers(),
+            ),
+        }
+    }
+
+    fn finish_connection(&mut self) {
+        if let Some(connection_use) = self.connection_use.take() {
+            connection_use.finish(self.successful_body_outcome);
+        }
+    }
+
+    fn finish_body(&mut self) {
+        self.body.finish(self.successful_body_outcome);
+    }
+}
+
 pub(super) async fn raw_response(
     response: Response<Incoming>,
     request: RawRequestInfo,
     headers: HeaderPairs,
+    mut lifecycle: ResponseLifecycleGuards,
     context: RawResponseContext<'_>,
 ) -> PyResult<RawResponse> {
     let status = response.status();
     let status_code = status.as_u16();
     let http_version = format!("{:?}", response.version());
-    let successful_body_outcome =
-        successful_response_body_outcome(response.version(), response.headers());
     let decoding_plan = response_body_can_be_decoded(&request.method, status)
         .then(|| response_body_decoding_plan(response.headers()));
-    let mut connection_use = response
-        .extensions()
-        .get::<ConnectionTelemetry>()
-        .map(ConnectionTelemetry::response_started);
-    let mut lifecycle = ResponseBodyLifecycle::new(
-        Arc::clone(&context.metrics),
-        Arc::clone(&context.origin_metrics),
-    );
     let read_timeout = duration_from_secs("Timeouts.read", context.read_timeout)
         .map_err(pyo3::exceptions::PyValueError::new_err)?;
     let collected = collect_response_body(response.into_body(), &context, read_timeout).await?;
-    if let Some(connection_use) = connection_use.take() {
-        connection_use.finish(successful_body_outcome);
-    }
+    lifecycle.finish_connection();
     let (headers, response_content, body_reservation) = if let Some(decoding_plan) = decoding_plan {
         let body = decode_body(collected, decoding_plan, context.max_response_body_size)?;
         (
@@ -49,7 +75,7 @@ pub(super) async fn raw_response(
     } else {
         (headers, collected.content, collected.reservation)
     };
-    lifecycle.finish(successful_body_outcome);
+    lifecycle.finish_body();
     let url = request.url.clone();
 
     Ok(RawResponse::from_parts(RawResponseParts {
@@ -69,20 +95,16 @@ pub(super) fn raw_stream_response(
     response: Response<Incoming>,
     request: RawRequestInfo,
     headers: HeaderPairs,
+    lifecycle: ResponseLifecycleGuards,
     context: RawStreamResponseContext,
 ) -> PyResult<RawStreamResponse> {
     let status_code = response.status().as_u16();
     let http_version = format!("{:?}", response.version());
-    let successful_body_outcome =
-        successful_response_body_outcome(response.version(), response.headers());
-    let connection_use = response
-        .extensions()
-        .get::<ConnectionTelemetry>()
-        .map(ConnectionTelemetry::response_started);
-    let lifecycle = ResponseBodyLifecycle::new(
-        Arc::clone(&context.metrics),
-        Arc::clone(&context.origin_metrics),
-    );
+    let ResponseLifecycleGuards {
+        body: lifecycle,
+        connection_use,
+        successful_body_outcome,
+    } = lifecycle;
     let read_timeout = duration_from_secs("Timeouts.read", context.read_timeout)
         .map_err(pyo3::exceptions::PyValueError::new_err)?;
     let url = request.url.clone();

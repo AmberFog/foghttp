@@ -23,6 +23,7 @@ from ._upload_body import SyncRequestContent
 from .headers import HeaderSource
 from .limits import Limits
 from .methods import DELETE, GET, HEAD, PATCH, POST, PUT, QUERY
+from .policy import TransportPolicyHooks
 from .request import Request
 from .response import Response
 from .stream_response import StreamResponse
@@ -58,6 +59,7 @@ class Client(ClientCore):
         tls: TLSConfig | None = None,
         runtime: Literal["shared", "dedicated"] | None = None,
         runtime_workers: int | None = None,
+        policy_hooks: TransportPolicyHooks | None = None,
         telemetry: TelemetryConfig | None = None,
     ) -> None:
         super().__init__(
@@ -77,6 +79,7 @@ class Client(ClientCore):
                     tls=tls,
                     runtime=runtime,
                     runtime_workers=runtime_workers,
+                    policy_hooks=policy_hooks,
                     telemetry=telemetry,
                     lifecycle_debug=None,
                 ),

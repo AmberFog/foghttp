@@ -2,7 +2,7 @@ use super::client::TransportClients;
 use super::context::RawResponseContext;
 use super::errors::transport_error;
 use super::request::{RequestState, TransportRequest};
-use super::response::raw_response;
+use super::response::{raw_response, ResponseLifecycleGuards};
 use crate::core::client::{with_connection_limit_timeout, with_request_write_timeout};
 use crate::core::headers::response_headers;
 use crate::core::metrics::Metrics;
@@ -31,6 +31,7 @@ pub async fn send_request(
     loop {
         let (mut raw, response_action) = {
             let redirect_hop = history.len();
+            let route = state.transport_route(redirect_hop)?;
             let origin = state.origin();
             let acquire_timeout_context = TimeoutContext::new(
                 TimeoutPhase::PoolAcquire,
@@ -46,7 +47,6 @@ pub async fn send_request(
             .await
             .map_err(|_| timeout_error(&acquire_timeout_context, REQUEST_TOTAL_TIMEOUT))??;
             let origin_metrics = permit.origin_metrics();
-            let route = state.transport_route()?;
             let request_info = state.request_info();
 
             let response_headers_timeout_context = TimeoutContext::new(
@@ -74,12 +74,16 @@ pub async fn send_request(
             .map_err(|_| timeout_error(&response_headers_timeout_context, REQUEST_TOTAL_TIMEOUT))?
             .map_err(|err| transport_error(&err))?;
 
+            let response_lifecycle =
+                ResponseLifecycleGuards::new(&response, &metrics, &origin_metrics);
             let headers = response_headers(response.headers());
-            let response_action = state.on_response_headers(response.status().as_u16(), &headers);
+            let response_action =
+                state.on_response_headers(response.status().as_u16(), &headers, redirect_hop)?;
             let raw = raw_response(
                 response,
                 request_info,
                 headers,
+                response_lifecycle,
                 RawResponseContext {
                     started,
                     total_timeout: state.total_timeout,
@@ -87,8 +91,6 @@ pub async fn send_request(
                     max_response_body_size: state.max_response_body_size,
                     buffered_body_budget: state.buffered_body_budget.clone(),
                     origin: &origin,
-                    metrics: Arc::clone(&metrics),
-                    origin_metrics,
                     redirect_hop,
                 },
             )

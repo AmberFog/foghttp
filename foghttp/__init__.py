@@ -43,6 +43,10 @@ __all__ = (
     "TimeoutError",
     "TimeoutPhase",
     "Timeouts",
+    "TransportPolicyBodyState",
+    "TransportPolicyHooks",
+    "TransportPolicyRequest",
+    "TransportPolicyResponse",
     "TransportState",
     "TransportStats",
     "UnclosedClientError",
@@ -81,6 +85,12 @@ from .lifecycle_debug import (
     AsyncLifecycleDebugSnapshot,
 )
 from .limits import Limits
+from .policy import (
+    TransportPolicyBodyState,
+    TransportPolicyHooks,
+    TransportPolicyRequest,
+    TransportPolicyResponse,
+)
 from .pool_diagnostics import OriginPoolDiagnostics, PoolBlockingReason, PoolDiagnostics
 from .request import Request
 from .request_info import RequestInfo

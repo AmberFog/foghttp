@@ -367,6 +367,7 @@ class RawClient:
         http_proxy_authorization: str | None,
         https_proxy_url: str | None,
         https_proxy_authorization: str | None,
+        policy_hooks: object | None,
     ) -> None: ...
     def request(
         self,

@@ -2,7 +2,7 @@ use super::client::TransportClients;
 use super::context::{RawResponseContext, RawStreamResponseContext};
 use super::errors::transport_error;
 use super::request::{RequestState, TransportRequest};
-use super::response::{raw_response, raw_stream_response};
+use super::response::{raw_response, raw_stream_response, ResponseLifecycleGuards};
 use crate::core::client::{with_connection_limit_timeout, with_request_write_timeout};
 use crate::core::headers::response_headers;
 use crate::core::metrics::Metrics;
@@ -40,6 +40,7 @@ pub async fn send_stream_request(
 
     loop {
         let redirect_hop = history.len();
+        let route = state.transport_route(redirect_hop)?;
         let origin = state.origin();
         let acquire_timeout_context = TimeoutContext::new(
             TimeoutPhase::PoolAcquire,
@@ -62,22 +63,25 @@ pub async fn send_stream_request(
             redirect_hop,
             pool_timeout,
             started,
+            route,
         )
         .await?;
 
+        let response_lifecycle = ResponseLifecycleGuards::new(&response, &metrics, &origin_metrics);
         let headers = response_headers(response.headers());
-        let response_action = state.on_response_headers(response.status().as_u16(), &headers);
+        let response_action =
+            state.on_response_headers(response.status().as_u16(), &headers, redirect_hop)?;
 
         let Some(response_action) = response_action else {
             return raw_stream_response(
                 response,
                 request_info,
                 headers,
+                response_lifecycle,
                 RawStreamResponseContext {
                     started,
                     read_timeout: state.read_timeout,
                     origin,
-                    origin_metrics,
                     metrics,
                     active_streams,
                     runtime_handle,
@@ -94,6 +98,7 @@ pub async fn send_stream_request(
             response,
             request_info,
             headers,
+            response_lifecycle,
             RawResponseContext {
                 started,
                 total_timeout: state.total_timeout,
@@ -101,8 +106,6 @@ pub async fn send_stream_request(
                 max_response_body_size: state.max_response_body_size,
                 buffered_body_budget: state.buffered_body_budget.clone(),
                 origin: &origin,
-                metrics: Arc::clone(&metrics),
-                origin_metrics,
                 redirect_hop,
             },
         )
@@ -121,8 +124,8 @@ async fn send_current_hop(
     redirect_hop: usize,
     pool_timeout: f64,
     started: Instant,
+    route: crate::core::policy::TransportRoute,
 ) -> PyResult<(Response<Incoming>, crate::py::response::RawRequestInfo)> {
-    let route = state.transport_route()?;
     let request_info = state.request_info();
     let response_headers_timeout_context = TimeoutContext::new(
         TimeoutPhase::ResponseHeaders,

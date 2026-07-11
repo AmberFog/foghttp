@@ -26,6 +26,7 @@ def client_options(
         tls=tls,
         runtime=None,
         runtime_workers=None,
+        policy_hooks=None,
         telemetry=None,
         lifecycle_debug=None,
     )
