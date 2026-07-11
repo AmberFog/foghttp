@@ -71,6 +71,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - [Quickstart](./quickstart.md)
 - [Request builder compatibility](./request-builder.md)
 - [Client lifecycle](./lifecycle.md)
+- [Packaging and Python compatibility](./packaging.md)
 - [Timeout model](./timeouts.md)
 - [Upload typing contracts](./upload-types.md)
 - [Telemetry contract](./telemetry.md)

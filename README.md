@@ -47,6 +47,12 @@ Runtime requirements:
 - Python `>=3.11`
 - `orjson>=3.11,<4`
 
+Published CPython wheels use the stable `cp311-abi3` ABI: each supported
+OS/architecture pair has one wheel for Python 3.11 and newer. The release
+pipeline currently installs and exercises those wheels on GIL-enabled CPython
+3.11 through 3.14. See [Packaging and Python compatibility](https://github.com/AmberFog/foghttp/blob/main/docs/packaging.md)
+for the complete wheel matrix and validation policy.
+
 ## Quick Start
 
 ```python
@@ -130,6 +136,7 @@ async with foghttp.AsyncClient() as client:
 - [Quickstart](https://github.com/AmberFog/foghttp/blob/main/docs/quickstart.md)
 - [Request builder compatibility](https://github.com/AmberFog/foghttp/blob/main/docs/request-builder.md)
 - [Client lifecycle](https://github.com/AmberFog/foghttp/blob/main/docs/lifecycle.md)
+- [Packaging and Python compatibility](https://github.com/AmberFog/foghttp/blob/main/docs/packaging.md)
 - [Timeout model](https://github.com/AmberFog/foghttp/blob/main/docs/timeouts.md)
 - [Upload typing contracts](https://github.com/AmberFog/foghttp/blob/main/docs/upload-types.md)
 - [Telemetry contract](https://github.com/AmberFog/foghttp/blob/main/docs/telemetry.md)
