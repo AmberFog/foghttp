@@ -12,6 +12,7 @@ import foghttp
 from foghttp._telemetry import TELEMETRY_SNAPSHOT_SCHEMA_VERSION
 from foghttp.methods import GET
 from tests.client_telemetry.models import FailingTelemetrySink
+from tests.client_warning_actions import collect_unclosed_client
 
 from .constants import SHORT_LIVED_CLIENT_COUNT
 from .helpers import (
@@ -101,17 +102,16 @@ def test_sync_client_rejects_stale_process_owner_without_closing_raw_parent_copy
 
 
 def test_inherited_client_copy_does_not_warn_about_parent_owned_resources() -> None:
-    client = foghttp.Client()
-    client._process_id = -1  # noqa: SLF001 - simulate inherited ownership deterministically.
+    def inherited_client_factory() -> foghttp.Client:
+        client = foghttp.Client()
+        client._process_id = -1  # noqa: SLF001 - simulate inherited ownership deterministically.
+        return client
 
-    try:
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            client.__del__()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        collect_unclosed_client(inherited_client_factory)
 
-        assert not [item for item in caught if issubclass(item.category, foghttp.UnclosedClientError)]
-    finally:
-        client.close()
+    assert not [item for item in caught if issubclass(item.category, foghttp.UnclosedClientError)]
 
 
 def test_sync_stream_context_rechecks_process_owner_on_enter(faker: Faker) -> None:
