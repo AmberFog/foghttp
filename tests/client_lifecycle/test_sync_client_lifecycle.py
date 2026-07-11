@@ -1,13 +1,18 @@
+from collections.abc import Callable
 from concurrent.futures import (
     ThreadPoolExecutor,
 )
 import threading
+import warnings
 
 from faker import Faker
 import pytest
 
 import foghttp
 from foghttp._telemetry import TELEMETRY_SNAPSHOT_SCHEMA_VERSION
+from foghttp.methods import GET
+from tests.client_telemetry.models import FailingTelemetrySink
+from tests.client_warning_actions import collect_unclosed_client
 
 from .constants import SHORT_LIVED_CLIENT_COUNT
 from .helpers import (
@@ -50,6 +55,89 @@ def test_sync_closed_client_rejects_stats(
 
     with pytest.raises(foghttp.ClientClosedError, match="FogHTTP client is closed"):
         client.stats()
+
+
+@pytest.mark.parametrize(
+    ("action_name", "action"),
+    [
+        pytest.param("stats", foghttp.Client.stats, id="stats"),
+        pytest.param("transport state", foghttp.Client.dump_transport_state, id="transport-state"),
+        pytest.param("pool diagnostics", foghttp.Client.dump_pool_diagnostics, id="pool-diagnostics"),
+    ],
+)
+def test_sync_client_maps_raw_lifecycle_errors(
+    lifecycle_error_sync_client_factory: type[foghttp.Client],
+    sync_noop_transport: None,
+    faker: Faker,
+    action_name: str,
+    action: Callable[[foghttp.Client], object],
+) -> None:
+    client = lifecycle_error_sync_client_factory()
+    try:
+        client.get(faker.url())
+
+        with pytest.raises(foghttp.LifecycleError, match="raw lifecycle failure"):
+            action(client)
+    finally:
+        client.close()
+
+
+def test_sync_client_rejects_stale_process_owner_without_closing_raw_parent_copy(
+    sync_client_factory: type[foghttp.Client],
+    sync_noop_transport: None,
+    raw_client: CloseTrackingRawClient,
+    faker: Faker,
+) -> None:
+    client = sync_client_factory()
+    client.get(faker.url())
+    client._process_id = -1  # noqa: SLF001 - simulate inherited ownership deterministically.
+
+    try:
+        with pytest.raises(foghttp.LifecycleError, match="cannot be used in forked process"):
+            client.stats()
+    finally:
+        client.close()
+
+    assert raw_client.close_calls == 0
+
+
+def test_inherited_client_copy_does_not_warn_about_parent_owned_resources() -> None:
+    def inherited_client_factory() -> foghttp.Client:
+        client = foghttp.Client()
+        client._process_id = -1  # noqa: SLF001 - simulate inherited ownership deterministically.
+        return client
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        collect_unclosed_client(inherited_client_factory)
+
+    assert not [item for item in caught if issubclass(item.category, foghttp.UnclosedClientError)]
+
+
+def test_sync_stream_context_rechecks_process_owner_on_enter(faker: Faker) -> None:
+    client = foghttp.Client()
+    stream_context = client.stream(GET, faker.url())
+    client._process_id = -1  # noqa: SLF001 - simulate ownership changing after context creation.
+
+    try:
+        with pytest.raises(foghttp.LifecycleError, match="cannot be used in forked process"):
+            stream_context.__enter__()
+    finally:
+        client.close()
+
+
+def test_sync_send_checks_process_owner_before_telemetry(faker: Faker) -> None:
+    client = foghttp.Client(
+        telemetry=foghttp.TelemetryConfig(sink=FailingTelemetrySink()),
+    )
+    request = client.build_request(GET, faker.url())
+    client._process_id = -1  # noqa: SLF001 - simulate inherited ownership deterministically.
+
+    try:
+        with pytest.raises(foghttp.LifecycleError, match="cannot be used in forked process"):
+            client.send(request)
+    finally:
+        client.close()
 
 
 def test_sync_dump_transport_state_before_first_request_do_not_create_raw_client(

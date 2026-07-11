@@ -5,6 +5,7 @@ use crate::core::headers::HeaderPairs;
 use crate::errors::FogHttpError;
 use crate::messages::STREAM_RESPONSE_READ_ABORTED;
 use crate::py::client::future::{complete_python_bytes_future, PythonFutureSetters};
+use crate::py::client::process::{current_process_id, stream_response_used_after_fork, ProcessId};
 use crate::py::response::{RawRequestInfo, RawResponse};
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
@@ -26,9 +27,10 @@ pub struct RawStreamResponse {
     #[pyo3(get)]
     elapsed: f64,
     history: Vec<RawResponse>,
-    state: StreamState,
-    runtime_handle: Handle,
+    state: Option<StreamState>,
+    runtime_handle: Option<Handle>,
     future_setters: PythonFutureSetters,
+    process_id: ProcessId,
 }
 
 impl RawStreamResponse {
@@ -64,7 +66,7 @@ impl RawStreamResponse {
             http_version,
             elapsed,
             history,
-            state: StreamState::new(StreamStateParts {
+            state: Some(StreamState::new(StreamStateParts {
                 body,
                 permit,
                 lifecycle,
@@ -77,15 +79,42 @@ impl RawStreamResponse {
                 read_timeout_secs,
                 origin,
                 redirect_hop,
-            }),
-            runtime_handle,
+            })),
+            runtime_handle: Some(runtime_handle),
             future_setters,
+            process_id: current_process_id(),
         }
     }
 
     fn release_body_reservations(&mut self) {
         for response in &mut self.history {
             response.release_body_reservations();
+        }
+    }
+
+    fn ensure_current_process(&self) -> PyResult<()> {
+        let current_process_id = current_process_id();
+        if self.process_id == current_process_id {
+            return Ok(());
+        }
+        Err(stream_response_used_after_fork(
+            self.process_id,
+            current_process_id,
+        ))
+    }
+
+    fn close_resources(&mut self) {
+        let state = self.state.take();
+        let runtime_handle = self.runtime_handle.take();
+        if self.process_id == current_process_id() {
+            if let Some(state) = state {
+                state.abort();
+            }
+            drop(runtime_handle);
+        } else {
+            // Aborting inherited stream state may lock or schedule on parent threads.
+            std::mem::forget(state);
+            std::mem::forget(runtime_handle);
         }
     }
 }
@@ -98,17 +127,29 @@ impl RawStreamResponse {
     }
 
     fn close(&self) {
-        self.state.abort();
+        if self.process_id != current_process_id() {
+            return;
+        }
+        if let Some(state) = &self.state {
+            state.abort();
+        }
     }
 
     fn next_chunk(&self, py: Python<'_>) -> PyResult<Option<Vec<u8>>> {
-        let state = self.state.clone();
+        self.ensure_current_process()?;
+        let Some(state) = self.state.clone() else {
+            return Ok(None);
+        };
+        let runtime_handle = self
+            .runtime_handle
+            .as_ref()
+            .ok_or_else(|| FogHttpError::new_err(STREAM_RESPONSE_READ_ABORTED))?;
         let Some(read_guard) = state.start_read(ReadyFrameCoalescing::Disabled)? else {
             return Ok(None);
         };
         let (result_sender, result_receiver) = oneshot::channel();
         let (start_sender, start_receiver) = oneshot::channel();
-        let handle = self.runtime_handle.spawn(async move {
+        let handle = runtime_handle.spawn(async move {
             if start_receiver.await.is_err() {
                 return;
             }
@@ -123,18 +164,26 @@ impl RawStreamResponse {
             return Err(FogHttpError::new_err(STREAM_RESPONSE_READ_ABORTED));
         }
 
-        let result = py.detach(|| self.runtime_handle.block_on(result_receiver));
+        let result = py.detach(|| runtime_handle.block_on(result_receiver));
         state.finish_read_delivery();
         result.map_err(|_| FogHttpError::new_err(STREAM_RESPONSE_READ_ABORTED))?
     }
 
     fn next_chunk_async(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.ensure_current_process()?;
         let loop_ = py
             .import("asyncio")?
             .call_method0("get_running_loop")?
             .unbind();
         let future = loop_.bind(py).call_method0("create_future")?.unbind();
-        let state = self.state.clone();
+        let Some(state) = self.state.clone() else {
+            future.bind(py).call_method1("set_result", (py.None(),))?;
+            return Ok(future);
+        };
+        let runtime_handle = self
+            .runtime_handle
+            .as_ref()
+            .ok_or_else(|| FogHttpError::new_err(STREAM_RESPONSE_READ_ABORTED))?;
         let Some(read_guard) = state.start_read(ReadyFrameCoalescing::Enabled)? else {
             future.bind(py).call_method1("set_result", (py.None(),))?;
             return Ok(future);
@@ -144,7 +193,7 @@ impl RawStreamResponse {
         let task_future_setters = self.future_setters.clone_ref(py);
         let (start_sender, start_receiver) = oneshot::channel();
 
-        let handle = self.runtime_handle.spawn(async move {
+        let handle = runtime_handle.spawn(async move {
             if start_receiver.await.is_err() {
                 return;
             }
@@ -179,13 +228,15 @@ impl RawStreamResponse {
         Ok(future)
     }
 
-    fn release_buffered_body_reservations(&mut self) {
+    fn release_buffered_body_reservations(&mut self) -> PyResult<()> {
+        self.ensure_current_process()?;
         self.release_body_reservations();
+        Ok(())
     }
 }
 
 impl Drop for RawStreamResponse {
     fn drop(&mut self) {
-        self.state.abort();
+        self.close_resources();
     }
 }

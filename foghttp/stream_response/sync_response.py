@@ -22,6 +22,7 @@ class StreamResponse(StreamResponseBase):
     __slots__ = ()
 
     def __enter__(self) -> "StreamResponse":
+        self._ensure_current_process()
         return self
 
     def __exit__(

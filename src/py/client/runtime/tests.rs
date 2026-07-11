@@ -99,9 +99,12 @@ fn rejects_invalid_runtime_mode() {
 #[test]
 fn shared_runtime_rejects_explicit_workers() {
     pyo3::Python::initialize();
-    let Err(error) = ClientRuntime::build(100, RuntimeMode::Shared, Some(1)) else {
-        panic!("expected shared runtime to reject explicit workers");
-    };
+    let error = pyo3::Python::attach(|py| {
+        let Err(error) = ClientRuntime::build(py, 100, RuntimeMode::Shared, Some(1)) else {
+            panic!("expected shared runtime to reject explicit workers");
+        };
+        error
+    });
 
     assert!(error
         .to_string()
