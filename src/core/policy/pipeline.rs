@@ -1,6 +1,6 @@
 use super::error::PolicyError;
 use super::proxy::{ProxyPolicy, TransportRoute};
-use super::redirect::{redirect_decision, RedirectAction, RedirectDecision};
+use super::redirect::{redirect_decision, RedirectAction, RedirectDecision, RedirectHeaderPolicy};
 use super::request::{PolicyRequest, RequestBodyMutation, ResponseHead};
 use crate::core::url::HttpUrl;
 
@@ -23,8 +23,8 @@ pub(crate) struct ResponsePolicyAction {
 pub(crate) enum PolicyMutation {
     Redirect {
         body: RequestBodyMutation,
+        header_policy: RedirectHeaderPolicy,
         method: &'static str,
-        remove_sensitive_headers: bool,
         url: HttpUrl,
     },
 }
@@ -102,8 +102,8 @@ impl PolicyPipeline {
 fn redirect_mutation(action: RedirectAction) -> PolicyMutation {
     PolicyMutation::Redirect {
         body: action.body,
+        header_policy: action.header_policy,
         method: action.method,
-        remove_sensitive_headers: action.remove_sensitive_headers,
         url: action.url,
     }
 }

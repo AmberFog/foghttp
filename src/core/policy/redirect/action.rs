@@ -1,3 +1,4 @@
+use super::headers::RedirectHeaderPolicy;
 use super::method::redirect_method;
 use super::policy::redirect_security_policy;
 use super::status::redirect_status_code;
@@ -13,8 +14,8 @@ pub(in crate::core::policy) enum RedirectDecision {
 
 pub(in crate::core::policy) struct RedirectAction {
     pub(in crate::core::policy) body: RequestBodyMutation,
+    pub(in crate::core::policy) header_policy: RedirectHeaderPolicy,
     pub(in crate::core::policy) method: &'static str,
-    pub(in crate::core::policy) remove_sensitive_headers: bool,
     pub(in crate::core::policy) url: HttpUrl,
 }
 
@@ -26,7 +27,7 @@ pub(in crate::core::policy) fn redirect_decision(
     let location = header_value(response.headers(), "location")?;
     let (next_method, body) = redirect_method(request.method(), status_code)?;
     let next_url = request.url().join(location).ok()?;
-    let policy = redirect_security_policy(request.url(), &next_url, next_method, body);
+    let policy = redirect_security_policy(request.url(), &next_url, body);
 
     if let Some(error) = policy.block_error {
         return Some(RedirectDecision::Block(error));
@@ -34,8 +35,8 @@ pub(in crate::core::policy) fn redirect_decision(
 
     Some(RedirectDecision::Follow(RedirectAction {
         body: policy.body,
+        header_policy: policy.header_policy,
         method: next_method,
-        remove_sensitive_headers: policy.remove_sensitive_headers,
         url: next_url,
     }))
 }

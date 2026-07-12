@@ -15,6 +15,8 @@ from foghttp.status_codes.redirect import (
 )
 from foghttp.status_codes.success import OK
 from tests.redirect_helpers import (
+    REDIRECT_CONDITIONAL_HEADERS,
+    REDIRECT_CONTENT_HEADERS,
     REDIRECT_SECURITY_HEADERS,
     SECURITY_HEADERS_PATH,
     header_values,
@@ -153,12 +155,17 @@ def test_post_method_preserving_redirect_rejects_non_replayable_body(
     assert stats.active_requests == 0
 
 
-def test_same_origin_redirect_preserves_sensitive_headers(sync_http_server: str) -> None:
+def test_same_origin_redirect_preserves_scoped_and_strips_conditional_headers(
+    sync_http_server: str,
+) -> None:
     location = f"{sync_http_server}{SECURITY_HEADERS_PATH}"
     url = redirect_to_location_url(sync_http_server, status_code=FOUND, location=location)
 
     with foghttp.Client(follow_redirects=True) as client:
-        response = client.get(url, headers=REDIRECT_SECURITY_HEADERS)
+        response = client.get(
+            url,
+            headers={**REDIRECT_SECURITY_HEADERS, **REDIRECT_CONDITIONAL_HEADERS},
+        )
 
     payload = response.json()
     assert header_values(payload, "authorization") == ["Bearer secret"]
@@ -167,6 +174,8 @@ def test_same_origin_redirect_preserves_sensitive_headers(sync_http_server: str)
     assert header_values(payload, "host") == [urlsplit(sync_http_server).netloc]
     assert header_values(payload, "origin") == ["https://example.com"]
     assert header_values(payload, "referer") == ["https://example.com/source"]
+    for name in REDIRECT_CONDITIONAL_HEADERS:
+        assert header_values(payload, name) == []
 
 
 def test_cross_origin_redirect_strips_sensitive_headers(
@@ -177,7 +186,10 @@ def test_cross_origin_redirect_strips_sensitive_headers(
     url = redirect_to_location_url(sync_http_server, status_code=FOUND, location=location)
 
     with foghttp.Client(follow_redirects=True) as client:
-        response = client.get(url, headers=REDIRECT_SECURITY_HEADERS)
+        response = client.get(
+            url,
+            headers={**REDIRECT_SECURITY_HEADERS, **REDIRECT_CONDITIONAL_HEADERS},
+        )
 
     payload = response.json()
     assert header_values(payload, "accept") == ["application/json"]
@@ -187,6 +199,33 @@ def test_cross_origin_redirect_strips_sensitive_headers(
     assert header_values(payload, "host") == [urlsplit(secondary_sync_http_server).netloc]
     assert header_values(payload, "origin") == []
     assert header_values(payload, "referer") == []
+    for name in REDIRECT_CONDITIONAL_HEADERS:
+        assert header_values(payload, name) == []
+
+
+def test_cross_origin_get_redirect_drops_explicit_body(
+    sync_http_server: str,
+    secondary_sync_http_server: str,
+    faker: Faker,
+) -> None:
+    location = f"{secondary_sync_http_server}{SECURITY_HEADERS_PATH}"
+    url = redirect_to_location_url(sync_http_server, status_code=FOUND, location=location)
+    request_body = faker.sentence()
+
+    with foghttp.Client(follow_redirects=True) as client:
+        request = client.build_request(
+            GET,
+            url,
+            headers=REDIRECT_CONTENT_HEADERS,
+            content=request_body,
+        )
+        assert request.content == request_body.encode()
+        response = client.send(request)
+
+    payload = response.json()
+    assert payload["body"] == ""
+    for name in REDIRECT_CONTENT_HEADERS:
+        assert header_values(payload, name) == []
 
 
 def test_post_redirect_rewrite_strips_body_headers(sync_http_server: str, faker: Faker) -> None:
@@ -199,8 +238,7 @@ def test_post_redirect_rewrite_strips_body_headers(sync_http_server: str, faker:
             url,
             headers={
                 "authorization": "Bearer secret",
-                "content-encoding": "identity",
-                "content-type": "text/plain",
+                **REDIRECT_CONTENT_HEADERS,
             },
             content=post_body,
         )
@@ -209,8 +247,10 @@ def test_post_redirect_rewrite_strips_body_headers(sync_http_server: str, faker:
     assert payload["request_line"] == f"GET {SECURITY_HEADERS_PATH} HTTP/1.1"
     assert payload["body"] == ""
     assert header_values(payload, "authorization") == ["Bearer secret"]
-    assert header_values(payload, "content-encoding") == []
-    assert header_values(payload, "content-type") == []
+    assert header_values(payload, "content-length") == []
+    assert header_values(payload, "transfer-encoding") == []
+    for name in REDIRECT_CONTENT_HEADERS:
+        assert header_values(payload, name) == []
 
 
 def test_post_redirect_preserving_method_keeps_body_headers(sync_http_server: str, faker: Faker) -> None:
@@ -221,14 +261,17 @@ def test_post_redirect_preserving_method_keeps_body_headers(sync_http_server: st
     with foghttp.Client(follow_redirects=True) as client:
         response = client.post(
             url,
-            headers={"content-type": "text/plain"},
+            headers=REDIRECT_CONTENT_HEADERS,
             content=post_body,
         )
 
     payload = response.json()
     assert payload["request_line"] == f"POST {SECURITY_HEADERS_PATH} HTTP/1.1"
     assert payload["body"] == post_body
-    assert header_values(payload, "content-type") == ["text/plain"]
+    assert header_values(payload, "content-length") == [str(len(post_body.encode()))]
+    assert header_values(payload, "transfer-encoding") == []
+    for name, value in REDIRECT_CONTENT_HEADERS.items():
+        assert header_values(payload, name) == [value]
 
 
 @pytest.mark.parametrize("status_code", POST_REDIRECTS_PRESERVE_METHOD_STATUS_CODES)
@@ -251,8 +294,7 @@ def test_cross_origin_post_redirect_drops_body_replay(
             url,
             headers={
                 **REDIRECT_SECURITY_HEADERS,
-                "content-encoding": "identity",
-                "content-type": "text/plain",
+                **REDIRECT_CONTENT_HEADERS,
             },
             content=post_body,
         )
@@ -262,8 +304,8 @@ def test_cross_origin_post_redirect_drops_body_replay(
     assert payload["body"] == ""
     assert header_values(payload, "accept") == ["application/json"]
     assert header_values(payload, "authorization") == []
-    assert header_values(payload, "content-encoding") == []
-    assert header_values(payload, "content-type") == []
+    for name in REDIRECT_CONTENT_HEADERS:
+        assert header_values(payload, name) == []
     assert header_values(payload, "cookie") == []
     assert header_values(payload, "host") == [urlsplit(secondary_sync_http_server).netloc]
     assert header_values(payload, "origin") == []
