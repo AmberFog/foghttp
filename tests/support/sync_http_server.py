@@ -25,7 +25,12 @@ from tests.support.http_routes import (
     status_code,
     unknown_size_bytes_response_size,
 )
-from tests.support.raw_responses import headers_payload, json_payload, security_headers_payload
+from tests.support.raw_responses import (
+    SECURITY_HEADER_NAMES,
+    headers_payload,
+    json_payload,
+    security_headers_payload,
+)
 
 
 class SyncHTTPHandler(BaseHTTPRequestHandler):
@@ -217,22 +222,7 @@ class SyncHTTPHandler(BaseHTTPRequestHandler):
         if path != SECURITY_HEADERS_PATH:
             return False
 
-        headers = {
-            name: self.headers.get_all(name, [])
-            for name in (
-                "accept",
-                "authorization",
-                "content-encoding",
-                "content-length",
-                "content-type",
-                "cookie",
-                "host",
-                "origin",
-                "proxy-authorization",
-                "referer",
-                "transfer-encoding",
-            )
-        }
+        headers = {name: self.headers.get_all(name, []) for name in SECURITY_HEADER_NAMES}
         payload = security_headers_payload(
             headers=headers,
             request_line=self.requestline,

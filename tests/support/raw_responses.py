@@ -1,4 +1,5 @@
 __all__ = (
+    "SECURITY_HEADER_NAMES",
     "header_values",
     "headers_payload",
     "json_payload",
@@ -27,6 +28,35 @@ from tests.support.http_routes import (
     redirect_to_status,
     status_code,
     unknown_size_bytes_response_size,
+)
+
+
+SECURITY_HEADER_NAMES = (
+    "accept",
+    "authorization",
+    "content-checksum",
+    "content-digest",
+    "content-disposition",
+    "content-encoding",
+    "content-language",
+    "content-length",
+    "content-location",
+    "content-range",
+    "content-type",
+    "cookie",
+    "digest",
+    "host",
+    "if-match",
+    "if-modified-since",
+    "if-none-match",
+    "if-range",
+    "if-unmodified-since",
+    "last-modified",
+    "origin",
+    "proxy-authorization",
+    "referer",
+    "repr-digest",
+    "transfer-encoding",
 )
 
 
@@ -274,22 +304,7 @@ def _raw_json_response(*, method: str, request_line: str, body: bytes) -> bytes:
 
 
 def _security_headers_from_raw(headers: str) -> dict[str, list[str]]:
-    return {
-        name: header_values(headers, name)
-        for name in (
-            "accept",
-            "authorization",
-            "content-encoding",
-            "content-length",
-            "content-type",
-            "cookie",
-            "host",
-            "origin",
-            "proxy-authorization",
-            "referer",
-            "transfer-encoding",
-        )
-    }
+    return {name: header_values(headers, name) for name in SECURITY_HEADER_NAMES}
 
 
 def _reason_phrase(status: int) -> str:

@@ -196,18 +196,14 @@ impl RequestState {
     fn apply_policy_mutation(&mut self, mutation: PolicyMutation) {
         let PolicyMutation::Redirect {
             body,
+            header_policy,
             method,
-            remove_sensitive_headers,
             url,
         } = mutation;
 
         self.method = method.to_owned();
         self.url = url;
-        self.headers = redirect_headers(
-            std::mem::take(&mut self.headers),
-            body,
-            remove_sensitive_headers,
-        );
+        self.headers = redirect_headers(std::mem::take(&mut self.headers), body, header_policy);
 
         if body == RequestBodyMutation::Drop {
             self.body = RequestBodyState::Empty;
