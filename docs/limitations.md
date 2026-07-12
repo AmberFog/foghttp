@@ -34,6 +34,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
   `response.raise_for_status()`
 - lightweight `response.request`
 - prepared `Request` objects with `build_request()` and `send()`
+- immutable request `extensions` propagated to policy hooks and `response.request`
 - case-insensitive `Headers` with repeated values
 - response header bytes exposed as Latin-1 strings, including obs-text values
 - normalized `URL` with origin comparison and relative joins

@@ -47,12 +47,13 @@ impl PythonPolicyHooks {
         &self,
         request: PolicyRequest<'_>,
         redirect_hop: usize,
+        extensions: Option<&Py<PyAny>>,
     ) -> PyResult<()> {
         let Some(callback) = self.before_send.as_ref() else {
             return Ok(());
         };
         Python::attach(|py| {
-            let request = self.request_snapshot(py, request, redirect_hop)?;
+            let request = self.request_snapshot(py, request, redirect_hop, extensions)?;
             call_hook(py, callback, request)
         })
     }
@@ -62,12 +63,14 @@ impl PythonPolicyHooks {
         request: PolicyRequest<'_>,
         response: ResponseHead<'_>,
         redirect_hop: usize,
+        extensions: Option<&Py<PyAny>>,
     ) -> PyResult<()> {
         let Some(callback) = self.on_response_headers.as_ref() else {
             return Ok(());
         };
         Python::attach(|py| {
-            let response = self.response_snapshot(py, request, response, redirect_hop)?;
+            let response =
+                self.response_snapshot(py, request, response, redirect_hop, extensions)?;
             call_hook(py, callback, response)
         })
     }
@@ -77,12 +80,14 @@ impl PythonPolicyHooks {
         request: PolicyRequest<'_>,
         response: ResponseHead<'_>,
         redirect_hop: usize,
+        extensions: Option<&Py<PyAny>>,
     ) -> PyResult<()> {
         let Some(callback) = self.after_response_body.as_ref() else {
             return Ok(());
         };
         Python::attach(|py| {
-            let response = self.response_snapshot(py, request, response, redirect_hop)?;
+            let response =
+                self.response_snapshot(py, request, response, redirect_hop, extensions)?;
             call_hook(py, callback, response)
         })
     }
@@ -96,16 +101,20 @@ impl PythonPolicyHooks {
         py: Python<'_>,
         request: PolicyRequest<'_>,
         redirect_hop: usize,
+        extensions: Option<&Py<PyAny>>,
     ) -> PyResult<Py<PyAny>> {
-        self.request_view
-            .bind(py)
-            .call1((
-                request.method(),
-                request.url().as_str(),
-                request_body_state(request.body()),
-                redirect_hop,
-            ))
-            .map(Bound::unbind)
+        let request_view = self.request_view.bind(py);
+        let method = request.method();
+        let url = request.url().as_str();
+        let body = request_body_state(request.body());
+        match extensions {
+            Some(extensions) => request_view
+                .call1((method, url, body, redirect_hop, extensions.bind(py)))
+                .map(Bound::unbind),
+            None => request_view
+                .call1((method, url, body, redirect_hop))
+                .map(Bound::unbind),
+        }
     }
 
     fn response_snapshot(
@@ -114,8 +123,9 @@ impl PythonPolicyHooks {
         request: PolicyRequest<'_>,
         response: ResponseHead<'_>,
         redirect_hop: usize,
+        extensions: Option<&Py<PyAny>>,
     ) -> PyResult<Py<PyAny>> {
-        let request = self.request_snapshot(py, request, redirect_hop)?;
+        let request = self.request_snapshot(py, request, redirect_hop, extensions)?;
         let headers = PyTuple::new(
             py,
             response

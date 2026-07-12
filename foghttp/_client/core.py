@@ -14,6 +14,7 @@ from ..limits import Limits
 from ..messages import CLIENT_CLOSED, UNCLOSED_CLIENT
 from ..pool_diagnostics import OriginPoolDiagnostics, PoolBlockingReason, PoolDiagnostics
 from ..request import Request
+from ..request_extensions import RequestExtensionsSource
 from ..timeouts import Timeouts
 from ..transport_state import TransportState
 from ..transport_stats import TransportStats
@@ -73,6 +74,7 @@ class ClientCore:
         data: RequestData = None,
         files: SyncMultipartFiles | AsyncMultipartFiles | None = None,
         json: Any = None,
+        extensions: RequestExtensionsSource = None,
     ) -> Request:
         return self._request_builder.build(
             RequestBuildOptions(
@@ -84,6 +86,7 @@ class ClientCore:
                 data=data,
                 files=files,
                 json=json,
+                extensions=extensions,
             ),
         )
 

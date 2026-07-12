@@ -38,6 +38,7 @@ from .limits import Limits
 from .methods import DELETE, GET, HEAD, PATCH, POST, PUT, QUERY
 from .policy import TransportPolicyHooks
 from .request import Request
+from .request_extensions import RequestExtensionsSource
 from .response import Response
 from .stream_response import AsyncStreamResponse
 from .stream_response.bindings import bind_stream_lifecycle_debug, bind_stream_telemetry
@@ -129,6 +130,7 @@ class AsyncClient(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
+        extensions: RequestExtensionsSource = None,
         content: AsyncRequestContent | None = None,
         data: RequestData = None,
         files: AsyncMultipartFiles | None = None,
@@ -141,6 +143,7 @@ class AsyncClient(ClientCore):
             url,
             headers=headers,
             params=params,
+            extensions=extensions,
             content=content,
             data=data,
             files=files,
@@ -178,6 +181,7 @@ class AsyncClient(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
+        extensions: RequestExtensionsSource = None,
         content: AsyncRequestContent | None = None,
         data: RequestData = None,
         files: AsyncMultipartFiles | None = None,
@@ -190,6 +194,7 @@ class AsyncClient(ClientCore):
             url,
             headers=headers,
             params=params,
+            extensions=extensions,
             content=content,
             data=data,
             files=files,
@@ -203,6 +208,7 @@ class AsyncClient(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
+        extensions: RequestExtensionsSource = None,
         timeout: Timeouts | None = None,
     ) -> Response:
         return await self.request(
@@ -210,6 +216,7 @@ class AsyncClient(ClientCore):
             url,
             headers=headers,
             params=params,
+            extensions=extensions,
             timeout=timeout,
         )
 
@@ -219,6 +226,7 @@ class AsyncClient(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
+        extensions: RequestExtensionsSource = None,
         timeout: Timeouts | None = None,
     ) -> Response:
         return await self.request(
@@ -226,6 +234,7 @@ class AsyncClient(ClientCore):
             url,
             headers=headers,
             params=params,
+            extensions=extensions,
             timeout=timeout,
         )
 
@@ -235,6 +244,7 @@ class AsyncClient(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
+        extensions: RequestExtensionsSource = None,
         content: AsyncRequestContent | None = None,
         data: RequestData = None,
         files: AsyncMultipartFiles | None = None,
@@ -246,6 +256,7 @@ class AsyncClient(ClientCore):
             url,
             headers=headers,
             params=params,
+            extensions=extensions,
             content=content,
             data=data,
             files=files,
@@ -259,6 +270,7 @@ class AsyncClient(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
+        extensions: RequestExtensionsSource = None,
         content: AsyncRequestContent | None = None,
         data: RequestData = None,
         files: AsyncMultipartFiles | None = None,
@@ -270,6 +282,7 @@ class AsyncClient(ClientCore):
             url,
             headers=headers,
             params=params,
+            extensions=extensions,
             content=content,
             data=data,
             files=files,
@@ -283,6 +296,7 @@ class AsyncClient(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
+        extensions: RequestExtensionsSource = None,
         content: AsyncRequestContent | None = None,
         data: RequestData = None,
         files: AsyncMultipartFiles | None = None,
@@ -294,6 +308,7 @@ class AsyncClient(ClientCore):
             url,
             headers=headers,
             params=params,
+            extensions=extensions,
             content=content,
             data=data,
             files=files,
@@ -307,6 +322,7 @@ class AsyncClient(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
+        extensions: RequestExtensionsSource = None,
         content: AsyncRequestContent | None = None,
         data: RequestData = None,
         files: AsyncMultipartFiles | None = None,
@@ -318,6 +334,7 @@ class AsyncClient(ClientCore):
             url,
             headers=headers,
             params=params,
+            extensions=extensions,
             content=content,
             data=data,
             files=files,
@@ -331,6 +348,7 @@ class AsyncClient(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
+        extensions: RequestExtensionsSource = None,
         content: AsyncRequestContent | None = None,
         data: RequestData = None,
         files: AsyncMultipartFiles | None = None,
@@ -342,6 +360,7 @@ class AsyncClient(ClientCore):
             url,
             headers=headers,
             params=params,
+            extensions=extensions,
             content=content,
             data=data,
             files=files,

@@ -105,6 +105,7 @@ def test_raw_sync_transport_sends_prepared_request_through_raw_client(
         faker.url(),
         headers=[("X-Trace", faker.uuid4())],
         content=faker.binary(length=8),
+        extensions={"tests.request_id": faker.uuid4()},
     )
     response = response_for_request(request)
     timeouts = Timeouts(pool=0.5, total=2.0)
@@ -117,6 +118,7 @@ def test_raw_sync_transport_sends_prepared_request_through_raw_client(
     def fake_response_from_raw(**kwargs: object) -> object:
         assert kwargs["raw"] is raw_response
         assert isinstance(kwargs["started"], float)
+        assert kwargs["extensions"] is request.extensions
         return response
 
     monkeypatch.setattr("foghttp._client.raw.requests.send_raw_request", fake_send_raw_request)
@@ -138,6 +140,7 @@ def test_raw_sync_transport_sends_prepared_request_through_raw_client(
         use_proxy_transport=False,
         proxy_policy=ProxyTransportPolicy.DIRECT,
         timeouts=timeouts,
+        extensions=request.extensions,
     )
 
 
@@ -223,6 +226,7 @@ async def test_raw_async_transport_sends_prepared_request_through_raw_client(
         faker.url(),
         headers=[("X-Trace", faker.uuid4())],
         content=faker.binary(length=8),
+        extensions={"tests.request_id": faker.uuid4()},
     )
     response = response_for_request(request)
     timeouts = Timeouts(pool=0.5, total=2.0)
@@ -235,6 +239,7 @@ async def test_raw_async_transport_sends_prepared_request_through_raw_client(
     def fake_response_from_raw(**kwargs: object) -> object:
         assert kwargs["raw"] is raw_response
         assert isinstance(kwargs["started"], float)
+        assert kwargs["extensions"] is request.extensions
         return response
 
     monkeypatch.setattr("foghttp._client.raw.requests.send_raw_request_async", fake_send_raw_request_async)
@@ -256,6 +261,7 @@ async def test_raw_async_transport_sends_prepared_request_through_raw_client(
         use_proxy_transport=False,
         proxy_policy=ProxyTransportPolicy.DIRECT,
         timeouts=timeouts,
+        extensions=request.extensions,
     )
 
 

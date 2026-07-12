@@ -38,14 +38,16 @@ def test_sync_policy_hooks_observe_each_transport_stage(
         after_response_body=after_response_body,
     )
     initial_url = f"{sync_http_server}/redirect/{FOUND}"
+    extensions = {"tests.request_id": initial_url}
+    expected_extensions = foghttp.RequestExtensions(extensions)
 
     with foghttp.Client(follow_redirects=True, policy_hooks=hooks) as client:
         if streaming:
-            with client.stream(GET, initial_url) as response:
+            with client.stream(GET, initial_url, extensions=extensions) as response:
                 assert response.status_code == OK
                 final_url = response.url
         else:
-            response = client.get(initial_url)
+            response = client.get(initial_url, extensions=extensions)
             assert response.status_code == OK
             final_url = response.url
 
@@ -61,7 +63,7 @@ def test_sync_policy_hooks_observe_each_transport_stage(
     redirected_request = events[3][1]
     final_response = events[4][1]
     assert isinstance(first_request, TransportPolicyRequest)
-    assert first_request == TransportPolicyRequest(GET, initial_url, "empty", 0)
+    assert first_request == TransportPolicyRequest(GET, initial_url, "empty", 0, expected_extensions)
     assert isinstance(redirect_response, TransportPolicyResponse)
     assert redirect_response.request is not first_request
     assert redirect_response.request == first_request
@@ -69,10 +71,12 @@ def test_sync_policy_hooks_observe_each_transport_stage(
     assert ("location", "/final") in redirect_response.headers
     assert events[2][1] == redirect_response
     assert isinstance(redirected_request, TransportPolicyRequest)
-    assert redirected_request == TransportPolicyRequest(GET, final_url, "empty", 1)
+    assert redirected_request == TransportPolicyRequest(GET, final_url, "empty", 1, expected_extensions)
     assert isinstance(final_response, TransportPolicyResponse)
     assert final_response.request == redirected_request
     assert final_response.status_code == OK
+    assert response.request.extensions is first_request.extensions
+    assert all(item.request.extensions is first_request.extensions for item in response.history)
 
 
 def test_sync_hook_exception_is_propagated_before_transport_acquire(sync_http_server: str) -> None:

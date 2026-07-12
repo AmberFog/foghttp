@@ -18,6 +18,7 @@ the current FogHTTP API. The same flow is available as a runnable example in
 | `params` | Supported | Accepts mappings, repeated pairs, and raw query strings. Existing URL query is preserved. |
 | client default `params` | Supported | Passed as `Client(params=...)` or `AsyncClient(params=...)`. Appended after URL query and before per-request params. |
 | `headers` | Supported | Accepts mappings, pairs, and `foghttp.Headers`. Lookups are case-insensitive and repeated values are preserved. |
+| `extensions` | Supported | Immutable request-scoped metadata for policy and application coordination. It is never serialized into the HTTP message. |
 | client default `headers` | Supported | Passed as `Client(headers=...)` or `AsyncClient(headers=...)`. Per-request headers override defaults case-insensitively. |
 | `json` | Supported | Encoded with `orjson`. Adds `content-type: application/json` unless explicitly set. |
 | `content` | Supported | Accepts buffered `bytes` or `str`, binary file-like objects, sync bytes-like iterables, zero-arg byte-stream factories, and async bytes-like iterables/factories on `AsyncClient`. Strings are encoded as UTF-8. No semantic content type is added. |
@@ -87,6 +88,54 @@ feature flag defaults visible in the final URL.
 Per-request headers override client defaults case-insensitively. Repeated
 headers from defaults are preserved when the request does not override that
 header name.
+
+## Request Extensions
+
+Use `extensions=` for request-scoped application metadata that policy hooks,
+auth, retry, proxy, or tracing integrations may need without placing service
+state in HTTP headers. The name is deliberately `extensions`, not `context`:
+the value belongs to a prepared request and does not imply `contextvars`, event
+loop, or task-context propagation.
+
+```python
+import foghttp
+from foghttp.methods import GET
+
+
+with foghttp.Client() as client:
+    request = client.build_request(
+        GET,
+        "https://api.example.com/resource",
+        extensions={"example.request_id": "request-42"},
+    )
+    response = client.send(request)
+    assert response.request.extensions["example.request_id"] == "request-42"
+```
+
+`Request`, `build_request()`, `request()`, `stream()`, and every method shortcut
+accept `extensions=`. FogHTTP makes a shallow immutable copy represented by
+`RequestExtensions`; later changes to the source mapping do not change the
+prepared request. Values remain caller-owned references, so keep them small and
+treat mutable values as immutable while a request, response, or hook may retain
+them. Do not attach open files, sockets, clients, tasks, or other lifecycle-owned
+resources.
+
+Keys must be non-empty strings. Libraries should use a package or reverse-domain
+namespace rather than generic names. The case-insensitive `foghttp.*` namespace
+is reserved for present and future internal timeout, trace, proxy, retry, and
+other policy decisions; callers cannot set it. Reserved internal state is not a
+public configuration API.
+
+Extensions are available as `request.extensions`, on
+`TransportPolicyRequest.extensions`, and on `response.request.extensions`,
+including redirect history. They are not copied into the URL, headers, or body.
+Their keys and values are omitted from request, response, and policy snapshot
+`repr()` output, but application code must still avoid logging the raw mapping
+when it contains sensitive metadata.
+
+When `extensions` is omitted, requests share one empty immutable snapshot and
+the native boundary receives `None`; no per-request metadata mapping or Python
+policy callback is introduced.
 
 ## Sync Example
 

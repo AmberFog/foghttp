@@ -41,6 +41,7 @@ def test_sync_shortcuts_use_request_builder_pipeline_without_transport(
     captured_requests: list[foghttp.Request] = []
     url = _base_url(faker)
     trace_value = faker.slug()
+    extensions = {"tests.request_id": faker.uuid4()}
 
     def fake_send(
         _client: foghttp.Client,
@@ -59,6 +60,7 @@ def test_sync_shortcuts_use_request_builder_pipeline_without_transport(
             url,
             headers={"Accept": "application/json"},
             params={"trace": trace_value},
+            extensions=extensions,
         )
 
     _assert_shortcut_request(
@@ -66,6 +68,7 @@ def test_sync_shortcuts_use_request_builder_pipeline_without_transport(
         response=response,
         expected_method=expected_method,
         expected_url=f"{url}&trace={trace_value}",
+        expected_extensions=extensions,
     )
 
 
@@ -82,6 +85,7 @@ async def test_async_shortcuts_use_request_builder_pipeline_without_transport(
     captured_requests: list[foghttp.Request] = []
     url = _base_url(faker)
     trace_value = faker.slug()
+    extensions = {"tests.request_id": faker.uuid4()}
 
     async def fake_send(
         _client: foghttp.AsyncClient,
@@ -100,6 +104,7 @@ async def test_async_shortcuts_use_request_builder_pipeline_without_transport(
             url,
             headers={"Accept": "application/json"},
             params={"trace": trace_value},
+            extensions=extensions,
         )
 
     _assert_shortcut_request(
@@ -107,6 +112,7 @@ async def test_async_shortcuts_use_request_builder_pipeline_without_transport(
         response=response,
         expected_method=expected_method,
         expected_url=f"{url}&trace={trace_value}",
+        expected_extensions=extensions,
     )
 
 
@@ -214,6 +220,7 @@ def _assert_shortcut_request(
     response: foghttp.Response,
     expected_method: str,
     expected_url: str,
+    expected_extensions: dict[str, object],
 ) -> None:
     assert len(captured_requests) == 1
     request = captured_requests[0]
@@ -221,6 +228,8 @@ def _assert_shortcut_request(
     assert request.method == expected_method
     assert request.url == expected_url
     assert request.headers["accept"] == "application/json"
+    assert request.extensions == expected_extensions
+    assert response.request.extensions == expected_extensions
 
 
 def _response_for(request: foghttp.Request) -> foghttp.Response:
@@ -233,6 +242,7 @@ def _response_for(request: foghttp.Request) -> foghttp.Response:
             method=request.method,
             url=request.url,
             headers=request.headers,
+            extensions=request.extensions,
         ),
         http_version="HTTP/1.1",
         elapsed=0.0,

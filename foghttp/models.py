@@ -8,6 +8,7 @@ __all__ = (
     "Headers",
     "Limits",
     "Request",
+    "RequestExtensions",
     "Response",
     "StreamResponse",
     "TLSConfig",
@@ -25,6 +26,7 @@ from .lifecycle_debug import (
 )
 from .limits import Limits
 from .request import Request
+from .request_extensions import RequestExtensions
 from .response import Response
 from .stream_response import AsyncStreamResponse, StreamResponse
 from .timeout_diagnostics import TimeoutDiagnostic, TimeoutPhase

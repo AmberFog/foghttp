@@ -24,6 +24,7 @@ __all__ = (
     "ReadTimeout",
     "Request",
     "RequestError",
+    "RequestExtensions",
     "RequestInfo",
     "Response",
     "ResponseBodyBudgetExceededError",
@@ -93,6 +94,7 @@ from .policy import (
 )
 from .pool_diagnostics import OriginPoolDiagnostics, PoolBlockingReason, PoolDiagnostics
 from .request import Request
+from .request_extensions import RequestExtensions
 from .request_info import RequestInfo
 from .response import Response
 from .stream_response import AsyncStreamResponse, StreamResponse

@@ -273,6 +273,7 @@ def _raw_request_options(
         "method": GET,
         "url": url,
         "headers": [],
+        "extensions": None,
         "body": None,
         "body_stream": BODY_STREAM,
         "body_replayable": REQUEST_BODY_REPLAYABLE,

@@ -101,6 +101,7 @@ def response_for_request(request: Request) -> Response:
             method=request.method,
             url=request.url,
             headers=request.headers.copy(),
+            extensions=request.extensions,
         ),
         http_version=_HTTP_1_1,
         elapsed=0.0,

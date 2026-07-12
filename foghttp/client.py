@@ -25,6 +25,7 @@ from .limits import Limits
 from .methods import DELETE, GET, HEAD, PATCH, POST, PUT, QUERY
 from .policy import TransportPolicyHooks
 from .request import Request
+from .request_extensions import RequestExtensionsSource
 from .response import Response
 from .stream_response import StreamResponse
 from .stream_response.bindings import bind_stream_telemetry
@@ -139,6 +140,7 @@ class Client(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
+        extensions: RequestExtensionsSource = None,
         content: SyncRequestContent | None = None,
         data: RequestData = None,
         files: SyncMultipartFiles | None = None,
@@ -151,6 +153,7 @@ class Client(ClientCore):
             url,
             headers=headers,
             params=params,
+            extensions=extensions,
             content=content,
             data=data,
             files=files,
@@ -188,6 +191,7 @@ class Client(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
+        extensions: RequestExtensionsSource = None,
         content: SyncRequestContent | None = None,
         data: RequestData = None,
         files: SyncMultipartFiles | None = None,
@@ -200,6 +204,7 @@ class Client(ClientCore):
             url,
             headers=headers,
             params=params,
+            extensions=extensions,
             content=content,
             data=data,
             files=files,
@@ -213,6 +218,7 @@ class Client(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
+        extensions: RequestExtensionsSource = None,
         timeout: Timeouts | None = None,
     ) -> Response:
         return self.request(
@@ -220,6 +226,7 @@ class Client(ClientCore):
             url,
             headers=headers,
             params=params,
+            extensions=extensions,
             timeout=timeout,
         )
 
@@ -229,6 +236,7 @@ class Client(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
+        extensions: RequestExtensionsSource = None,
         timeout: Timeouts | None = None,
     ) -> Response:
         return self.request(
@@ -236,6 +244,7 @@ class Client(ClientCore):
             url,
             headers=headers,
             params=params,
+            extensions=extensions,
             timeout=timeout,
         )
 
@@ -245,6 +254,7 @@ class Client(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
+        extensions: RequestExtensionsSource = None,
         content: SyncRequestContent | None = None,
         data: RequestData = None,
         files: SyncMultipartFiles | None = None,
@@ -256,6 +266,7 @@ class Client(ClientCore):
             url,
             headers=headers,
             params=params,
+            extensions=extensions,
             content=content,
             data=data,
             files=files,
@@ -269,6 +280,7 @@ class Client(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
+        extensions: RequestExtensionsSource = None,
         content: SyncRequestContent | None = None,
         data: RequestData = None,
         files: SyncMultipartFiles | None = None,
@@ -280,6 +292,7 @@ class Client(ClientCore):
             url,
             headers=headers,
             params=params,
+            extensions=extensions,
             content=content,
             data=data,
             files=files,
@@ -293,6 +306,7 @@ class Client(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
+        extensions: RequestExtensionsSource = None,
         content: SyncRequestContent | None = None,
         data: RequestData = None,
         files: SyncMultipartFiles | None = None,
@@ -304,6 +318,7 @@ class Client(ClientCore):
             url,
             headers=headers,
             params=params,
+            extensions=extensions,
             content=content,
             data=data,
             files=files,
@@ -317,6 +332,7 @@ class Client(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
+        extensions: RequestExtensionsSource = None,
         content: SyncRequestContent | None = None,
         data: RequestData = None,
         files: SyncMultipartFiles | None = None,
@@ -328,6 +344,7 @@ class Client(ClientCore):
             url,
             headers=headers,
             params=params,
+            extensions=extensions,
             content=content,
             data=data,
             files=files,
@@ -341,6 +358,7 @@ class Client(ClientCore):
         *,
         headers: HeaderSource = None,
         params: QueryParams = None,
+        extensions: RequestExtensionsSource = None,
         content: SyncRequestContent | None = None,
         data: RequestData = None,
         files: SyncMultipartFiles | None = None,
@@ -352,6 +370,7 @@ class Client(ClientCore):
             url,
             headers=headers,
             params=params,
+            extensions=extensions,
             content=content,
             data=data,
             files=files,

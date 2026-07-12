@@ -234,6 +234,7 @@ impl RawClient {
         method,
         url,
         headers,
+        extensions=None,
         body,
         body_stream,
         body_replayable,
@@ -251,6 +252,7 @@ impl RawClient {
         method: String,
         url: String,
         headers: HeaderPairs,
+        extensions: Option<Py<PyAny>>,
         body: Option<Vec<u8>>,
         body_stream: Option<Py<RawUploadBody>>,
         body_replayable: bool,
@@ -274,6 +276,7 @@ impl RawClient {
         let max_redirects = self.max_redirects;
         let proxy_authorization = self.proxy_authorization.clone();
         let policy_hooks = self.policy_hooks.clone();
+        let extensions = extensions.filter(|_| policy_hooks.is_some());
         self.metrics.request_started();
 
         let result = py.detach(|| {
@@ -301,6 +304,7 @@ impl RawClient {
                         follow_redirects,
                         max_redirects,
                         policy_hooks,
+                        extensions,
                     },
                 )
                 .await
@@ -316,6 +320,7 @@ impl RawClient {
         method,
         url,
         headers,
+        extensions=None,
         body,
         body_stream,
         body_replayable,
@@ -333,6 +338,7 @@ impl RawClient {
         method: String,
         url: String,
         headers: HeaderPairs,
+        extensions: Option<Py<PyAny>>,
         body: Option<Vec<u8>>,
         body_stream: Option<Py<RawUploadBody>>,
         body_replayable: bool,
@@ -354,6 +360,7 @@ impl RawClient {
         let max_redirects = self.max_redirects;
         let proxy_authorization = self.proxy_authorization.clone();
         let policy_hooks = self.policy_hooks.clone();
+        let extensions = extensions.filter(|_| policy_hooks.is_some());
         spawn_async_request(
             py,
             runtime,
@@ -382,6 +389,7 @@ impl RawClient {
                     follow_redirects,
                     max_redirects,
                     policy_hooks,
+                    extensions,
                 },
             },
         )
@@ -392,6 +400,7 @@ impl RawClient {
         method,
         url,
         headers,
+        extensions=None,
         body,
         body_stream,
         body_replayable,
@@ -409,6 +418,7 @@ impl RawClient {
         method: String,
         url: String,
         headers: HeaderPairs,
+        extensions: Option<Py<PyAny>>,
         body: Option<Vec<u8>>,
         body_stream: Option<Py<RawUploadBody>>,
         body_replayable: bool,
@@ -434,6 +444,7 @@ impl RawClient {
         let max_redirects = self.max_redirects;
         let proxy_authorization = self.proxy_authorization.clone();
         let policy_hooks = self.policy_hooks.clone();
+        let extensions = extensions.filter(|_| policy_hooks.is_some());
         let completion = RequestCompletion::default();
         let request_completion = completion.clone();
         let future_setters = self.future_setters.clone_ref(py);
@@ -467,6 +478,7 @@ impl RawClient {
                         follow_redirects,
                         max_redirects,
                         policy_hooks,
+                        extensions,
                     },
                     request_completion,
                 )
@@ -485,6 +497,7 @@ impl RawClient {
         method,
         url,
         headers,
+        extensions=None,
         body,
         body_stream,
         body_replayable,
@@ -502,6 +515,7 @@ impl RawClient {
         method: String,
         url: String,
         headers: HeaderPairs,
+        extensions: Option<Py<PyAny>>,
         body: Option<Vec<u8>>,
         body_stream: Option<Py<RawUploadBody>>,
         body_replayable: bool,
@@ -523,6 +537,7 @@ impl RawClient {
         let max_redirects = self.max_redirects;
         let proxy_authorization = self.proxy_authorization.clone();
         let policy_hooks = self.policy_hooks.clone();
+        let extensions = extensions.filter(|_| policy_hooks.is_some());
         spawn_async_stream_request(
             py,
             runtime,
@@ -552,6 +567,7 @@ impl RawClient {
                     follow_redirects,
                     max_redirects,
                     policy_hooks,
+                    extensions,
                 },
             },
         )

@@ -13,6 +13,7 @@ import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
 from ..._request_body import RequestBody
 from ..._upload_body import prepare_async_upload_body, prepare_sync_upload_body
+from ...request_extensions import RequestExtensions
 from ...timeouts import Timeouts
 from ..proxy import ProxyTransportPolicy
 from .errors import raise_public_raw_error
@@ -27,6 +28,7 @@ class RawRequestOptions:
     use_proxy_transport: bool
     proxy_policy: ProxyTransportPolicy
     timeouts: Timeouts
+    extensions: RequestExtensions | None = None
 
 
 def send_raw_request(
@@ -40,6 +42,7 @@ def send_raw_request(
             method=request.method.upper(),
             url=request.url,
             headers=request.headers,
+            extensions=request.extensions,
             body=body.buffered_body,
             body_stream=body.raw_body,
             body_replayable=request.body.replayable,
@@ -67,6 +70,7 @@ def send_raw_stream_request(
             method=request.method.upper(),
             url=request.url,
             headers=request.headers,
+            extensions=request.extensions,
             body=body.buffered_body,
             body_stream=body.raw_body,
             body_replayable=request.body.replayable,
@@ -94,6 +98,7 @@ async def send_raw_request_async(
             method=request.method.upper(),
             url=request.url,
             headers=request.headers,
+            extensions=request.extensions,
             body=body.buffered_body,
             body_stream=body.raw_body,
             body_replayable=request.body.replayable,
@@ -121,6 +126,7 @@ async def send_raw_stream_request_async(
             method=request.method.upper(),
             url=request.url,
             headers=request.headers,
+            extensions=request.extensions,
             body=body.buffered_body,
             body_stream=body.raw_body,
             body_replayable=request.body.replayable,

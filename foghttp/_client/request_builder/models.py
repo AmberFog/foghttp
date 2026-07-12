@@ -5,6 +5,7 @@ from typing import Any
 
 from ..._upload_body import AsyncRequestContent, SyncRequestContent
 from ...headers import HeaderSource
+from ...request_extensions import RequestExtensionsSource
 from ...types import AsyncMultipartFiles, QueryParams, RequestData, SyncMultipartFiles
 from ...url import URL
 
@@ -19,3 +20,4 @@ class RequestBuildOptions:
     data: RequestData = None
     files: SyncMultipartFiles | AsyncMultipartFiles | None = None
     json: Any = None
+    extensions: RequestExtensionsSource = None

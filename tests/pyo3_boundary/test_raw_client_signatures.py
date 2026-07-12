@@ -32,6 +32,7 @@ RAW_REQUEST_KEYWORD_ONLY_PARAMETERS = (
     "method",
     "url",
     "headers",
+    "extensions",
     "body",
     "body_stream",
     "body_replayable",
@@ -67,6 +68,7 @@ def test_raw_request_signatures_are_kw_only() -> None:
         assert parameters[0].kind is inspect.Parameter.POSITIONAL_ONLY
         assert _parameter_names(signature)[1:] == RAW_REQUEST_KEYWORD_ONLY_PARAMETERS
         assert all(parameter.kind is inspect.Parameter.KEYWORD_ONLY for parameter in parameters[1:])
+        assert signature.parameters["extensions"].default is None
 
 
 def _parameter_names(signature: inspect.Signature) -> tuple[str, ...]:

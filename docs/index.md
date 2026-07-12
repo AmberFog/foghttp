@@ -113,6 +113,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - sync and async bytes/text/line response streaming with context-managed cleanup
 - response status flags for success, redirects, and client/server errors
 - prepared `Request` objects with `build_request()` and `send()`
+- immutable request `extensions` for policy/application metadata outside the HTTP message
 - public upload typing contracts for streaming request bodies and multipart
   `files=` providers
 - case-insensitive `Headers` with repeated value support
