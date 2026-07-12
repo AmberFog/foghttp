@@ -90,11 +90,14 @@ def test_policy_views_are_immutable_snapshots() -> None:
 
 
 def test_policy_view_repr_redacts_url_and_header_values() -> None:
+    extension_key = "tests.private"
+    extension_value = "private-extension-value"
     request = TransportPolicyRequest(
         method="GET",
         url="https://example.com/resource?access_token=secret",
         body="empty",
         redirect_hop=0,
+        extensions=foghttp.RequestExtensions({extension_key: extension_value}),
     )
     response = TransportPolicyResponse(
         request=request,
@@ -106,7 +109,10 @@ def test_policy_view_repr_redacts_url_and_header_values() -> None:
 
     assert "access_token=<redacted>" in representation
     assert "session=secret" not in representation
+    assert extension_key not in representation
+    assert extension_value not in representation
     assert "headers=<1 headers>" in representation
+    assert "extensions=<1 items>" in representation
 
 
 def test_policy_contracts_are_exported_at_package_root() -> None:

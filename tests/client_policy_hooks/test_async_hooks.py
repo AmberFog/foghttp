@@ -1,4 +1,5 @@
 import asyncio
+from threading import Barrier
 
 import pytest
 
@@ -37,14 +38,16 @@ async def test_async_policy_hooks_observe_each_transport_stage(
         after_response_body=after_response_body,
     )
     initial_url = f"{http_server}/redirect/{FOUND}"
+    extensions = {"tests.request_id": initial_url}
+    expected_extensions = foghttp.RequestExtensions(extensions)
 
     async with foghttp.AsyncClient(follow_redirects=True, policy_hooks=hooks) as client:
         if streaming:
-            async with client.stream(GET, initial_url) as response:
+            async with client.stream(GET, initial_url, extensions=extensions) as response:
                 assert response.status_code == OK
                 final_url = response.url
         else:
-            response = await client.get(initial_url)
+            response = await client.get(initial_url, extensions=extensions)
             assert response.status_code == OK
             final_url = response.url
 
@@ -60,16 +63,18 @@ async def test_async_policy_hooks_observe_each_transport_stage(
     redirected_request = events[3][1]
     final_response = events[4][1]
     assert isinstance(first_request, TransportPolicyRequest)
-    assert first_request == TransportPolicyRequest(GET, initial_url, "empty", 0)
+    assert first_request == TransportPolicyRequest(GET, initial_url, "empty", 0, expected_extensions)
     assert isinstance(redirect_response, TransportPolicyResponse)
     assert redirect_response.request == first_request
     assert redirect_response.status_code == FOUND
     assert events[2][1] == redirect_response
     assert isinstance(redirected_request, TransportPolicyRequest)
-    assert redirected_request == TransportPolicyRequest(GET, final_url, "empty", 1)
+    assert redirected_request == TransportPolicyRequest(GET, final_url, "empty", 1, expected_extensions)
     assert isinstance(final_response, TransportPolicyResponse)
     assert final_response.request == redirected_request
     assert final_response.status_code == OK
+    assert response.request.extensions is first_request.extensions
+    assert all(item.request.extensions is first_request.extensions for item in response.history)
 
 
 async def test_async_hook_exception_is_propagated(http_server: str) -> None:
@@ -87,20 +92,29 @@ async def test_async_hook_exception_is_propagated(http_server: str) -> None:
     assert stats.pool_acquire_attempts == 0
 
 
-async def test_async_policy_hook_is_shared_by_concurrent_requests(http_server: str) -> None:
-    observed_urls: list[str] = []
+async def test_async_policy_hooks_keep_extensions_isolated_under_overlap(http_server: str) -> None:
+    urls = [f"{http_server}/status/{OK}?request={index}" for index in range(2)]
+    request_ids = {url: index for index, url in enumerate(urls)}
+    overlap = Barrier(len(urls))
+    observed: dict[str, object] = {}
 
     def observe(request: TransportPolicyRequest) -> None:
-        observed_urls.append(request.url)
+        overlap.wait(timeout=5.0)
+        observed[request.url] = request.extensions["tests.request_id"]
 
     hooks = TransportPolicyHooks(before_send=observe)
-    urls = [f"{http_server}/status/{OK}?request={index}" for index in range(20)]
 
-    async with foghttp.AsyncClient(policy_hooks=hooks) as client:
-        responses = await asyncio.gather(*(client.get(url) for url in urls))
+    async with foghttp.AsyncClient(
+        policy_hooks=hooks,
+        runtime="dedicated",
+        runtime_workers=2,
+    ) as client:
+        responses = await asyncio.gather(
+            *(client.get(url, extensions={"tests.request_id": request_ids[url]}) for url in urls),
+        )
 
     assert all(response.status_code == OK for response in responses)
-    assert sorted(observed_urls) == sorted(urls)
+    assert observed == request_ids
 
 
 @pytest.mark.parametrize("streaming", [False, True], ids=("buffered", "streaming"))

@@ -165,6 +165,7 @@ fn transport_request(body: Option<Vec<u8>>, body_replayable: bool) -> TransportR
         follow_redirects: true,
         max_redirects: 20,
         policy_hooks: None,
+        extensions: None,
     }
 }
 

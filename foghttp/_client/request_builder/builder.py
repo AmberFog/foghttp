@@ -29,6 +29,7 @@ class RequestBuilder:
             request_url,
             headers=request_headers,
             body=body,
+            extensions=options.extensions,
         )
 
     def _build_url(self, url: str | URL, params: QueryParams) -> str:

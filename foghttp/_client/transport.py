@@ -48,7 +48,7 @@ class RawSyncTransport:
             raw_client=self._raw_client_provider(),
             request=raw_request,
         )
-        return response_from_raw(raw=raw, started=started)
+        return response_from_raw(raw=raw, started=started, extensions=request.extensions)
 
     def stream(self, request: Request, *, timeouts: Timeouts) -> StreamResponse:
         started = time.perf_counter()
@@ -57,7 +57,7 @@ class RawSyncTransport:
             raw_client=self._raw_client_provider(),
             request=raw_request,
         )
-        return stream_response_from_raw(raw=raw, started=started)
+        return stream_response_from_raw(raw=raw, started=started, extensions=request.extensions)
 
 
 class RawAsyncTransport:
@@ -72,7 +72,7 @@ class RawAsyncTransport:
             raw_client=self._raw_client_provider(),
             request=raw_request,
         )
-        return response_from_raw(raw=raw, started=started)
+        return response_from_raw(raw=raw, started=started, extensions=request.extensions)
 
     async def stream(self, request: Request, *, timeouts: Timeouts) -> AsyncStreamResponse:
         started = time.perf_counter()
@@ -81,4 +81,4 @@ class RawAsyncTransport:
             raw_client=self._raw_client_provider(),
             request=raw_request,
         )
-        return async_stream_response_from_raw(raw=raw, started=started)
+        return async_stream_response_from_raw(raw=raw, started=started, extensions=request.extensions)

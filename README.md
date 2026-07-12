@@ -106,6 +106,7 @@ async with foghttp.AsyncClient() as client:
 - sync and async bytes/text/line response streaming with explicit
   context-managed lifecycle
 - prepared `Request` objects with `build_request()` and `send()`
+- immutable request `extensions` for policy/application metadata outside the HTTP message
 - case-insensitive `Headers` with repeated values
 - safe policy for transport-managed request headers
 - redacted repr/error surfaces for sensitive headers, URL credentials,

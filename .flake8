@@ -29,10 +29,11 @@ exclude =
 per-file-ignores =
     # FogHTTP uses public __init__.py modules as explicit import/__all__ API vitrines.
     **/__init__.py: WPS412
-    # Public/API orchestration modules naturally collect more dependencies and ergonomic kwargs.
-    foghttp/__init__.py: WPS201, WPS412
+    # Root package is an explicit API vitrine; import count follows the stable public surface.
+    foghttp/__init__.py: WPS201, WPS203, WPS412
+    # Public client orchestration modules naturally collect ergonomic kwargs.
     foghttp/client.py: WPS201, WPS211, WPS214, WPS501
-    foghttp/async_client.py: WPS201, WPS211, WPS214
+    foghttp/async_client.py: WPS201, WPS203, WPS211, WPS214
     # ClientCore maps Rust snapshots to TypedDict literal keys and owns the unclosed-client warning.
     foghttp/_client/core.py: WPS201, WPS211, WPS214, WPS226, WPS603
     # Public domain objects intentionally expose mapping/response/url-style APIs.

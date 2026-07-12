@@ -22,6 +22,7 @@ from foghttp._request_body import RequestBody
 from foghttp.limits import Limits
 from foghttp.methods import GET
 from foghttp.policy import TransportPolicyHooks, TransportPolicyRequest
+from foghttp.request_extensions import RequestExtensions
 from foghttp.timeouts import Timeouts
 from foghttp.tls import TLSConfig
 
@@ -55,6 +56,7 @@ RAW_REQUEST_ARGUMENTS = (
     "method",
     "url",
     "headers",
+    "extensions",
     "body",
     "body_stream",
     "body_replayable",
@@ -109,6 +111,7 @@ def _raw_request(
     timeouts: Timeouts,
     body: bytes | None = None,
     body_replayable: bool = True,
+    extensions: RequestExtensions | None = None,
 ) -> RawRequestOptions:
     return RawRequestOptions(
         method=GET,
@@ -118,6 +121,7 @@ def _raw_request(
         use_proxy_transport=False,
         proxy_policy=ProxyTransportPolicy.DIRECT,
         timeouts=timeouts,
+        extensions=extensions,
     )
 
 
@@ -336,6 +340,7 @@ def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker:
     url = faker.url()
     body = faker.binary(length=8)
     body_replayable = False
+    extensions = RequestExtensions({"tests.request_id": faker.uuid4()})
 
     response = send_raw_request(
         raw_client=RawClientProbe(),
@@ -343,6 +348,7 @@ def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker:
             url=url,
             body=body,
             body_replayable=body_replayable,
+            extensions=extensions,
             timeouts=timeouts,
         ),
     )
@@ -352,6 +358,7 @@ def test_send_raw_request_passes_request_timeouts_without_connect_timeout(faker:
         url=url,
         body=body,
         body_replayable=body_replayable,
+        extensions=extensions,
         timeouts=timeouts,
     )
 
@@ -449,11 +456,13 @@ def _expected_raw_request_options(
     body: bytes | None,
     body_replayable: bool,
     timeouts: Timeouts,
+    extensions: RequestExtensions | None = None,
 ) -> dict[str, object]:
     options: dict[str, object] = {
         "method": GET,
         "url": url,
         "headers": [],
+        "extensions": extensions,
         "body": body,
         "body_stream": None,
         "body_replayable": body_replayable,

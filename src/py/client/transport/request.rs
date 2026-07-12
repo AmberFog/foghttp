@@ -14,6 +14,7 @@ use crate::py::client::policy_hooks::PythonPolicyHooks;
 use crate::py::client::upload_body::RawUploadBody;
 use crate::py::response::RawRequestInfo;
 use pyo3::prelude::*;
+use pyo3::types::PyAny;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -35,6 +36,7 @@ pub struct TransportRequest {
     pub follow_redirects: bool,
     pub max_redirects: usize,
     pub policy_hooks: Option<Arc<PythonPolicyHooks>>,
+    pub extensions: Option<Py<PyAny>>,
 }
 
 pub(super) struct RequestState {
@@ -45,6 +47,7 @@ pub(super) struct RequestState {
     pub(super) body_policy: RequestBodyPolicy,
     policy: PolicyPipeline,
     policy_hooks: Option<Arc<PythonPolicyHooks>>,
+    extensions: Option<Py<PyAny>>,
     pub(super) proxy_authorization: Option<String>,
     pub(super) total_timeout: f64,
     pub(super) read_timeout: f64,
@@ -126,7 +129,7 @@ impl RequestState {
             .before_send(request)
             .map_err(|error| policy_error(&error))?;
         if let Some(hooks) = self.policy_hooks.as_ref() {
-            hooks.before_send(request, redirect_hop)?;
+            hooks.before_send(request, redirect_hop, self.extensions.as_ref())?;
         }
         Ok(route)
     }
@@ -141,7 +144,7 @@ impl RequestState {
         let response = ResponseHead::new(status_code, headers);
         let action = self.policy.on_response_headers(request, response);
         if let Some(hooks) = self.policy_hooks.as_ref() {
-            hooks.on_response_headers(request, response, redirect_hop)?;
+            hooks.on_response_headers(request, response, redirect_hop, self.extensions.as_ref())?;
         }
         Ok(action.map(|action| PendingResponsePolicyAction {
             action,
@@ -161,7 +164,12 @@ impl RequestState {
             .after_response_body(request, action, completed_redirects)
             .map_err(|error| policy_error(&error))?;
         if let (Some(hooks), Some(response)) = (self.policy_hooks.as_ref(), response.as_ref()) {
-            hooks.after_response_body(request, response.as_view(), completed_redirects)?;
+            hooks.after_response_body(
+                request,
+                response.as_view(),
+                completed_redirects,
+                self.extensions.as_ref(),
+            )?;
         }
         self.apply_policy_mutation(mutation);
         Ok(())
@@ -231,6 +239,7 @@ impl RequestState {
             body_policy,
             policy,
             policy_hooks: parts.policy_hooks,
+            extensions: parts.extensions,
             proxy_authorization: parts.proxy_authorization,
             total_timeout: parts.total_timeout,
             read_timeout: parts.read_timeout,

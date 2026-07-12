@@ -9,16 +9,18 @@ import time
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
 from ..headers import Headers
+from ..request_extensions import RequestExtensions
 from ..request_info import RequestInfo
 from ..response import Response
 from ..stream_response import AsyncStreamResponse, StreamResponse
 
 
-def request_info_from_raw(raw: _foghttp.RawRequestInfo) -> RequestInfo:
+def request_info_from_raw(raw: _foghttp.RawRequestInfo, *, extensions: RequestExtensions) -> RequestInfo:
     return RequestInfo(
         method=raw.method,
         url=raw.url,
         headers=Headers(raw.headers),
+        extensions=extensions,
     )
 
 
@@ -26,16 +28,17 @@ def response_from_raw(
     *,
     raw: _foghttp.RawResponse,
     started: float,
+    extensions: RequestExtensions,
 ) -> Response:
     try:
         elapsed = raw.elapsed if raw.elapsed >= 0 else time.perf_counter() - started
-        history = tuple(response_from_raw(raw=item, started=started) for item in raw.history)
+        history = tuple(response_from_raw(raw=item, started=started, extensions=extensions) for item in raw.history)
         return Response(
             status_code=raw.status_code,
             headers=Headers(raw.headers),
             content=raw.content,
             url=raw.url,
-            request=request_info_from_raw(raw.request),
+            request=request_info_from_raw(raw.request, extensions=extensions),
             http_version=raw.http_version,
             elapsed=elapsed,
             history=history,
@@ -48,15 +51,16 @@ def stream_response_from_raw(
     *,
     raw: _foghttp.RawStreamResponse,
     started: float,
+    extensions: RequestExtensions,
 ) -> StreamResponse:
     try:
         elapsed = raw.elapsed if raw.elapsed >= 0 else time.perf_counter() - started
-        history = tuple(response_from_raw(raw=item, started=started) for item in raw.history)
+        history = tuple(response_from_raw(raw=item, started=started, extensions=extensions) for item in raw.history)
         return StreamResponse(
             status_code=raw.status_code,
             headers=Headers(raw.headers),
             url=raw.url,
-            request=request_info_from_raw(raw.request),
+            request=request_info_from_raw(raw.request, extensions=extensions),
             http_version=raw.http_version,
             elapsed=elapsed,
             _raw=raw,
@@ -70,15 +74,16 @@ def async_stream_response_from_raw(
     *,
     raw: _foghttp.RawStreamResponse,
     started: float,
+    extensions: RequestExtensions,
 ) -> AsyncStreamResponse:
     try:
         elapsed = raw.elapsed if raw.elapsed >= 0 else time.perf_counter() - started
-        history = tuple(response_from_raw(raw=item, started=started) for item in raw.history)
+        history = tuple(response_from_raw(raw=item, started=started, extensions=extensions) for item in raw.history)
         return AsyncStreamResponse(
             status_code=raw.status_code,
             headers=Headers(raw.headers),
             url=raw.url,
-            request=request_info_from_raw(raw.request),
+            request=request_info_from_raw(raw.request, extensions=extensions),
             http_version=raw.http_version,
             elapsed=elapsed,
             _raw=raw,

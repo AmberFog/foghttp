@@ -14,6 +14,7 @@ def test_top_level_exports() -> None:
     assert foghttp.AsyncStreamResponse is not None
     assert foghttp.Headers is not None
     assert foghttp.Request is not None
+    assert foghttp.RequestExtensions is not None
     assert foghttp.RequestInfo is not None
     assert foghttp.ResponseBodyBudgetExceededError is not None
     assert foghttp.ResponseBodyTooLargeError is not None
@@ -34,6 +35,7 @@ def test_compatibility_modules_reexport_models() -> None:
     assert foghttp.models.AsyncLifecycleDebugSnapshot is foghttp.AsyncLifecycleDebugSnapshot
     assert foghttp.models.Headers is foghttp.Headers
     assert foghttp.models.Request is foghttp.Request
+    assert foghttp.models.RequestExtensions is foghttp.RequestExtensions
     assert foghttp.models.Response is foghttp.Response
     assert foghttp.models.AsyncStreamResponse is foghttp.AsyncStreamResponse
     assert foghttp.models.StreamResponse is foghttp.StreamResponse

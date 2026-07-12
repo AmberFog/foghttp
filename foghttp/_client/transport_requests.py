@@ -22,4 +22,5 @@ def raw_request_options(
         use_proxy_transport=proxy_decision.uses_proxy,
         proxy_policy=proxy_resolver.transport_policy(),
         timeouts=timeouts,
+        extensions=request.extensions or None,
     )

@@ -62,7 +62,8 @@ retry-policy consumer.
 - normalized uppercase `method`;
 - full normalized `url`;
 - `body` as `"empty"`, `"replayable"`, or `"non_replayable"`;
-- zero-based `redirect_hop`.
+- zero-based `redirect_hop`;
+- immutable request-scoped `extensions` supplied by the caller.
 
 `TransportPolicyResponse` contains the request snapshot, `status_code`, and an
 immutable tuple of response header pairs. Repeated values for the same header
@@ -71,14 +72,18 @@ retain their order.
 The full URL and header values are available because trusted policy code may
 need them to make a decision. They can contain credentials or tokens and are
 not telemetry-safe data. Their `repr()` surfaces redact URL secrets and omit
-header values, but hook code must still avoid logging the raw attributes. Use
+header values plus extension keys and values, but hook code must still avoid
+logging the raw attributes. Extensions are metadata only and are never
+serialized into HTTP headers, the URL, or the request body. Use
 [`TelemetryConfig`](./telemetry.md) when the goal is observability through
 redacted events rather than request admission.
 
 Snapshots contain no socket, permit, response body, cancellation handle, pool,
-or runtime reference. They are copies: changing them through Python escape
-hatches cannot alter the request or bypass Rust redirect and replayability
-checks.
+or runtime reference. Their transport fields are copies: replacing those fields
+through Python escape hatches cannot alter the request or bypass Rust redirect
+and replayability checks. The extensions mapping is immutable, but its values
+are the caller-owned shallow references described in the request builder
+contract.
 
 ## Execution And Lifecycle
 
@@ -86,6 +91,8 @@ Hooks run inline with transport policy evaluation. They may execute on FogHTTP
 transport worker threads and may be invoked concurrently by concurrent
 requests. A hook must therefore be fast, thread-safe, and independent of an
 asyncio event loop, thread-local state, or `contextvars` propagation.
+Extension values are shared shallow references, so hooks must treat them as
+read-only and safe for concurrent observation.
 
 Do not perform blocking I/O, call back into FogHTTP, or re-enter the same client
 from a hook. Hook execution advances the wall clock used by later total-time

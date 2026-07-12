@@ -11,6 +11,11 @@ from inspect import isasyncgenfunction, iscoroutinefunction
 from typing import Literal, TypeAlias
 
 from ._redaction import redact_url
+from .request_extensions import (
+    RequestExtensions,
+    empty_request_extensions,
+    normalize_request_extensions,
+)
 
 
 TransportPolicyBodyState: TypeAlias = Literal[
@@ -28,14 +33,20 @@ class TransportPolicyRequest:
     url: str
     body: TransportPolicyBodyState
     redirect_hop: int
+    extensions: RequestExtensions = field(default_factory=empty_request_extensions, repr=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "extensions", normalize_request_extensions(self.extensions))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        method = self.method
-        url = redact_url(self.url)
-        body = self.body
-        redirect_hop = self.redirect_hop
-        return f"{class_name}(method={method!r}, url={url!r}, body={body!r}, redirect_hop={redirect_hop!r})"
+        redacted_url = redact_url(self.url)
+        extension_count = len(self.extensions)
+        return (
+            f"{class_name}(method={self.method!r}, url={redacted_url!r}, "
+            f"body={self.body!r}, redirect_hop={self.redirect_hop!r}, "
+            f"extensions=<{extension_count} items>)"
+        )
 
 
 @dataclass(frozen=True, repr=False, slots=True)

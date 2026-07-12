@@ -15,6 +15,8 @@ QUERY_VALUE = "redaction-query-value"
 FRAGMENT_VALUE = "redaction-fragment-value"
 SAFE_HEADER_VALUE = "trace-id"
 SAFE_QUERY_VALUE = "public"
+EXTENSION_KEY = "tests.private"
+EXTENSION_VALUE = "redaction-extension-value"
 
 
 @pytest.mark.parametrize(
@@ -128,6 +130,7 @@ def test_request_repr_redacts_url_and_never_includes_body() -> None:
         f"https://user:{USERINFO_VALUE}@example.com/users?token={QUERY_VALUE}",
         headers={"Authorization": f"Bearer {HEADER_VALUE}"},
         content=BODY_VALUE,
+        extensions={EXTENSION_KEY: EXTENSION_VALUE},
     )
 
     representation = repr(request)
@@ -136,6 +139,8 @@ def test_request_repr_redacts_url_and_never_includes_body() -> None:
     assert QUERY_VALUE not in representation
     assert HEADER_VALUE not in representation
     assert BODY_VALUE.decode() not in representation
+    assert EXTENSION_KEY not in representation
+    assert EXTENSION_VALUE not in representation
     assert "<redacted>" in representation
 
 
@@ -149,6 +154,7 @@ def test_request_info_repr_redacts_url_and_headers() -> None:
                 ("X-Trace", SAFE_HEADER_VALUE),
             ],
         ),
+        extensions=foghttp.RequestExtensions({EXTENSION_KEY: EXTENSION_VALUE}),
     )
 
     representation = repr(request_info)
@@ -157,6 +163,8 @@ def test_request_info_repr_redacts_url_and_headers() -> None:
     assert QUERY_VALUE not in representation
     assert HEADER_VALUE not in representation
     assert SAFE_HEADER_VALUE in representation
+    assert EXTENSION_KEY not in representation
+    assert EXTENSION_VALUE not in representation
     assert "<redacted>" in representation
 
 
@@ -170,6 +178,7 @@ def test_response_repr_redacts_url_headers_request_and_body() -> None:
             method=GET,
             url=f"https://user:{USERINFO_VALUE}@example.com/users?token={QUERY_VALUE}",
             headers=foghttp.Headers([("Authorization", f"Bearer {HEADER_VALUE}")]),
+            extensions=foghttp.RequestExtensions({EXTENSION_KEY: EXTENSION_VALUE}),
         ),
         http_version="HTTP/1.1",
         elapsed=0.1,
@@ -182,6 +191,8 @@ def test_response_repr_redacts_url_headers_request_and_body() -> None:
     assert COOKIE_VALUE not in representation
     assert HEADER_VALUE not in representation
     assert BODY_VALUE.decode() not in representation
+    assert EXTENSION_KEY not in representation
+    assert EXTENSION_VALUE not in representation
     assert f"content=<{len(BODY_VALUE)} bytes>" in representation
     assert "<redacted>" in representation
 
