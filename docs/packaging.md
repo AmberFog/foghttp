@@ -2,9 +2,11 @@
 
 FogHTTP ships a Rust extension built with PyO3. Published CPython wheels target
 the stable `cp311-abi3` ABI, matching the package minimum of Python 3.11. One
-wheel per supported operating-system and architecture pair can therefore be
-installed by GIL-enabled CPython 3.11 and newer instead of building a separate
-wheel for every CPython minor version.
+wheel per supported operating-system and architecture pair covers the
+currently validated GIL-enabled CPython 3.11-3.14 range instead of requiring a
+separate wheel for every supported CPython minor version. The ABI may remain
+compatible with newer Python versions, but FogHTTP does not claim that support
+until the full suite and exact wheel pass the release validation matrix.
 
 ## Release Matrix
 
