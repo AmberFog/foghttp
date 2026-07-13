@@ -121,7 +121,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - redacted repr/error surfaces for sensitive headers, URL credentials,
   token-like URL params, and buffered body bytes
 - normalized `URL` model with origin comparison and relative joins
-- GET/HEAD/POST/QUERY redirects with final URL, history, and conservative replay policy
+- GET/HEAD/POST/QUERY redirects with final URL, history, typed same-origin and
+  cross-origin header policy, and no cross-origin body replay
 - HTTPS with default WebPKI roots, explicit custom CA certificates, and
   custom-only CA trust
 - documented lazy transport creation, graceful sync close, async request

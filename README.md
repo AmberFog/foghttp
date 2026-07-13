@@ -49,9 +49,9 @@ Runtime requirements:
 - `orjson>=3.11,<4`
 
 Published CPython wheels use the stable `cp311-abi3` ABI: each supported
-OS/architecture pair has one wheel for Python 3.11 and newer. The release
-pipeline currently installs and exercises those wheels on GIL-enabled CPython
-3.11 through 3.14. See [Packaging and Python compatibility](https://github.com/AmberFog/foghttp/blob/main/docs/packaging.md)
+OS/architecture pair has one wheel for the currently validated GIL-enabled
+CPython 3.11 through 3.14 range. Newer Python versions are not part of the
+compatibility claim until they pass the same release checks. See [Packaging and Python compatibility](https://github.com/AmberFog/foghttp/blob/main/docs/packaging.md)
 for the complete wheel matrix and validation policy.
 
 ## Quick Start
@@ -112,7 +112,8 @@ async with foghttp.AsyncClient() as client:
 - redacted repr/error surfaces for sensitive headers, URL credentials,
   token-like URL params, and buffered body bytes
 - normalized `URL` model with origin comparison and relative joins
-- GET/HEAD/POST/QUERY redirects with final URL, history, and conservative replay policy
+- GET/HEAD/POST/QUERY redirects with final URL, history, typed same-origin and
+  cross-origin header policy, and no cross-origin body replay
 - HTTP proxy routing and HTTPS proxy `CONNECT` tunnelling through explicit
   `proxy=` or `trust_env=True` when the proxy endpoint uses `http://`
 - HTTPS with default WebPKI roots, explicit custom CA certificates, and
