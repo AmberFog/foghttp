@@ -7,8 +7,9 @@ For `https://` targets, FogHTTP opens a `CONNECT` tunnel to the proxy and then
 performs the TLS handshake against the **target** host over that tunnel, so the
 certificate is validated for the target origin, not the proxy. If the tunnel
 cannot be established — proxy authentication failure, a non-2xx `CONNECT`
-status, or the proxy closing the tunnel early — FogHTTP raises `RequestError`
-instead of silently falling back to a direct connection.
+status, or the proxy closing the tunnel early — FogHTTP raises `NetworkError`
+(a `RequestError` subtype) instead of silently falling back to a direct
+connection.
 
 ## Explicit Proxy
 
@@ -61,7 +62,7 @@ Host: api.internal:443
 TLS is validated against the **target** host using the same `TLSConfig` rules as
 a direct connection; the proxy never terminates TLS and cannot impersonate the
 target. A failed tunnel (`CONNECT` non-2xx, proxy auth failure, or early close)
-maps to a stable `RequestError`, releases the request slot, and does not return
+maps to a stable `NetworkError`, releases the request slot, and does not return
 a poisoned connection to the pool. The tunnelled request itself is sent in
 origin-form, exactly like a direct HTTPS request.
 
@@ -199,4 +200,4 @@ Use explicit `TLSConfig` for custom CA bundles and custom-only trust.
 - TLS-to-proxy endpoints (`https://proxy.example:443`)
 - PAC/WPAD or platform/browser proxy discovery
 - per-route proxy policies
-- proxy retry policy
+- proxy failover, rotation, or per-route policy

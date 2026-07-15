@@ -24,9 +24,9 @@ with foghttp.Client(timeouts=timeouts) as client:
 
 | Field | Default | Applies Today | Public Error |
 |---|---:|---|---|
-| `connect` | `2.0` | Client-level Rust connector TCP connect timeout. It is read when the lazy Rust transport is created from the client constructor settings. | No stable dedicated `ConnectTimeout` mapping yet; low-level connect failures can surface as `RequestError`, while the outer `total` deadline can raise `TimeoutError`. |
+| `connect` | `2.0` | Client-level Rust connector TCP connect timeout. It is read when the lazy Rust transport is created from the client constructor settings. | No stable dedicated `ConnectTimeout` mapping yet; low-level connect failures surface as `NetworkError`, while the outer `total` deadline can raise `TimeoutError`. |
 | `pool` | `1.0` | Waiting for a global/per-origin active request slot or an opt-in global/per-host physical connection slot. Each acquire phase gets its own `pool` budget; `total` bounds the whole request hop. | `PoolTimeout` for acquire timeout or full pending queue. |
-| `total` | `30.0` | Buffered path: outer deadline for acquiring a request slot, sending the request body, waiting for response headers, and collecting the buffered response body for each transport hop. Stream path: acquire, redirect hops, streaming upload send, and response headers before the response stream is returned. The same budget is shared across redirect hops. | Base `TimeoutError`. |
+| `total` | `30.0` | Buffered path: outer deadline for acquiring a request slot, sending the request body, waiting for response headers, and collecting the buffered response body for each transport hop. Stream path: acquire, redirect hops, streaming upload send, and response headers before the response stream is returned. The same budget is shared across redirect hops and retry attempts. | Base `TimeoutError`. |
 | `read` | `10.0` | Waiting for the next response body frame/chunk while collecting a buffered response body or consuming a streamed body. | `ReadTimeout`. |
 | `write` | `10.0` | Waiting for buffered request body write progress, streaming upload provider chunks, and streaming upload socket write progress while sending a non-empty request body. | `WriteTimeout`. |
 
@@ -50,8 +50,11 @@ except foghttp.WriteTimeout:
 except foghttp.TimeoutError:
     # The broader buffered transport deadline expired.
     raise
+except foghttp.NetworkError:
+    # DNS, TLS, proxy, or protocol failure before response headers.
+    raise
 except foghttp.RequestError:
-    # Network, protocol, DNS, TLS, or other transport failure.
+    # Request-provider or response-body failure outside the timeout taxonomy.
     raise
 ```
 
@@ -261,7 +264,9 @@ deadline expired in `pool_acquire`, `response_headers`, or `response_body`; the
 diagnostic `timeout` value is the configured total timeout. If `total` expires
 while the request body is still being sent, the request has not reached response
 headers yet, so the current broader-total diagnostic phase remains
-`response_headers`; `WriteTimeout` is the dedicated stalled-write signal.
+`response_headers`; `WriteTimeout` is the dedicated stalled-write signal. If
+the total deadline expires while an opt-in retry is sleeping, the phase is
+`retry_backoff`.
 
 ```python
 with foghttp.Client(timeouts=foghttp.Timeouts(pool=1.0, total=0.05)) as client:
@@ -272,6 +277,11 @@ with foghttp.Client(timeouts=foghttp.Timeouts(pool=1.0, total=0.05)) as client:
 ```
 
 `total` is a shared wall-clock budget, not a separate per-chunk read timeout.
+It includes every retry attempt, intermediate retryable-response body drain,
+`Retry-After`, exponential backoff, and jitter. Each attempt receives the usual
+pool/read/write phase handling, but retries never reset the shared total
+deadline. See [Retry policy](./retries.md).
+
 For async callers that need an additional application-level budget, wrapping the
 call in `asyncio.timeout()` is still fine; cancellation aborts the in-flight Rust
 request.

@@ -341,7 +341,7 @@ def test_tunnel_validates_target_certificate(
     unrelated = create_tls_certificate_bundle(unrelated_directory)
 
     with foghttp.Client(proxy=connect_proxy.base_url, tls=_tls(unrelated)) as client:
-        with pytest.raises(foghttp.RequestError):
+        with pytest.raises(foghttp.NetworkError):
             client.get(_target_url(server))
 
         stats = client.stats()
@@ -350,13 +350,13 @@ def test_tunnel_validates_target_certificate(
     assert stats.active_requests == 0
 
 
-def test_connect_auth_failure_is_request_error(
+def test_connect_auth_failure_is_network_error(
     tls_target: tuple[TLSServer, TLSCertificateBundle],
 ) -> None:
     server, bundle = tls_target
     with _connect_proxy(require_auth=True, expected_authorization=_basic("user", "secret")) as proxy:
         with foghttp.Client(proxy=proxy.base_url, tls=_tls(bundle)) as client:
-            with pytest.raises(foghttp.RequestError, match="407"):
+            with pytest.raises(foghttp.NetworkError, match="407"):
                 client.get(_target_url(server))
 
             stats = client.stats()
@@ -364,13 +364,13 @@ def test_connect_auth_failure_is_request_error(
         assert stats.active_requests == 0
 
 
-def test_connect_non_2xx_is_request_error(
+def test_connect_non_2xx_is_network_error(
     tls_target: tuple[TLSServer, TLSCertificateBundle],
 ) -> None:
     server, bundle = tls_target
     with _connect_proxy(reject_status=502) as proxy:
         with foghttp.Client(proxy=proxy.base_url, tls=_tls(bundle)) as client:
-            with pytest.raises(foghttp.RequestError, match="502"):
+            with pytest.raises(foghttp.NetworkError, match="502"):
                 client.get(_target_url(server))
 
             stats = client.stats()
@@ -384,7 +384,7 @@ def test_connect_non_2xx_with_body_preserves_status_error(
     server, bundle = tls_target
     with _connect_proxy(reject_status=502, reject_body=b"proxy error body") as proxy:
         with foghttp.Client(proxy=proxy.base_url, tls=_tls(bundle)) as client:
-            with pytest.raises(foghttp.RequestError, match="502"):
+            with pytest.raises(foghttp.NetworkError, match="502"):
                 client.get(_target_url(server))
 
             stats = client.stats()
@@ -392,13 +392,13 @@ def test_connect_non_2xx_with_body_preserves_status_error(
         assert stats.active_requests == 0
 
 
-async def test_async_connect_non_2xx_is_request_error(
+async def test_async_connect_non_2xx_is_network_error(
     tls_target: tuple[TLSServer, TLSCertificateBundle],
 ) -> None:
     server, bundle = tls_target
     with _connect_proxy(reject_status=502) as proxy:
         async with foghttp.AsyncClient(proxy=proxy.base_url, tls=_tls(bundle)) as client:
-            with pytest.raises(foghttp.RequestError, match="502"):
+            with pytest.raises(foghttp.NetworkError, match="502"):
                 await client.get(_target_url(server))
 
             stats = client.stats()
@@ -406,13 +406,13 @@ async def test_async_connect_non_2xx_is_request_error(
         assert stats.active_requests == 0
 
 
-def test_early_tunnel_close_is_request_error_and_releases_slot(
+def test_early_tunnel_close_is_network_error_and_releases_slot(
     tls_target: tuple[TLSServer, TLSCertificateBundle],
 ) -> None:
     server, bundle = tls_target
     with _connect_proxy(early_close=True) as proxy:
         with foghttp.Client(proxy=proxy.base_url, tls=_tls(bundle)) as client:
-            with pytest.raises(foghttp.RequestError):
+            with pytest.raises(foghttp.NetworkError):
                 client.get(_target_url(server))
 
             stats = client.stats()
@@ -421,13 +421,13 @@ def test_early_tunnel_close_is_request_error_and_releases_slot(
         assert stats.active_requests == 0
 
 
-async def test_async_early_tunnel_close_releases_slot(
+async def test_async_early_tunnel_close_is_network_error_and_releases_slot(
     tls_target: tuple[TLSServer, TLSCertificateBundle],
 ) -> None:
     server, bundle = tls_target
     with _connect_proxy(early_close=True) as proxy:
         async with foghttp.AsyncClient(proxy=proxy.base_url, tls=_tls(bundle)) as client:
-            with pytest.raises(foghttp.RequestError):
+            with pytest.raises(foghttp.NetworkError):
                 await client.get(_target_url(server))
 
             stats = client.stats()
@@ -528,7 +528,7 @@ def test_failed_connect_does_not_leak_proxy_credentials(
         proxy_url = f"http://{username}:{password}@{urlsplit(proxy.base_url).netloc}"
         with (
             foghttp.Client(proxy=proxy_url, tls=_tls(bundle)) as client,
-            pytest.raises(foghttp.RequestError) as exc_info,
+            pytest.raises(foghttp.NetworkError) as exc_info,
         ):
             client.get(_target_url(server))
 
@@ -538,7 +538,7 @@ def test_failed_connect_does_not_leak_proxy_credentials(
     assert password not in message
 
 
-def test_connect_handshake_timeout_is_request_error_and_releases_slot(
+def test_connect_handshake_timeout_is_network_error_and_releases_slot(
     tls_target: tuple[TLSServer, TLSCertificateBundle],
 ) -> None:
     server, bundle = tls_target
@@ -548,7 +548,7 @@ def test_connect_handshake_timeout_is_request_error_and_releases_slot(
             tls=_tls(bundle),
             timeouts=Timeouts(connect=0.3),
         ) as client:
-            with pytest.raises(foghttp.RequestError, match="timed out"):
+            with pytest.raises(foghttp.NetworkError, match="timed out"):
                 client.get(_target_url(server))
 
             stats = client.stats()
@@ -585,7 +585,7 @@ async def test_async_cancellation_during_connect_releases_slot(
             )
 
 
-async def test_async_connect_handshake_timeout_is_request_error_and_releases_slot(
+async def test_async_connect_handshake_timeout_is_network_error_and_releases_slot(
     tls_target: tuple[TLSServer, TLSCertificateBundle],
 ) -> None:
     server, bundle = tls_target
@@ -595,7 +595,7 @@ async def test_async_connect_handshake_timeout_is_request_error_and_releases_slo
             tls=_tls(bundle),
             timeouts=Timeouts(connect=0.3),
         ) as client:
-            with pytest.raises(foghttp.RequestError, match="timed out"):
+            with pytest.raises(foghttp.NetworkError, match="timed out"):
                 await client.get(_target_url(server))
 
             stats = client.stats()

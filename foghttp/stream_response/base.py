@@ -2,6 +2,7 @@ __all__ = ("StreamResponseBase",)
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from foghttp._client.process import current_process_id, forked_process_error
 from foghttp._client.telemetry import TelemetryRequestContext
@@ -23,6 +24,10 @@ from .status import StreamResponseStatusMixin
 from .telemetry import StreamResponseTelemetryMixin
 
 
+if TYPE_CHECKING:
+    from foghttp._client.retry import RetryDecisionData
+
+
 @dataclass(slots=True)
 class StreamResponseBase(
     StreamResponseLifecycleDebugMixin,
@@ -37,6 +42,12 @@ class StreamResponseBase(
     elapsed: float
     _raw: _foghttp.RawStreamResponse = field(repr=False)
     history: tuple[Response, ...] = ()
+    _retry_decisions: tuple["RetryDecisionData", ...] = field(
+        default=(),
+        init=False,
+        repr=False,
+        compare=False,
+    )
     _closed: bool = field(default=False, init=False, repr=False)
     _body_started: bool = field(default=False, init=False, repr=False)
     _telemetry_context: TelemetryRequestContext | None = field(default=None, init=False, repr=False)

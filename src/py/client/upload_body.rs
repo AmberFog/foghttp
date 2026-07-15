@@ -4,14 +4,21 @@ use crate::core::client::{
 use bytes::Bytes;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 
 const UPLOAD_BODY_CHANNEL_CAPACITY: usize = 8;
 const STREAMING_BODY_CONSUMED: &str = "streaming request body was already consumed";
 
 #[pyclass(module = "foghttp._foghttp", skip_from_py_object)]
+#[derive(Clone)]
 pub struct RawUploadBody {
-    inner: Arc<Mutex<RawUploadBodyState>>,
+    inner: RawUploadBodyInner,
+}
+
+#[derive(Clone)]
+enum RawUploadBodyInner {
+    Owner(Arc<Mutex<RawUploadBodyState>>),
+    Attempt(UploadBodySender),
 }
 
 struct RawUploadBodyState {
@@ -35,14 +42,14 @@ impl RawUploadBody {
     ) -> Self {
         let (sender, receiver) = new_upload_body_channel(py, ready_callback.as_ref());
         Self {
-            inner: Arc::new(Mutex::new(RawUploadBodyState {
+            inner: RawUploadBodyInner::Owner(Arc::new(Mutex::new(RawUploadBodyState {
                 sender: Some(sender),
                 receiver: Some(receiver),
                 content_length,
                 start_callback,
                 replayable,
                 ready_callback,
-            })),
+            }))),
         }
     }
 
@@ -118,8 +125,13 @@ impl RawUploadBody {
         &self,
         py: Python<'_>,
     ) -> PyResult<(UploadBodyReceiver, Option<u64>)> {
-        let (receiver, content_length, start_callback) = {
-            let mut state = self.state();
+        let RawUploadBodyInner::Owner(state) = &self.inner else {
+            return Err(pyo3::exceptions::PyRuntimeError::new_err(
+                STREAMING_BODY_CONSUMED,
+            ));
+        };
+        let (receiver, content_length, start_callback, attempt_sender) = {
+            let mut state = state.lock().expect("raw upload body lock poisoned");
             if state.receiver.is_none() {
                 if !state.replayable {
                     return Err(pyo3::exceptions::PyRuntimeError::new_err(
@@ -133,37 +145,51 @@ impl RawUploadBody {
                     STREAMING_BODY_CONSUMED,
                 ));
             };
+            let Some(attempt_sender) = state.sender.clone() else {
+                return Err(pyo3::exceptions::PyRuntimeError::new_err(
+                    STREAMING_BODY_CONSUMED,
+                ));
+            };
             (
                 receiver,
                 state.content_length,
                 state.start_callback.clone_ref(py),
+                attempt_sender,
             )
         };
 
-        if let Err(error) = start_callback.call0(py) {
-            self.close();
+        let attempt_body = Py::new(
+            py,
+            Self {
+                inner: RawUploadBodyInner::Attempt(attempt_sender.clone()),
+            },
+        )?;
+        if let Err(error) = start_callback.call1(py, (attempt_body,)) {
+            attempt_sender.close();
             return Err(error);
         }
         Ok((receiver, content_length))
     }
 
     fn sender(&self) -> Option<UploadBodySender> {
-        self.state().sender.clone()
+        match &self.inner {
+            RawUploadBodyInner::Owner(state) => state
+                .lock()
+                .expect("raw upload body lock poisoned")
+                .sender
+                .clone(),
+            RawUploadBodyInner::Attempt(sender) => Some(sender.clone()),
+        }
     }
 
     fn take_sender(&self) -> Option<UploadBodySender> {
-        self.state().sender.take()
-    }
-
-    fn state(&self) -> MutexGuard<'_, RawUploadBodyState> {
-        self.inner.lock().expect("raw upload body lock poisoned")
-    }
-}
-
-impl Clone for RawUploadBody {
-    fn clone(&self) -> Self {
-        Self {
-            inner: Arc::clone(&self.inner),
+        match &self.inner {
+            RawUploadBodyInner::Owner(state) => state
+                .lock()
+                .expect("raw upload body lock poisoned")
+                .sender
+                .take(),
+            RawUploadBodyInner::Attempt(sender) => Some(sender.clone()),
         }
     }
 }

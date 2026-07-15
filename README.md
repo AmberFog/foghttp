@@ -127,6 +127,8 @@ async with foghttp.AsyncClient() as client:
   response body, and request completion lifecycle
 - opt-in typed transport policy hooks for lightweight request admission and
   response-head checks without default-path Python callbacks
+- opt-in Rust-owned retry policy for selected statuses and pre-header network
+  failures, with safe methods and replayable bodies by default
 - versioned telemetry snapshot metadata for `stats()`, `dump_transport_state()`,
   and `dump_pool_diagnostics()`
 - opt-in async lifecycle debug mode for active request snapshots, strict leak
@@ -146,6 +148,7 @@ async with foghttp.AsyncClient() as client:
 - [Timeout model](https://github.com/AmberFog/foghttp/blob/main/docs/timeouts.md)
 - [Upload typing contracts](https://github.com/AmberFog/foghttp/blob/main/docs/upload-types.md)
 - [Transport policy hooks](https://github.com/AmberFog/foghttp/blob/main/docs/policy-hooks.md)
+- [Retry policy](https://github.com/AmberFog/foghttp/blob/main/docs/retries.md)
 - [Telemetry contract](https://github.com/AmberFog/foghttp/blob/main/docs/telemetry.md)
 - [Response streaming](https://github.com/AmberFog/foghttp/blob/main/docs/streaming.md)
 - [Proxy and trust_env](https://github.com/AmberFog/foghttp/blob/main/docs/proxies.md)

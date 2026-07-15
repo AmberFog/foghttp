@@ -47,13 +47,14 @@ or replace transport state.
 
 | Hook | Ordering and scope |
 |---|---|
-| `before_send` | Runs for the initial request and every redirect hop after Rust has selected and validated the transport route, but before request-slot acquire. |
-| `on_response_headers` | Runs for every response after Rust has classified any redirect action and before FogHTTP consumes or returns the response body. |
+| `before_send` | Runs for the initial request, every retry attempt, and every redirect hop after Rust has selected and validated the transport route, but before request-slot acquire. |
+| `on_response_headers` | Runs for every response attempt after Rust has classified any redirect action and before FogHTTP consumes or returns the response body. |
 | `after_response_body` | Runs only for redirect response bodies consumed internally by FogHTTP. Rust first validates the redirect limit, replayability, scheme downgrade, header policy, and proxy boundary; the hook runs before the already validated mutation is applied. It does not run for the final body returned to the caller. |
 
-There is deliberately no error, timeout, or cancellation hook. Those stages
-remain unavailable until FogHTTP has a Rust-owned failure taxonomy and a real
-retry-policy consumer.
+There is deliberately no public error, timeout, cancellation, or retry-decision
+hook. The built-in retry policy uses a Rust-owned pre-header network-error
+classification and exposes decisions through typed telemetry instead of
+calling Python policy code from failure paths.
 
 ## Snapshot Contract
 

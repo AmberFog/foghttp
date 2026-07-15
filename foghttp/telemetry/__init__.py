@@ -9,9 +9,18 @@ __all__ = (
     "TelemetryHookErrorPolicy",
     "TelemetryRequestMode",
     "TelemetryRequestOutcome",
+    "TelemetryRetryDecision",
+    "TelemetryRetryReason",
 )
 
 from .config import TelemetryConfig, TelemetryHookErrorPolicy
 from .errors import TelemetryHookError
-from .events import TelemetryEvent, TelemetryEventType, TelemetryRequestMode, TelemetryRequestOutcome
+from .events import (
+    TelemetryEvent,
+    TelemetryEventType,
+    TelemetryRequestMode,
+    TelemetryRequestOutcome,
+    TelemetryRetryDecision,
+    TelemetryRetryReason,
+)
 from .sinks import TelemetryEventSink

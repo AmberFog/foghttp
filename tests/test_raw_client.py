@@ -50,6 +50,12 @@ RAW_CLIENT_INIT_ARGUMENTS = (
     "https_proxy_url",
     "https_proxy_authorization",
     "policy_hooks",
+    "retry_retries",
+    "retry_backoff",
+    "retry_jitter",
+    "retry_statuses",
+    "retry_methods",
+    "retry_network_errors",
 )
 
 RAW_REQUEST_ARGUMENTS = (
@@ -99,6 +105,7 @@ def _client_config(
             runtime=runtime,
             runtime_workers=runtime_workers,
             policy_hooks=policy_hooks,
+            retry=None,
             telemetry=None,
             lifecycle_debug=None,
         ),
@@ -187,6 +194,12 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
         "https_proxy_url": None,
         "https_proxy_authorization": None,
         "policy_hooks": None,
+        "retry_retries": None,
+        "retry_backoff": 0.0,
+        "retry_jitter": 0.0,
+        "retry_statuses": [],
+        "retry_methods": [],
+        "retry_network_errors": False,
     }
 
 

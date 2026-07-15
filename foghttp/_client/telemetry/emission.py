@@ -8,7 +8,13 @@ __all__ = (
 
 from dataclasses import dataclass
 
-from ...telemetry import TelemetryEventType, TelemetryRequestMode, TelemetryRequestOutcome
+from ...telemetry import (
+    TelemetryEventType,
+    TelemetryRequestMode,
+    TelemetryRequestOutcome,
+    TelemetryRetryDecision,
+    TelemetryRetryReason,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,11 +51,17 @@ class TelemetryCompletion:
 @dataclass(frozen=True, slots=True)
 class TelemetryEmission:
     event_type: TelemetryEventType
+    method: str | None = None
     status_code: int | None = None
     elapsed_ns: int | None = None
     redirect_hop: int | None = None
+    retry_attempt: int | None = None
+    retry_decision: TelemetryRetryDecision | None = None
+    retry_reason: TelemetryRetryReason | None = None
+    retry_backoff_ns: int | None = None
     origin: str | None = None
     redacted_url: str | None = None
     outcome: TelemetryRequestOutcome | None = None
     error: BaseException | None = None
+    error_type: str | None = None
     suppress_hook_errors: bool = False

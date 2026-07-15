@@ -16,6 +16,7 @@ __all__ = (
     "Headers",
     "LifecycleError",
     "Limits",
+    "NetworkError",
     "OriginPoolDiagnostics",
     "OriginPressureState",
     "PoolBlockingReason",
@@ -30,6 +31,8 @@ __all__ = (
     "ResponseBodyBudgetExceededError",
     "ResponseBodyTooLargeError",
     "ResponseError",
+    "RetryConditions",
+    "RetryPolicy",
     "StreamResponse",
     "TLSConfig",
     "TelemetryConfig",
@@ -40,6 +43,8 @@ __all__ = (
     "TelemetryHookErrorPolicy",
     "TelemetryRequestMode",
     "TelemetryRequestOutcome",
+    "TelemetryRetryDecision",
+    "TelemetryRetryReason",
     "TimeoutDiagnostic",
     "TimeoutError",
     "TimeoutPhase",
@@ -58,6 +63,7 @@ from .async_client import AsyncClient
 from .client import Client
 from .errors.base import (
     FogHTTPError,
+    NetworkError,
     RequestError,
 )
 from .errors.lifecycle import (
@@ -97,6 +103,7 @@ from .request import Request
 from .request_extensions import RequestExtensions
 from .request_info import RequestInfo
 from .response import Response
+from .retry import RetryConditions, RetryPolicy
 from .stream_response import AsyncStreamResponse, StreamResponse
 from .telemetry import (
     TelemetryConfig,
@@ -108,6 +115,7 @@ from .telemetry import (
     TelemetryRequestMode,
     TelemetryRequestOutcome,
 )
+from .telemetry.events import TelemetryRetryDecision, TelemetryRetryReason
 from .timeout_diagnostics import TimeoutDiagnostic, TimeoutPhase
 from .timeouts import Timeouts
 from .tls import TLSConfig

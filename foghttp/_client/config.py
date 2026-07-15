@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from ..lifecycle_debug import AsyncLifecycleDebugConfig
 from ..limits import Limits
-from ..policy import TransportPolicyHooks
+from ..policy import RetryPolicy, TransportPolicyHooks
 from ..telemetry import TelemetryConfig
 from ..timeouts import Timeouts
 from ..tls import TLSConfig
@@ -39,6 +39,7 @@ class ClientConfig:
     runtime: RuntimeMode
     runtime_workers: int | None
     policy_hooks: TransportPolicyHooks | None
+    retry: RetryPolicy | None
     telemetry: TelemetryConfig | None
     lifecycle_debug: AsyncLifecycleDebugConfig | None
     request_defaults: RequestBuildDefaults
@@ -74,6 +75,7 @@ class ClientConfig:
             policy_hooks=(
                 options.policy_hooks if options.policy_hooks is not None and options.policy_hooks.enabled else None
             ),
+            retry=options.retry,
             telemetry=options.telemetry,
             lifecycle_debug=options.lifecycle_debug,
             request_defaults=(

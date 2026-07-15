@@ -4,9 +4,10 @@ from typing import NoReturn
 
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
-from ...errors import FogHTTPError, LifecycleError, RequestError
+from ...errors import FogHTTPError, LifecycleError, NetworkError, RequestError
 from ...errors.response import ResponseBodyBudgetExceededError, ResponseBodyTooLargeError, ResponseError
 from ...errors.timeout import PoolTimeout, ReadTimeout, TimeoutError, WriteTimeout
+from ..retry import bind_retry_decisions, raw_retry_decisions_on_error
 from .timeout_errors import timeout_error_from_raw
 
 
@@ -24,6 +25,12 @@ _LIFECYCLE_ERROR_TYPES = (_foghttp.FogHttpLifecycleError,)
 
 
 def public_raw_error(exc: BaseException) -> FogHTTPError:
+    error = _public_raw_error(exc)
+    bind_retry_decisions(error, raw_retry_decisions_on_error(exc))
+    return error
+
+
+def _public_raw_error(exc: BaseException) -> FogHTTPError:
     if _is_lifecycle_error(exc):
         return LifecycleError(str(exc))
 
@@ -34,6 +41,9 @@ def public_raw_error(exc: BaseException) -> FogHTTPError:
     timeout_error_type = _timeout_error_type(exc)
     if timeout_error_type is not None:
         return timeout_error_from_raw(exc, timeout_error_type)
+
+    if isinstance(exc, _foghttp.FogHttpNetworkError):
+        return NetworkError(str(exc))
 
     return RequestError(str(exc))
 

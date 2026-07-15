@@ -5,6 +5,7 @@ mod context;
 mod errors;
 mod request;
 mod response;
+mod retry;
 mod streaming;
 
 pub use buffered::send_request;

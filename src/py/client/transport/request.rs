@@ -1,22 +1,37 @@
+use super::client::TransportClients;
+use super::context::RawResponseContext;
 use super::errors::policy_error;
-use crate::core::client::{ConnectionLimitContext, RequestWriteTimeoutContext};
+use crate::core::client::{
+    with_connection_limit_timeout, with_request_write_timeout, ConnectionLimitContext,
+    RequestWriteTimeoutContext,
+};
 use crate::core::headers::HeaderPairs;
 use crate::core::numeric::duration_from_secs;
 use crate::core::policy::{
     redirect_headers, PolicyMutation, PolicyPipeline, PolicyRequest, RequestBodyMutation,
-    RequestBodyPolicy, ResponseHead, ResponsePolicyAction, TransportRoute,
+    RequestBodyPolicy, ResponseHead, ResponsePolicyAction, RetryDecision, RetryPolicy,
+    RetryStopReason, TransportRoute,
 };
-use crate::core::request::{RequestBodyParts, RequestParts};
+use crate::core::request::{build_request, RequestBodyParts, RequestParts};
 use crate::core::response::BufferedBodyBudget;
 use crate::core::url::HttpUrl;
 use crate::errors::FogHttpError;
+use crate::messages::REQUEST_TOTAL_TIMEOUT;
+use crate::py::client::acquire::{AcquireGate, AcquirePermit};
 use crate::py::client::policy_hooks::PythonPolicyHooks;
+use crate::py::client::timeout_diagnostics::{
+    remaining_duration, timeout_error, TimeoutContext, TimeoutPhase,
+};
 use crate::py::client::upload_body::RawUploadBody;
 use crate::py::response::RawRequestInfo;
+use crate::py::retry::RawRetryDecision;
+use hyper::body::Incoming;
+use hyper::Response;
+use hyper_util::client::legacy::Error as HyperClientError;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime};
 
 pub struct TransportRequest {
     pub method: String,
@@ -35,6 +50,7 @@ pub struct TransportRequest {
     pub buffered_body_budget: BufferedBodyBudget,
     pub follow_redirects: bool,
     pub max_redirects: usize,
+    pub retry_policy: Option<RetryPolicy>,
     pub policy_hooks: Option<Arc<PythonPolicyHooks>>,
     pub extensions: Option<Py<PyAny>>,
 }
@@ -55,6 +71,9 @@ pub(super) struct RequestState {
     pub(super) write_timeout_secs: f64,
     pub(super) max_response_body_size: Option<usize>,
     pub(super) buffered_body_budget: BufferedBodyBudget,
+    retry_attempt: usize,
+    completed_retries: usize,
+    retry_decisions: Vec<RawRetryDecision>,
 }
 
 impl RequestState {
@@ -122,6 +141,23 @@ impl RequestState {
         ))
     }
 
+    pub(super) fn response_context<'a>(
+        &self,
+        started: Instant,
+        origin: &'a str,
+        redirect_hop: usize,
+    ) -> RawResponseContext<'a> {
+        RawResponseContext {
+            started,
+            total_timeout: self.total_timeout,
+            read_timeout: self.read_timeout,
+            max_response_body_size: self.max_response_body_size,
+            buffered_body_budget: self.buffered_body_budget.clone(),
+            origin,
+            redirect_hop,
+        }
+    }
+
     pub(super) fn transport_route(&self, redirect_hop: usize) -> PyResult<TransportRoute> {
         let request = self.policy_request();
         let route = self
@@ -150,6 +186,68 @@ impl RequestState {
             action,
             response: self.response_body_snapshot(status_code, headers),
         }))
+    }
+
+    pub(super) fn retry_on_response(
+        &self,
+        status_code: u16,
+        headers: &HeaderPairs,
+    ) -> Option<PendingRetryDecision> {
+        if !self.policy.retries_enabled() {
+            return None;
+        }
+        let response = ResponseHead::new(status_code, headers);
+        self.policy
+            .on_retryable_response(
+                self.policy_request(),
+                response,
+                self.completed_retries,
+                fastrand::f64(),
+                SystemTime::now(),
+            )
+            .map(|decision| PendingRetryDecision {
+                decision,
+                trigger: RetryTrigger::Status(status_code),
+            })
+    }
+
+    pub(super) fn retry_on_network_error(&self) -> Option<PendingRetryDecision> {
+        if !self.policy.retries_enabled() {
+            return None;
+        }
+        self.policy
+            .on_network_error(
+                self.policy_request(),
+                self.completed_retries,
+                fastrand::f64(),
+            )
+            .map(|decision| PendingRetryDecision {
+                decision,
+                trigger: RetryTrigger::NetworkError,
+            })
+    }
+
+    pub(super) fn commit_retry_decision(
+        &mut self,
+        pending: &PendingRetryDecision,
+        elapsed: Duration,
+    ) -> RetryAction {
+        let action = pending.action();
+        self.retry_decisions.push(pending.raw_decision(
+            self.retry_attempt,
+            &self.method,
+            self.url.origin(),
+            elapsed,
+        ));
+        if matches!(action, RetryAction::Retry(_)) {
+            self.completed_retries += 1;
+            self.retry_attempt += 1;
+        }
+        action
+    }
+
+    pub(super) fn take_retry_decisions(&mut self) -> Vec<RawRetryDecision> {
+        std::mem::take(&mut self.retry_decisions)
     }
 
     pub(super) fn after_response_body(
@@ -224,6 +322,7 @@ impl RequestState {
             &url,
             parts.follow_redirects,
             parts.max_redirects,
+            parts.retry_policy,
         )
         .map_err(|error| policy_error(&error))?;
 
@@ -243,8 +342,153 @@ impl RequestState {
             write_timeout_secs: parts.write_timeout,
             max_response_body_size: parts.max_response_body_size,
             buffered_body_budget: parts.buffered_body_budget,
+            retry_attempt: 1,
+            completed_retries: 0,
+            retry_decisions: Vec::new(),
         })
     }
+}
+
+pub(super) async fn send_current_hop(
+    clients: &TransportClients,
+    state: &mut RequestState,
+    origin: &str,
+    redirect_hop: usize,
+    pool_timeout: f64,
+    started: Instant,
+    route: TransportRoute,
+) -> PyResult<Result<(Response<Incoming>, RawRequestInfo), HyperClientError>> {
+    let request_info = state.request_info();
+    let response_headers_timeout_context = TimeoutContext::new(
+        TimeoutPhase::ResponseHeaders,
+        started,
+        state.total_timeout,
+        origin,
+        redirect_hop,
+    );
+    let write_timeout_context = state.write_timeout_context(origin, redirect_hop);
+    let connection_limit_context =
+        RequestState::connection_limit_context(origin, redirect_hop, pool_timeout)?;
+    let request = build_request(state.take_request_parts(route)?)?;
+    let use_write_timeout_transport = write_timeout_context.is_some();
+    debug_assert_eq!(use_write_timeout_transport, state.has_request_body());
+    let client = clients.select(route, use_write_timeout_transport)?;
+    let response = tokio::time::timeout(
+        remaining_duration("Timeouts.total", &response_headers_timeout_context)?,
+        with_connection_limit_timeout(
+            Some(connection_limit_context),
+            with_request_write_timeout(write_timeout_context, client.request(request)),
+        ),
+    )
+    .await
+    .map_err(|_| timeout_error(&response_headers_timeout_context, REQUEST_TOTAL_TIMEOUT))?;
+
+    Ok(response.map(|response| (response, request_info)))
+}
+
+pub(super) async fn acquire_request_slot(
+    acquire_gate: &AcquireGate,
+    origin: &str,
+    pool_timeout: f64,
+    started: Instant,
+    total_timeout: f64,
+    redirect_hop: usize,
+) -> PyResult<AcquirePermit> {
+    let context = TimeoutContext::new(
+        TimeoutPhase::PoolAcquire,
+        started,
+        total_timeout,
+        origin,
+        redirect_hop,
+    );
+    tokio::time::timeout(
+        remaining_duration("Timeouts.total", &context)?,
+        acquire_gate.acquire(origin, pool_timeout, redirect_hop),
+    )
+    .await
+    .map_err(|_| timeout_error(&context, REQUEST_TOTAL_TIMEOUT))?
+}
+
+pub(super) struct PendingRetryDecision {
+    decision: RetryDecision,
+    trigger: RetryTrigger,
+}
+
+impl PendingRetryDecision {
+    pub(super) fn should_retry(&self) -> bool {
+        matches!(self.decision, RetryDecision::Retry { .. })
+    }
+
+    fn action(&self) -> RetryAction {
+        match self.decision {
+            RetryDecision::Retry { delay } => RetryAction::Retry(delay),
+            RetryDecision::Stop { .. } => RetryAction::Stop,
+        }
+    }
+
+    fn raw_decision(
+        &self,
+        attempt: usize,
+        method: &str,
+        origin: String,
+        elapsed: Duration,
+    ) -> RawRetryDecision {
+        let (decision, reason, backoff) = match self.decision {
+            RetryDecision::Retry { delay } => ("retry", self.trigger.reason(), delay.as_secs_f64()),
+            RetryDecision::Stop {
+                reason: RetryStopReason::NonReplayableBody,
+            } => ("block_non_replayable", "non_replayable_body", 0.0),
+            RetryDecision::Stop {
+                reason: RetryStopReason::MethodNotAllowed,
+            } => ("stop", "method_not_allowed", 0.0),
+            RetryDecision::Stop {
+                reason: RetryStopReason::RetriesExhausted,
+            } => ("stop", "retries_exhausted", 0.0),
+        };
+        RawRetryDecision {
+            attempt,
+            method: method.to_owned(),
+            origin,
+            status_code: self.trigger.status_code(),
+            error_type: self.trigger.error_type().map(str::to_owned),
+            decision: decision.to_owned(),
+            reason: reason.to_owned(),
+            backoff,
+            elapsed: elapsed.as_secs_f64(),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum RetryTrigger {
+    NetworkError,
+    Status(u16),
+}
+
+impl RetryTrigger {
+    fn status_code(self) -> Option<u16> {
+        match self {
+            Self::Status(status_code) => Some(status_code),
+            Self::NetworkError => None,
+        }
+    }
+
+    fn error_type(self) -> Option<&'static str> {
+        matches!(self, Self::NetworkError).then_some("NetworkError")
+    }
+
+    fn reason(self) -> &'static str {
+        match self {
+            Self::Status(_) => "status",
+            Self::NetworkError => "network_error",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum RetryAction {
+    Retry(Duration),
+    Stop,
 }
 
 pub(super) struct PendingResponsePolicyAction {

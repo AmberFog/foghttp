@@ -169,19 +169,20 @@ async def test_async_slow_body_total_timeout_recovers(
 
 
 @pytest.mark.parametrize(
-    "fault_path",
+    ("fault_path", "error_type"),
     [
-        pytest.param(ABRUPT_BEFORE_HEADERS_PATH, id="abrupt-before-headers"),
-        pytest.param(ABRUPT_DURING_BODY_PATH, id="abrupt-during-body"),
-        pytest.param(INCOMPLETE_BODY_PATH, id="incomplete-body"),
+        pytest.param(ABRUPT_BEFORE_HEADERS_PATH, foghttp.NetworkError, id="abrupt-before-headers"),
+        pytest.param(ABRUPT_DURING_BODY_PATH, foghttp.RequestError, id="abrupt-during-body"),
+        pytest.param(INCOMPLETE_BODY_PATH, foghttp.RequestError, id="incomplete-body"),
     ],
 )
 async def test_async_network_fault_recovers_next_request(
     fault_injection_server: FaultInjectionServer,
     fault_path: str,
+    error_type: type[foghttp.RequestError],
 ) -> None:
     async with foghttp.AsyncClient(timeouts=RECOVERY_TIMEOUTS) as client:
-        with pytest.raises(foghttp.RequestError) as exc_info:
+        with pytest.raises(error_type) as exc_info:
             await client.get(fault_injection_server.url + fault_path)
 
         stats_after_error = client.stats()
@@ -189,6 +190,7 @@ async def test_async_network_fault_recovers_next_request(
         final_stats = client.stats()
 
     assert response.status_code == OK
+    assert type(exc_info.value) is error_type
     assert not isinstance(exc_info.value, foghttp.TimeoutError)
     assert_network_failure_recovered(stats_after_error, final_stats)
 

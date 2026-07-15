@@ -13,6 +13,7 @@ _TIMEOUT_PHASES: frozenset[TimeoutPhase] = frozenset(
         "connection_acquire",
         "pool_acquire",
         "request_body",
+        "retry_backoff",
         "response_headers",
         "response_body",
     ),

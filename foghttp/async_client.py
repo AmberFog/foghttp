@@ -40,6 +40,7 @@ from .policy import TransportPolicyHooks
 from .request import Request
 from .request_extensions import RequestExtensionsSource
 from .response import Response
+from .retry import RetryPolicy
 from .stream_response import AsyncStreamResponse
 from .stream_response.bindings import bind_stream_lifecycle_debug, bind_stream_telemetry
 from .telemetry import TelemetryConfig, TelemetryRequestMode
@@ -70,6 +71,7 @@ class AsyncClient(ClientCore):
         runtime: Literal["shared", "dedicated"] | None = None,
         runtime_workers: int | None = None,
         policy_hooks: TransportPolicyHooks | None = None,
+        retry: RetryPolicy | None = None,
         telemetry: TelemetryConfig | None = None,
         lifecycle_debug: AsyncLifecycleDebugConfig | None = None,
     ) -> None:
@@ -91,6 +93,7 @@ class AsyncClient(ClientCore):
                     runtime=runtime,
                     runtime_workers=runtime_workers,
                     policy_hooks=policy_hooks,
+                    retry=retry,
                     telemetry=telemetry,
                     lifecycle_debug=lifecycle_debug,
                 ),

@@ -6,9 +6,11 @@ __all__ = (
 from typing import Protocol
 
 from ...telemetry import TelemetryRequestOutcome
+from ..retry import public_retry_decisions
 from .clock import elapsed_seconds_to_ns
 from .emission import TelemetryCompletion, TelemetryRedirect, TelemetryResponseMetadata
 from .request_context import TelemetryRequestContext
+from .retries import emit_retry_decisions
 from .url import redacted_url, url_origin
 
 
@@ -36,6 +38,11 @@ def emit_buffered_response_telemetry(
         return
 
     metadata = _response_metadata(response)
+    emit_retry_decisions(
+        telemetry_context,
+        public_retry_decisions(response),
+        suppress_hook_errors=False,
+    )
     _emit_redirect_telemetry(telemetry_context, response.history)
     telemetry_context.response_headers_received(metadata)
     telemetry_context.response_body_finished(_success_completion(metadata))
@@ -49,6 +56,11 @@ def emit_stream_response_headers_telemetry(
     if telemetry_context is None:
         return
 
+    emit_retry_decisions(
+        telemetry_context,
+        public_retry_decisions(response),
+        suppress_hook_errors=False,
+    )
     _emit_redirect_telemetry(telemetry_context, response.history)
     telemetry_context.response_headers_received(_response_metadata(response))
 

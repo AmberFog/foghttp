@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from ...telemetry import TelemetryEventType
+from ..retry import RetryDecisionData
+from .clock import elapsed_seconds_to_ns
 from .emission import (
     TelemetryCompletion,
     TelemetryContextData,
@@ -38,6 +40,30 @@ class TelemetryRequestContext:
                 redirect_hop=redirect.redirect_hop,
                 origin=redirect.response.origin,
                 redacted_url=redirect.response.redacted_url,
+            ),
+        )
+
+    def retry_decision(
+        self,
+        retry: RetryDecisionData,
+        *,
+        suppress_hook_errors: bool,
+    ) -> None:
+        self.dispatcher.emit(
+            self.data,
+            TelemetryEmission(
+                event_type=TelemetryEventType.RETRY_DECISION,
+                method=retry.method,
+                status_code=retry.status_code,
+                elapsed_ns=elapsed_seconds_to_ns(retry.elapsed),
+                retry_attempt=retry.attempt,
+                retry_decision=retry.decision,
+                retry_reason=retry.reason,
+                retry_backoff_ns=elapsed_seconds_to_ns(retry.backoff),
+                origin=retry.origin,
+                redacted_url=retry.origin,
+                error_type=retry.error_type,
+                suppress_hook_errors=suppress_hook_errors,
             ),
         )
 

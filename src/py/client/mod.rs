@@ -17,6 +17,7 @@ use crate::core::client::{
 };
 use crate::core::headers::HeaderPairs;
 use crate::core::metrics::Metrics;
+use crate::core::policy::RetryPolicy;
 use crate::core::response::BufferedBodyBudget;
 use crate::errors::FogHttpError;
 use crate::py::client::acquire::AcquireGate;
@@ -60,6 +61,7 @@ pub struct RawClient {
     max_redirects: usize,
     proxy_authorization: Option<String>,
     policy_hooks: Option<Arc<PythonPolicyHooks>>,
+    retry_policy: Option<RetryPolicy>,
     process_id: ProcessId,
 }
 
@@ -89,7 +91,13 @@ impl RawClient {
         http_proxy_authorization,
         https_proxy_url,
         https_proxy_authorization,
-        policy_hooks
+        policy_hooks,
+        retry_retries,
+        retry_backoff,
+        retry_jitter,
+        retry_statuses,
+        retry_methods,
+        retry_network_errors
     ))]
     #[allow(
         clippy::fn_params_excessive_bools,
@@ -122,6 +130,12 @@ impl RawClient {
         https_proxy_url: Option<String>,
         https_proxy_authorization: Option<String>,
         policy_hooks: Option<Py<PyAny>>,
+        retry_retries: Option<usize>,
+        retry_backoff: f64,
+        retry_jitter: f64,
+        retry_statuses: Vec<u16>,
+        retry_methods: Vec<String>,
+        retry_network_errors: bool,
     ) -> PyResult<Self> {
         validate_numeric_client_options(NumericClientOptions {
             max_active_requests,
@@ -136,6 +150,19 @@ impl RawClient {
             connect_timeout,
         })?;
         let policy_hooks = PythonPolicyHooks::from_config(py, policy_hooks)?;
+        let retry_policy = retry_retries
+            .map(|retries| {
+                RetryPolicy::new(
+                    retries,
+                    retry_backoff,
+                    retry_jitter,
+                    retry_statuses,
+                    retry_methods,
+                    retry_network_errors,
+                )
+            })
+            .transpose()
+            .map_err(FogHttpError::new_err)?;
 
         let runtime_mode = parse_runtime_mode(runtime)?;
         let metrics = Arc::new(Metrics::default());
@@ -225,6 +252,7 @@ impl RawClient {
             max_redirects,
             proxy_authorization: http_proxy_authorization,
             policy_hooks,
+            retry_policy,
             process_id: current_process_id(),
         })
     }
@@ -276,6 +304,7 @@ impl RawClient {
         let max_redirects = self.max_redirects;
         let proxy_authorization = self.proxy_authorization.clone();
         let policy_hooks = self.policy_hooks.clone();
+        let retry_policy = self.retry_policy.clone();
         let extensions = extensions.filter(|_| policy_hooks.is_some());
         self.metrics.request_started();
 
@@ -303,6 +332,7 @@ impl RawClient {
                         buffered_body_budget,
                         follow_redirects,
                         max_redirects,
+                        retry_policy,
                         policy_hooks,
                         extensions,
                     },
@@ -360,6 +390,7 @@ impl RawClient {
         let max_redirects = self.max_redirects;
         let proxy_authorization = self.proxy_authorization.clone();
         let policy_hooks = self.policy_hooks.clone();
+        let retry_policy = self.retry_policy.clone();
         let extensions = extensions.filter(|_| policy_hooks.is_some());
         spawn_async_request(
             py,
@@ -388,6 +419,7 @@ impl RawClient {
                     buffered_body_budget,
                     follow_redirects,
                     max_redirects,
+                    retry_policy,
                     policy_hooks,
                     extensions,
                 },
@@ -444,6 +476,7 @@ impl RawClient {
         let max_redirects = self.max_redirects;
         let proxy_authorization = self.proxy_authorization.clone();
         let policy_hooks = self.policy_hooks.clone();
+        let retry_policy = self.retry_policy.clone();
         let extensions = extensions.filter(|_| policy_hooks.is_some());
         let completion = RequestCompletion::default();
         let request_completion = completion.clone();
@@ -477,6 +510,7 @@ impl RawClient {
                         buffered_body_budget,
                         follow_redirects,
                         max_redirects,
+                        retry_policy,
                         policy_hooks,
                         extensions,
                     },
@@ -537,6 +571,7 @@ impl RawClient {
         let max_redirects = self.max_redirects;
         let proxy_authorization = self.proxy_authorization.clone();
         let policy_hooks = self.policy_hooks.clone();
+        let retry_policy = self.retry_policy.clone();
         let extensions = extensions.filter(|_| policy_hooks.is_some());
         spawn_async_stream_request(
             py,
@@ -566,6 +601,7 @@ impl RawClient {
                     buffered_body_budget,
                     follow_redirects,
                     max_redirects,
+                    retry_policy,
                     policy_hooks,
                     extensions,
                 },

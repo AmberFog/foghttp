@@ -64,9 +64,10 @@ sniff the body or invent a media type. `Accept-Query` response headers are
 available through the normal case-insensitive `response.headers` interface;
 FogHTTP does not yet parse that Structured Field value.
 
-RFC 10008 classifies QUERY as safe and idempotent. FogHTTP records the method
-name in request metadata and telemetry, but does not currently provide an
-automatic retry policy or an HTTP cache. RFC 10008 permits QUERY responses to
+RFC 10008 classifies QUERY as safe and idempotent. FogHTTP therefore includes
+it in the default method set of the opt-in [retry policy](./retries.md), but a
+body-bearing QUERY is eligible only when its provider is replayable. FogHTTP
+does not currently provide an HTTP cache. RFC 10008 permits QUERY responses to
 be cached, but a QUERY cache key must incorporate the request content and
 related metadata, including `Content-Type`; a URL-only GET-style cache key is
 not valid for QUERY.

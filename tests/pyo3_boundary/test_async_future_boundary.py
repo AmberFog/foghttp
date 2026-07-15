@@ -133,7 +133,7 @@ async def test_async_error_completion_uses_cached_exception_helper(
         await asyncio.wait_for(server.request_seen.wait(), timeout=WAIT_TIMEOUT)
         server.release_response.set()
 
-        with pytest.raises(foghttp.RequestError):
+        with pytest.raises(foghttp.NetworkError):
             await asyncio.wait_for(task, timeout=WAIT_TIMEOUT)
 
 
@@ -163,5 +163,5 @@ async def test_async_stream_error_completion_uses_cached_exception_helper(
         await asyncio.wait_for(server.request_seen.wait(), timeout=WAIT_TIMEOUT)
         server.release_response.set()
 
-        with pytest.raises(foghttp.RequestError):
+        with pytest.raises(foghttp.NetworkError):
             await asyncio.wait_for(task, timeout=WAIT_TIMEOUT)

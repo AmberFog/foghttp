@@ -7,6 +7,7 @@ use crate::messages::STREAM_RESPONSE_READ_ABORTED;
 use crate::py::client::future::{complete_python_bytes_future, PythonFutureSetters};
 use crate::py::client::process::{current_process_id, stream_response_used_after_fork, ProcessId};
 use crate::py::response::{RawRequestInfo, RawResponse};
+use crate::py::retry::RawRetryDecision;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 use tokio::runtime::Handle;
@@ -27,6 +28,7 @@ pub struct RawStreamResponse {
     #[pyo3(get)]
     elapsed: f64,
     history: Vec<RawResponse>,
+    retry_decisions: Vec<RawRetryDecision>,
     state: Option<StreamState>,
     runtime_handle: Option<Handle>,
     future_setters: PythonFutureSetters,
@@ -43,6 +45,7 @@ impl RawStreamResponse {
             http_version,
             elapsed,
             history,
+            retry_decisions,
             body,
             permit,
             lifecycle,
@@ -66,6 +69,7 @@ impl RawStreamResponse {
             http_version,
             elapsed,
             history,
+            retry_decisions,
             state: Some(StreamState::new(StreamStateParts {
                 body,
                 permit,
@@ -90,6 +94,10 @@ impl RawStreamResponse {
         for response in &mut self.history {
             response.release_body_reservations();
         }
+    }
+
+    pub(crate) fn set_retry_decisions(&mut self, decisions: Vec<RawRetryDecision>) {
+        self.retry_decisions = decisions;
     }
 
     fn ensure_current_process(&self) -> PyResult<()> {
@@ -124,6 +132,11 @@ impl RawStreamResponse {
     #[getter]
     fn history(&self) -> Vec<RawResponse> {
         self.history.clone()
+    }
+
+    #[getter]
+    fn retry_decisions(&self) -> Vec<RawRetryDecision> {
+        self.retry_decisions.clone()
     }
 
     fn close(&self) {

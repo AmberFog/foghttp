@@ -65,9 +65,9 @@ Do not mix multipart file factories with direct non-replayable file or stream
 parts in the same request. FogHTTP rejects that shape because it would create a
 body where only some parts can be safely replayed.
 
-Do not model replayability as a public boolean. Future redirect, retry, auth
-refresh, and multipart logic will use provider/factory shape to decide whether a
-body can be safely replayed.
+Do not model replayability as a public boolean. Redirects and the opt-in
+[retry policy](./retries.md) use provider/factory shape to decide whether a
+body can be safely replayed; future auth refresh follows the same boundary.
 
 ## Ownership And Cleanup
 

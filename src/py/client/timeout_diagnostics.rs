@@ -13,6 +13,7 @@ pub enum TimeoutPhase {
     ConnectionAcquire,
     PoolAcquire,
     RequestBody,
+    RetryBackoff,
     ResponseBody,
     ResponseHeaders,
 }
@@ -23,6 +24,7 @@ impl TimeoutPhase {
             Self::ConnectionAcquire => "connection_acquire",
             Self::PoolAcquire => "pool_acquire",
             Self::RequestBody => "request_body",
+            Self::RetryBackoff => "retry_backoff",
             Self::ResponseBody => "response_body",
             Self::ResponseHeaders => "response_headers",
         }

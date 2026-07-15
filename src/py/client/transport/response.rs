@@ -1,4 +1,4 @@
-use super::body::{collect_response_body, response_body_can_be_decoded};
+use super::body::{collect_response_body, drain_response_body, response_body_can_be_decoded};
 use super::context::{RawResponseContext, RawStreamResponseContext};
 use crate::core::client::{ConnectionTelemetry, ConnectionUseGuard};
 use crate::core::headers::HeaderPairs;
@@ -49,6 +49,19 @@ impl ResponseLifecycleGuards {
     }
 }
 
+pub(super) async fn drain_response(
+    response: Response<Incoming>,
+    mut lifecycle: ResponseLifecycleGuards,
+    context: RawResponseContext<'_>,
+) -> PyResult<()> {
+    let read_timeout = duration_from_secs("Timeouts.read", context.read_timeout)
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
+    drain_response_body(response.into_body(), &context, read_timeout).await?;
+    lifecycle.finish_connection();
+    lifecycle.finish_body();
+    Ok(())
+}
+
 pub(super) async fn raw_response(
     response: Response<Incoming>,
     request: RawRequestInfo,
@@ -87,6 +100,7 @@ pub(super) async fn raw_response(
         http_version,
         elapsed: context.started.elapsed().as_secs_f64(),
         history: Vec::new(),
+        retry_decisions: Vec::new(),
         body_reservation: Some(body_reservation),
     }))
 }
@@ -117,6 +131,7 @@ pub(super) fn raw_stream_response(
         http_version,
         elapsed: context.started.elapsed().as_secs_f64(),
         history: context.history,
+        retry_decisions: Vec::new(),
         body: response.into_body(),
         permit: context.permit,
         lifecycle,

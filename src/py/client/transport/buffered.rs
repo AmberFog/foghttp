@@ -1,18 +1,13 @@
 use super::client::TransportClients;
-use super::context::RawResponseContext;
-use super::errors::transport_error;
-use super::request::{RequestState, TransportRequest};
+use super::errors::{is_retryable_network_error, transport_error};
+use super::request::{acquire_request_slot, send_current_hop, RequestState, TransportRequest};
 use super::response::{raw_response, ResponseLifecycleGuards};
-use crate::core::client::{with_connection_limit_timeout, with_request_write_timeout};
+use super::retry::{retry_after_network_error, retry_after_response};
 use crate::core::headers::response_headers;
 use crate::core::metrics::Metrics;
-use crate::core::request::build_request;
-use crate::messages::REQUEST_TOTAL_TIMEOUT;
 use crate::py::client::acquire::AcquireGate;
-use crate::py::client::timeout_diagnostics::{
-    remaining_duration, timeout_error, TimeoutContext, TimeoutPhase,
-};
 use crate::py::response::RawResponse;
+use crate::py::retry::attach_retry_decisions;
 use pyo3::prelude::*;
 use std::sync::Arc;
 use std::time::Instant;
@@ -27,79 +22,120 @@ pub async fn send_request(
     let started = Instant::now();
     let mut state = RequestState::try_from(parts)?;
     let mut history = Vec::new();
+    let result = send_request_attempts(
+        &clients,
+        &acquire_gate,
+        &metrics,
+        pool_timeout,
+        started,
+        &mut state,
+        &mut history,
+    )
+    .await;
+    let decisions = state.take_retry_decisions();
+    match result {
+        Ok(mut response) => {
+            response.set_retry_decisions(decisions);
+            Ok(response)
+        }
+        Err(error) => Err(attach_retry_decisions(error, decisions)),
+    }
+}
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "attempt loop owns one logical request lifecycle"
+)]
+async fn send_request_attempts(
+    clients: &TransportClients,
+    acquire_gate: &AcquireGate,
+    metrics: &Arc<Metrics>,
+    pool_timeout: f64,
+    started: Instant,
+    state: &mut RequestState,
+    history: &mut Vec<RawResponse>,
+) -> PyResult<RawResponse> {
     loop {
-        let (mut raw, response_action) = {
-            let redirect_hop = history.len();
-            let route = state.transport_route(redirect_hop)?;
-            let origin = state.origin();
-            let acquire_timeout_context = TimeoutContext::new(
-                TimeoutPhase::PoolAcquire,
-                started,
-                state.total_timeout,
-                &origin,
-                redirect_hop,
-            );
-            let permit = tokio::time::timeout(
-                remaining_duration("Timeouts.total", &acquire_timeout_context)?,
-                acquire_gate.acquire(&origin, pool_timeout, redirect_hop),
-            )
-            .await
-            .map_err(|_| timeout_error(&acquire_timeout_context, REQUEST_TOTAL_TIMEOUT))??;
-            let origin_metrics = permit.origin_metrics();
-            let request_info = state.request_info();
-
-            let response_headers_timeout_context = TimeoutContext::new(
-                TimeoutPhase::ResponseHeaders,
-                started,
-                state.total_timeout,
-                &origin,
-                redirect_hop,
-            );
-            let write_timeout_context = state.write_timeout_context(&origin, redirect_hop);
-            let connection_limit_context =
-                RequestState::connection_limit_context(&origin, redirect_hop, pool_timeout)?;
-            let request = build_request(state.take_request_parts(route)?)?;
-            let use_write_timeout_transport = write_timeout_context.is_some();
-            debug_assert_eq!(use_write_timeout_transport, state.has_request_body());
-            let client = clients.select(route, use_write_timeout_transport)?;
-            let response = tokio::time::timeout(
-                remaining_duration("Timeouts.total", &response_headers_timeout_context)?,
-                with_connection_limit_timeout(
-                    Some(connection_limit_context),
-                    with_request_write_timeout(write_timeout_context, client.request(request)),
-                ),
-            )
-            .await
-            .map_err(|_| timeout_error(&response_headers_timeout_context, REQUEST_TOTAL_TIMEOUT))?
-            .map_err(|err| transport_error(&err))?;
-
-            let response_lifecycle =
-                ResponseLifecycleGuards::new(&response, &metrics, &origin_metrics);
-            let headers = response_headers(response.headers());
-            let response_action =
-                state.on_response_headers(response.status().as_u16(), &headers, redirect_hop)?;
-            let raw = raw_response(
-                response,
-                request_info,
-                headers,
-                response_lifecycle,
-                RawResponseContext {
+        let redirect_hop = history.len();
+        let route = state.transport_route(redirect_hop)?;
+        let origin = state.origin();
+        let permit = acquire_request_slot(
+            acquire_gate,
+            &origin,
+            pool_timeout,
+            started,
+            state.total_timeout,
+            redirect_hop,
+        )
+        .await?;
+        let origin_metrics = permit.origin_metrics();
+        let response = send_current_hop(
+            clients,
+            state,
+            &origin,
+            redirect_hop,
+            pool_timeout,
+            started,
+            route,
+        )
+        .await?;
+        let response = match response {
+            Ok(response) => response,
+            Err(error) => {
+                if retry_after_network_error(
+                    state,
+                    is_retryable_network_error(&error),
+                    permit,
                     started,
-                    total_timeout: state.total_timeout,
-                    read_timeout: state.read_timeout,
-                    max_response_body_size: state.max_response_body_size,
-                    buffered_body_budget: state.buffered_body_budget.clone(),
-                    origin: &origin,
+                    &origin,
                     redirect_hop,
-                },
-            )
-            .await?;
-            (raw, response_action)
+                )
+                .await?
+                {
+                    continue;
+                }
+                return Err(transport_error(&error));
+            }
         };
+        let (response, request_info) = response;
+
+        let response_lifecycle = ResponseLifecycleGuards::new(&response, metrics, &origin_metrics);
+        let headers = response_headers(response.headers());
+        let status_code = response.status().as_u16();
+        let response_action = state.on_response_headers(status_code, &headers, redirect_hop)?;
+        let retry_decision = response_action
+            .is_none()
+            .then(|| state.retry_on_response(status_code, &headers))
+            .flatten();
+
+        if let Some(pending) = retry_decision {
+            if pending.should_retry() {
+                retry_after_response(
+                    state,
+                    &pending,
+                    response,
+                    response_lifecycle,
+                    state.response_context(started, &origin, redirect_hop),
+                    permit,
+                )
+                .await?;
+                continue;
+            }
+            state.commit_retry_decision(&pending, started.elapsed());
+        }
+
+        let mut raw = raw_response(
+            response,
+            request_info,
+            headers,
+            response_lifecycle,
+            state.response_context(started, &origin, redirect_hop),
+        )
+        .await?;
+        drop(permit);
 
         let Some(action) = response_action else {
-            raw.history = history;
+            raw.history = std::mem::take(history);
             return Ok(raw);
         };
         state.after_response_body(action, history.len())?;

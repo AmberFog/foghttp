@@ -18,6 +18,8 @@ def test_top_level_exports() -> None:
     assert foghttp.RequestInfo is not None
     assert foghttp.ResponseBodyBudgetExceededError is not None
     assert foghttp.ResponseBodyTooLargeError is not None
+    assert foghttp.RetryConditions is not None
+    assert foghttp.RetryPolicy is not None
     assert foghttp.StreamResponse is not None
     assert foghttp.TLSConfig is not None
     assert foghttp.TimeoutDiagnostic is not None
@@ -25,6 +27,7 @@ def test_top_level_exports() -> None:
     assert foghttp.TransportState is not None
     assert foghttp.OriginPressureState is not None
     assert foghttp.URL is not None
+    assert issubclass(foghttp.NetworkError, foghttp.RequestError)
 
 
 def test_compatibility_modules_reexport_models() -> None:

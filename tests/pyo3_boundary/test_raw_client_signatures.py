@@ -26,6 +26,12 @@ RAW_CLIENT_KEYWORD_ONLY_PARAMETERS = (
     "https_proxy_url",
     "https_proxy_authorization",
     "policy_hooks",
+    "retry_retries",
+    "retry_backoff",
+    "retry_jitter",
+    "retry_statuses",
+    "retry_methods",
+    "retry_network_errors",
 )
 
 RAW_REQUEST_KEYWORD_ONLY_PARAMETERS = (

@@ -1,4 +1,4 @@
-__all__ = ("FogHTTPError", "RequestError")
+__all__ = ("FogHTTPError", "NetworkError", "RequestError")
 
 
 class FogHTTPError(Exception):
@@ -7,3 +7,7 @@ class FogHTTPError(Exception):
 
 class RequestError(FogHTTPError):
     """Raised when a request cannot be completed."""
+
+
+class NetworkError(RequestError):
+    """Raised when the transport fails before response headers are available."""

@@ -2,7 +2,9 @@ use super::error::PolicyError;
 use super::proxy::{ProxyPolicy, TransportRoute};
 use super::redirect::{redirect_decision, RedirectAction, RedirectDecision, RedirectHeaderPolicy};
 use super::request::{PolicyRequest, RequestBodyMutation, ResponseHead};
+use super::retry::{RetryDecision, RetryPolicy};
 use crate::core::url::HttpUrl;
+use std::time::SystemTime;
 
 #[derive(Debug)]
 struct RedirectPolicy {
@@ -13,6 +15,7 @@ struct RedirectPolicy {
 pub(crate) struct PolicyPipeline {
     proxy: ProxyPolicy,
     redirect: Option<RedirectPolicy>,
+    retry: Option<RetryPolicy>,
 }
 
 pub(crate) struct ResponsePolicyAction {
@@ -30,12 +33,17 @@ pub(crate) enum PolicyMutation {
 }
 
 impl PolicyPipeline {
+    pub(crate) fn retries_enabled(&self) -> bool {
+        self.retry.is_some()
+    }
+
     pub(crate) fn new(
         proxy_policy: &str,
         initial_use_proxy_transport: bool,
         initial_url: &HttpUrl,
         follow_redirects: bool,
         max_redirects: usize,
+        retry: Option<RetryPolicy>,
     ) -> Result<Self, PolicyError> {
         let initial_route = if initial_use_proxy_transport {
             TransportRoute::Proxy
@@ -44,7 +52,35 @@ impl PolicyPipeline {
         };
         let proxy = ProxyPolicy::parse(proxy_policy, initial_route, initial_url)?;
         let redirect = follow_redirects.then_some(RedirectPolicy { max_redirects });
-        Ok(Self { proxy, redirect })
+        Ok(Self {
+            proxy,
+            redirect,
+            retry,
+        })
+    }
+
+    pub(crate) fn on_retryable_response(
+        &self,
+        request: PolicyRequest<'_>,
+        response: ResponseHead<'_>,
+        completed_retries: usize,
+        jitter_sample: f64,
+        now: SystemTime,
+    ) -> Option<RetryDecision> {
+        self.retry
+            .as_ref()?
+            .on_response(request, response, completed_retries, jitter_sample, now)
+    }
+
+    pub(crate) fn on_network_error(
+        &self,
+        request: PolicyRequest<'_>,
+        completed_retries: usize,
+        jitter_sample: f64,
+    ) -> Option<RetryDecision> {
+        self.retry
+            .as_ref()?
+            .on_network_error(request, completed_retries, jitter_sample)
     }
 
     pub(crate) fn before_send(

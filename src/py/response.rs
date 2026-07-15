@@ -3,6 +3,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
 use crate::core::headers::HeaderPairs;
+use crate::py::retry::RawRetryDecision;
 
 pub(crate) struct RawResponseParts {
     pub status_code: u16,
@@ -13,6 +14,7 @@ pub(crate) struct RawResponseParts {
     pub http_version: String,
     pub elapsed: f64,
     pub history: Vec<RawResponse>,
+    pub retry_decisions: Vec<RawRetryDecision>,
     pub body_reservation: Option<BufferedBodyReservation>,
 }
 
@@ -52,6 +54,7 @@ pub struct RawResponse {
     #[pyo3(get)]
     pub elapsed: f64,
     pub history: Vec<RawResponse>,
+    retry_decisions: Vec<RawRetryDecision>,
     body_reservation: Option<BufferedBodyReservation>,
 }
 
@@ -66,6 +69,7 @@ impl Clone for RawResponse {
             http_version: self.http_version.clone(),
             elapsed: self.elapsed,
             history: self.history.clone(),
+            retry_decisions: self.retry_decisions.clone(),
             body_reservation: None,
         }
     }
@@ -82,6 +86,7 @@ impl RawResponse {
             http_version: parts.http_version,
             elapsed: parts.elapsed,
             history: parts.history,
+            retry_decisions: parts.retry_decisions,
             body_reservation: parts.body_reservation,
         }
     }
@@ -91,6 +96,10 @@ impl RawResponse {
         for response in &mut self.history {
             response.release_body_reservations();
         }
+    }
+
+    pub(crate) fn set_retry_decisions(&mut self, decisions: Vec<RawRetryDecision>) {
+        self.retry_decisions = decisions;
     }
 }
 
@@ -104,6 +113,11 @@ impl RawResponse {
     #[getter]
     fn history(&self) -> Vec<Self> {
         self.history.clone()
+    }
+
+    #[getter]
+    fn retry_decisions(&self) -> Vec<RawRetryDecision> {
+        self.retry_decisions.clone()
     }
 
     fn release_buffered_body_reservations(&mut self) {
