@@ -2,7 +2,6 @@ from collections.abc import Callable
 from typing import assert_type
 
 import foghttp
-from foghttp import RequestExtensions
 from foghttp.policy import (
     TransportPolicyHooks,
     TransportPolicyRequest,
@@ -12,7 +11,7 @@ from foghttp.policy import (
 
 def observe_request(request: TransportPolicyRequest) -> None:
     assert request.method
-    assert_type(request.extensions, RequestExtensions)
+    assert_type(request.extensions, foghttp.RequestExtensions)
 
 
 def observe_response(response: TransportPolicyResponse) -> None:
