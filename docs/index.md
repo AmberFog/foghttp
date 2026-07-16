@@ -4,7 +4,7 @@ layout: "home"
 hero:
   name: "FogHTTP"
   text: "Rust-powered HTTP client for Python"
-  tagline: "Buffered JSON and form requests, streaming and multipart uploads, sync and async response streaming, transparent response decoding, base URL clients, default headers and params, sync and async APIs, redirects, custom CA certificates, cancellation, and observable request limits with pool diagnostics."
+  tagline: "Buffered JSON and form requests, streaming and multipart uploads, sync and async response streaming, transparent response decoding, base URL clients, default headers and params, opt-in safe retries, redirects, custom CA certificates, cancellation, and observable request limits with pool diagnostics."
 
 features:
   - title: "Rust transport"
@@ -62,6 +62,8 @@ FogHTTP is designed around a few engineering priorities:
   events
 - opt-in typed transport policy hooks for lightweight request admission and
   response-head checks, with Rust-owned redirect safety
+- opt-in Rust-owned retry policy with safe-method defaults, replayability
+  gating, bounded backoff, and typed decisions
 - versioned telemetry snapshots that separate alert-oriented stats from
   diagnostic dump APIs
 - opt-in async lifecycle debug snapshots for tests, staging, and incident
@@ -79,6 +81,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - [Timeout model](./timeouts.md)
 - [Upload typing contracts](./upload-types.md)
 - [Transport policy hooks](./policy-hooks.md)
+- [Retry policy](./retries.md)
 - [Telemetry contract](./telemetry.md)
 - [Response streaming](./streaming.md)
 - [TLS trust](./tls.md)
@@ -136,6 +139,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
   response body, and request completion lifecycle
 - opt-in typed transport policy hooks with immutable request/response views and
   no default-path Python callback
+- opt-in retry policy for selected statuses and pre-header network failures,
+  with safe methods and replayable bodies by default
 - versioned telemetry snapshot metadata for `stats()`, `dump_transport_state()`,
   and `dump_pool_diagnostics()`
 - opt-in async lifecycle debug mode for active request snapshots and strict

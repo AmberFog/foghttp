@@ -1,7 +1,7 @@
 __all__ = ("Response",)
 
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 import orjson
 
@@ -20,6 +20,10 @@ from .messages import http_status_error
 from .request_info import RequestInfo
 
 
+if TYPE_CHECKING:
+    from ._client.retry import RetryDecisionData
+
+
 @dataclass(frozen=True, slots=True)
 class Response:
     status_code: int
@@ -30,6 +34,12 @@ class Response:
     http_version: str
     elapsed: float
     history: tuple["Response", ...] = ()
+    _retry_decisions: tuple["RetryDecisionData", ...] = field(
+        default=(),
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     def __repr__(self) -> str:
         return (

@@ -3,8 +3,10 @@ __all__ = ("emit_request_error_telemetry", "start_request_telemetry")
 import asyncio
 
 from ...telemetry import TelemetryRequestOutcome
+from ..retry import public_retry_decisions
 from .emission import TelemetryCompletion
 from .request_context import TelemetryRequestContext
+from .retries import emit_retry_decisions
 
 
 def start_request_telemetry(telemetry_context: TelemetryRequestContext | None) -> bool:
@@ -22,6 +24,11 @@ def emit_request_error_telemetry(
 ) -> None:
     if telemetry_context is None or not telemetry_started:
         return
+    emit_retry_decisions(
+        telemetry_context,
+        public_retry_decisions(error),
+        suppress_hook_errors=True,
+    )
     telemetry_context.request_finished(
         TelemetryCompletion(
             response=None,

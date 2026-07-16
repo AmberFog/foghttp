@@ -44,6 +44,17 @@ pub(super) async fn collect_response_body(
     Ok(collector.finish())
 }
 
+pub(super) async fn drain_response_body(
+    mut body: Incoming,
+    context: &RawResponseContext<'_>,
+    read_timeout: Duration,
+) -> PyResult<()> {
+    while let Some(frame) = next_response_body_frame(&mut body, context, read_timeout).await? {
+        frame.map_err(|err| FogHttpError::new_err(err.to_string()))?;
+    }
+    Ok(())
+}
+
 async fn next_response_body_frame(
     body: &mut Incoming,
     context: &RawResponseContext<'_>,

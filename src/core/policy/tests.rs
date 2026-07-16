@@ -75,7 +75,7 @@ fn proxy_policy_modes_own_route_selection() {
 fn unknown_proxy_policy_is_rejected_at_pipeline_creation() {
     let url = HttpUrl::parse(INITIAL_URL).expect("valid URL");
 
-    let error = PolicyPipeline::new("unknown", false, &url, false, 0)
+    let error = PolicyPipeline::new("unknown", false, &url, false, 0, None)
         .expect_err("unknown proxy policy should fail closed");
 
     assert_eq!(error, PolicyError::InvalidProxyPolicy("unknown".to_owned()));
@@ -157,6 +157,7 @@ fn pipeline(
         initial_url,
         follow_redirects,
         max_redirects,
+        None,
     )
     .expect("valid policy pipeline")
 }

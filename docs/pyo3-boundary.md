@@ -73,9 +73,11 @@ seam does not mutate response status, headers, or body content.
 Policy diagnostics may include a normalized origin, but must not include URL
 userinfo, path, query parameters, or fragments.
 
-Error and timeout policy stages are intentionally absent until the retry work
-defines a Rust-owned failure taxonomy. Core policy code must not accept or
-return `PyErr` merely to reserve a future hook.
+The built-in retry stage owns a narrow Rust failure taxonomy: eligible network
+failures occur before response headers and exclude timeout, connection-acquire,
+and user request-body provider errors. Retry decisions remain typed core values;
+core policy code does not accept or return `PyErr`. The PyO3 adapter maps final
+errors and carries structured retry decisions to optional Python telemetry.
 
 The PyO3 bridge lives outside `src/core/policy/`. It invokes only callbacks
 resolved when `RawClient` is created, rejects non-`None` callback returns, and

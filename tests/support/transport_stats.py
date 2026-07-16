@@ -20,13 +20,16 @@ def wait_for_sync_transport_stats(
     *,
     message: str,
 ) -> None:
+    stats = client.stats()
     for _attempt in range(MAX_STATS_POLLS):
-        stats = client.stats()
         if condition(stats):
             return
         time.sleep(STATS_POLL_INTERVAL)
+        stats = client.stats()
 
-    raise AssertionError(_stats_message(message, client.stats()))
+    if condition(stats):
+        return
+    raise AssertionError(_stats_message(message, stats))
 
 
 async def wait_for_async_transport_stats(
@@ -35,13 +38,16 @@ async def wait_for_async_transport_stats(
     *,
     message: str,
 ) -> None:
+    stats = client.stats()
     for _attempt in range(MAX_STATS_POLLS):
-        stats = client.stats()
         if condition(stats):
             return
         await asyncio.sleep(STATS_POLL_INTERVAL)
+        stats = client.stats()
 
-    raise AssertionError(_stats_message(message, client.stats()))
+    if condition(stats):
+        return
+    raise AssertionError(_stats_message(message, stats))
 
 
 def _stats_message(message: str, stats: foghttp.TransportStats) -> str:

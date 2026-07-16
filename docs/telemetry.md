@@ -49,13 +49,14 @@ Current event fields include:
 
 | field | meaning |
 | --- | --- |
-| `schema_version` | Version of the telemetry event shape. |
+| `schema_version` | Version of the telemetry event shape. The current version is `2`. |
 | `event_sequence` | Monotonic Python-side sequence within the current client event dispatcher. |
 | `observed_at_ns` | Monotonic observation timestamp, not Unix epoch. |
 | `request_id` | Client-local request correlation id for all events emitted for one request. |
 | `mode` | `buffered` or `stream`. |
 | `method`, `origin`, `redacted_url` | Safe request surface. URLs are redacted before they reach the hook. |
 | `status_code`, `elapsed_ns`, `redirect_hop` | Response/redirect context when applicable. For stream completion events, `elapsed_ns` is `None` until FogHTTP exposes a separate body/request duration field. |
+| `retry_attempt`, `retry_decision`, `retry_reason`, `retry_backoff_ns` | Structured opt-in retry decision context. Attempt numbering starts at `1`; backoff is a duration in nanoseconds. |
 | `outcome`, `error_type` | Completion outcome and public error class name when applicable. |
 
 FogHTTP never passes raw request or response bodies to telemetry hooks. Hook
@@ -80,10 +81,17 @@ failure is not masked.
 
 The typed event model reserves names for pool acquire and connection lifecycle
 phases. These enum members are not emitted by Python hooks yet. The current
-Python hook delivery emits request start, redirect decisions visible in response
-history, response headers received, response body finished, and request finished
-events. Lower-level Rust pool and connection event delivery should be added as a
-follow-up before building Prometheus/OpenTelemetry exporters from event hooks.
+Python hook delivery emits request start, structured retry decisions, redirect
+decisions visible in response history, response headers received, response body
+finished, and request finished events. Native retry decisions are delivered
+when the transport returns or raises, in attempt order and before the final
+response lifecycle or request-failure event; they are not live Python callbacks
+during backoff. Caller cancellation can abort the native task before its
+pending decision batch reaches Python. Their origin is normalized and omits
+path/query data; no request or response body is included. The final
+`request_finished.outcome` remains the logical request outcome. Lower-level
+Rust pool and connection event delivery should be added as a follow-up before
+building Prometheus/OpenTelemetry exporters from event hooks.
 
 ## Snapshot Metadata
 

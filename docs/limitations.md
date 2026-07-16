@@ -55,6 +55,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
   response body, and request completion lifecycle
 - opt-in synchronous transport policy hooks with immutable request/response
   snapshots and Rust-owned redirect safety
+- opt-in retry policy for selected statuses and pre-header network failures,
+  gated by method safety and request-body replayability
 - opt-in async lifecycle debug snapshots for active async request handles,
   pending transport pressure, strict test checks, and unclosed-client context
 - default per-response and aggregate buffered response memory limits
@@ -99,6 +101,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | socket lifecycle telemetry granularity | `TransportStats` and `dump_transport_state()["origins"]` expose opened, open-failed, closed, reused, aborted, idle-timeout eviction, active, and idle tracked connection counters for the current HTTP/1 path; dedicated failed-reuse and close-reason taxonomy are not exposed yet because current connector hooks do not provide a stable reason signal |
 | telemetry hook granularity | `TelemetryConfig` currently dispatches Python-level request/response lifecycle events; lower-level Rust pool acquire and connection lifecycle event delivery is planned before Prometheus/OpenTelemetry exporters |
 | transport policy hook execution | `TransportPolicyHooks` callbacks are synchronous, inline, non-reentrant, and may run on Rust transport worker threads; `after_response_body` observes only redirect bodies consumed internally, not the final response body returned to the caller |
+| retry scope | Retry is client-level and opt-in. It covers configured response statuses and pre-header `NetworkError` only; response-body errors, FogHTTP timeouts, local upload-provider failures, auth refresh, hedging, and circuit breaking are not retried. |
 | diagnostic snapshot transactionality | `stats()`, `dump_transport_state()`, and `dump_pool_diagnostics()` include `schema_version` and a monotonic `snapshot_sequence`, but the `dump_*` APIs remain diagnostic snapshots rather than lock-protected SLA transactions; use `stats()` for alert-oriented low-cardinality metrics |
 
 ## Practical Guidance
@@ -132,7 +135,8 @@ Wait before using FogHTTP when:
 
 ## Error Surface
 
-Network and protocol failures map to `RequestError`. Pool acquire timeout and
+Pre-header transport failures map to `NetworkError`, a `RequestError` subtype;
+local request-provider and other request failures remain `RequestError`. Pool acquire timeout and
 queue-full conditions map to `PoolTimeout`. Response body progress timeout maps
 to `ReadTimeout` for buffered responses and streamed body chunks. Buffered and
 streamed request body write progress timeout maps to `WriteTimeout`. The broader

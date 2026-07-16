@@ -8,6 +8,9 @@ from foghttp.telemetry import TelemetryConfig, TelemetryEvent, TelemetryEventTyp
 from tests.client_telemetry.models import RecordingTelemetrySink
 
 
+EXPECTED_EVENT_SCHEMA_VERSION = 2
+
+
 @pytest.mark.parametrize(
     "url",
     [
@@ -37,6 +40,7 @@ def test_event_schema_uses_event_constant() -> None:
     )
 
     assert event.schema_version == TELEMETRY_EVENT_SCHEMA_VERSION
+    assert event.schema_version == EXPECTED_EVENT_SCHEMA_VERSION
 
 
 def test_request_redacts_url_secret_parts() -> None:

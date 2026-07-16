@@ -6,6 +6,7 @@ __all__ = (
     "FogHTTPError",
     "HTTPStatusError",
     "LifecycleError",
+    "NetworkError",
     "PoolTimeout",
     "ReadTimeout",
     "RequestError",
@@ -17,7 +18,7 @@ __all__ = (
     "WriteTimeout",
 )
 
-from .base import FogHTTPError, RequestError
+from .base import FogHTTPError, NetworkError, RequestError
 from .lifecycle import ClientClosedError, LifecycleError, UnclosedClientError
 from .response import (
     HTTPStatusError,

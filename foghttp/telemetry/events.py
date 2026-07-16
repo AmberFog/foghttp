@@ -3,6 +3,8 @@ __all__ = (
     "TelemetryEventType",
     "TelemetryRequestMode",
     "TelemetryRequestOutcome",
+    "TelemetryRetryDecision",
+    "TelemetryRetryReason",
 )
 
 from dataclasses import dataclass
@@ -28,6 +30,7 @@ class TelemetryEventType(StrEnum):
     CONNECTION_ABORTED = "connection_aborted"
     RESPONSE_HEADERS_RECEIVED = "response_headers_received"
     REDIRECT_DECISION = "redirect_decision"
+    RETRY_DECISION = "retry_decision"
     RESPONSE_BODY_FINISHED = "response_body_finished"
     REQUEST_FINISHED = "request_finished"
 
@@ -44,6 +47,20 @@ class TelemetryRequestOutcome(StrEnum):
     CANCELLED = "cancelled"
 
 
+class TelemetryRetryDecision(StrEnum):
+    RETRY = "retry"
+    STOP = "stop"
+    BLOCK_NON_REPLAYABLE = "block_non_replayable"
+
+
+class TelemetryRetryReason(StrEnum):
+    STATUS = "status"
+    NETWORK_ERROR = "network_error"
+    METHOD_NOT_ALLOWED = "method_not_allowed"
+    NON_REPLAYABLE_BODY = "non_replayable_body"
+    RETRIES_EXHAUSTED = "retries_exhausted"
+
+
 @dataclass(frozen=True, slots=True)
 class TelemetryEvent:
     event_type: TelemetryEventType
@@ -57,6 +74,10 @@ class TelemetryEvent:
     status_code: int | None = None
     elapsed_ns: int | None = None
     redirect_hop: int | None = None
+    retry_attempt: int | None = None
+    retry_decision: TelemetryRetryDecision | None = None
+    retry_reason: TelemetryRetryReason | None = None
+    retry_backoff_ns: int | None = None
     outcome: TelemetryRequestOutcome | None = None
     error_type: str | None = None
     schema_version: int = TELEMETRY_EVENT_SCHEMA_VERSION

@@ -1,7 +1,11 @@
 __all__ = ("close_raw_client", "create_raw_client")
 
+from dataclasses import dataclass
+
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
+from ...errors import NetworkError
+from ...retry import RetryPolicy
 from ..config import ClientConfig
 from ..proxy.auth import basic_proxy_authorization
 from ..tls import ca_certificate_bytes, trust_webpki_roots
@@ -17,6 +21,7 @@ def create_raw_client(
 ) -> _foghttp.RawClient:
     try:
         limits = config.limits
+        retry_options = _RawRetryOptions.from_policy(config.retry)
         return _foghttp.RawClient(
             max_active_requests=limits.max_active_requests,
             max_active_requests_per_origin=limits.max_active_requests_per_origin,
@@ -40,6 +45,42 @@ def create_raw_client(
             https_proxy_url=None if config.https_proxy is None else config.https_proxy.endpoint_url,
             https_proxy_authorization=basic_proxy_authorization(config.https_proxy),
             policy_hooks=config.policy_hooks,
+            retry_retries=retry_options.retries,
+            retry_backoff=retry_options.backoff,
+            retry_jitter=retry_options.jitter,
+            retry_statuses=retry_options.statuses,
+            retry_methods=retry_options.methods,
+            retry_network_errors=retry_options.network_errors,
         )
     except _foghttp.FogHttpError as exc:
         raise ValueError(str(exc)) from exc
+
+
+@dataclass(frozen=True, slots=True)
+class _RawRetryOptions:
+    retries: int | None
+    backoff: float
+    jitter: float
+    statuses: list[int]
+    methods: list[str]
+    network_errors: bool
+
+    @classmethod
+    def from_policy(cls, policy: RetryPolicy | None) -> "_RawRetryOptions":
+        if policy is None:
+            return cls(
+                retries=None,
+                backoff=0,
+                jitter=0,
+                statuses=[],
+                methods=[],
+                network_errors=False,
+            )
+        return cls(
+            retries=policy.retries,
+            backoff=policy.backoff,
+            jitter=policy.jitter,
+            statuses=sorted(policy.retry_on.statuses),
+            methods=sorted(policy.methods),
+            network_errors=NetworkError in policy.retry_on.exceptions,
+        )

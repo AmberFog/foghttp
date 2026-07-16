@@ -44,7 +44,7 @@ def test_sync_close_waits_for_peer_close_in_flight_request(
         finally:
             fault_injection_server.release_delayed_peer_close()
 
-        with pytest.raises(foghttp.RequestError) as exc_info:
+        with pytest.raises(foghttp.NetworkError) as exc_info:
             request_future.result(timeout=REQUEST_RESULT_TIMEOUT)
         close_future.result(timeout=REQUEST_RESULT_TIMEOUT)
 

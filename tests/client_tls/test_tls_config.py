@@ -55,11 +55,9 @@ def test_client_rejects_custom_only_trust_signed_by_unrelated_ca(
 
     with (
         foghttp.Client(tls=tls) as client,
-        pytest.raises(foghttp.RequestError) as exc_info,
+        pytest.raises(foghttp.NetworkError),
     ):
         client.get(tls_http_server.url + TLS_PATH)
-
-    assert not isinstance(exc_info.value, foghttp.TimeoutError)
 
 
 def test_tls_config_does_not_expose_verify_false_escape_hatch() -> None:

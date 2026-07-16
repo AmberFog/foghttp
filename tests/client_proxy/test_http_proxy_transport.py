@@ -425,11 +425,13 @@ async def test_async_explicit_proxy_http_to_http_cross_origin_redirect_uses_same
     )
 
 
-def test_proxy_connection_failure_cleans_up_request_stats(unused_tcp_port: int) -> None:
+def test_proxy_connection_failure_maps_to_network_error_and_cleans_up_request_stats(
+    unused_tcp_port: int,
+) -> None:
     target_url = "http://example.test/proxy-connection-failure"
 
     with foghttp.Client(proxy=f"http://127.0.0.1:{unused_tcp_port}") as client:
-        with pytest.raises(foghttp.RequestError):
+        with pytest.raises(foghttp.NetworkError):
             client.get(target_url)
 
         stats = client.stats()
@@ -439,14 +441,14 @@ def test_proxy_connection_failure_cleans_up_request_stats(unused_tcp_port: int) 
     assert stats.active_requests == 0
 
 
-def test_proxy_protocol_failure_cleans_up_request_stats(
+def test_proxy_protocol_failure_maps_to_network_error_and_cleans_up_request_stats(
     sync_http_proxy: SyncHTTPProxy,
     unused_tcp_port: int,
 ) -> None:
     target_url = _target_url(unused_tcp_port, "/invalid-proxy-response")
 
     with foghttp.Client(proxy=sync_http_proxy.base_url) as client:
-        with pytest.raises(foghttp.RequestError):
+        with pytest.raises(foghttp.NetworkError):
             client.get(target_url)
 
         stats = client.stats()

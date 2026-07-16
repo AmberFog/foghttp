@@ -99,9 +99,21 @@ def _event_from_emission(
         status_code=emission.status_code,
         elapsed_ns=emission.elapsed_ns,
         redirect_hop=emission.redirect_hop,
+        retry_attempt=emission.retry_attempt,
+        retry_decision=emission.retry_decision,
+        retry_reason=emission.retry_reason,
+        retry_backoff_ns=emission.retry_backoff_ns,
         outcome=emission.outcome,
-        error_type=None if emission.error is None else emission.error.__class__.__name__,
+        error_type=_emission_error_type(emission),
     )
+
+
+def _emission_error_type(emission: TelemetryEmission) -> str | None:
+    if emission.error_type is not None:
+        return emission.error_type
+    if emission.error is None:
+        return None
+    return emission.error.__class__.__name__
 
 
 def _context_with_emission_overrides(
@@ -110,6 +122,7 @@ def _context_with_emission_overrides(
 ) -> TelemetryContextData:
     return replace(
         context,
+        method=context.method if emission.method is None else emission.method,
         origin=context.origin if emission.origin is None else emission.origin,
         redacted_url=context.redacted_url if emission.redacted_url is None else emission.redacted_url,
     )

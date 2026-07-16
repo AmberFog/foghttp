@@ -38,14 +38,13 @@ def test_sync_client_rejects_untrusted_tls_certificate_and_recovers(
     sync_http_server: str,
 ) -> None:
     with foghttp.Client() as client:
-        with pytest.raises(foghttp.RequestError) as exc_info:
+        with pytest.raises(foghttp.NetworkError):
             client.get(tls_http_server.url + TLS_PATH)
 
         stats_after_failure = client.stats()
         recovery_response = client.get(sync_http_server)
         final_stats = client.stats()
 
-    assert not isinstance(exc_info.value, foghttp.TimeoutError)
     assert_tls_failure_stats(stats_after_failure)
     assert recovery_response.status_code == OK
     assert_recovered_after_tls_failure(final_stats)

@@ -238,8 +238,9 @@ response = client.get("https://api.example.com/me", headers=headers)
 For one-upstream clients with a static token, client-level `headers=` can avoid
 repeating the same header at every call site.
 
-For token refresh, retries after `401`, request signing, or OAuth flows, wait
-for the planned auth/hooks layer or keep that logic outside FogHTTP.
+The opt-in retry policy can match `401`, but it cannot refresh a token or mutate
+authentication state between attempts. Keep token refresh, request signing, and
+OAuth flows outside FogHTTP until the planned auth layer exists.
 
 ### Buffered, Streaming, And Multipart Uploads
 

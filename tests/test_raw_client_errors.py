@@ -93,6 +93,7 @@ def _default_client_config() -> ClientConfig:
             runtime="dedicated",
             runtime_workers=1,
             policy_hooks=None,
+            retry=None,
             telemetry=None,
             lifecycle_debug=None,
         ),

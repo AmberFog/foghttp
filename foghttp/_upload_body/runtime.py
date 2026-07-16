@@ -55,10 +55,7 @@ class _SyncStreamingUploadBody:
         self._threads: list[threading.Thread] = []
         self._replayable = replayable
 
-    def start(self) -> None:
-        raw_body = self.raw_body
-        if raw_body is None:
-            return
+    def start(self, raw_body: _foghttp.RawUploadBody) -> None:
         source = self._fresh_source()
         if is_async_stream(source):
             close_sync_source(source)
@@ -111,10 +108,7 @@ class _AsyncStreamingUploadBody:
         self._owned_sources: list[object] = []
         self._replayable = replayable
 
-    def start(self) -> None:
-        raw_body = self.raw_body
-        if raw_body is None:
-            return
+    def start(self, raw_body: _foghttp.RawUploadBody) -> None:
         source = self._fresh_source()
         future = asyncio.run_coroutine_threadsafe(
             feed_async_upload_body(raw_body, source, self._ready),

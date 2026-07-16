@@ -1,0 +1,18 @@
+__all__ = (
+    "ALWAYS_CLOSE_PATH",
+    "ALWAYS_STATUS_PATH",
+    "CLOSE_THEN_OK_PATH",
+    "EARLY_STATUS_THEN_OK_PATH",
+    "EXPECTED_ATTEMPTS",
+    "INCOMPLETE_RETRYABLE_RESPONSE_PATH",
+    "STATUS_THEN_OK_PATH",
+)
+
+
+ALWAYS_STATUS_PATH = "/always-status"
+ALWAYS_CLOSE_PATH = "/always-close"
+CLOSE_THEN_OK_PATH = "/close-then-ok"
+EARLY_STATUS_THEN_OK_PATH = "/early-status-then-ok"
+EXPECTED_ATTEMPTS = 2
+INCOMPLETE_RETRYABLE_RESPONSE_PATH = "/incomplete-retryable-response"
+STATUS_THEN_OK_PATH = "/status-then-ok"

@@ -107,7 +107,7 @@ async def test_async_streaming_upload_body_closes_factory_owned_source(
         ),
     )
 
-    body.raw_body.start_callback()
+    body.raw_body.start_callback(body.raw_body)
     await body.aclose()
 
     assert sources

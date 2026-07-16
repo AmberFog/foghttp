@@ -2,11 +2,12 @@ use crate::core::client::{
     connection_acquire_timeout_from_error, request_write_timeout_from_error,
 };
 use crate::core::policy::PolicyError;
-use crate::errors::{transport_error_message, FogHttpError};
+use crate::errors::{transport_error_message, FogHttpError, FogHttpNetworkError};
 use crate::messages::CONNECTION_ACQUIRE_TIMEOUT;
 use crate::py::client::timeout_diagnostics::{
     connection_acquire_timeout_error, write_timeout_error,
 };
+use hyper::Error as HyperError;
 use pyo3::prelude::*;
 use std::error::Error;
 
@@ -27,5 +28,29 @@ pub(super) fn transport_error(error: &(dyn Error + 'static)) -> PyErr {
             timeout.redirect_hop(),
         );
     }
-    FogHttpError::new_err(transport_error_message(error))
+    if error_chain_contains_user_error(error) {
+        return FogHttpError::new_err(transport_error_message(error));
+    }
+    FogHttpNetworkError::new_err(transport_error_message(error))
+}
+
+pub(super) fn is_retryable_network_error(error: &(dyn Error + 'static)) -> bool {
+    request_write_timeout_from_error(error).is_none()
+        && connection_acquire_timeout_from_error(error).is_none()
+        && !error_chain_contains_user_error(error)
+}
+
+fn error_chain_contains_user_error(mut error: &(dyn Error + 'static)) -> bool {
+    loop {
+        if error
+            .downcast_ref::<HyperError>()
+            .is_some_and(HyperError::is_user)
+        {
+            return true;
+        }
+        let Some(source) = error.source() else {
+            return false;
+        };
+        error = source;
+    }
 }
