@@ -128,7 +128,7 @@ async with foghttp.AsyncClient() as client:
 - opt-in typed transport policy hooks for lightweight request admission and
   response-head checks without default-path Python callbacks
 - opt-in Rust-owned retry policy for selected statuses and pre-header network
-  failures, with safe methods and replayable bodies by default
+  failures, with safe methods, replayable bodies, and immutable attempt traces
 - versioned telemetry snapshot metadata for `stats()`, `dump_transport_state()`,
   and `dump_pool_diagnostics()`
 - opt-in async lifecycle debug mode for active request snapshots, strict leak

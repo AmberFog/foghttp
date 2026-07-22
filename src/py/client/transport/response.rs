@@ -100,7 +100,7 @@ pub(super) async fn raw_response(
         http_version,
         elapsed: context.started.elapsed().as_secs_f64(),
         history: Vec::new(),
-        retry_decisions: Vec::new(),
+        retry_trace: None,
         body_reservation: Some(body_reservation),
     }))
 }
@@ -131,7 +131,7 @@ pub(super) fn raw_stream_response(
         http_version,
         elapsed: context.started.elapsed().as_secs_f64(),
         history: context.history,
-        retry_decisions: Vec::new(),
+        retry_trace: None,
         body: response.into_body(),
         permit: context.permit,
         lifecycle,

@@ -21,7 +21,7 @@ from .request_info import RequestInfo
 
 
 if TYPE_CHECKING:
-    from ._client.retry import RetryDecisionData
+    from .retry_trace import RetryTrace
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,8 +34,8 @@ class Response:
     http_version: str
     elapsed: float
     history: tuple["Response", ...] = ()
-    _retry_decisions: tuple["RetryDecisionData", ...] = field(
-        default=(),
+    _retry_trace: "RetryTrace | None" = field(
+        default=None,
         init=False,
         repr=False,
         compare=False,
@@ -75,6 +75,10 @@ class Response:
         return is_error_status(self.status_code)
 
     @property
+    def retry_trace(self) -> "RetryTrace | None":
+        return self._retry_trace
+
+    @property
     def text(self) -> str:
         return self.content.decode(self.encoding, errors="replace")
 
@@ -94,4 +98,5 @@ class Response:
                     self.status_code,
                 ),
                 response=self,
+                retry_trace=self.retry_trace,
             )

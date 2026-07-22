@@ -3,8 +3,8 @@ __all__ = ("TelemetryRequestContext",)
 from dataclasses import dataclass
 from typing import Protocol
 
+from ...retry_trace import RetryAttempt
 from ...telemetry import TelemetryEventType
-from ..retry import RetryDecisionData
 from .clock import elapsed_seconds_to_ns
 from .emission import (
     TelemetryCompletion,
@@ -45,7 +45,7 @@ class TelemetryRequestContext:
 
     def retry_decision(
         self,
-        retry: RetryDecisionData,
+        retry: RetryAttempt,
         *,
         suppress_hook_errors: bool,
     ) -> None:

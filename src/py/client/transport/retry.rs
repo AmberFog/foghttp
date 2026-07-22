@@ -25,13 +25,14 @@ pub(super) async fn retry_after_network_error(
     let Some(pending) = state.retry_on_network_error() else {
         return Ok(false);
     };
-    let action = state.commit_retry_decision(&pending, started.elapsed());
+    let action = state.commit_retry_decision(&pending, started.elapsed(), redirect_hop);
     let RetryAction::Retry(delay) = action else {
         return Ok(false);
     };
 
     drop(permit);
     wait_for_retry(delay, started, state.total_timeout, origin, redirect_hop).await?;
+    state.advance_retry_attempt();
     Ok(true)
 }
 
@@ -50,10 +51,14 @@ pub(super) async fn retry_after_response(
     drain_response(response, response_lifecycle, context).await?;
     drop(permit);
 
-    let RetryAction::Retry(delay) = state.commit_retry_decision(pending, started.elapsed()) else {
+    let RetryAction::Retry(delay) =
+        state.commit_retry_decision(pending, started.elapsed(), redirect_hop)
+    else {
         unreachable!("pending retry changed after response drain");
     };
-    wait_for_retry(delay, started, total_timeout, origin, redirect_hop).await
+    wait_for_retry(delay, started, total_timeout, origin, redirect_hop).await?;
+    state.advance_retry_attempt();
+    Ok(())
 }
 
 pub(super) async fn wait_for_retry(

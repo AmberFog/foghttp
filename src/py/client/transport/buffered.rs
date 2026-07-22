@@ -7,7 +7,7 @@ use crate::core::headers::response_headers;
 use crate::core::metrics::Metrics;
 use crate::py::client::acquire::AcquireGate;
 use crate::py::response::RawResponse;
-use crate::py::retry::attach_retry_decisions;
+use crate::py::retry::{attach_retry_trace, RetryTraceOutcome};
 use pyo3::prelude::*;
 use std::sync::Arc;
 use std::time::Instant;
@@ -32,13 +32,26 @@ pub async fn send_request(
         &mut history,
     )
     .await;
-    let decisions = state.take_retry_decisions();
+    let trace = match result.as_ref() {
+        Ok(response) => state.finish_retry_trace(
+            RetryTraceOutcome::Response,
+            Some(response.terminal_status_code()),
+            response.redirect_hop(),
+            started.elapsed(),
+        ),
+        Err(_) => state.finish_retry_trace(
+            RetryTraceOutcome::Error,
+            None,
+            history.len(),
+            started.elapsed(),
+        ),
+    };
     match result {
         Ok(mut response) => {
-            response.set_retry_decisions(decisions);
+            response.set_retry_trace(trace);
             Ok(response)
         }
-        Err(error) => Err(attach_retry_decisions(error, decisions)),
+        Err(error) => Err(attach_retry_trace(error, trace)),
     }
 }
 
@@ -121,7 +134,7 @@ async fn send_request_attempts(
                 .await?;
                 continue;
             }
-            state.commit_retry_decision(&pending, started.elapsed());
+            state.commit_retry_decision(&pending, started.elapsed(), redirect_hop);
         }
 
         let mut raw = raw_response(

@@ -25,7 +25,7 @@ from .telemetry import StreamResponseTelemetryMixin
 
 
 if TYPE_CHECKING:
-    from foghttp._client.retry import RetryDecisionData
+    from foghttp.retry_trace import RetryTrace
 
 
 @dataclass(slots=True)
@@ -42,8 +42,8 @@ class StreamResponseBase(
     elapsed: float
     _raw: _foghttp.RawStreamResponse = field(repr=False)
     history: tuple[Response, ...] = ()
-    _retry_decisions: tuple["RetryDecisionData", ...] = field(
-        default=(),
+    _retry_trace: "RetryTrace | None" = field(
+        default=None,
         init=False,
         repr=False,
         compare=False,

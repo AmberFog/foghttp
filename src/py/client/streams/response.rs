@@ -7,7 +7,7 @@ use crate::messages::STREAM_RESPONSE_READ_ABORTED;
 use crate::py::client::future::{complete_python_bytes_future, PythonFutureSetters};
 use crate::py::client::process::{current_process_id, stream_response_used_after_fork, ProcessId};
 use crate::py::response::{RawRequestInfo, RawResponse};
-use crate::py::retry::RawRetryDecision;
+use crate::py::retry::RawRetryTrace;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 use tokio::runtime::Handle;
@@ -28,7 +28,7 @@ pub struct RawStreamResponse {
     #[pyo3(get)]
     elapsed: f64,
     history: Vec<RawResponse>,
-    retry_decisions: Vec<RawRetryDecision>,
+    retry_trace: Option<RawRetryTrace>,
     state: Option<StreamState>,
     runtime_handle: Option<Handle>,
     future_setters: PythonFutureSetters,
@@ -45,7 +45,7 @@ impl RawStreamResponse {
             http_version,
             elapsed,
             history,
-            retry_decisions,
+            retry_trace,
             body,
             permit,
             lifecycle,
@@ -69,7 +69,7 @@ impl RawStreamResponse {
             http_version,
             elapsed,
             history,
-            retry_decisions,
+            retry_trace,
             state: Some(StreamState::new(StreamStateParts {
                 body,
                 permit,
@@ -96,8 +96,16 @@ impl RawStreamResponse {
         }
     }
 
-    pub(crate) fn set_retry_decisions(&mut self, decisions: Vec<RawRetryDecision>) {
-        self.retry_decisions = decisions;
+    pub(crate) fn set_retry_trace(&mut self, trace: Option<RawRetryTrace>) {
+        self.retry_trace = trace;
+    }
+
+    pub(crate) fn terminal_status_code(&self) -> u16 {
+        self.status_code
+    }
+
+    pub(crate) fn redirect_hop(&self) -> usize {
+        self.history.len()
     }
 
     fn ensure_current_process(&self) -> PyResult<()> {
@@ -135,8 +143,8 @@ impl RawStreamResponse {
     }
 
     #[getter]
-    fn retry_decisions(&self) -> Vec<RawRetryDecision> {
-        self.retry_decisions.clone()
+    fn retry_trace(&self) -> Option<RawRetryTrace> {
+        self.retry_trace.clone()
     }
 
     fn close(&self) {
