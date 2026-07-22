@@ -18,8 +18,11 @@ def test_top_level_exports() -> None:
     assert foghttp.RequestInfo is not None
     assert foghttp.ResponseBodyBudgetExceededError is not None
     assert foghttp.ResponseBodyTooLargeError is not None
+    assert foghttp.RetryAttempt is not None
     assert foghttp.RetryConditions is not None
     assert foghttp.RetryPolicy is not None
+    assert foghttp.RetryTrace is not None
+    assert foghttp.RetryTraceOutcome is not None
     assert foghttp.StreamResponse is not None
     assert foghttp.TLSConfig is not None
     assert foghttp.TimeoutDiagnostic is not None

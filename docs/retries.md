@@ -115,6 +115,82 @@ the logical request lifecycle.
 
 ## Observability
 
+A request made by a client with `RetryPolicy` exposes one immutable,
+request-scoped `RetryTrace` when transport execution returns a buffered or
+streaming response, or raises a terminal `FogHTTPError`. Responses provide it
+as `response.retry_trace`; terminal `FogHTTPError` instances provide the same
+property. Errors raised before native transport execution are outside this
+contract. A client without a retry policy returns `None`, so the default path
+does not collect attempt history or allocate terminal trace values.
+
+```python
+try:
+    response = client.get("https://api.example.com/items")
+except foghttp.FogHTTPError as error:
+    trace = error.retry_trace
+else:
+    trace = response.retry_trace
+
+if trace is not None:
+    for attempt in trace.attempts:
+        print(attempt.attempt, attempt.decision, attempt.reason)
+```
+
+`RetryTrace` contains:
+
+| Field | Meaning |
+|---|---|
+| `attempts` | Ordered immutable tuple, bounded to at most `retries + 1` entries. |
+| `outcome` | `response` when the transport returned a response object, or `error` when it raised. |
+| `status_code` | Final response status, otherwise `None`. |
+| `error_type` | Diagnostic name of the final public exception class, otherwise `None`. |
+| `elapsed` | Total logical-request time in seconds through the returned response or error. |
+
+Each `RetryAttempt` represents one retry-policy execution cycle inside the
+native transport, not one socket send or server-observed request. Redirect hops
+remain within the same retry attempt and rerun route selection, the
+`before_send` hook and request-slot/connection acquisition. An attempt can
+therefore end with a policy or acquire error before a connection sends any
+request bytes.
+
+An attempt contains the 1-based `attempt`, normalized `method`, credential-free
+`origin`, zero-based `redirect_hop`, optional `status_code` and `error_type`,
+typed `decision` and `reason`, selected `backoff` in seconds, optional cumulative
+`decision_elapsed` seconds when the retry decision was committed by the
+transport, and cumulative `completed_elapsed` seconds when that execution
+attempt ended. All elapsed values are measured from the start of the logical
+request, not from the start of an individual attempt. A buffered attempt can
+contain both a status and a later body-read error. The final retry execution
+attempt is always present. Its `decision` and `reason` are `None` when that
+attempt did not trigger retry policy; a terminal method stop, replayability
+block or exhaustion retains its typed decision and reason.
+
+`error_type` follows the corresponding public exception class name and is a
+diagnostic field rather than a separate error-category enum. When class-name
+comparison is needed, prefer `foghttp.NetworkError.__name__` over a repeated
+string literal. `backoff` is the delay selected by policy, not a measurement of
+time actually slept; a timeout or cancellation can end the wait early.
+
+A logical request can fail after its latest transport attempt has completed.
+For example, a total timeout during retry backoff is reported by
+`RetryTrace.error_type` and `RetryTrace.elapsed`; it does not overwrite the
+completed status or network result of the preceding attempt.
+
+`RetryTraceOutcome.RESPONSE` means that request execution produced a response;
+it does not classify an HTTP status as successful. For streaming responses the
+trace is complete when response headers are exposed, because body-consumption
+failures are outside the retry scope and do not mutate the immutable trace.
+`HTTPStatusError` preserves the trace of its response.
+
+FogHTTP preserves the original terminal request error if CPython cannot
+allocate or attach the native trace handoff object. That exceptional attachment
+failure is reported through `sys.unraisablehook`; the error then has no trace
+rather than being replaced by an observability error.
+
+Trace values never include a request path, query, headers, body, credentials or
+userinfo. They retain only the normalized origin and typed operational fields,
+so their default representation is safe for diagnostics.
+
 When telemetry is enabled and the native request returns or raises, each retry
 decision emits a typed `TelemetryEventType.RETRY_DECISION` event with:
 
@@ -126,11 +202,23 @@ decision emits a typed `TelemetryEventType.RETRY_DECISION` event with:
 - `retry_backoff_ns` and `elapsed_ns`;
 - normalized method and origin, without request path, query, headers, or body.
 
-The final `request_finished` event reports the logical request outcome. Native
-decisions are delivered to the Python sink when the transport returns or
-raises, before the final response lifecycle or request failure event; they are
-not live callbacks during backoff. Cancelling an async caller can abort the
-native task before this batch is returned, so decisions pending at cancellation
-are not emitted to the Python sink. Detailed public attempt-trace introspection
-is a separate future contract; application code should not inspect private
-response or exception attributes.
+The public trace and telemetry events are derived from the same native attempt
+records; terminal attempts without a retry decision do not emit a
+`retry_decision` event. The final `request_finished` event still reports the
+logical request outcome. Native records are delivered when the transport
+returns or raises, not as live callbacks during backoff.
+`RetryAttempt.decision` and `RetryAttempt.reason` intentionally reuse
+`TelemetryRetryDecision` and `TelemetryRetryReason` as the shared public retry
+vocabulary; telemetry is a projection of the same decision records rather than
+a separate enum contract.
+For a `retry_decision` event, `elapsed_ns` is derived from
+`RetryAttempt.decision_elapsed`, and `status_code`/`error_type` describe the
+trigger seen when that decision was committed. A later buffered-body error can
+therefore appear on the state-oriented `RetryAttempt` without rewriting the
+earlier decision event.
+
+Cancelling an async caller can abort the native task before a response or
+exception is returned. `asyncio.CancelledError` therefore does not manufacture
+a partial `retry_trace`, and buffered retry decisions, including the decision
+that selected a cancelled backoff, are not emitted to the Python sink. There is
+no global retry-trace history.

@@ -2,13 +2,13 @@ __all__ = ("emit_retry_decisions",)
 
 from collections.abc import Sequence
 
-from ..retry import RetryDecisionData
+from ...retry_trace import RetryAttempt
 from .request_context import TelemetryRequestContext
 
 
 def emit_retry_decisions(
     telemetry_context: TelemetryRequestContext,
-    decisions: Sequence[RetryDecisionData],
+    decisions: Sequence[RetryAttempt],
     *,
     suppress_hook_errors: bool,
 ) -> None:

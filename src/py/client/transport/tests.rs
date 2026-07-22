@@ -25,7 +25,7 @@ fn initialize_python() {
 fn method_preserving_redirect_rejects_non_replayable_body() {
     initialize_python();
     let mut state = request_state(Some(vec![1, 2, 3]), false);
-    let action = response_action(&state, StatusCode::TEMPORARY_REDIRECT, "/next");
+    let action = response_action(&mut state, StatusCode::TEMPORARY_REDIRECT, "/next");
 
     let error = state
         .after_response_body(action, 0)
@@ -39,7 +39,7 @@ fn method_preserving_redirect_rejects_non_replayable_body() {
 #[test]
 fn method_rewriting_redirect_drops_non_replayable_body() {
     let mut state = request_state(Some(vec![1, 2, 3]), false);
-    let action = response_action(&state, StatusCode::SEE_OTHER, "/next");
+    let action = response_action(&mut state, StatusCode::SEE_OTHER, "/next");
 
     state
         .after_response_body(action, 0)
@@ -101,7 +101,7 @@ fn explicit_proxy_tunnels_https_redirect_via_connect() {
     parts.proxy_policy = "explicit_proxy".to_owned();
     parts.use_proxy_transport = true;
     let mut state = RequestState::try_from(parts).expect("valid request state");
-    let action = response_action(&state, StatusCode::FOUND, "https://example.com/secure");
+    let action = response_action(&mut state, StatusCode::FOUND, "https://example.com/secure");
 
     state
         .after_response_body(action, 0)
@@ -131,7 +131,7 @@ fn environment_proxy_blocks_cross_origin_redirect_until_per_hop_decisions_exist(
     parts.proxy_policy = "environment_proxy".to_owned();
     parts.use_proxy_transport = true;
     let mut state = RequestState::try_from(parts).expect("valid request state");
-    let action = response_action(&state, StatusCode::FOUND, "http://api.example.com/next");
+    let action = response_action(&mut state, StatusCode::FOUND, "http://api.example.com/next");
 
     let error = state
         .after_response_body(action, 0)
@@ -171,7 +171,7 @@ fn transport_request(body: Option<Vec<u8>>, body_replayable: bool) -> TransportR
 }
 
 fn response_action(
-    state: &RequestState,
+    state: &mut RequestState,
     status: StatusCode,
     location: &str,
 ) -> PendingResponsePolicyAction {

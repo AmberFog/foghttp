@@ -3,8 +3,8 @@ __all__ = ("TelemetryRequestContext",)
 from dataclasses import dataclass
 from typing import Protocol
 
+from ...retry_trace import RetryAttempt
 from ...telemetry import TelemetryEventType
-from ..retry import RetryDecisionData
 from .clock import elapsed_seconds_to_ns
 from .emission import (
     TelemetryCompletion,
@@ -45,24 +45,29 @@ class TelemetryRequestContext:
 
     def retry_decision(
         self,
-        retry: RetryDecisionData,
+        retry: RetryAttempt,
         *,
         suppress_hook_errors: bool,
     ) -> None:
+        decision_elapsed = retry.decision_elapsed
+        if decision_elapsed is None:
+            msg = "retry decision record is missing decision_elapsed"
+            raise RuntimeError(msg)
+        decision_error_type = retry.error_type if retry.status_code is None else None
         self.dispatcher.emit(
             self.data,
             TelemetryEmission(
                 event_type=TelemetryEventType.RETRY_DECISION,
                 method=retry.method,
                 status_code=retry.status_code,
-                elapsed_ns=elapsed_seconds_to_ns(retry.elapsed),
+                elapsed_ns=elapsed_seconds_to_ns(decision_elapsed),
                 retry_attempt=retry.attempt,
                 retry_decision=retry.decision,
                 retry_reason=retry.reason,
                 retry_backoff_ns=elapsed_seconds_to_ns(retry.backoff),
                 origin=retry.origin,
                 redacted_url=retry.origin,
-                error_type=retry.error_type,
+                error_type=decision_error_type,
                 suppress_hook_errors=suppress_hook_errors,
             ),
         )

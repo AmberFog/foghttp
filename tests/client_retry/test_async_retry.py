@@ -113,9 +113,13 @@ async def test_async_stream_retries_before_exposing_response(
 async def test_async_cancellation_during_backoff_releases_request_lifecycle(
     retry_server: RetryTestServer,
 ) -> None:
+    sink = RecordingTelemetrySink()
     policy = foghttp.RetryPolicy(retries=1, backoff=2, jitter=0)
 
-    async with foghttp.AsyncClient(retry=policy) as client:
+    async with foghttp.AsyncClient(
+        retry=policy,
+        telemetry=foghttp.TelemetryConfig(sink=sink),
+    ) as client:
         task = asyncio.create_task(client.get(retry_server.url + STATUS_THEN_OK_PATH))
         await wait_for_async_transport_stats(
             client,
@@ -125,13 +129,53 @@ async def test_async_cancellation_during_backoff_releases_request_lifecycle(
         assert task.done() is False
 
         task.cancel()
-        with pytest.raises(asyncio.CancelledError):
+        with pytest.raises(asyncio.CancelledError) as exc_info:
             await task
 
         recovery = await client.get(retry_server.url + "/recovery")
         stats = client.stats()
 
     assert recovery.status_code == OK
+    assert getattr(exc_info.value, "retry_trace", None) is None
+    assert retry_events(sink.events) == ()
+    assert len(retry_server.snapshot().requests_for(STATUS_THEN_OK_PATH)) == 1
+    assert stats.active_requests == 0
+    assert stats.pending_requests == 0
+
+
+async def test_async_stream_cancellation_during_backoff_releases_request_lifecycle(
+    retry_server: RetryTestServer,
+) -> None:
+    sink = RecordingTelemetrySink()
+    policy = foghttp.RetryPolicy(retries=1, backoff=2, jitter=0)
+
+    async with foghttp.AsyncClient(
+        retry=policy,
+        telemetry=foghttp.TelemetryConfig(sink=sink),
+    ) as client:
+
+        async def open_stream() -> None:
+            async with client.stream("GET", retry_server.url + STATUS_THEN_OK_PATH):
+                pass
+
+        task = asyncio.create_task(open_stream())
+        await wait_for_async_transport_stats(
+            client,
+            lambda stats: stats.total_requests == 1 and stats.pool_acquire_attempts == 1 and stats.active_requests == 0,
+            message="stream request did not enter retry backoff",
+        )
+        assert task.done() is False
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError) as exc_info:
+            await task
+
+        recovery = await client.get(retry_server.url + "/recovery")
+        stats = client.stats()
+
+    assert recovery.status_code == OK
+    assert getattr(exc_info.value, "retry_trace", None) is None
+    assert retry_events(sink.events) == ()
     assert len(retry_server.snapshot().requests_for(STATUS_THEN_OK_PATH)) == 1
     assert stats.active_requests == 0
     assert stats.pending_requests == 0

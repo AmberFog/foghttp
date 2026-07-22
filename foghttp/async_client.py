@@ -17,6 +17,7 @@ from ._client.options import ClientOptions
 from ._client.raw.errors import raise_public_raw_error
 from ._client.raw.lifecycle import close_raw_client
 from ._client.request_builder.header_policy import validate_safe_request_headers
+from ._client.retry import bind_error_retry_trace
 from ._client.stats import stats_from_raw
 from ._client.stream_context import AsyncStreamContext
 from ._client.telemetry import (
@@ -165,6 +166,7 @@ class AsyncClient(ClientCore):
             validate_safe_request_headers(request.headers)
             response = await self._transport.send(request, timeouts=self._request_timeouts(timeout))
         except BaseException as error:
+            bind_error_retry_trace(error)
             emit_request_error_telemetry(
                 telemetry_context,
                 telemetry_started=telemetry_started,
@@ -424,6 +426,7 @@ class AsyncClient(ClientCore):
             validate_safe_request_headers(request.headers)
             response = await self._transport.stream(request, timeouts=self._request_timeouts(timeout))
         except BaseException as error:
+            bind_error_retry_trace(error)
             emit_request_error_telemetry(
                 telemetry_context,
                 telemetry_started=telemetry_started,

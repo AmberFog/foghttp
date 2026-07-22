@@ -7,7 +7,8 @@ import foghttp._foghttp as _foghttp  # noqa: PLR0402
 from ...errors import FogHTTPError, LifecycleError, NetworkError, RequestError
 from ...errors.response import ResponseBodyBudgetExceededError, ResponseBodyTooLargeError, ResponseError
 from ...errors.timeout import PoolTimeout, ReadTimeout, TimeoutError, WriteTimeout
-from ..retry import bind_retry_decisions, raw_retry_decisions_on_error
+from ..retry import bind_retry_trace
+from ..retry_trace_mapping import raw_retry_trace_on_error
 from .timeout_errors import timeout_error_from_raw
 
 
@@ -26,7 +27,10 @@ _LIFECYCLE_ERROR_TYPES = (_foghttp.FogHttpLifecycleError,)
 
 def public_raw_error(exc: BaseException) -> FogHTTPError:
     error = _public_raw_error(exc)
-    bind_retry_decisions(error, raw_retry_decisions_on_error(exc))
+    bind_retry_trace(
+        error,
+        raw_retry_trace_on_error(exc, error_type=type(error).__name__),
+    )
     return error
 
 

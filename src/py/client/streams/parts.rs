@@ -6,7 +6,7 @@ use crate::py::client::async_requests::RequestCompletion;
 use crate::py::client::future::PythonFutureSetters;
 use crate::py::client::lifecycle::ResponseBodyLifecycle;
 use crate::py::response::{RawRequestInfo, RawResponse};
-use crate::py::retry::RawRetryDecision;
+use crate::py::retry::RawRetryTrace;
 use hyper::body::Incoming;
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,7 +20,7 @@ pub(crate) struct RawStreamResponseParts {
     pub(crate) http_version: String,
     pub(crate) elapsed: f64,
     pub(crate) history: Vec<RawResponse>,
-    pub(crate) retry_decisions: Vec<RawRetryDecision>,
+    pub(crate) retry_trace: Option<RawRetryTrace>,
     pub(crate) body: Incoming,
     pub(crate) permit: AcquirePermit,
     pub(crate) lifecycle: ResponseBodyLifecycle,

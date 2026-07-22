@@ -10,7 +10,7 @@ use crate::py::client::acquire::AcquireGate;
 use crate::py::client::async_requests::RequestCompletion;
 use crate::py::client::future::PythonFutureSetters;
 use crate::py::client::streams::{RawStreamResponse, StreamRegistry};
-use crate::py::retry::attach_retry_decisions;
+use crate::py::retry::{attach_retry_trace, RetryAttemptCompletion, RetryTraceOutcome};
 use pyo3::prelude::*;
 use std::sync::Arc;
 use std::time::Instant;
@@ -45,18 +45,32 @@ pub async fn send_stream_request(
         completion,
     )
     .await;
-    let decisions = state.take_retry_decisions();
+    let trace = match result.as_ref() {
+        Ok(response) => state.finish_retry_trace(
+            RetryTraceOutcome::Response,
+            Some(response.terminal_status_code()),
+            response.redirect_hop(),
+            started.elapsed(),
+        ),
+        Err(_) => state.finish_retry_trace(
+            RetryTraceOutcome::Error,
+            None,
+            history.len(),
+            started.elapsed(),
+        ),
+    };
     match result {
         Ok(mut response) => {
-            response.set_retry_decisions(decisions);
+            response.set_retry_trace(trace);
             Ok(response)
         }
-        Err(error) => Err(attach_retry_decisions(error, decisions)),
+        Err(error) => Err(attach_retry_trace(error, trace)),
     }
 }
 
 #[allow(
     clippy::too_many_arguments,
+    clippy::too_many_lines,
     reason = "attempt loop owns one logical stream lifecycle"
 )]
 async fn send_stream_request_attempts(
@@ -73,6 +87,7 @@ async fn send_stream_request_attempts(
     completion: RequestCompletion,
 ) -> PyResult<RawStreamResponse> {
     loop {
+        state.begin_transport_hop();
         let redirect_hop = history.len();
         let route = state.transport_route(redirect_hop)?;
         let origin = state.origin();
@@ -137,7 +152,12 @@ async fn send_stream_request_attempts(
                 .await?;
                 continue;
             }
-            state.commit_retry_decision(&pending, started.elapsed());
+            state.commit_retry_decision(
+                &pending,
+                started.elapsed(),
+                redirect_hop,
+                RetryAttemptCompletion::Complete,
+            );
         }
 
         let Some(response_action) = response_action else {

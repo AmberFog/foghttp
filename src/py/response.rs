@@ -3,7 +3,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
 use crate::core::headers::HeaderPairs;
-use crate::py::retry::RawRetryDecision;
+use crate::py::retry::RawRetryTrace;
 
 pub(crate) struct RawResponseParts {
     pub status_code: u16,
@@ -14,7 +14,7 @@ pub(crate) struct RawResponseParts {
     pub http_version: String,
     pub elapsed: f64,
     pub history: Vec<RawResponse>,
-    pub retry_decisions: Vec<RawRetryDecision>,
+    pub retry_trace: Option<RawRetryTrace>,
     pub body_reservation: Option<BufferedBodyReservation>,
 }
 
@@ -54,7 +54,7 @@ pub struct RawResponse {
     #[pyo3(get)]
     pub elapsed: f64,
     pub history: Vec<RawResponse>,
-    retry_decisions: Vec<RawRetryDecision>,
+    retry_trace: Option<RawRetryTrace>,
     body_reservation: Option<BufferedBodyReservation>,
 }
 
@@ -69,7 +69,7 @@ impl Clone for RawResponse {
             http_version: self.http_version.clone(),
             elapsed: self.elapsed,
             history: self.history.clone(),
-            retry_decisions: self.retry_decisions.clone(),
+            retry_trace: self.retry_trace.clone(),
             body_reservation: None,
         }
     }
@@ -86,7 +86,7 @@ impl RawResponse {
             http_version: parts.http_version,
             elapsed: parts.elapsed,
             history: parts.history,
-            retry_decisions: parts.retry_decisions,
+            retry_trace: parts.retry_trace,
             body_reservation: parts.body_reservation,
         }
     }
@@ -98,8 +98,16 @@ impl RawResponse {
         }
     }
 
-    pub(crate) fn set_retry_decisions(&mut self, decisions: Vec<RawRetryDecision>) {
-        self.retry_decisions = decisions;
+    pub(crate) fn set_retry_trace(&mut self, trace: Option<RawRetryTrace>) {
+        self.retry_trace = trace;
+    }
+
+    pub(crate) fn terminal_status_code(&self) -> u16 {
+        self.status_code
+    }
+
+    pub(crate) fn redirect_hop(&self) -> usize {
+        self.history.len()
     }
 }
 
@@ -116,8 +124,8 @@ impl RawResponse {
     }
 
     #[getter]
-    fn retry_decisions(&self) -> Vec<RawRetryDecision> {
-        self.retry_decisions.clone()
+    fn retry_trace(&self) -> Option<RawRetryTrace> {
+        self.retry_trace.clone()
     }
 
     fn release_buffered_body_reservations(&mut self) {

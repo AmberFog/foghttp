@@ -31,8 +31,11 @@ __all__ = (
     "ResponseBodyBudgetExceededError",
     "ResponseBodyTooLargeError",
     "ResponseError",
+    "RetryAttempt",
     "RetryConditions",
     "RetryPolicy",
+    "RetryTrace",
+    "RetryTraceOutcome",
     "StreamResponse",
     "TLSConfig",
     "TelemetryConfig",
@@ -104,6 +107,7 @@ from .request_extensions import RequestExtensions
 from .request_info import RequestInfo
 from .response import Response
 from .retry import RetryConditions, RetryPolicy
+from .retry_trace import RetryAttempt, RetryTrace, RetryTraceOutcome
 from .stream_response import AsyncStreamResponse, StreamResponse
 from .telemetry import (
     TelemetryConfig,

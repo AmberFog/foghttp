@@ -10,7 +10,7 @@ from foghttp.status_codes.success import OK
 from tests.client_telemetry.models import RecordingTelemetrySink
 from tests.support.timeout_diagnostics import assert_timeout_diagnostic
 
-from .assertions import retry_events, single_retry_event
+from .assertions import require_retry_trace, retry_events, single_retry_event
 from .constants import (
     ALWAYS_CLOSE_PATH,
     ALWAYS_STATUS_PATH,
@@ -40,7 +40,10 @@ RETRY_TOTAL_TIMEOUT = 0.5
 
 
 class ReplayFactoryFailure(RuntimeError):
-    _retry_decisions: tuple[object, ...] = ()
+    @property
+    def retry_trace(self) -> None:
+        msg = "user exception properties must not be inspected"
+        raise AssertionError(msg)
 
 
 def test_retry_is_opt_in(retry_server: RetryTestServer) -> None:
@@ -97,7 +100,14 @@ def test_sync_retryable_response_drain_failure_does_not_retry(
 
     failed_requests = retry_server.snapshot().requests_for(INCOMPLETE_RETRYABLE_RESPONSE_PATH)
     recovery_requests = retry_server.snapshot().requests_for("/recovery")
+    trace = require_retry_trace(exc_info.value)
     assert not isinstance(exc_info.value, foghttp.NetworkError)
+    assert trace.outcome == foghttp.RetryTraceOutcome.ERROR
+    assert trace.error_type == foghttp.RequestError.__name__
+    assert len(trace.attempts) == 1
+    assert trace.attempts[0].status_code == SERVICE_UNAVAILABLE
+    assert trace.attempts[0].error_type == foghttp.RequestError.__name__
+    assert trace.attempts[0].decision is None
     assert len(failed_requests) == 1
     assert recovery.status_code == OK
     assert failed_requests[0].connection_id != recovery_requests[0].connection_id
@@ -124,7 +134,14 @@ def test_sync_stream_retryable_response_drain_failure_does_not_retry(
 
     failed_requests = retry_server.snapshot().requests_for(INCOMPLETE_RETRYABLE_RESPONSE_PATH)
     recovery_requests = retry_server.snapshot().requests_for("/recovery")
+    trace = require_retry_trace(exc_info.value)
     assert not isinstance(exc_info.value, foghttp.NetworkError)
+    assert trace.outcome == foghttp.RetryTraceOutcome.ERROR
+    assert trace.error_type == foghttp.RequestError.__name__
+    assert len(trace.attempts) == 1
+    assert trace.attempts[0].status_code == SERVICE_UNAVAILABLE
+    assert trace.attempts[0].error_type == foghttp.RequestError.__name__
+    assert trace.attempts[0].decision is None
     assert len(failed_requests) == 1
     assert recovery.status_code == OK
     assert failed_requests[0].connection_id != recovery_requests[0].connection_id
@@ -304,7 +321,7 @@ def test_sync_replay_factory_failure_preserves_prior_retry_telemetry(
             retry=policy,
             telemetry=foghttp.TelemetryConfig(sink=sink),
         ) as client,
-        pytest.raises(RuntimeError, match=REPLAY_FACTORY_FAILURE),
+        pytest.raises(ReplayFactoryFailure, match=REPLAY_FACTORY_FAILURE),
     ):
         client.query(retry_server.url + STATUS_THEN_OK_PATH, content=content)
 
@@ -366,7 +383,32 @@ def test_sync_network_retry_exhaustion_preserves_error_and_recovers(
     assert request_failure.error_type == "NetworkError"
 
 
-def test_sync_total_timeout_covers_retry_backoff(retry_server: RetryTestServer) -> None:
+@pytest.mark.parametrize(
+    ("path", "status_code", "attempt_error_type", "reason"),
+    [
+        pytest.param(
+            STATUS_THEN_OK_PATH,
+            SERVICE_UNAVAILABLE,
+            None,
+            foghttp.TelemetryRetryReason.STATUS,
+            id="status",
+        ),
+        pytest.param(
+            ALWAYS_CLOSE_PATH,
+            None,
+            foghttp.NetworkError.__name__,
+            foghttp.TelemetryRetryReason.NETWORK_ERROR,
+            id="network-error",
+        ),
+    ],
+)
+def test_sync_total_timeout_covers_retry_backoff(
+    retry_server: RetryTestServer,
+    path: str,
+    status_code: int | None,
+    attempt_error_type: str | None,
+    reason: foghttp.TelemetryRetryReason,
+) -> None:
     policy = foghttp.RetryPolicy(retries=1, backoff=0.2, jitter=0)
     timeouts = foghttp.Timeouts(total=0.05)
 
@@ -374,7 +416,7 @@ def test_sync_total_timeout_covers_retry_backoff(retry_server: RetryTestServer) 
         foghttp.Client(retry=policy, timeouts=timeouts) as client,
         pytest.raises(foghttp.TimeoutError, match="request total timeout expired") as exc_info,
     ):
-        client.get(retry_server.url + STATUS_THEN_OK_PATH)
+        client.get(retry_server.url + path)
 
     assert_timeout_diagnostic(
         exc_info.value,
@@ -382,7 +424,19 @@ def test_sync_total_timeout_covers_retry_backoff(retry_server: RetryTestServer) 
         origin=retry_server.url,
         timeout=timeouts.total,
     )
-    assert len(retry_server.snapshot().requests_for(STATUS_THEN_OK_PATH)) == 1
+    trace = require_retry_trace(exc_info.value)
+    assert trace.outcome == foghttp.RetryTraceOutcome.ERROR
+    assert trace.error_type == foghttp.TimeoutError.__name__
+    assert len(trace.attempts) == 1
+    attempt = trace.attempts[0]
+    assert attempt.status_code == status_code
+    assert attempt.error_type == attempt_error_type
+    assert attempt.decision == foghttp.TelemetryRetryDecision.RETRY
+    assert attempt.reason == reason
+    assert attempt.decision_elapsed is not None
+    assert attempt.decision_elapsed == attempt.completed_elapsed
+    assert attempt.decision_elapsed <= attempt.completed_elapsed < trace.elapsed
+    assert len(retry_server.snapshot().requests_for(path)) == 1
 
 
 def test_sync_stream_retries_before_exposing_response(retry_server: RetryTestServer) -> None:

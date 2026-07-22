@@ -24,7 +24,9 @@ use crate::py::client::timeout_diagnostics::{
 };
 use crate::py::client::upload_body::RawUploadBody;
 use crate::py::response::RawRequestInfo;
-use crate::py::retry::RawRetryDecision;
+use crate::py::retry::{
+    RawRetryAttempt, RawRetryTrace, RetryAttemptCompletion, RetryTraceOutcome, RetryTraceRecorder,
+};
 use hyper::body::Incoming;
 use hyper::Response;
 use hyper_util::client::legacy::Error as HyperClientError;
@@ -73,10 +75,14 @@ pub(super) struct RequestState {
     pub(super) buffered_body_budget: BufferedBodyBudget,
     retry_attempt: usize,
     completed_retries: usize,
-    retry_decisions: Vec<RawRetryDecision>,
+    retry_trace: RetryTraceRecorder,
 }
 
 impl RequestState {
+    pub(super) fn begin_transport_hop(&mut self) {
+        self.retry_trace.begin_transport_hop();
+    }
+
     pub(super) fn take_request_parts(&mut self, route: TransportRoute) -> PyResult<RequestParts> {
         Ok(RequestParts {
             method: self.method.clone(),
@@ -171,11 +177,12 @@ impl RequestState {
     }
 
     pub(super) fn on_response_headers(
-        &self,
+        &mut self,
         status_code: u16,
         headers: &HeaderPairs,
         redirect_hop: usize,
     ) -> PyResult<Option<PendingResponsePolicyAction>> {
+        self.retry_trace.observe_response(status_code, redirect_hop);
         let request = self.policy_request();
         let response = ResponseHead::new(status_code, headers);
         let action = self.policy.on_response_headers(request, response);
@@ -230,24 +237,59 @@ impl RequestState {
     pub(super) fn commit_retry_decision(
         &mut self,
         pending: &PendingRetryDecision,
-        elapsed: Duration,
+        decision_elapsed: Duration,
+        redirect_hop: usize,
+        completion: RetryAttemptCompletion,
     ) -> RetryAction {
         let action = pending.action();
-        self.retry_decisions.push(pending.raw_decision(
+        self.retry_trace.record(pending.raw_attempt(
             self.retry_attempt,
             &self.method,
             self.url.origin(),
-            elapsed,
+            redirect_hop,
+            decision_elapsed,
+            completion,
         ));
-        if matches!(action, RetryAction::Retry(_)) {
-            self.completed_retries += 1;
-            self.retry_attempt += 1;
-        }
         action
     }
 
-    pub(super) fn take_retry_decisions(&mut self) -> Vec<RawRetryDecision> {
-        std::mem::take(&mut self.retry_decisions)
+    pub(super) fn advance_retry_attempt(&mut self) {
+        self.completed_retries += 1;
+        self.retry_attempt += 1;
+    }
+
+    pub(super) fn finish_retry_trace(
+        &mut self,
+        outcome: RetryTraceOutcome,
+        status_code: Option<u16>,
+        redirect_hop: usize,
+        elapsed: Duration,
+    ) -> Option<RawRetryTrace> {
+        if !self.retry_trace.is_enabled() {
+            return None;
+        }
+        let observed_response = self.retry_trace.observed_response();
+        let terminal_attempt = RawRetryAttempt {
+            attempt: self.retry_attempt,
+            method: self.method.clone(),
+            origin: self.url.origin(),
+            redirect_hop: observed_response.map_or(redirect_hop, |response| response.redirect_hop),
+            status_code: status_code
+                .or_else(|| observed_response.map(|response| response.status_code)),
+            error_type: None,
+            decision: None,
+            reason: None,
+            backoff: 0.0,
+            decision_elapsed: None,
+            completed_elapsed: elapsed.as_secs_f64(),
+            completion: RetryAttemptCompletion::Complete,
+        };
+        self.retry_trace.finish(
+            terminal_attempt,
+            outcome,
+            status_code,
+            elapsed.as_secs_f64(),
+        )
     }
 
     pub(super) fn after_response_body(
@@ -316,6 +358,11 @@ impl RequestState {
         let body = RequestBodyState::from_raw_parts(parts.body, parts.body_stream);
         let body_policy =
             RequestBodyPolicy::from_request(body.has_request_body(), parts.body_replayable);
+        let retry_trace = if parts.retry_policy.is_some() {
+            RetryTraceRecorder::enabled()
+        } else {
+            RetryTraceRecorder::disabled()
+        };
         let policy = PolicyPipeline::new(
             &parts.proxy_policy,
             parts.use_proxy_transport,
@@ -344,7 +391,7 @@ impl RequestState {
             buffered_body_budget: parts.buffered_body_budget,
             retry_attempt: 1,
             completed_retries: 0,
-            retry_decisions: Vec::new(),
+            retry_trace,
         })
     }
 }
@@ -426,13 +473,15 @@ impl PendingRetryDecision {
         }
     }
 
-    fn raw_decision(
+    fn raw_attempt(
         &self,
         attempt: usize,
         method: &str,
         origin: String,
-        elapsed: Duration,
-    ) -> RawRetryDecision {
+        redirect_hop: usize,
+        decision_elapsed: Duration,
+        completion: RetryAttemptCompletion,
+    ) -> RawRetryAttempt {
         let (decision, reason, backoff) = match self.decision {
             RetryDecision::Retry { delay } => ("retry", self.trigger.reason(), delay.as_secs_f64()),
             RetryDecision::Stop {
@@ -445,16 +494,20 @@ impl PendingRetryDecision {
                 reason: RetryStopReason::RetriesExhausted,
             } => ("stop", "retries_exhausted", 0.0),
         };
-        RawRetryDecision {
+        let decision_elapsed = decision_elapsed.as_secs_f64();
+        RawRetryAttempt {
             attempt,
             method: method.to_owned(),
             origin,
+            redirect_hop,
             status_code: self.trigger.status_code(),
             error_type: self.trigger.error_type().map(str::to_owned),
-            decision: decision.to_owned(),
-            reason: reason.to_owned(),
+            decision: Some(decision.to_owned()),
+            reason: Some(reason.to_owned()),
             backoff,
-            elapsed: elapsed.as_secs_f64(),
+            decision_elapsed: Some(decision_elapsed),
+            completed_elapsed: decision_elapsed,
+            completion,
         }
     }
 }

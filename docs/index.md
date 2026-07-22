@@ -63,7 +63,7 @@ FogHTTP is designed around a few engineering priorities:
 - opt-in typed transport policy hooks for lightweight request admission and
   response-head checks, with Rust-owned redirect safety
 - opt-in Rust-owned retry policy with safe-method defaults, replayability
-  gating, bounded backoff, and typed decisions
+  gating, bounded backoff, typed decisions, and immutable attempt traces
 - versioned telemetry snapshots that separate alert-oriented stats from
   diagnostic dump APIs
 - opt-in async lifecycle debug snapshots for tests, staging, and incident
@@ -140,7 +140,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - opt-in typed transport policy hooks with immutable request/response views and
   no default-path Python callback
 - opt-in retry policy for selected statuses and pre-header network failures,
-  with safe methods and replayable bodies by default
+  with safe methods, replayable bodies, and immutable attempt traces
 - versioned telemetry snapshot metadata for `stats()`, `dump_transport_state()`,
   and `dump_pool_diagnostics()`
 - opt-in async lifecycle debug mode for active request snapshots and strict

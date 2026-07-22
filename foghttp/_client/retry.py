@@ -1,81 +1,45 @@
 __all__ = (
-    "RetryDecisionData",
-    "bind_retry_decisions",
+    "bind_error_retry_trace",
+    "bind_retry_trace",
     "public_retry_decisions",
-    "raw_retry_decisions_on_error",
-    "retry_decisions_from_raw",
+    "public_retry_trace",
 )
 
-from collections.abc import Sequence
-from dataclasses import dataclass
-from typing import Protocol, TypeVar
+from typing import TypeVar
 
-import foghttp._foghttp as _foghttp  # noqa: PLR0402
-
-from ..telemetry import TelemetryRetryDecision, TelemetryRetryReason
+from ..errors import FogHTTPError
+from ..retry_trace import RetryAttempt, RetryTrace
+from .retry_trace_mapping import raw_retry_trace_on_error
 
 
-_RETRY_DECISIONS_ATTRIBUTE = "_foghttp_retry_decisions"
-_PUBLIC_RETRY_DECISIONS_ATTRIBUTE = "_retry_decisions"
+_PUBLIC_RETRY_TRACE_ATTRIBUTE = "_retry_trace"
 _TargetT = TypeVar("_TargetT")
 
 
-class RawRetryDecisionSource(Protocol):
-    @property
-    def retry_decisions(self) -> Sequence["_foghttp.RawRetryDecision"]: ...
-
-
-@dataclass(frozen=True, slots=True)
-class RetryDecisionData:
-    attempt: int
-    method: str
-    origin: str
-    status_code: int | None
-    error_type: str | None
-    decision: TelemetryRetryDecision
-    reason: TelemetryRetryReason
-    backoff: float
-    elapsed: float
-
-
-def retry_decisions_from_raw(source: RawRetryDecisionSource) -> tuple[RetryDecisionData, ...]:
-    return tuple(_retry_decision_from_raw(decision) for decision in source.retry_decisions)
-
-
-def bind_retry_decisions(target: _TargetT, decisions: tuple[RetryDecisionData, ...]) -> _TargetT:
-    if decisions:
-        object.__setattr__(target, _PUBLIC_RETRY_DECISIONS_ATTRIBUTE, decisions)
+def bind_retry_trace(target: _TargetT, trace: RetryTrace | None) -> _TargetT:
+    if trace is not None:
+        object.__setattr__(target, _PUBLIC_RETRY_TRACE_ATTRIBUTE, trace)
     return target
 
 
-def public_retry_decisions(source: object) -> tuple[RetryDecisionData, ...]:
-    raw_decisions = raw_retry_decisions_on_error(source)
-    if raw_decisions:
-        return raw_decisions
-    decisions = getattr(source, _PUBLIC_RETRY_DECISIONS_ATTRIBUTE, None)
-    if isinstance(decisions, tuple) and all(isinstance(decision, RetryDecisionData) for decision in decisions):
-        return decisions
-    return ()
+def bind_error_retry_trace(error: BaseException) -> None:
+    if isinstance(error, FogHTTPError):
+        bind_retry_trace(error, public_retry_trace(error))
 
 
-def raw_retry_decisions_on_error(error: object) -> tuple[RetryDecisionData, ...]:
-    raw_decisions = getattr(error, _RETRY_DECISIONS_ATTRIBUTE, ())
-    if not isinstance(raw_decisions, tuple) or not all(
-        isinstance(decision, _foghttp.RawRetryDecision) for decision in raw_decisions
-    ):
+def public_retry_trace(source: object) -> RetryTrace | None:
+    trace = getattr(source, _PUBLIC_RETRY_TRACE_ATTRIBUTE, None)
+    if isinstance(trace, RetryTrace):
+        return trace
+    return raw_retry_trace_on_error(source, error_type=type(source).__name__)
+
+
+def public_retry_decisions(source: object) -> tuple[RetryAttempt, ...]:
+    trace = public_retry_trace(source)
+    if trace is None:
         return ()
-    return tuple(_retry_decision_from_raw(decision) for decision in raw_decisions)
+    return tuple(filter(_has_retry_decision, trace.attempts))
 
 
-def _retry_decision_from_raw(raw: "_foghttp.RawRetryDecision") -> RetryDecisionData:
-    return RetryDecisionData(
-        attempt=raw.attempt,
-        method=raw.method,
-        origin=raw.origin,
-        status_code=raw.status_code,
-        error_type=raw.error_type,
-        decision=TelemetryRetryDecision(raw.decision),
-        reason=TelemetryRetryReason(raw.reason),
-        backoff=raw.backoff,
-        elapsed=raw.elapsed,
-    )
+def _has_retry_decision(attempt: RetryAttempt) -> bool:
+    return attempt.decision is not None and attempt.reason is not None

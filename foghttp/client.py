@@ -10,6 +10,7 @@ from ._client.core import ClientCore
 from ._client.options import ClientOptions
 from ._client.raw.lifecycle import close_raw_client
 from ._client.request_builder.header_policy import validate_safe_request_headers
+from ._client.retry import bind_error_retry_trace
 from ._client.stream_context import StreamContext
 from ._client.telemetry import (
     TelemetryRequestContext,
@@ -175,6 +176,7 @@ class Client(ClientCore):
             validate_safe_request_headers(request.headers)
             response = self._transport.send(request, timeouts=self._request_timeouts(timeout))
         except BaseException as error:
+            bind_error_retry_trace(error)
             emit_request_error_telemetry(
                 telemetry_context,
                 telemetry_started=telemetry_started,
@@ -392,6 +394,7 @@ class Client(ClientCore):
             validate_safe_request_headers(request.headers)
             response = self._transport.stream(request, timeouts=self._request_timeouts(timeout))
         except BaseException as error:
+            bind_error_retry_trace(error)
             emit_request_error_telemetry(
                 telemetry_context,
                 telemetry_started=telemetry_started,
