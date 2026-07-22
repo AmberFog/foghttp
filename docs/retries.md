@@ -143,20 +143,33 @@ if trace is not None:
 | `attempts` | Ordered immutable tuple, bounded to at most `retries + 1` entries. |
 | `outcome` | `response` when the transport returned a response object, or `error` when it raised. |
 | `status_code` | Final response status, otherwise `None`. |
-| `error_type` | Final public exception class name, otherwise `None`. |
+| `error_type` | Diagnostic name of the final public exception class, otherwise `None`. |
 | `elapsed` | Total logical-request time in seconds through the returned response or error. |
 
-Each `RetryAttempt` contains the 1-based `attempt`, normalized `method`,
-credential-free `origin`, zero-based `redirect_hop`, optional `status_code` and
-`error_type`, typed `decision` and `reason`, selected `backoff` in seconds,
-optional cumulative `decision_elapsed` seconds when the retry decision was
-committed by the transport, and cumulative `completed_elapsed` seconds when the
-transport attempt completed. A buffered attempt can contain both a status and
-a later body-read error. The final physical transport attempt is always
-present. Its
-`decision` and `reason` are `None` when that attempt did not trigger retry
-policy; a terminal method stop, replayability block or exhaustion retains its
-typed decision and reason.
+Each `RetryAttempt` represents one retry-policy execution cycle inside the
+native transport, not one socket send or server-observed request. Redirect hops
+remain within the same retry attempt and rerun route selection, the
+`before_send` hook and request-slot/connection acquisition. An attempt can
+therefore end with a policy or acquire error before a connection sends any
+request bytes.
+
+An attempt contains the 1-based `attempt`, normalized `method`, credential-free
+`origin`, zero-based `redirect_hop`, optional `status_code` and `error_type`,
+typed `decision` and `reason`, selected `backoff` in seconds, optional cumulative
+`decision_elapsed` seconds when the retry decision was committed by the
+transport, and cumulative `completed_elapsed` seconds when that execution
+attempt ended. All elapsed values are measured from the start of the logical
+request, not from the start of an individual attempt. A buffered attempt can
+contain both a status and a later body-read error. The final retry execution
+attempt is always present. Its `decision` and `reason` are `None` when that
+attempt did not trigger retry policy; a terminal method stop, replayability
+block or exhaustion retains its typed decision and reason.
+
+`error_type` follows the corresponding public exception class name and is a
+diagnostic field rather than a separate error-category enum. When class-name
+comparison is needed, prefer `foghttp.NetworkError.__name__` over a repeated
+string literal. `backoff` is the delay selected by policy, not a measurement of
+time actually slept; a timeout or cancellation can end the wait early.
 
 A logical request can fail after its latest transport attempt has completed.
 For example, a total timeout during retry backoff is reported by

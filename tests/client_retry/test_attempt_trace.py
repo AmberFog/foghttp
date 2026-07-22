@@ -44,6 +44,77 @@ def test_retry_trace_is_absent_without_opt_in_policy(retry_server: RetryTestServ
     assert response.retry_trace is None
 
 
+def test_before_send_failure_records_pre_send_execution_attempt(
+    retry_server: RetryTestServer,
+) -> None:
+    error = foghttp.RequestError("request rejected before send")
+
+    def reject_request(_request: foghttp.TransportPolicyRequest) -> None:
+        raise error
+
+    hooks = foghttp.TransportPolicyHooks(before_send=reject_request)
+    policy = foghttp.RetryPolicy(retries=0, backoff=0, jitter=0)
+
+    with (
+        foghttp.Client(retry=policy, policy_hooks=hooks) as client,
+        pytest.raises(foghttp.RequestError) as exc_info,
+    ):
+        client.get(retry_server.url)
+
+    trace = require_retry_trace(exc_info.value)
+    assert exc_info.value is error
+    assert trace.outcome == foghttp.RetryTraceOutcome.ERROR
+    assert trace.status_code is None
+    assert trace.error_type == foghttp.RequestError.__name__
+    assert len(trace.attempts) == 1
+    attempt = trace.attempts[0]
+    assert attempt.attempt == 1
+    assert attempt.method == "GET"
+    assert attempt.origin == retry_server.url
+    assert attempt.redirect_hop == 0
+    assert attempt.status_code is None
+    assert attempt.error_type == foghttp.RequestError.__name__
+    assert attempt.decision is None
+    assert attempt.reason is None
+    assert attempt.backoff == 0
+    assert attempt.decision_elapsed is None
+    assert attempt.completed_elapsed == trace.elapsed
+    assert retry_server.snapshot().requests == ()
+
+
+def test_request_slot_rejection_records_pre_send_execution_attempt(
+    retry_server: RetryTestServer,
+) -> None:
+    limits = foghttp.Limits(max_active_requests=0, max_pending_requests=0)
+    policy = foghttp.RetryPolicy(retries=0, backoff=0, jitter=0)
+
+    with (
+        foghttp.Client(retry=policy, limits=limits) as client,
+        pytest.raises(foghttp.PoolTimeout, match="request acquire queue is full") as exc_info,
+    ):
+        client.get(retry_server.url)
+
+    trace = require_retry_trace(exc_info.value)
+    assert exc_info.value.phase == "pool_acquire"
+    assert trace.outcome == foghttp.RetryTraceOutcome.ERROR
+    assert trace.status_code is None
+    assert trace.error_type == foghttp.PoolTimeout.__name__
+    assert len(trace.attempts) == 1
+    attempt = trace.attempts[0]
+    assert attempt.attempt == 1
+    assert attempt.method == "GET"
+    assert attempt.origin == retry_server.url
+    assert attempt.redirect_hop == 0
+    assert attempt.status_code is None
+    assert attempt.error_type == foghttp.PoolTimeout.__name__
+    assert attempt.decision is None
+    assert attempt.reason is None
+    assert attempt.backoff == 0
+    assert attempt.decision_elapsed is None
+    assert attempt.completed_elapsed == trace.elapsed
+    assert retry_server.snapshot().requests == ()
+
+
 def test_trace_attachment_failure_preserves_terminal_request_error(
     retry_server: RetryTestServer,
     monkeypatch: pytest.MonkeyPatch,

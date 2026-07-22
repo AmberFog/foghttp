@@ -30,6 +30,17 @@ pub struct RawRetryAttempt {
     pub(crate) completion: RetryAttemptCompletion,
 }
 
+impl RawRetryAttempt {
+    fn has_valid_decision_state(&self) -> bool {
+        self.decision.is_some() == self.reason.is_some()
+            && self.decision.is_some() == self.decision_elapsed.is_some()
+            && self
+                .decision_elapsed
+                .is_none_or(|elapsed| elapsed <= self.completed_elapsed)
+            && (self.completion == RetryAttemptCompletion::Complete || self.decision.is_some())
+    }
+}
+
 #[derive(Clone)]
 #[pyclass(skip_from_py_object)]
 pub struct RawRetryTrace {
@@ -125,6 +136,10 @@ impl RetryTraceRecorder {
     pub(crate) fn record(&mut self, attempt: RawRetryAttempt) {
         if let Some(attempts) = self.attempts.as_mut() {
             debug_assert!(
+                attempt.has_valid_decision_state(),
+                "retry decision fields and timing must form a valid attempt state",
+            );
+            debug_assert!(
                 attempts
                     .last()
                     .is_none_or(|recorded| recorded.attempt < attempt.attempt),
@@ -145,6 +160,10 @@ impl RetryTraceRecorder {
             terminal_attempt.completion,
             RetryAttemptCompletion::Complete,
         );
+        debug_assert!(
+            terminal_attempt.has_valid_decision_state(),
+            "terminal retry attempt must not contain an incomplete decision state",
+        );
         let mut attempts = self.attempts.take()?;
         let terminal_error_on_last_attempt = match attempts.last_mut() {
             Some(attempt) if attempt.attempt == terminal_attempt.attempt => {
@@ -163,6 +182,12 @@ impl RetryTraceRecorder {
                 matches!(outcome, RetryTraceOutcome::Error)
             }
         };
+        debug_assert!(
+            attempts
+                .iter()
+                .all(RawRetryAttempt::has_valid_decision_state),
+            "completed retry trace must preserve attempt decision invariants",
+        );
         Some(RawRetryTrace {
             attempts,
             outcome: outcome.as_str().to_owned(),
@@ -295,5 +320,24 @@ mod tests {
         assert_eq!(trace.attempts.len(), 1);
         assert!((trace.attempts[0].completed_elapsed - 1.0).abs() < f64::EPSILON);
         assert!(!trace.terminal_error_on_last_attempt);
+    }
+
+    #[test]
+    fn attempt_decision_and_timing_invariants_are_explicit() {
+        let decision = attempt(1, Some("retry"), RetryAttemptCompletion::Complete);
+        let terminal = attempt(1, None, RetryAttemptCompletion::Complete);
+        assert!(decision.has_valid_decision_state());
+        assert!(terminal.has_valid_decision_state());
+
+        let mut missing_elapsed = decision.clone();
+        missing_elapsed.decision_elapsed = None;
+        assert!(!missing_elapsed.has_valid_decision_state());
+
+        let mut completed_before_decision = decision;
+        completed_before_decision.completed_elapsed = 0.5;
+        assert!(!completed_before_decision.has_valid_decision_state());
+
+        let pending_terminal = attempt(1, None, RetryAttemptCompletion::Pending);
+        assert!(!pending_terminal.has_valid_decision_state());
     }
 }
