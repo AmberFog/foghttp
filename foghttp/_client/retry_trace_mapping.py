@@ -36,21 +36,14 @@ def _retry_trace_from_raw(
     error_type: str | None,
 ) -> RetryTrace:
     outcome = RetryTraceOutcome(raw.outcome)
-    raw_attempts = raw.attempts
-    attempts = tuple(
-        _retry_attempt_from_raw(
-            attempt,
-            terminal_error_type=_terminal_error_type(
-                outcome=outcome,
-                attempt_index=attempt_index,
-                attempt_count=len(raw_attempts),
-                error_type=error_type,
-            ),
-        )
-        for attempt_index, attempt in enumerate(raw_attempts)
+    terminal_error_type = (
+        error_type if outcome == RetryTraceOutcome.ERROR and raw.terminal_error_on_last_attempt else None
     )
     return RetryTrace(
-        attempts=attempts,
+        attempts=_retry_attempts_from_raw(
+            raw.attempts,
+            terminal_error_type=terminal_error_type,
+        ),
         outcome=outcome,
         status_code=raw.status_code,
         error_type=error_type if outcome == RetryTraceOutcome.ERROR else None,
@@ -58,16 +51,19 @@ def _retry_trace_from_raw(
     )
 
 
-def _terminal_error_type(
+def _retry_attempts_from_raw(
+    raw_attempts: list["_foghttp.RawRetryAttempt"],
     *,
-    outcome: RetryTraceOutcome,
-    attempt_index: int,
-    attempt_count: int,
-    error_type: str | None,
-) -> str | None:
-    if outcome != RetryTraceOutcome.ERROR or attempt_index + 1 != attempt_count:
-        return None
-    return error_type
+    terminal_error_type: str | None,
+) -> tuple[RetryAttempt, ...]:
+    terminal_index = len(raw_attempts) - 1
+    return tuple(
+        _retry_attempt_from_raw(
+            attempt,
+            terminal_error_type=(terminal_error_type if attempt_index == terminal_index else None),
+        )
+        for attempt_index, attempt in enumerate(raw_attempts)
+    )
 
 
 def _retry_attempt_from_raw(
@@ -76,7 +72,7 @@ def _retry_attempt_from_raw(
     terminal_error_type: str | None,
 ) -> RetryAttempt:
     error_type = raw.error_type
-    if error_type is None and raw.status_code is None:
+    if terminal_error_type is not None:
         error_type = terminal_error_type
     return RetryAttempt(
         attempt=raw.attempt,
@@ -88,5 +84,6 @@ def _retry_attempt_from_raw(
         decision=None if raw.decision is None else TelemetryRetryDecision(raw.decision),
         reason=None if raw.reason is None else TelemetryRetryReason(raw.reason),
         backoff=raw.backoff,
-        elapsed=raw.elapsed,
+        decision_elapsed=raw.decision_elapsed,
+        completed_elapsed=raw.completed_elapsed,
     )

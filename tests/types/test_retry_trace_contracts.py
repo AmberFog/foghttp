@@ -17,7 +17,8 @@ def test_retry_trace_public_fields_are_explicit() -> None:
         "decision",
         "reason",
         "backoff",
-        "elapsed",
+        "decision_elapsed",
+        "completed_elapsed",
     )
     assert tuple(field.name for field in fields(foghttp.RetryTrace)) == (
         "attempts",
@@ -51,7 +52,8 @@ def test_retry_trace_value_contracts() -> None:
         decision=foghttp.TelemetryRetryDecision.RETRY,
         reason=foghttp.TelemetryRetryReason.STATUS,
         backoff=0.1,
-        elapsed=0.2,
+        decision_elapsed=0.2,
+        completed_elapsed=0.3,
     )
     trace = foghttp.RetryTrace(
         attempts=(attempt,),
@@ -76,7 +78,8 @@ def test_retry_trace_value_contracts() -> None:
         foghttp.TelemetryRetryReason | None,
     )
     assert_type(attempt.backoff, float)
-    assert_type(attempt.elapsed, float)
+    assert_type(attempt.decision_elapsed, float | None)
+    assert_type(attempt.completed_elapsed, float)
     assert_type(trace.attempts, tuple[foghttp.RetryAttempt, ...])
     assert_type(trace.outcome, foghttp.RetryTraceOutcome)
     assert_type(trace.status_code, int | None)

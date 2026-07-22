@@ -6,6 +6,7 @@ use crate::py::client::acquire::AcquirePermit;
 use crate::py::client::timeout_diagnostics::{
     remaining_duration, timeout_error, TimeoutContext, TimeoutPhase,
 };
+use crate::py::retry::RetryAttemptCompletion;
 use hyper::body::Incoming;
 use hyper::Response;
 use pyo3::prelude::*;
@@ -25,7 +26,12 @@ pub(super) async fn retry_after_network_error(
     let Some(pending) = state.retry_on_network_error() else {
         return Ok(false);
     };
-    let action = state.commit_retry_decision(&pending, started.elapsed(), redirect_hop);
+    let action = state.commit_retry_decision(
+        &pending,
+        started.elapsed(),
+        redirect_hop,
+        RetryAttemptCompletion::Complete,
+    );
     let RetryAction::Retry(delay) = action else {
         return Ok(false);
     };
@@ -51,9 +57,12 @@ pub(super) async fn retry_after_response(
     drain_response(response, response_lifecycle, context).await?;
     drop(permit);
 
-    let RetryAction::Retry(delay) =
-        state.commit_retry_decision(pending, started.elapsed(), redirect_hop)
-    else {
+    let RetryAction::Retry(delay) = state.commit_retry_decision(
+        pending,
+        started.elapsed(),
+        redirect_hop,
+        RetryAttemptCompletion::Complete,
+    ) else {
         unreachable!("pending retry changed after response drain");
     };
     wait_for_retry(delay, started, total_timeout, origin, redirect_hop).await?;

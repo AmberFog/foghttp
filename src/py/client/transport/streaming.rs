@@ -10,7 +10,7 @@ use crate::py::client::acquire::AcquireGate;
 use crate::py::client::async_requests::RequestCompletion;
 use crate::py::client::future::PythonFutureSetters;
 use crate::py::client::streams::{RawStreamResponse, StreamRegistry};
-use crate::py::retry::{attach_retry_trace, RetryTraceOutcome};
+use crate::py::retry::{attach_retry_trace, RetryAttemptCompletion, RetryTraceOutcome};
 use pyo3::prelude::*;
 use std::sync::Arc;
 use std::time::Instant;
@@ -70,6 +70,7 @@ pub async fn send_stream_request(
 
 #[allow(
     clippy::too_many_arguments,
+    clippy::too_many_lines,
     reason = "attempt loop owns one logical stream lifecycle"
 )]
 async fn send_stream_request_attempts(
@@ -86,6 +87,7 @@ async fn send_stream_request_attempts(
     completion: RequestCompletion,
 ) -> PyResult<RawStreamResponse> {
     loop {
+        state.begin_transport_hop();
         let redirect_hop = history.len();
         let route = state.transport_route(redirect_hop)?;
         let origin = state.origin();
@@ -150,7 +152,12 @@ async fn send_stream_request_attempts(
                 .await?;
                 continue;
             }
-            state.commit_retry_decision(&pending, started.elapsed(), redirect_hop);
+            state.commit_retry_decision(
+                &pending,
+                started.elapsed(),
+                redirect_hop,
+                RetryAttemptCompletion::Complete,
+            );
         }
 
         let Some(response_action) = response_action else {

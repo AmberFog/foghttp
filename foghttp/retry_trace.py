@@ -22,7 +22,8 @@ class RetryAttempt:
     decision: TelemetryRetryDecision | None
     reason: TelemetryRetryReason | None
     backoff: float
-    elapsed: float
+    decision_elapsed: float | None
+    completed_elapsed: float
 
 
 @dataclass(frozen=True, slots=True)

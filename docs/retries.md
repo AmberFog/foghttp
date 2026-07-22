@@ -147,19 +147,32 @@ if trace is not None:
 | `elapsed` | Total logical-request time in seconds through the returned response or error. |
 
 Each `RetryAttempt` contains the 1-based `attempt`, normalized `method`,
-credential-free `origin`, zero-based `redirect_hop`, `status_code` or
-`error_type`, typed `decision` and `reason`, selected `backoff` in seconds and
-cumulative `elapsed` seconds when its decision or terminal result was observed.
-The terminal attempt is always present. Its
+credential-free `origin`, zero-based `redirect_hop`, optional `status_code` and
+`error_type`, typed `decision` and `reason`, selected `backoff` in seconds,
+optional cumulative `decision_elapsed` seconds when the retry decision was
+committed by the transport, and cumulative `completed_elapsed` seconds when the
+transport attempt completed. A buffered attempt can contain both a status and
+a later body-read error. The final physical transport attempt is always
+present. Its
 `decision` and `reason` are `None` when that attempt did not trigger retry
 policy; a terminal method stop, replayability block or exhaustion retains its
 typed decision and reason.
+
+A logical request can fail after its latest transport attempt has completed.
+For example, a total timeout during retry backoff is reported by
+`RetryTrace.error_type` and `RetryTrace.elapsed`; it does not overwrite the
+completed status or network result of the preceding attempt.
 
 `RetryTraceOutcome.RESPONSE` means that request execution produced a response;
 it does not classify an HTTP status as successful. For streaming responses the
 trace is complete when response headers are exposed, because body-consumption
 failures are outside the retry scope and do not mutate the immutable trace.
 `HTTPStatusError` preserves the trace of its response.
+
+FogHTTP preserves the original terminal request error if CPython cannot
+allocate or attach the native trace handoff object. That exceptional attachment
+failure is reported through `sys.unraisablehook`; the error then has no trace
+rather than being replaced by an observability error.
 
 Trace values never include a request path, query, headers, body, credentials or
 userinfo. They retain only the normalized origin and typed operational fields,
@@ -181,6 +194,15 @@ records; terminal attempts without a retry decision do not emit a
 `retry_decision` event. The final `request_finished` event still reports the
 logical request outcome. Native records are delivered when the transport
 returns or raises, not as live callbacks during backoff.
+`RetryAttempt.decision` and `RetryAttempt.reason` intentionally reuse
+`TelemetryRetryDecision` and `TelemetryRetryReason` as the shared public retry
+vocabulary; telemetry is a projection of the same decision records rather than
+a separate enum contract.
+For a `retry_decision` event, `elapsed_ns` is derived from
+`RetryAttempt.decision_elapsed`, and `status_code`/`error_type` describe the
+trigger seen when that decision was committed. A later buffered-body error can
+therefore appear on the state-oriented `RetryAttempt` without rewriting the
+earlier decision event.
 
 Cancelling an async caller can abort the native task before a response or
 exception is returned. `asyncio.CancelledError` therefore does not manufacture
