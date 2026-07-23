@@ -10,7 +10,7 @@ use crate::core::numeric::duration_from_secs;
 use crate::core::policy::{
     redirect_headers, PolicyMutation, PolicyPipeline, PolicyRequest, RequestBodyMutation,
     RequestBodyPolicy, ResponseHead, ResponsePolicyAction, RetryDecision, RetryPolicy,
-    RetryStopReason, TransportRoute,
+    RetryStopReason, SsrfPolicy, TransportRoute,
 };
 use crate::core::request::{build_request, RequestBodyParts, RequestParts};
 use crate::core::response::BufferedBodyBudget;
@@ -53,6 +53,7 @@ pub struct TransportRequest {
     pub follow_redirects: bool,
     pub max_redirects: usize,
     pub retry_policy: Option<RetryPolicy>,
+    pub ssrf_policy: Option<Arc<SsrfPolicy>>,
     pub policy_hooks: Option<Arc<PythonPolicyHooks>>,
     pub extensions: Option<Py<PyAny>>,
 }
@@ -370,6 +371,7 @@ impl RequestState {
             parts.follow_redirects,
             parts.max_redirects,
             parts.retry_policy,
+            parts.ssrf_policy,
         )
         .map_err(|error| policy_error(&error))?;
 

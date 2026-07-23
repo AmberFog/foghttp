@@ -1,3 +1,6 @@
+import copy
+import pickle
+
 from faker import Faker
 import pytest
 
@@ -6,6 +9,7 @@ from foghttp._client.config import ClientConfig
 from foghttp._client.constants import DEFAULT_MAX_REDIRECTS
 from foghttp._client.options import ClientOptions
 from foghttp._client.proxy import ProxyTransportPolicy
+from foghttp._client.raw.errors import public_raw_error
 from foghttp._client.raw.lifecycle import create_raw_client
 from foghttp._client.raw.requests import RawRequestOptions, send_raw_request, send_raw_request_async
 from foghttp._request_body import RequestBody
@@ -14,6 +18,8 @@ from foghttp.errors import (
     ReadTimeout,
     ResponseBodyBudgetExceededError,
     ResponseBodyTooLargeError,
+    SSRFError,
+    SSRFViolationReason,
     TimeoutError,
     WriteTimeout,
 )
@@ -46,6 +52,10 @@ CONNECTION_ACQUIRE_TIMEOUT_RAW_ARGS = (
     0.1,
     "https://example.com",
     0,
+)
+SSRF_RAW_ARGS = (
+    "SSRF policy blocked target 'example.test' (address is not publicly routable)",
+    "non_public_address",
 )
 
 
@@ -94,6 +104,7 @@ def _default_client_config() -> ClientConfig:
             runtime_workers=1,
             policy_hooks=None,
             retry=None,
+            ssrf=None,
             telemetry=None,
             lifecycle_debug=None,
         ),
@@ -159,6 +170,14 @@ class PoolTimeoutRawClient:
 class ConnectionAcquireTimeoutRawClient:
     def request(self, **_kwargs: object) -> object:
         raise _foghttp.FogHttpPoolTimeoutError(CONNECTION_ACQUIRE_TIMEOUT_RAW_ARGS)
+
+
+class SSRFRawClient:
+    def request(self, **_kwargs: object) -> object:
+        raise _foghttp.FogHttpSsrfError(SSRF_RAW_ARGS)
+
+    async def request_async(self, **_kwargs: object) -> object:
+        raise _foghttp.FogHttpSsrfError(SSRF_RAW_ARGS)
 
 
 class BodyTooLargeRawClient:
@@ -292,6 +311,61 @@ def test_raw_connection_acquire_timeout_preserves_public_diagnostic(faker: Faker
 
     assert exc_info.value.phase == "connection_acquire"
     assert exc_info.value.origin == "https://example.com"
+
+
+def test_sync_raw_ssrf_error_preserves_machine_readable_reason(faker: Faker) -> None:
+    with pytest.raises(SSRFError, match="SSRF policy blocked target") as exc_info:
+        send_raw_request(
+            raw_client=SSRFRawClient(),
+            request=_raw_request(faker.url()),
+        )
+
+    assert exc_info.value.reason is SSRFViolationReason.NON_PUBLIC_ADDRESS
+
+
+async def test_async_raw_ssrf_error_preserves_machine_readable_reason(faker: Faker) -> None:
+    with pytest.raises(SSRFError, match="SSRF policy blocked target") as exc_info:
+        await send_raw_request_async(
+            raw_client=SSRFRawClient(),
+            request=_raw_request(faker.url()),
+        )
+
+    assert exc_info.value.reason is SSRFViolationReason.NON_PUBLIC_ADDRESS
+
+
+@pytest.mark.parametrize(
+    "raw_args",
+    [
+        pytest.param(("SSRF policy blocked target",), id="missing-reason"),
+        pytest.param(("SSRF policy blocked target", "future_reason"), id="unknown-reason"),
+    ],
+)
+def test_malformed_raw_ssrf_reason_remains_a_typed_policy_error(
+    raw_args: tuple[object, ...],
+) -> None:
+    error = public_raw_error(_foghttp.FogHttpSsrfError(raw_args))
+
+    assert isinstance(error, SSRFError)
+    assert str(error) == "SSRF policy blocked target"
+    assert error.reason is SSRFViolationReason.UNKNOWN
+
+
+def test_public_ssrf_error_copy_and_pickle_preserve_reason() -> None:
+    error = SSRFError(
+        "SSRF policy blocked target",
+        reason=SSRFViolationReason.NON_PUBLIC_ADDRESS,
+    )
+
+    restored_errors = (
+        copy.copy(error),
+        copy.deepcopy(error),
+        pickle.loads(pickle.dumps(error)),  # noqa: S301 - locally produced test payload
+    )
+
+    for restored in restored_errors:
+        assert isinstance(restored, SSRFError)
+        assert str(restored) == str(error)
+        assert restored.reason is error.reason
 
 
 def test_sync_raw_body_limit_error_maps_to_public_response_error(faker: Faker) -> None:

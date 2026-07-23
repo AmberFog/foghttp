@@ -1,6 +1,7 @@
 __all__ = (
     "RetryConditions",
     "RetryPolicy",
+    "SSRFPolicy",
     "TransportPolicyBodyState",
     "TransportPolicyHooks",
     "TransportPolicyRequest",
@@ -19,6 +20,7 @@ from .request_extensions import (
     normalize_request_extensions,
 )
 from .retry import RetryConditions, RetryPolicy
+from .ssrf import SSRFPolicy
 
 
 TransportPolicyBodyState: TypeAlias = Literal[

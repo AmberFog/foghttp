@@ -194,6 +194,14 @@ FogHTTP intentionally does not expose a `verify=False` compatibility mode and
 does not honor environment variables that disable certificate verification.
 Use explicit `TLSConfig` for custom CA bundles and custom-only trust.
 
+## SSRF Policy Compatibility
+
+Requests that select a proxy route fail closed when `SSRFPolicy` is enabled.
+Forward and `CONNECT` proxies can resolve the target hostname remotely, so the
+client cannot guarantee that its locally checked DNS result is the address
+used by the proxy. See [SSRF protection](./ssrf.md) for the trust boundary and
+recommended network-layer controls.
+
 ## Not Implemented Yet
 
 - SOCKS5/SOCKS5h

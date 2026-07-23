@@ -1,8 +1,8 @@
 use crate::core::client::{
     connection_acquire_timeout_from_error, request_write_timeout_from_error,
 };
-use crate::core::policy::PolicyError;
-use crate::errors::{transport_error_message, FogHttpError, FogHttpNetworkError};
+use crate::core::policy::{PolicyError, SsrfViolation};
+use crate::errors::{transport_error_message, FogHttpError, FogHttpNetworkError, FogHttpSsrfError};
 use crate::messages::CONNECTION_ACQUIRE_TIMEOUT;
 use crate::py::client::timeout_diagnostics::{
     connection_acquire_timeout_error, write_timeout_error,
@@ -12,6 +12,9 @@ use pyo3::prelude::*;
 use std::error::Error;
 
 pub(super) fn policy_error(error: &PolicyError) -> PyErr {
+    if let PolicyError::SsrfViolation(violation) = error {
+        return ssrf_error(violation);
+    }
     FogHttpError::new_err(error.to_string())
 }
 
@@ -28,16 +31,38 @@ pub(super) fn transport_error(error: &(dyn Error + 'static)) -> PyErr {
             timeout.redirect_hop(),
         );
     }
+    if let Some(violation) = ssrf_violation_from_error(error) {
+        return ssrf_error(violation);
+    }
     if error_chain_contains_user_error(error) {
         return FogHttpError::new_err(transport_error_message(error));
     }
     FogHttpNetworkError::new_err(transport_error_message(error))
 }
 
+fn ssrf_error(violation: &SsrfViolation) -> PyErr {
+    FogHttpSsrfError::new_err((
+        violation.to_string(),
+        violation.reason().as_code().to_owned(),
+    ))
+}
+
 pub(super) fn is_retryable_network_error(error: &(dyn Error + 'static)) -> bool {
     request_write_timeout_from_error(error).is_none()
         && connection_acquire_timeout_from_error(error).is_none()
+        && ssrf_violation_from_error(error).is_none()
         && !error_chain_contains_user_error(error)
+}
+
+fn ssrf_violation_from_error<'a>(
+    mut error: &'a (dyn Error + 'static),
+) -> Option<&'a SsrfViolation> {
+    loop {
+        if let Some(violation) = error.downcast_ref::<SsrfViolation>() {
+            return Some(violation);
+        }
+        error = error.source()?;
+    }
 }
 
 fn error_chain_contains_user_error(mut error: &(dyn Error + 'static)) -> bool {

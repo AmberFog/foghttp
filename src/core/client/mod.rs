@@ -1,6 +1,7 @@
 mod body;
 mod connection_limit;
 mod proxy;
+mod ssrf;
 mod telemetry;
 mod write_timeout;
 
@@ -14,6 +15,7 @@ pub(crate) use connection_limit::{
 };
 use proxy::parse_proxy_endpoint;
 pub(crate) use proxy::{HttpProxyConnector, HttpsTunnelConnector, ProxyTunnelTarget};
+pub(crate) use ssrf::SsrfResolver;
 pub(crate) use telemetry::{ConnectionTelemetry, ConnectionUseGuard, InstrumentedConnector};
 pub(crate) use write_timeout::{
     current_request_write_timeout, request_write_timeout_from_error, with_request_write_timeout,
@@ -22,8 +24,10 @@ pub(crate) use write_timeout::{
 
 use crate::core::metrics::Metrics;
 use crate::core::numeric::duration_from_secs;
+use crate::core::policy::SsrfPolicy;
 use crate::core::tls::build_tls_config;
 use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
+use hyper_util::client::legacy::connect::dns::GaiResolver;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 use std::future::Future;
@@ -31,7 +35,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 type BoxSendFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
-type BaseConnector = HttpsConnector<HttpsTunnelConnector<HttpConnector>>;
+type NetworkConnector = HttpConnector<SsrfResolver<GaiResolver>>;
+type BaseConnector = HttpsConnector<HttpsTunnelConnector<NetworkConnector>>;
 pub type HyperClient =
     Client<InstrumentedConnector<HttpProxyConnector<BaseConnector>>, RequestBody>;
 
@@ -46,6 +51,7 @@ pub struct ClientOptions {
     pub http_proxy_url: Option<String>,
     pub https_proxy_url: Option<String>,
     pub https_proxy_authorization: Option<String>,
+    pub ssrf_policy: Option<Arc<SsrfPolicy>>,
 }
 
 pub fn build_client_with_connection_gate(
@@ -89,7 +95,8 @@ where
     let connect_timeout = duration_from_secs("Timeouts.connect", options.connect_timeout)?;
     let idle_timeout = duration_from_secs("Limits.idle_timeout", options.idle_timeout)?;
 
-    let mut http = HttpConnector::new();
+    let resolver = SsrfResolver::new(GaiResolver::new(), options.ssrf_policy.is_some());
+    let mut http = HttpConnector::new_with_resolver(resolver);
     http.enforce_http(false);
     http.set_connect_timeout(Some(connect_timeout));
 

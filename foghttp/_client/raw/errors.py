@@ -9,6 +9,7 @@ from ...errors.response import ResponseBodyBudgetExceededError, ResponseBodyTooL
 from ...errors.timeout import PoolTimeout, ReadTimeout, TimeoutError, WriteTimeout
 from ..retry import bind_retry_trace
 from ..retry_trace_mapping import raw_retry_trace_on_error
+from .ssrf_errors import ssrf_error_from_raw
 from .timeout_errors import timeout_error_from_raw
 
 
@@ -38,6 +39,9 @@ def _public_raw_error(exc: BaseException) -> FogHTTPError:
     if _is_lifecycle_error(exc):
         return LifecycleError(str(exc))
 
+    if isinstance(exc, _foghttp.FogHttpSsrfError):
+        return ssrf_error_from_raw(exc)
+
     response_error_type = _response_error_type(exc)
     if response_error_type is not None:
         return response_error_type(str(exc))
@@ -46,10 +50,8 @@ def _public_raw_error(exc: BaseException) -> FogHTTPError:
     if timeout_error_type is not None:
         return timeout_error_from_raw(exc, timeout_error_type)
 
-    if isinstance(exc, _foghttp.FogHttpNetworkError):
-        return NetworkError(str(exc))
-
-    return RequestError(str(exc))
+    error_type = NetworkError if isinstance(exc, _foghttp.FogHttpNetworkError) else RequestError
+    return error_type(str(exc))
 
 
 def raise_public_raw_error(exc: BaseException) -> NoReturn:

@@ -31,6 +31,9 @@ def raw_client_options(**overrides: object) -> dict[str, object]:
         "retry_statuses": (),
         "retry_methods": (),
         "retry_network_errors": False,
+        "ssrf_allowed_schemes": None,
+        "ssrf_allowed_origins": (),
+        "ssrf_allowed_domains": (),
     }
     options.update(overrides)
     return options
