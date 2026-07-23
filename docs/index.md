@@ -4,7 +4,7 @@ layout: "home"
 hero:
   name: "FogHTTP"
   text: "Rust-powered HTTP client for Python"
-  tagline: "Buffered JSON and form requests, streaming and multipart uploads, sync and async response streaming, transparent response decoding, base URL clients, default headers and params, opt-in safe retries, redirects, custom CA certificates, cancellation, and observable request limits with pool diagnostics."
+  tagline: "Buffered JSON and form requests, streaming and multipart uploads, sync and async response streaming, transparent response decoding, base URL clients, default headers and params, opt-in safe retries and SSRF destination controls, redirects, custom CA certificates, cancellation, and observable request limits with pool diagnostics."
 
 features:
   - title: "Rust transport"
@@ -104,6 +104,9 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - cancellable buffered async requests
 - bounded sync and async response streaming
 - prepared requests that can be inspected before sending
+- opt-in safe retries with request-scoped attempt diagnostics
+- direct service clients that need an opt-in SSRF guard for partially trusted
+  destination URLs
 - simple benchmarks against other buffered HTTP clients
 
 ## Key Features
