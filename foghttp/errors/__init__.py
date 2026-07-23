@@ -13,6 +13,8 @@ __all__ = (
     "ResponseBodyBudgetExceededError",
     "ResponseBodyTooLargeError",
     "ResponseError",
+    "SSRFError",
+    "SSRFViolationReason",
     "TimeoutError",
     "UnclosedClientError",
     "WriteTimeout",
@@ -26,4 +28,5 @@ from .response import (
     ResponseBodyTooLargeError,
     ResponseError,
 )
+from .ssrf import SSRFError, SSRFViolationReason
 from .timeout import ConnectTimeout, PoolTimeout, ReadTimeout, TimeoutError, WriteTimeout

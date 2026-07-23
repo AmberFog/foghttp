@@ -2,7 +2,7 @@ use crate::core::client::{
     connection_acquire_timeout_from_error, request_write_timeout_from_error,
 };
 use crate::core::policy::{PolicyError, SsrfViolation};
-use crate::errors::{transport_error_message, FogHttpError, FogHttpNetworkError};
+use crate::errors::{transport_error_message, FogHttpError, FogHttpNetworkError, FogHttpSsrfError};
 use crate::messages::CONNECTION_ACQUIRE_TIMEOUT;
 use crate::py::client::timeout_diagnostics::{
     connection_acquire_timeout_error, write_timeout_error,
@@ -12,6 +12,9 @@ use pyo3::prelude::*;
 use std::error::Error;
 
 pub(super) fn policy_error(error: &PolicyError) -> PyErr {
+    if let PolicyError::SsrfViolation(violation) = error {
+        return ssrf_error(violation);
+    }
     FogHttpError::new_err(error.to_string())
 }
 
@@ -29,12 +32,19 @@ pub(super) fn transport_error(error: &(dyn Error + 'static)) -> PyErr {
         );
     }
     if let Some(violation) = ssrf_violation_from_error(error) {
-        return FogHttpError::new_err(violation.to_string());
+        return ssrf_error(violation);
     }
     if error_chain_contains_user_error(error) {
         return FogHttpError::new_err(transport_error_message(error));
     }
     FogHttpNetworkError::new_err(transport_error_message(error))
+}
+
+fn ssrf_error(violation: &SsrfViolation) -> PyErr {
+    FogHttpSsrfError::new_err((
+        violation.to_string(),
+        violation.reason().as_code().to_owned(),
+    ))
 }
 
 pub(super) fn is_retryable_network_error(error: &(dyn Error + 'static)) -> bool {

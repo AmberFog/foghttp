@@ -4,6 +4,7 @@ use pyo3::prelude::*;
 
 create_exception!(_foghttp, FogHttpError, PyException);
 create_exception!(_foghttp, FogHttpNetworkError, FogHttpError);
+create_exception!(_foghttp, FogHttpSsrfError, FogHttpError);
 create_exception!(_foghttp, FogHttpTimeoutError, FogHttpError);
 create_exception!(_foghttp, FogHttpPoolTimeoutError, FogHttpTimeoutError);
 create_exception!(_foghttp, FogHttpReadTimeoutError, FogHttpTimeoutError);
@@ -47,6 +48,7 @@ pub fn transport_error_message(error: &dyn std::error::Error) -> String {
 pub fn register(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("FogHttpError", py.get_type::<FogHttpError>())?;
     module.add("FogHttpNetworkError", py.get_type::<FogHttpNetworkError>())?;
+    module.add("FogHttpSsrfError", py.get_type::<FogHttpSsrfError>())?;
     module.add("FogHttpTimeoutError", py.get_type::<FogHttpTimeoutError>())?;
     module.add(
         "FogHttpPoolTimeoutError",

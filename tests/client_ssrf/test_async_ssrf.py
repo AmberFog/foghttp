@@ -12,8 +12,13 @@ async def test_async_ssrf_policy_blocks_localhost_after_dns_resolution(
     localhost_url = http_server.replace("127.0.0.1", "localhost")
 
     async with foghttp.AsyncClient(ssrf=foghttp.SSRFPolicy()) as client:
-        with pytest.raises(foghttp.RequestError, match="address is not publicly routable"):
+        with pytest.raises(
+            foghttp.SSRFError,
+            match="address is not publicly routable",
+        ) as exc_info:
             await client.get(localhost_url)
+
+    assert exc_info.value.reason is foghttp.SSRFViolationReason.NON_PUBLIC_ADDRESS
 
 
 async def test_async_ssrf_policy_allows_an_explicit_ip_origin(http_server: str) -> None:
@@ -43,13 +48,13 @@ async def test_async_ssrf_policy_checks_redirect_target_before_sending(
     )
 
     async with foghttp.AsyncClient(follow_redirects=True, ssrf=policy) as client:
-        with pytest.raises(foghttp.RequestError, match="address is not publicly routable"):
+        with pytest.raises(foghttp.SSRFError, match="address is not publicly routable"):
             await client.get(url)
 
 
 async def test_async_ssrf_policy_applies_to_streaming_requests() -> None:
     async with foghttp.AsyncClient(ssrf=foghttp.SSRFPolicy()) as client:
-        with pytest.raises(foghttp.RequestError, match="SSRF policy blocked target"):
+        with pytest.raises(foghttp.SSRFError, match="SSRF policy blocked target"):
             async with client.stream("GET", "http://127.0.0.1/private"):
                 pass
 
@@ -57,7 +62,9 @@ async def test_async_ssrf_policy_applies_to_streaming_requests() -> None:
 async def test_async_ssrf_policy_fails_closed_for_proxy_resolution(http_server: str) -> None:
     async with foghttp.AsyncClient(proxy=http_server, ssrf=foghttp.SSRFPolicy()) as client:
         with pytest.raises(
-            foghttp.RequestError,
+            foghttp.SSRFError,
             match="proxy transport cannot guarantee local DNS validation",
-        ):
+        ) as exc_info:
             await client.get("https://example.com/")
+
+    assert exc_info.value.reason is foghttp.SSRFViolationReason.PROXY_RESOLUTION_UNSUPPORTED

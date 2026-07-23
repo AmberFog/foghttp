@@ -36,7 +36,9 @@ __all__ = (
     "RetryPolicy",
     "RetryTrace",
     "RetryTraceOutcome",
+    "SSRFError",
     "SSRFPolicy",
+    "SSRFViolationReason",
     "StreamResponse",
     "TLSConfig",
     "TelemetryConfig",
@@ -81,6 +83,7 @@ from .errors.response import (
     ResponseBodyTooLargeError,
     ResponseError,
 )
+from .errors.ssrf import SSRFError, SSRFViolationReason
 from .errors.timeout import (
     ConnectTimeout,
     PoolTimeout,

@@ -24,7 +24,11 @@ checked.
 IPv6 destinations are accepted only from IANA-allocated global-unicast
 prefixes or the globally reachable well-known NAT64 prefix. The list is
 conservative: a newly allocated prefix remains blocked until FogHTTP updates
-its registry snapshot.
+its registry snapshot. The checked-in classifier was audited on 2026-07-23
+against the IPv4 and IPv6 special-purpose registries updated 2025-10-09 and
+the IPv6 global-unicast registry updated 2025-10-10. When those registries
+change, maintainers update the Rust prefix table, special-use exceptions, and
+classification tests together.
 
 ## Destination Allowlists
 
@@ -82,12 +86,14 @@ FogHTTP evaluates the destination policy before the initial request and before
 every followed redirect hop. A redirect cannot escape the client-level
 allowlist or switch to a blocked address.
 
-For DNS names, the Rust resolver checks every returned address. The exact
-validated address set is then passed to the connector, so the connector does
-not perform a second lookup between validation and TCP connect. Each new DNS
-resolution is checked again; a later answer that changes to a blocked address
-is rejected. A pooled connection may reuse the endpoint that was already
-validated when that connection was opened.
+For DNS names, the Rust resolver checks every returned address. If any address
+in a DNS answer is non-public, FogHTTP rejects the entire resolution; it does
+not discard individual blocked addresses. The exact validated address set is
+then passed to the connector, so the connector does not perform a second
+lookup between validation and TCP connect. Each new DNS resolution is checked
+again; a later answer that changes to a blocked address is rejected. A pooled
+connection may reuse the endpoint that was already validated when that
+connection was opened.
 
 Proxy routes fail closed while `SSRFPolicy` is enabled. HTTP forward proxies
 and HTTPS `CONNECT` proxies may resolve the target remotely, so the client
@@ -97,10 +103,19 @@ use a proxy.
 
 ## Errors And Privacy
 
-A rejected request raises `RequestError` with an `SSRF policy blocked target`
-message. Diagnostics include only a normalized URL origin or DNS hostname;
-userinfo, paths, query parameters, fragments, and resolved IP details are not
-included.
+A rejected request raises `SSRFError`, a `RequestError` subtype, with an
+`SSRF policy blocked target` message. Its stable `reason` is one of:
+
+- `SSRFViolationReason.DESTINATION_NOT_ALLOWED`;
+- `SSRFViolationReason.NON_PUBLIC_ADDRESS`;
+- `SSRFViolationReason.PROXY_RESOLUTION_UNSUPPORTED`;
+- `SSRFViolationReason.SCHEME_NOT_ALLOWED`.
+
+`SSRFViolationReason.UNKNOWN` represents an unavailable classification, such
+as a malformed or forward-incompatible native error payload. Applications can branch on
+`reason` for audit metrics without parsing the diagnostic text. Diagnostics
+include only a normalized URL origin or DNS hostname; userinfo, paths, query
+parameters, fragments, and resolved IP details are not included.
 
 The policy is an application-layer guard, not a replacement for firewall,
 service-mesh, container, or cloud egress policy. Defense in depth remains

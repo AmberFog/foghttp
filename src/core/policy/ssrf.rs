@@ -21,7 +21,14 @@ const IPV6_DET: Ipv6Addr = Ipv6Addr::new(0x2001, 0x0030, 0, 0, 0, 0, 0, 0);
 const IPV6_DOCUMENTATION: Ipv6Addr = Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 0);
 const IPV6_6TO4: Ipv6Addr = Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 0);
 
-// Keep this conservative allowlist aligned with the IANA IPv6 Global Unicast registry.
+// Registry snapshot audited on 2026-07-23 against the IANA IPv4/IPv6
+// Special-Purpose registries (updated 2025-10-09) and IPv6 Global Unicast
+// registry (updated 2025-10-10). When the registries change, update this
+// table, the special-use exceptions above, and the classification tests
+// together. Unlisted global-unicast space remains blocked fail-closed.
+// Sources: https://www.iana.org/assignments/iana-ipv4-special-registry/,
+// https://www.iana.org/assignments/iana-ipv6-special-registry/, and
+// https://www.iana.org/assignments/ipv6-unicast-address-assignments/.
 const IPV6_ALLOCATED_GLOBAL_UNICAST: [(Ipv6Addr, u32); 22] = [
     (Ipv6Addr::new(0x2001, 0, 0, 0, 0, 0, 0, 0), 20),
     (Ipv6Addr::new(0x2001, 0x1200, 0, 0, 0, 0, 0, 0), 23),
@@ -153,6 +160,21 @@ impl SsrfViolation {
 
     fn new(target: String, reason: SsrfViolationReason) -> Self {
         Self { target, reason }
+    }
+
+    pub(crate) const fn reason(&self) -> SsrfViolationReason {
+        self.reason
+    }
+}
+
+impl SsrfViolationReason {
+    pub(crate) const fn as_code(self) -> &'static str {
+        match self {
+            Self::DestinationNotAllowed => "destination_not_allowed",
+            Self::NonPublicAddress => "non_public_address",
+            Self::ProxyResolutionUnsupported => "proxy_resolution_unsupported",
+            Self::SchemeNotAllowed => "scheme_not_allowed",
+        }
     }
 }
 
@@ -564,7 +586,7 @@ mod tests {
     }
 
     #[test]
-    fn allocated_ipv6_unicast_ranges_are_allowlisted_explicitly() {
+    fn allocated_ipv6_unicast_ranges_match_iana_2025_10_10_snapshot() {
         let allowed = [
             "2001:200::1",
             "2001:1200::1",
@@ -644,6 +666,26 @@ mod tests {
             .expect_err("HTTP must be blocked by an HTTPS-only policy");
 
         assert_eq!(error.reason, SsrfViolationReason::SchemeNotAllowed);
+    }
+
+    #[test]
+    fn violation_reason_codes_are_stable() {
+        let cases = [
+            (
+                SsrfViolationReason::DestinationNotAllowed,
+                "destination_not_allowed",
+            ),
+            (SsrfViolationReason::NonPublicAddress, "non_public_address"),
+            (
+                SsrfViolationReason::ProxyResolutionUnsupported,
+                "proxy_resolution_unsupported",
+            ),
+            (SsrfViolationReason::SchemeNotAllowed, "scheme_not_allowed"),
+        ];
+
+        for (reason, expected) in cases {
+            assert_eq!(reason.as_code(), expected);
+        }
     }
 
     #[test]
