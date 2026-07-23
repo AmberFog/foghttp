@@ -415,6 +415,9 @@ class RawClient:
         retry_statuses: Sequence[int],
         retry_methods: Sequence[str],
         retry_network_errors: bool,
+        ssrf_allowed_schemes: Sequence[str] | None,
+        ssrf_allowed_origins: Sequence[str],
+        ssrf_allowed_domains: Sequence[str],
     ) -> None: ...
     def request(
         self,

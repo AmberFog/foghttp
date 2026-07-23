@@ -3,7 +3,9 @@ use super::proxy::{ProxyPolicy, TransportRoute};
 use super::redirect::{redirect_decision, RedirectAction, RedirectDecision, RedirectHeaderPolicy};
 use super::request::{PolicyRequest, RequestBodyMutation, ResponseHead};
 use super::retry::{RetryDecision, RetryPolicy};
+use super::ssrf::{SsrfPolicy, SsrfViolation};
 use crate::core::url::HttpUrl;
+use std::sync::Arc;
 use std::time::SystemTime;
 
 #[derive(Debug)]
@@ -16,6 +18,7 @@ pub(crate) struct PolicyPipeline {
     proxy: ProxyPolicy,
     redirect: Option<RedirectPolicy>,
     retry: Option<RetryPolicy>,
+    ssrf: Option<Arc<SsrfPolicy>>,
 }
 
 pub(crate) struct ResponsePolicyAction {
@@ -44,6 +47,7 @@ impl PolicyPipeline {
         follow_redirects: bool,
         max_redirects: usize,
         retry: Option<RetryPolicy>,
+        ssrf: Option<Arc<SsrfPolicy>>,
     ) -> Result<Self, PolicyError> {
         let initial_route = if initial_use_proxy_transport {
             TransportRoute::Proxy
@@ -56,6 +60,7 @@ impl PolicyPipeline {
             proxy,
             redirect,
             retry,
+            ssrf,
         })
     }
 
@@ -87,7 +92,14 @@ impl PolicyPipeline {
         &self,
         request: PolicyRequest<'_>,
     ) -> Result<TransportRoute, PolicyError> {
-        self.proxy.route(request.url())
+        if let Some(ssrf) = self.ssrf.as_ref() {
+            ssrf.validate_url(request.url())?;
+        }
+        let route = self.proxy.route(request.url())?;
+        if route == TransportRoute::Proxy && self.ssrf.is_some() {
+            return Err(SsrfViolation::proxy(request.url().origin()).into());
+        }
+        Ok(route)
     }
 
     pub(crate) fn on_response_headers(

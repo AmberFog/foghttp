@@ -5,6 +5,8 @@ use crate::messages::{
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
+use super::ssrf::SsrfViolation;
+
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum PolicyError {
     InvalidProxyPolicy(String),
@@ -15,6 +17,7 @@ pub(crate) enum PolicyError {
     HttpsToHttpRedirectBlocked,
     NonReplayableRequestBodyRedirect,
     ProxyRedirectPolicyRecomputeUnsupported,
+    SsrfViolation(SsrfViolation),
 }
 
 impl Display for PolicyError {
@@ -34,7 +37,14 @@ impl Display for PolicyError {
             Self::ProxyRedirectPolicyRecomputeUnsupported => {
                 formatter.write_str(PROXY_REDIRECT_POLICY_RECOMPUTE_UNSUPPORTED)
             }
+            Self::SsrfViolation(error) => Display::fmt(error, formatter),
         }
+    }
+}
+
+impl From<SsrfViolation> for PolicyError {
+    fn from(error: SsrfViolation) -> Self {
+        Self::SsrfViolation(error)
     }
 }
 

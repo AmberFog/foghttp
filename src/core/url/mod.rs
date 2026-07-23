@@ -59,6 +59,14 @@ impl HttpUrl {
         self.inner.fragment().unwrap_or_default()
     }
 
+    pub(crate) fn is_origin_only(&self) -> bool {
+        self.inner.username().is_empty()
+            && self.inner.password().is_none()
+            && matches!(self.inner.path(), "" | "/")
+            && self.inner.query().is_none()
+            && self.inner.fragment().is_none()
+    }
+
     pub fn origin(&self) -> String {
         origin::format_origin(self.scheme(), &self.host(), self.port())
     }

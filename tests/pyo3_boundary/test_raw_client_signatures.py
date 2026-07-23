@@ -32,6 +32,9 @@ RAW_CLIENT_KEYWORD_ONLY_PARAMETERS = (
     "retry_statuses",
     "retry_methods",
     "retry_network_errors",
+    "ssrf_allowed_schemes",
+    "ssrf_allowed_origins",
+    "ssrf_allowed_domains",
 )
 
 RAW_REQUEST_KEYWORD_ONLY_PARAMETERS = (

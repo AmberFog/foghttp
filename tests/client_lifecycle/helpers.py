@@ -86,6 +86,7 @@ def create_test_raw_client() -> "_foghttp.RawClient":
             runtime_workers=1,
             policy_hooks=None,
             retry=None,
+            ssrf=None,
             telemetry=None,
             lifecycle_debug=None,
         ),

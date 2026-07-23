@@ -6,6 +6,7 @@ import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
 from ...errors import NetworkError
 from ...retry import RetryPolicy
+from ...ssrf import SSRFPolicy
 from ..config import ClientConfig
 from ..proxy.auth import basic_proxy_authorization
 from ..tls import ca_certificate_bytes, trust_webpki_roots
@@ -22,6 +23,7 @@ def create_raw_client(
     try:
         limits = config.limits
         retry_options = _RawRetryOptions.from_policy(config.retry)
+        ssrf_options = _RawSSRFOptions.from_policy(config.ssrf)
         return _foghttp.RawClient(
             max_active_requests=limits.max_active_requests,
             max_active_requests_per_origin=limits.max_active_requests_per_origin,
@@ -51,6 +53,9 @@ def create_raw_client(
             retry_statuses=retry_options.statuses,
             retry_methods=retry_options.methods,
             retry_network_errors=retry_options.network_errors,
+            ssrf_allowed_schemes=ssrf_options.schemes,
+            ssrf_allowed_origins=ssrf_options.origins,
+            ssrf_allowed_domains=ssrf_options.domains,
         )
     except _foghttp.FogHttpError as exc:
         raise ValueError(str(exc)) from exc
@@ -83,4 +88,21 @@ class _RawRetryOptions:
             statuses=sorted(policy.retry_on.statuses),
             methods=sorted(policy.methods),
             network_errors=NetworkError in policy.retry_on.exceptions,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _RawSSRFOptions:
+    schemes: list[str] | None
+    origins: list[str]
+    domains: list[str]
+
+    @classmethod
+    def from_policy(cls, policy: SSRFPolicy | None) -> "_RawSSRFOptions":
+        if policy is None:
+            return cls(schemes=None, origins=[], domains=[])
+        return cls(
+            schemes=sorted(policy.allowed_schemes),
+            origins=sorted(policy.allowed_origins),
+            domains=sorted(policy.allowed_domains),
         )

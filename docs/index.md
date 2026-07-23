@@ -64,6 +64,8 @@ FogHTTP is designed around a few engineering priorities:
   response-head checks, with Rust-owned redirect safety
 - opt-in Rust-owned retry policy with safe-method defaults, replayability
   gating, bounded backoff, typed decisions, and immutable attempt traces
+- opt-in Rust-owned SSRF destination policy with per-hop allowlists,
+  post-resolution IP checks, and DNS rebinding mitigation
 - versioned telemetry snapshots that separate alert-oriented stats from
   diagnostic dump APIs
 - opt-in async lifecycle debug snapshots for tests, staging, and incident
@@ -82,6 +84,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - [Upload typing contracts](./upload-types.md)
 - [Transport policy hooks](./policy-hooks.md)
 - [Retry policy](./retries.md)
+- [SSRF protection](./ssrf.md)
 - [Telemetry contract](./telemetry.md)
 - [Response streaming](./streaming.md)
 - [TLS trust](./tls.md)
@@ -141,6 +144,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
   no default-path Python callback
 - opt-in retry policy for selected statuses and pre-header network failures,
   with safe methods, replayable bodies, and immutable attempt traces
+- opt-in SSRF destination policy that validates initial and redirected targets,
+  then pins each connection attempt to its checked DNS result
 - versioned telemetry snapshot metadata for `stats()`, `dump_transport_state()`,
   and `dump_pool_diagnostics()`
 - opt-in async lifecycle debug mode for active request snapshots and strict

@@ -28,6 +28,7 @@ def client_options(
         runtime_workers=None,
         policy_hooks=None,
         retry=None,
+        ssrf=None,
         telemetry=None,
         lifecycle_debug=None,
     )

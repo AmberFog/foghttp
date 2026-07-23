@@ -23,6 +23,7 @@ def test_top_level_exports() -> None:
     assert foghttp.RetryPolicy is not None
     assert foghttp.RetryTrace is not None
     assert foghttp.RetryTraceOutcome is not None
+    assert foghttp.SSRFPolicy is not None
     assert foghttp.StreamResponse is not None
     assert foghttp.TLSConfig is not None
     assert foghttp.TimeoutDiagnostic is not None

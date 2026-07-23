@@ -56,6 +56,9 @@ RAW_CLIENT_INIT_ARGUMENTS = (
     "retry_statuses",
     "retry_methods",
     "retry_network_errors",
+    "ssrf_allowed_schemes",
+    "ssrf_allowed_origins",
+    "ssrf_allowed_domains",
 )
 
 RAW_REQUEST_ARGUMENTS = (
@@ -106,6 +109,7 @@ def _client_config(
             runtime_workers=runtime_workers,
             policy_hooks=policy_hooks,
             retry=None,
+            ssrf=None,
             telemetry=None,
             lifecycle_debug=None,
         ),
@@ -200,6 +204,9 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
         "retry_statuses": [],
         "retry_methods": [],
         "retry_network_errors": False,
+        "ssrf_allowed_schemes": None,
+        "ssrf_allowed_origins": [],
+        "ssrf_allowed_domains": [],
     }
 
 

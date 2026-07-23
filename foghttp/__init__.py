@@ -36,6 +36,7 @@ __all__ = (
     "RetryPolicy",
     "RetryTrace",
     "RetryTraceOutcome",
+    "SSRFPolicy",
     "StreamResponse",
     "TLSConfig",
     "TelemetryConfig",
@@ -108,6 +109,7 @@ from .request_info import RequestInfo
 from .response import Response
 from .retry import RetryConditions, RetryPolicy
 from .retry_trace import RetryAttempt, RetryTrace, RetryTraceOutcome
+from .ssrf import SSRFPolicy
 from .stream_response import AsyncStreamResponse, StreamResponse
 from .telemetry import (
     TelemetryConfig,

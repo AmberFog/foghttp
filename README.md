@@ -129,6 +129,8 @@ async with foghttp.AsyncClient() as client:
   response-head checks without default-path Python callbacks
 - opt-in Rust-owned retry policy for selected statuses and pre-header network
   failures, with safe methods, replayable bodies, and immutable attempt traces
+- opt-in Rust-owned SSRF destination policy with per-hop allowlists,
+  post-resolution IP checks, and DNS rebinding mitigation
 - versioned telemetry snapshot metadata for `stats()`, `dump_transport_state()`,
   and `dump_pool_diagnostics()`
 - opt-in async lifecycle debug mode for active request snapshots, strict leak
@@ -149,6 +151,7 @@ async with foghttp.AsyncClient() as client:
 - [Upload typing contracts](https://github.com/AmberFog/foghttp/blob/main/docs/upload-types.md)
 - [Transport policy hooks](https://github.com/AmberFog/foghttp/blob/main/docs/policy-hooks.md)
 - [Retry policy](https://github.com/AmberFog/foghttp/blob/main/docs/retries.md)
+- [SSRF protection](https://github.com/AmberFog/foghttp/blob/main/docs/ssrf.md)
 - [Telemetry contract](https://github.com/AmberFog/foghttp/blob/main/docs/telemetry.md)
 - [Response streaming](https://github.com/AmberFog/foghttp/blob/main/docs/streaming.md)
 - [Proxy and trust_env](https://github.com/AmberFog/foghttp/blob/main/docs/proxies.md)

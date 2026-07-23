@@ -10,7 +10,7 @@ from ..messages import (
     HTTP_VERSION_UNSUPPORTED,
     MAX_REDIRECTS_INVALID,
 )
-from ..policy import RetryPolicy, TransportPolicyHooks
+from ..policy import RetryPolicy, SSRFPolicy, TransportPolicyHooks
 from ..telemetry import TelemetryConfig
 from ..timeouts import Timeouts
 from ..tls import TLSConfig
@@ -37,6 +37,7 @@ class ClientOptions:
     runtime_workers: int | None
     policy_hooks: TransportPolicyHooks | None
     retry: RetryPolicy | None
+    ssrf: SSRFPolicy | None
     telemetry: TelemetryConfig | None
     lifecycle_debug: AsyncLifecycleDebugConfig | None
 

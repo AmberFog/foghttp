@@ -17,7 +17,7 @@ use crate::core::client::{
 };
 use crate::core::headers::HeaderPairs;
 use crate::core::metrics::Metrics;
-use crate::core::policy::RetryPolicy;
+use crate::core::policy::{RetryPolicy, SsrfPolicy};
 use crate::core::response::BufferedBodyBudget;
 use crate::errors::FogHttpError;
 use crate::py::client::acquire::AcquireGate;
@@ -62,6 +62,7 @@ pub struct RawClient {
     proxy_authorization: Option<String>,
     policy_hooks: Option<Arc<PythonPolicyHooks>>,
     retry_policy: Option<RetryPolicy>,
+    ssrf_policy: Option<Arc<SsrfPolicy>>,
     process_id: ProcessId,
 }
 
@@ -97,7 +98,10 @@ impl RawClient {
         retry_jitter,
         retry_statuses,
         retry_methods,
-        retry_network_errors
+        retry_network_errors,
+        ssrf_allowed_schemes,
+        ssrf_allowed_origins,
+        ssrf_allowed_domains
     ))]
     #[allow(
         clippy::fn_params_excessive_bools,
@@ -136,6 +140,9 @@ impl RawClient {
         retry_statuses: Vec<u16>,
         retry_methods: Vec<String>,
         retry_network_errors: bool,
+        ssrf_allowed_schemes: Option<Vec<String>>,
+        ssrf_allowed_origins: Vec<String>,
+        ssrf_allowed_domains: Vec<String>,
     ) -> PyResult<Self> {
         validate_numeric_client_options(NumericClientOptions {
             max_active_requests,
@@ -163,6 +170,18 @@ impl RawClient {
             })
             .transpose()
             .map_err(FogHttpError::new_err)?;
+        let ssrf_policy = match ssrf_allowed_schemes {
+            Some(schemes) => Some(Arc::new(
+                SsrfPolicy::new(schemes, ssrf_allowed_origins, ssrf_allowed_domains)
+                    .map_err(FogHttpError::new_err)?,
+            )),
+            None if ssrf_allowed_origins.is_empty() && ssrf_allowed_domains.is_empty() => None,
+            None => {
+                return Err(FogHttpError::new_err(
+                    "SSRF policy allowlists require allowed schemes",
+                ));
+            }
+        };
 
         let runtime_mode = parse_runtime_mode(runtime)?;
         let metrics = Arc::new(Metrics::default());
@@ -177,6 +196,7 @@ impl RawClient {
             http_proxy_url: None,
             https_proxy_url: None,
             https_proxy_authorization: None,
+            ssrf_policy: ssrf_policy.clone(),
         };
         let client = build_client_with_connection_gate(
             &client_options,
@@ -253,6 +273,7 @@ impl RawClient {
             proxy_authorization: http_proxy_authorization,
             policy_hooks,
             retry_policy,
+            ssrf_policy,
             process_id: current_process_id(),
         })
     }
@@ -305,6 +326,7 @@ impl RawClient {
         let proxy_authorization = self.proxy_authorization.clone();
         let policy_hooks = self.policy_hooks.clone();
         let retry_policy = self.retry_policy.clone();
+        let ssrf_policy = self.ssrf_policy.clone();
         let extensions = extensions.filter(|_| policy_hooks.is_some());
         self.metrics.request_started();
 
@@ -333,6 +355,7 @@ impl RawClient {
                         follow_redirects,
                         max_redirects,
                         retry_policy,
+                        ssrf_policy,
                         policy_hooks,
                         extensions,
                     },
@@ -391,6 +414,7 @@ impl RawClient {
         let proxy_authorization = self.proxy_authorization.clone();
         let policy_hooks = self.policy_hooks.clone();
         let retry_policy = self.retry_policy.clone();
+        let ssrf_policy = self.ssrf_policy.clone();
         let extensions = extensions.filter(|_| policy_hooks.is_some());
         spawn_async_request(
             py,
@@ -420,6 +444,7 @@ impl RawClient {
                     follow_redirects,
                     max_redirects,
                     retry_policy,
+                    ssrf_policy,
                     policy_hooks,
                     extensions,
                 },
@@ -477,6 +502,7 @@ impl RawClient {
         let proxy_authorization = self.proxy_authorization.clone();
         let policy_hooks = self.policy_hooks.clone();
         let retry_policy = self.retry_policy.clone();
+        let ssrf_policy = self.ssrf_policy.clone();
         let extensions = extensions.filter(|_| policy_hooks.is_some());
         let completion = RequestCompletion::default();
         let request_completion = completion.clone();
@@ -511,6 +537,7 @@ impl RawClient {
                         follow_redirects,
                         max_redirects,
                         retry_policy,
+                        ssrf_policy,
                         policy_hooks,
                         extensions,
                     },
@@ -572,6 +599,7 @@ impl RawClient {
         let proxy_authorization = self.proxy_authorization.clone();
         let policy_hooks = self.policy_hooks.clone();
         let retry_policy = self.retry_policy.clone();
+        let ssrf_policy = self.ssrf_policy.clone();
         let extensions = extensions.filter(|_| policy_hooks.is_some());
         spawn_async_stream_request(
             py,
@@ -602,6 +630,7 @@ impl RawClient {
                     follow_redirects,
                     max_redirects,
                     retry_policy,
+                    ssrf_policy,
                     policy_hooks,
                     extensions,
                 },

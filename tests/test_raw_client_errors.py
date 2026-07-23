@@ -94,6 +94,7 @@ def _default_client_config() -> ClientConfig:
             runtime_workers=1,
             policy_hooks=None,
             retry=None,
+            ssrf=None,
             telemetry=None,
             lifecycle_debug=None,
         ),
