@@ -1,6 +1,6 @@
 [package]
 name = "foghttp"
-version = "0.3.7"
+version = "0.3.8"
 description = "Observable Rust-powered HTTP client for Python services."
 edition = "2021"
 homepage = "https://github.com/AmberFog/foghttp"

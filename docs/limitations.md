@@ -56,7 +56,11 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - opt-in synchronous transport policy hooks with immutable request/response
   snapshots and Rust-owned redirect safety
 - opt-in retry policy for selected statuses and pre-header network failures,
-  gated by method safety and request-body replayability
+  gated by method safety and request-body replayability, with immutable
+  request-scoped attempt traces on responses and terminal `FogHTTPError`
+- opt-in SSRF destination policy with scheme/origin/domain allowlists,
+  per-redirect checks, post-resolution address validation, and typed redacted
+  `SSRFError` reasons
 - opt-in async lifecycle debug snapshots for active async request handles,
   pending transport pressure, strict test checks, and unclosed-client context
 - default per-response and aggregate buffered response memory limits
@@ -102,6 +106,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | telemetry hook granularity | `TelemetryConfig` currently dispatches Python-level request/response lifecycle events; lower-level Rust pool acquire and connection lifecycle event delivery is planned before Prometheus/OpenTelemetry exporters |
 | transport policy hook execution | `TransportPolicyHooks` callbacks are synchronous, inline, non-reentrant, and may run on Rust transport worker threads; `after_response_body` observes only redirect bodies consumed internally, not the final response body returned to the caller |
 | retry scope | Retry is client-level and opt-in. It covers configured response statuses and pre-header `NetworkError` only; response-body errors, FogHTTP timeouts, local upload-provider failures, auth refresh, hedging, and circuit breaking are not retried. |
+| SSRF protection scope | `SSRFPolicy` is client-level and opt-in. It validates initial and redirected destinations plus every resolved address, but it is not a replacement for network egress policy. Proxy routes fail closed because a remote proxy can resolve the target independently. |
 | diagnostic snapshot transactionality | `stats()`, `dump_transport_state()`, and `dump_pool_diagnostics()` include `schema_version` and a monotonic `snapshot_sequence`, but the `dump_*` APIs remain diagnostic snapshots rather than lock-protected SLA transactions; use `stats()` for alert-oriented low-cardinality metrics |
 
 ## Practical Guidance
@@ -119,6 +124,8 @@ Use FogHTTP today when:
 - async request cancellation and sync/async stream cleanup behavior are useful
 - global/per-origin request-slot backpressure and opt-in global/per-host
   physical connection caps are enough for your resource control needs
+- you accept partially trusted destination URLs and can use direct connections
+  with an explicit client-level `SSRFPolicy`
 - you can reuse clients instead of creating many short-lived transport and pool
   instances once requests start flowing
 
@@ -126,6 +133,8 @@ Wait before using FogHTTP when:
 
 - you need transparent streaming decompression
 - you need SOCKS, PAC, WPAD, or platform proxy discovery
+- you require proxy routing and application-layer SSRF protection on the same
+  client; enforce destination policy at the proxy or network egress boundary
 - you rely on cookies across requests
 - you need per-request connect timeout reconfiguration
 - you need automatic compression negotiation instead of manual
@@ -142,6 +151,8 @@ to `ReadTimeout` for buffered responses and streamed body chunks. Buffered and
 streamed request body write progress timeout maps to `WriteTimeout`. The broader
 buffered transport deadline maps to the base `TimeoutError` with phase-aware
 diagnostics; for streaming responses it covers acquire, redirects, and response
-headers before the stream is returned. Dedicated connect timeout exception mapping is
-reserved for later timeout work. See
+headers before the stream is returned. An enabled SSRF policy raises
+`SSRFError` with a stable `SSRFViolationReason` before a blocked destination is
+sent. Dedicated connect timeout exception mapping is reserved for later timeout
+work. See
 [Timeout model](./timeouts.md) for the current behavior.

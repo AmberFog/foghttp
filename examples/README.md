@@ -23,6 +23,8 @@ uv run examples/multipart_uploads.py
 uv run examples/redirects.py
 uv run examples/prepared_requests.py
 uv run examples/request_builder_compatibility.py
+uv run examples/retry_policy.py
+uv run examples/ssrf_policy.py
 uv run examples/telemetry_hooks.py
 ```
 
@@ -55,6 +57,10 @@ uv run examples/telemetry_hooks.py
 - [request_builder_compatibility.py](./request_builder_compatibility.py):
   client defaults, repeated query params, form data, prepared requests, and body
   conflict validation.
+- [retry_policy.py](./retry_policy.py): opt-in status retries and immutable
+  request-scoped attempt trace inspection.
+- [ssrf_policy.py](./ssrf_policy.py): a trusted domain allowlist and stable
+  typed rejection reason for a blocked destination.
 - [telemetry_hooks.py](./telemetry_hooks.py): opt-in typed telemetry events with
   redacted URLs and explicit hook error policy.
 

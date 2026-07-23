@@ -31,6 +31,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - typed telemetry event hooks with redacted request/response lifecycle events
 - versioned telemetry snapshots that separate alert-oriented stats from
   diagnostic dump APIs
+- opt-in Rust-owned retries with replayability gates and immutable attempt
+  traces, plus opt-in per-hop and post-DNS SSRF destination controls
 - opt-in async lifecycle debug snapshots for staging and tests
 - lazy process-wide shared Tokio runtime by default, opt-in dedicated runtime
   tuning, and fail-closed client ownership across `fork()`
@@ -170,7 +172,8 @@ available as bytes/text/line context-managed APIs. Streaming `content=` uploads
 and multipart `files=` uploads are available with explicit replayability and
 cleanup rules. HTTP proxy routing and HTTPS proxy `CONNECT` tunnelling are
 available through `proxy=` and `trust_env=True` when the proxy endpoint itself
-uses `http://`.
+uses `http://`. Proxy-routed requests fail closed when `SSRFPolicy` is enabled
+because the client cannot prove which target address a remote proxy resolves.
 Cookies, auth helpers, HTTP/2, automatic `Accept-Encoding` negotiation,
 streaming decompression, and per-request connect timeout reconfiguration are
 planned for later versions. Physical connection caps currently apply to the
