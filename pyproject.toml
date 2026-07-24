@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "foghttp"
-version = "0.3.8"
+version = "0.3.9"
 description = "Observable Rust-powered HTTP client for Python services."
 readme = "README.md"
 requires-python = ">=3.11"

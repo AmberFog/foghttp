@@ -122,7 +122,7 @@ dependencies = [
 
 [[package]]
 name = "foghttp"
-version = "0.3.8"
+version = "0.3.9"
 dependencies = [
  "brotli",
  "bytes",

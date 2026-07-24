@@ -17,7 +17,9 @@ uv run examples/async_json_fanout.py
 uv run examples/async_resource_limits.py
 uv run examples/async_lifecycle_debug.py
 uv run examples/async_streaming.py
+uv run examples/authentication.py
 uv run examples/compressed_response.py
+uv run examples/cookies.py
 uv run examples/http_proxy.py
 uv run examples/multipart_uploads.py
 uv run examples/redirects.py
@@ -42,8 +44,12 @@ uv run examples/telemetry_hooks.py
   debug snapshots and strict no-leak assertion pattern.
 - [async_streaming.py](./async_streaming.py): async bytes, text, and line response
   streaming with explicit context-managed cleanup.
+- [authentication.py](./authentication.py): request-aware client auth with a
+  redaction-aware `Authorization` header.
 - [compressed_response.py](./compressed_response.py): manual
   `Accept-Encoding` negotiation with transparent buffered response decoding.
+- [cookies.py](./cookies.py): an opt-in client cookie session across a redirect
+  and a later request.
 - [http_proxy.py](./http_proxy.py): direct request by default, or HTTP proxy
   routing / HTTPS `CONNECT` tunnelling with
   `FOGHTTP_HTTP_PROXY=http://proxy:port`; set `FOGHTTP_PROXY_TARGET_URL` to
@@ -69,5 +75,7 @@ uv run examples/telemetry_hooks.py
 FogHTTP supports sync and async response streaming for bytes, text, and lines,
 plus plain HTTP proxy routing and HTTPS proxy `CONNECT` through `http://` proxy
 endpoints. Streaming request uploads and multipart `files=` uploads are
-available. Do not use these examples as templates for cookie sessions,
-SOCKS/PAC proxy clients, TLS-to-proxy endpoints, or streaming decompression yet.
+available. The cookie example is HTTP service-client state, not browser-grade
+public-suffix, SameSite, partitioned, or third-party cookie policy. Do not use
+these examples as templates for SOCKS/PAC proxy clients, TLS-to-proxy endpoints,
+or streaming decompression yet.
