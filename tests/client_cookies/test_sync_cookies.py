@@ -1,12 +1,16 @@
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
+import pytest
+
 import foghttp
 from foghttp.auth import AuthRequest
 from foghttp.status_codes.server_error import SERVICE_UNAVAILABLE
 from foghttp.status_codes.success import OK
 from tests.client_telemetry.models import RecordingTelemetrySink
+from tests.http_body_scenarios import INCOMPLETE_CHUNKED_BODY_PATH
 from tests.redirect_helpers import header_values
 from tests.support.http_routes import (
+    COOKIE_BODY_PATH,
     COOKIE_EXPIRE_PATH,
     COOKIE_OPAQUE_PATH,
     COOKIE_PATH_SET_PATH,
@@ -19,9 +23,6 @@ from tests.support.http_routes import (
 )
 
 from .assertions import cookie_pairs, request_cookie_pairs
-
-
-EXPECTED_RETRY_ATTEMPT_COUNT = 2
 
 
 def test_sync_cookie_jar_is_disabled_by_default(sync_http_server: str) -> None:
@@ -50,7 +51,7 @@ def test_sync_cookie_jar_stores_repeated_headers_and_redacts_values(
     assert "<redacted>" in representation
 
 
-def test_sync_cookie_jar_preserves_opaque_values_on_the_wire(
+def test_sync_cookie_jar_preserves_supported_opaque_values_on_the_wire(
     sync_http_server: str,
 ) -> None:
     with foghttp.Client(cookies=True) as client:
@@ -58,7 +59,8 @@ def test_sync_cookie_jar_preserves_opaque_values_on_the_wire(
         response = client.get(sync_http_server + SECURITY_HEADERS_PATH)
 
     assert header_values(response.json(), "cookie") == [
-        'opaque=%41%2F%25; quoted="a%2Fb"; literal=100%; encoded=%FF; empty=; equals=a=b',
+        'opaque=%41%2F%25; quoted="a%2Fb"; literal=100%; encoded=%FF; empty=; '
+        "equals=a=b; nameless-token; ascii=sibling",
     ]
 
 
@@ -98,12 +100,18 @@ def test_sync_cookie_jar_reselects_for_same_and_cross_host_redirects(
     with foghttp.Client(cookies=True, follow_redirects=True) as client:
         same_host = client.get(same_host_url)
     with foghttp.Client(cookies=True, follow_redirects=True) as client:
-        cross_host = client.get(cross_host_url)
+        client.get(_localhost_url(sync_http_server, COOKIE_ROOT_SET_PATH))
+        cross_host = client.get(
+            cross_host_url,
+            headers={"Cookie": "source=caller-secret"},
+        )
 
     assert cookie_pairs(header_values(same_host.json(), "cookie")) == {
         "redirect_session=cookie-secret",
     }
-    assert header_values(cross_host.json(), "cookie") == []
+    assert cookie_pairs(header_values(cross_host.json(), "cookie")) == {
+        "root=cookie-secret",
+    }
 
 
 def test_sync_cookie_jar_updates_before_retry(sync_http_server: str) -> None:
@@ -113,8 +121,10 @@ def test_sync_cookie_jar_updates_before_retry(sync_http_server: str) -> None:
 
     assert response.status_code == OK
     assert response.retry_trace is not None
-    assert len(response.retry_trace.attempts) == EXPECTED_RETRY_ATTEMPT_COUNT
-    assert response.retry_trace.attempts[0].status_code == SERVICE_UNAVAILABLE
+    assert [attempt.status_code for attempt in response.retry_trace.attempts] == [
+        SERVICE_UNAVAILABLE,
+        OK,
+    ]
     assert request_cookie_pairs(response) == {"retry_session=cookie-secret"}
 
 
@@ -135,12 +145,31 @@ def test_sync_auth_cookie_takes_precedence_over_managed_cookie(
 
 
 def test_sync_cookie_jar_updates_before_stream_is_exposed(sync_http_server: str) -> None:
-    with foghttp.Client(cookies=True) as client:
-        with client.stream("GET", sync_http_server + REPEATED_HEADERS_PATH) as response:
-            assert response.status_code == OK
+    with (
+        foghttp.Client(cookies=True) as client,
+        client.stream("GET", sync_http_server + COOKIE_BODY_PATH) as response,
+    ):
+        assert response.status_code == OK
         echoed = client.get(sync_http_server + SECURITY_HEADERS_PATH)
 
-    assert cookie_pairs(header_values(echoed.json(), "cookie")) == {"first=1", "second=2"}
+    assert cookie_pairs(header_values(echoed.json(), "cookie")) == {
+        "retry_session=cookie-secret",
+    }
+
+
+def test_sync_cookie_jar_commits_before_incomplete_body_timeout(
+    sync_http_server: str,
+) -> None:
+    timeouts = foghttp.Timeouts(total=0.05)
+    with foghttp.Client(cookies=True, timeouts=timeouts) as client:
+        with pytest.raises(foghttp.TimeoutError) as exc_info:
+            client.get(sync_http_server + INCOMPLETE_CHUNKED_BODY_PATH)
+        verification = client.get(sync_http_server + SECURITY_HEADERS_PATH)
+
+    assert "request total timeout expired" in str(exc_info.value)
+    assert cookie_pairs(header_values(verification.json(), "cookie")) == {
+        "incomplete_session=cookie-secret",
+    }
 
 
 def _cookie_redirect_url(base_url: str, location: str) -> str:

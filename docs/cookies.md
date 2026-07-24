@@ -42,10 +42,16 @@ following rules:
 - `__Secure-` and `__Host-` name-prefix requirements are enforced
 - malformed or rejected fields do not prevent valid sibling fields from being
   stored
+- nameless fields such as `Set-Cookie: session-token` are returned without an
+  equals sign, following the HTTP cookie retrieval algorithm
 
 Matching cookies are sent with longer paths first, then by creation order.
-Cookie values are opaque: percent-looking octets are preserved exactly rather
-than decoded or canonicalized. Cookie scope does not include the TCP port.
+Cookie values are opaque: supported ASCII header octets, including
+percent-looking values, are preserved exactly rather than decoded or
+canonicalized. Name/value pairs containing non-ASCII `obs-text` are ignored
+rather than transcoded across the Python/Rust string boundary. Cookie scope
+does not include the TCP port. Non-ASCII `Domain` attributes are rejected;
+ASCII punycode domains remain supported.
 
 Response headers update the jar before redirect or retry handling, before a
 buffered body is read, and before a streaming response is exposed. A cookie set

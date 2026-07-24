@@ -92,7 +92,8 @@ def raw_response(
     content: bytes = b"",
 ) -> bytes:
     header_lines = "".join(f"{name}: {value}\r\n" for name, value in headers)
-    return f"HTTP/1.1 {status_code} {reason}\r\n{header_lines}\r\n".encode() + content
+    head = f"HTTP/1.1 {status_code} {reason}\r\n{header_lines}\r\n".encode("latin-1")
+    return head + content
 
 
 def raw_http_server_response(headers: str, body: bytes) -> bytes:
@@ -122,8 +123,17 @@ def _raw_cookie_response(path: str, query: str, headers: str) -> bytes | None:
     response = cookie_response(path, query, header_values(headers, "cookie"))
     if response is None:
         return None
-    status_code, response_headers = response
-    return _raw_empty_response(status_code, _reason_phrase(status_code), response_headers)
+    status_code, response_headers, content = response
+    return raw_response(
+        status_code,
+        _reason_phrase(status_code),
+        [
+            *response_headers,
+            ("content-length", str(len(content))),
+            ("connection", "close"),
+        ],
+        content,
+    )
 
 
 def json_payload(*, request_line: str, body: bytes) -> bytes:

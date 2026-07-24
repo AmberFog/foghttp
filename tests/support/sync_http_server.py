@@ -101,13 +101,14 @@ class SyncHTTPHandler(BaseHTTPRequestHandler):
         )
         if response is None:
             return False
-        status_code, headers = response
+        status_code, headers, content = response
         self.send_response(status_code)
         for name, value in headers:
             self.send_header(name, value)
-        self.send_header("content-length", "0")
+        self.send_header("content-length", str(len(content)))
         self.send_header("connection", "close")
         self.end_headers()
+        self.wfile.write(content)
         return True
 
     def _write_redirect_to_location(self) -> bool:

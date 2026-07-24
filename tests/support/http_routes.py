@@ -1,4 +1,5 @@
 __all__ = (
+    "COOKIE_BODY_PATH",
     "COOKIE_EXPIRE_PATH",
     "COOKIE_OPAQUE_PATH",
     "COOKIE_PATH_SET_PATH",
@@ -33,13 +34,14 @@ REDIRECT_TO_STATUS_PATH_PARTS = 3
 STATUS_PATH_PARTS = 2
 UNKNOWN_SIZE_BYTES_ROUTE = "unknown-size-bytes"
 
-ECHO_HEADERS_PATH = "/headers/echo"
+COOKIE_BODY_PATH = "/cookies/body"
 COOKIE_EXPIRE_PATH = "/cookies/expire"
 COOKIE_OPAQUE_PATH = "/cookies/opaque"
 COOKIE_PATH_SET_PATH = "/cookies/path"
 COOKIE_REDIRECT_PATH = "/cookies/redirect"
 COOKIE_RETRY_PATH = "/cookies/retry"
 COOKIE_ROOT_SET_PATH = "/cookies/root"
+ECHO_HEADERS_PATH = "/headers/echo"
 OBS_TEXT_HEADERS_PATH = "/headers/obs-text"
 REDIRECT_TO_LOCATION_PATH = "/redirect-to-location"
 REPEATED_HEADERS_PATH = "/headers/repeated"
@@ -51,9 +53,15 @@ def cookie_response(
     path: str,
     query: str,
     request_cookies: list[str],
-) -> tuple[int, list[tuple[str, str]]] | None:
+) -> tuple[int, list[tuple[str, str]], bytes] | None:
     if path == COOKIE_PATH_SET_PATH:
-        response = OK, [("set-cookie", "scoped=cookie-secret; Path=/headers")]
+        response = OK, [("set-cookie", "scoped=cookie-secret; Path=/headers")], b""
+    elif path == COOKIE_BODY_PATH:
+        response = (
+            OK,
+            [("set-cookie", "retry_session=cookie-secret; Path=/")],
+            b"x" * 4096,
+        )
     elif path == COOKIE_OPAQUE_PATH:
         response = (
             OK,
@@ -62,14 +70,18 @@ def cookie_response(
                 ("set-cookie", 'quoted="a%2Fb"; Path=/'),
                 ("set-cookie", "literal=100%; Path=/"),
                 ("set-cookie", "encoded=%FF; Path=/"),
+                ("set-cookie", "latin=\xe9; Path=/"),
                 ("set-cookie", "empty=; Path=/"),
                 ("set-cookie", "equals=a=b; Path=/"),
+                ("set-cookie", "nameless-token; Path=/"),
+                ("set-cookie", "ascii=sibling; Path=/"),
             ],
+            b"",
         )
     elif path == COOKIE_ROOT_SET_PATH:
-        response = OK, [("set-cookie", "root=cookie-secret; Path=/")]
+        response = OK, [("set-cookie", "root=cookie-secret; Path=/")], b""
     elif path == COOKIE_EXPIRE_PATH:
-        response = OK, [("set-cookie", "root=; Path=/; Max-Age=0")]
+        response = OK, [("set-cookie", "root=; Path=/; Max-Age=0")], b""
     elif path == COOKIE_REDIRECT_PATH:
         locations = parse_qs(query, keep_blank_values=True).get("location", [])
         if locations:
@@ -79,18 +91,20 @@ def cookie_response(
                     ("location", locations[0]),
                     ("set-cookie", "redirect_session=cookie-secret; Path=/"),
                 ],
+                b"",
             )
         else:
             response = None
     elif path == COOKIE_RETRY_PATH:
         if any("retry_session=cookie-secret" in value for value in request_cookies):
-            response = OK, []
+            response = OK, [], b""
         else:
             response = (
                 SERVICE_UNAVAILABLE,
                 [
                     ("set-cookie", "retry_session=cookie-secret; Path=/"),
                 ],
+                b"",
             )
     else:
         response = None

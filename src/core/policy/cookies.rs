@@ -1,13 +1,13 @@
 use crate::core::headers::HeaderPairs;
 use crate::core::url::HttpUrl;
-use cookie::time::{OffsetDateTime, SignedDuration};
-use cookie::Cookie as RawCookie;
 use hyper::header::HeaderValue;
 use rfc_6265::date::parse_cookie_date;
 use rfc_6265::domain::{domain_matches, to_ascii};
+use rfc_6265::grammar::{has_host_prefix, has_secure_prefix};
 use rfc_6265::path::{default_path, path_matches};
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use time::{Duration, OffsetDateTime};
 
 const MAX_COOKIE_PAIR_OCTETS: usize = 4096;
 const MAX_COOKIE_ATTRIBUTE_VALUE_OCTETS: usize = 1024;
@@ -16,8 +16,6 @@ const MAX_COOKIES_PER_DOMAIN: usize = 50;
 const MAX_COOKIES: usize = 3000;
 const MAX_COOKIE_AGE_SECONDS: i64 = 400 * 24 * 60 * 60;
 const SET_COOKIE_HEADER_NAME: &str = "set-cookie";
-const SECURE_COOKIE_PREFIX: &str = "__Secure-";
-const HOST_COOKIE_PREFIX: &str = "__Host-";
 
 #[derive(Clone)]
 pub(crate) struct CookieJar {
@@ -57,7 +55,8 @@ impl CookieJar {
 
         for (name, value) in headers {
             if name.eq_ignore_ascii_case(SET_COOKIE_HEADER_NAME)
-                && value.len() <= MAX_SET_COOKIE_OCTETS
+                && response_header_octet_len(value)
+                    .is_some_and(|octets| octets <= MAX_SET_COOKIE_OCTETS)
             {
                 store.store(value, &host, url.path(), secure, now);
             }
@@ -70,7 +69,7 @@ impl CookieJar {
 }
 
 // RFC 10025 includes host_only and last_access in storage semantics. Keep one
-// storage owner while delegating opaque parsing and date/domain/path algorithms.
+// storage owner while reusing the crate's date, domain, path, and prefix primitives.
 #[derive(Default)]
 struct CookieStore {
     cookies: Vec<StoredCookie>,
@@ -154,9 +153,7 @@ impl CookieStore {
             if !header.is_empty() {
                 header.push_str("; ");
             }
-            header.push_str(&cookie.name);
-            header.push('=');
-            header.push_str(&cookie.value);
+            header.push_str(&cookie.wire_pair);
         }
         Some(header)
     }
@@ -215,7 +212,7 @@ impl CookieStore {
 
 struct StoredCookie {
     name: String,
-    value: String,
+    wire_pair: String,
     domain: String,
     path: String,
     host_only: bool,
@@ -236,17 +233,19 @@ impl StoredCookie {
         if contains_disallowed_control(value) {
             return None;
         }
-        let parsed = RawCookie::parse(value.to_owned()).ok()?;
-        let name = parsed.name();
-        let cookie_value = parsed.value();
-        if !is_safe_cookie_pair(name, cookie_value) {
-            return None;
-        }
+        let (name, cookie_value) = parse_cookie_pair(value)?;
+        let wire_pair = serialize_cookie_pair(name, cookie_value)?;
 
         let attributes = CookieAttributes::parse(value, now);
-        let (domain, host_only) = match attributes.domain {
+        let domain_attribute = attributes
+            .domain
+            .map(|domain| domain.strip_prefix('.').unwrap_or(domain));
+        let (domain, host_only) = match domain_attribute {
             Some(domain) if !domain.is_empty() => {
-                let domain = canonical_cookie_domain(domain.strip_prefix('.').unwrap_or(domain))?;
+                if !domain.is_ascii() {
+                    return None;
+                }
+                let domain = canonical_cookie_domain(domain)?;
                 if !domain_matches(origin_host, &domain) {
                     return None;
                 }
@@ -254,7 +253,7 @@ impl StoredCookie {
             }
             _ => (origin_host.to_owned(), true),
         };
-        let explicit_root_path = attributes.path == Some("/");
+        let path_attribute_present = attributes.path.is_some();
         let path = attributes
             .path
             .filter(|path| path.starts_with('/'))
@@ -264,18 +263,21 @@ impl StoredCookie {
         if secure && !origin_secure {
             return None;
         }
-        if has_ascii_case_insensitive_prefix(name, SECURE_COOKIE_PREFIX) && !secure {
+        if has_secure_prefix(name) && !secure {
             return None;
         }
-        if has_ascii_case_insensitive_prefix(name, HOST_COOKIE_PREFIX)
-            && (!secure || !host_only || !explicit_root_path)
+        if has_host_prefix(name)
+            && (!secure || !host_only || !path_attribute_present || path != "/")
         {
+            return None;
+        }
+        if name.is_empty() && (has_secure_prefix(cookie_value) || has_host_prefix(cookie_value)) {
             return None;
         }
 
         Some(Self {
             name: name.to_owned(),
-            value: cookie_value.to_owned(),
+            wire_pair,
             domain,
             path,
             host_only,
@@ -324,7 +326,9 @@ impl<'a> CookieAttributes<'a> {
                 raw_attribute.split_once('=').unwrap_or((raw_attribute, ""));
             let name = trim_cookie_whitespace(name);
             let attribute_value = trim_cookie_whitespace(attribute_value);
-            if attribute_value.len() > MAX_COOKIE_ATTRIBUTE_VALUE_OCTETS {
+            if response_header_octet_len(attribute_value)
+                .is_none_or(|octets| octets > MAX_COOKIE_ATTRIBUTE_VALUE_OCTETS)
+            {
                 continue;
             }
 
@@ -366,11 +370,11 @@ fn parse_max_age(value: &str, now: OffsetDateTime) -> Option<OffsetDateTime> {
             .saturating_add(i64::from(byte - b'0'))
             .min(MAX_COOKIE_AGE_SECONDS)
     });
-    Some(now.saturating_add(SignedDuration::seconds(seconds)))
+    Some(now.saturating_add(Duration::seconds(seconds)))
 }
 
 fn clamp_cookie_expiry(expires: OffsetDateTime, now: OffsetDateTime) -> OffsetDateTime {
-    expires.min(now.saturating_add(SignedDuration::seconds(MAX_COOKIE_AGE_SECONDS)))
+    expires.min(now.saturating_add(Duration::seconds(MAX_COOKIE_AGE_SECONDS)))
 }
 
 fn trim_cookie_whitespace(value: &str) -> &str {
@@ -383,18 +387,41 @@ fn contains_disallowed_control(value: &str) -> bool {
         .any(|byte| matches!(byte, 0x00..=0x08 | 0x0a..=0x1f | 0x7f))
 }
 
-fn is_safe_cookie_pair(name: &str, value: &str) -> bool {
-    name.len() + value.len() <= MAX_COOKIE_PAIR_OCTETS
-        && name.is_ascii()
-        && value.is_ascii()
-        && HeaderValue::from_str(&format!("{name}={value}")).is_ok()
+// Response headers map each wire byte to one Latin-1 scalar. Counting UTF-8
+// storage bytes would make obs-text consume two octets and change RFC limits.
+fn response_header_octet_len(value: &str) -> Option<usize> {
+    let mut octets = 0;
+    for character in value.chars() {
+        if character > '\u{ff}' {
+            return None;
+        }
+        octets += 1;
+    }
+    Some(octets)
 }
 
-fn has_ascii_case_insensitive_prefix(value: &str, prefix: &str) -> bool {
-    value
-        .as_bytes()
-        .get(..prefix.len())
-        .is_some_and(|candidate| candidate.eq_ignore_ascii_case(prefix.as_bytes()))
+fn parse_cookie_pair(value: &str) -> Option<(&str, &str)> {
+    let pair = value
+        .split_once(';')
+        .map_or(value, |(pair, _attributes)| pair);
+    let (name, cookie_value) = pair.split_once('=').unwrap_or(("", pair));
+    let name = trim_cookie_whitespace(name);
+    let cookie_value = trim_cookie_whitespace(cookie_value);
+    (!name.is_empty() || !cookie_value.is_empty()).then_some((name, cookie_value))
+}
+
+fn serialize_cookie_pair(name: &str, value: &str) -> Option<String> {
+    if name.len() + value.len() > MAX_COOKIE_PAIR_OCTETS || !name.is_ascii() || !value.is_ascii() {
+        return None;
+    }
+    let mut pair = String::with_capacity(name.len() + value.len() + usize::from(!name.is_empty()));
+    if !name.is_empty() {
+        pair.push_str(name);
+        pair.push('=');
+    }
+    pair.push_str(value);
+    HeaderValue::from_str(&pair).ok()?;
+    Some(pair)
 }
 
 fn canonical_cookie_domain(value: &str) -> Option<String> {
@@ -419,6 +446,8 @@ fn is_trustworthy_origin(url: &HttpUrl) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::headers::response_headers;
+    use hyper::header::{HeaderMap, SET_COOKIE};
 
     const NOW_SECONDS: i64 = 1_752_000_000;
 
@@ -432,6 +461,15 @@ mod tests {
 
     fn set_cookie(value: impl Into<String>) -> HeaderPairs {
         vec![(SET_COOKIE_HEADER_NAME.to_owned(), value.into())]
+    }
+
+    fn raw_set_cookie(value: &[u8]) -> HeaderPairs {
+        let mut headers = HeaderMap::new();
+        headers.append(
+            SET_COOKIE,
+            HeaderValue::from_bytes(value).expect("valid raw Set-Cookie value"),
+        );
+        response_headers(&headers)
     }
 
     #[test]
@@ -490,6 +528,117 @@ mod tests {
         assert_eq!(
             jar.request_header_at(&origin, now()),
             Some("opaque=%41%2F%25; quoted=\"a%2Fb\"".to_owned()),
+        );
+    }
+
+    #[test]
+    fn serializes_nameless_cookies_without_an_equals_sign() {
+        let jar = CookieJar::new();
+        let origin = url("https://example.test/");
+
+        jar.store_response_at(&origin, &set_cookie("nameless-token; Path=/"), now());
+        jar.store_response_at(&origin, &set_cookie("named=value; Path=/"), now());
+        assert_eq!(
+            jar.request_header_at(&origin, now()),
+            Some("nameless-token; named=value".to_owned()),
+        );
+
+        jar.store_response_at(&origin, &set_cookie("=replacement-token; Path=/"), now());
+        assert_eq!(
+            jar.request_header_at(&origin, now()),
+            Some("replacement-token; named=value".to_owned()),
+        );
+    }
+
+    #[test]
+    fn rejects_reserved_prefixes_in_nameless_cookie_values() {
+        let jar = CookieJar::new();
+        let origin = url("https://example.test/");
+
+        jar.store_response_at(&origin, &set_cookie("safe-token; Path=/"), now());
+        jar.store_response_at(
+            &origin,
+            &set_cookie("__Secure-hidden; Secure; Path=/"),
+            now(),
+        );
+        jar.store_response_at(
+            &origin,
+            &set_cookie("=__Host-hidden; Secure; Path=/"),
+            now(),
+        );
+        assert_eq!(
+            jar.request_header_at(&origin, now()),
+            Some("safe-token".to_owned()),
+        );
+    }
+
+    #[test]
+    fn rejects_non_ascii_domain_attributes_but_accepts_ascii_punycode() {
+        let jar = CookieJar::new();
+        let origin = url("https://xn--mnchen-3ya.de/");
+
+        jar.store_response_at(
+            &origin,
+            &set_cookie("unicode=one; Domain=münchen.de; Path=/"),
+            now(),
+        );
+        assert_eq!(jar.request_header_at(&origin, now()), None);
+
+        jar.store_response_at(
+            &origin,
+            &set_cookie("punycode=two; Domain=xn--mnchen-3ya.de; Path=/"),
+            now(),
+        );
+        assert_eq!(
+            jar.request_header_at(&origin, now()),
+            Some("punycode=two".to_owned()),
+        );
+    }
+
+    #[test]
+    fn counts_attribute_limits_in_original_response_header_octets() {
+        let jar = CookieJar::new();
+        let secure_origin = url("https://example.test/");
+        let plain_origin = url("http://example.test/");
+
+        let mut exact_secure = b"exact=value; Secure=".to_vec();
+        exact_secure.extend(std::iter::repeat_n(0x80, MAX_COOKIE_ATTRIBUTE_VALUE_OCTETS));
+        jar.store_response_at(&secure_origin, &raw_set_cookie(&exact_secure), now());
+
+        let mut oversized_secure = b"oversized=value; Secure=".to_vec();
+        oversized_secure.extend(std::iter::repeat_n(
+            0x80,
+            MAX_COOKIE_ATTRIBUTE_VALUE_OCTETS + 1,
+        ));
+        jar.store_response_at(&secure_origin, &raw_set_cookie(&oversized_secure), now());
+
+        let mut non_ascii_domain = b"domain=value; Domain=".to_vec();
+        non_ascii_domain.extend(std::iter::repeat_n(0x80, 600));
+        jar.store_response_at(&secure_origin, &raw_set_cookie(&non_ascii_domain), now());
+
+        assert_eq!(
+            jar.request_header_at(&secure_origin, now()),
+            Some("exact=value; oversized=value".to_owned()),
+        );
+        assert_eq!(
+            jar.request_header_at(&plain_origin, now()),
+            Some("oversized=value".to_owned()),
+        );
+    }
+
+    #[test]
+    fn empty_domain_after_leading_dot_uses_host_only_scope() {
+        let jar = CookieJar::new();
+        let origin = url("https://example.test/");
+        jar.store_response_at(&origin, &set_cookie("dot=one; Domain=.; Path=/"), now());
+
+        assert_eq!(
+            jar.request_header_at(&origin, now()),
+            Some("dot=one".to_owned()),
+        );
+        assert_eq!(
+            jar.request_header_at(&url("https://sub.example.test/"), now()),
+            None,
         );
     }
 
@@ -562,7 +711,7 @@ mod tests {
             Some("short=1".to_owned()),
         );
         assert_eq!(
-            jar.request_header_at(&origin, now() + SignedDuration::seconds(2)),
+            jar.request_header_at(&origin, now() + Duration::seconds(2)),
             None,
         );
 
@@ -585,7 +734,7 @@ mod tests {
             Some("dated=one".to_owned()),
         );
         assert_eq!(
-            jar.request_header_at(&origin, now() + SignedDuration::seconds(2)),
+            jar.request_header_at(&origin, now() + Duration::seconds(2)),
             None,
         );
 
@@ -605,25 +754,22 @@ mod tests {
         ];
         jar.store_response_at(&origin, &far_future, now());
         assert_eq!(
-            jar.request_header_at(&origin, now() + SignedDuration::seconds(9)),
+            jar.request_header_at(&origin, now() + Duration::seconds(9)),
             Some("max=one; expires=two; precedence=three".to_owned()),
         );
         assert_eq!(
-            jar.request_header_at(&origin, now() + SignedDuration::seconds(11)),
+            jar.request_header_at(&origin, now() + Duration::seconds(11)),
             Some("max=one; expires=two".to_owned()),
         );
         assert_eq!(
             jar.request_header_at(
                 &origin,
-                now() + SignedDuration::seconds(MAX_COOKIE_AGE_SECONDS - 1),
+                now() + Duration::seconds(MAX_COOKIE_AGE_SECONDS - 1),
             ),
             Some("max=one; expires=two".to_owned()),
         );
         assert_eq!(
-            jar.request_header_at(
-                &origin,
-                now() + SignedDuration::seconds(MAX_COOKIE_AGE_SECONDS),
-            ),
+            jar.request_header_at(&origin, now() + Duration::seconds(MAX_COOKIE_AGE_SECONDS)),
             None,
         );
     }
@@ -639,7 +785,7 @@ mod tests {
             now(),
         );
         assert_eq!(
-            jar.request_header_at(&origin, now() + SignedDuration::seconds(2)),
+            jar.request_header_at(&origin, now() + Duration::seconds(2)),
             None,
         );
 
@@ -664,7 +810,7 @@ mod tests {
         jar.store_response_at(
             &origin,
             &[
-                ("set-cookie".to_owned(), "missing-pair".to_owned()),
+                ("set-cookie".to_owned(), "=; Path=/".to_owned()),
                 ("set-cookie".to_owned(), oversized),
                 (
                     "set-cookie".to_owned(),
@@ -748,6 +894,46 @@ mod tests {
         assert_eq!(
             jar.request_header_at(&origin, now()),
             Some("__Host-valid=three".to_owned()),
+        );
+    }
+
+    #[test]
+    fn host_prefix_uses_present_normalized_path_attribute() {
+        let jar = CookieJar::new();
+        let root_default = url("https://example.test/set");
+        jar.store_response_at(
+            &root_default,
+            &[
+                (
+                    "set-cookie".to_owned(),
+                    "__Host-relative=one; Secure; Path=relative".to_owned(),
+                ),
+                (
+                    "set-cookie".to_owned(),
+                    "__Host-empty=two; Secure; Path=".to_owned(),
+                ),
+                (
+                    "set-cookie".to_owned(),
+                    "__Host-bare=three; Secure; Path".to_owned(),
+                ),
+            ],
+            now(),
+        );
+
+        let nested_default = url("https://example.test/private/set");
+        jar.store_response_at(
+            &nested_default,
+            &set_cookie("__Host-nested=four; Secure; Path=relative"),
+            now(),
+        );
+
+        assert_eq!(
+            jar.request_header_at(&root_default, now()),
+            Some("__Host-relative=one; __Host-empty=two; __Host-bare=three".to_owned()),
+        );
+        assert_eq!(
+            jar.request_header_at(&url("https://example.test/private/resource"), now()),
+            Some("__Host-relative=one; __Host-empty=two; __Host-bare=three".to_owned()),
         );
     }
 
