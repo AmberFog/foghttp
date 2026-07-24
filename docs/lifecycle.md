@@ -268,6 +268,12 @@ Calling `aclose()` closes the async client for everyone using it, cancels
 in-flight async requests, aborts active async streamed response bodies, and then
 shuts down the Rust transport.
 
+Cancellation is cooperative at Rust future boundaries. A synchronous auth hook
+that is already executing cannot be preempted by task cancellation or
+`aclose()`; it may continue until the callback returns. The transport request is
+still aborted and holds no request slot or socket because auth runs before
+acquisition.
+
 ```python
 import asyncio
 
@@ -527,9 +533,9 @@ if diagnostics["pending_requests"]:
 ## Current Boundaries
 
 The lifecycle contract currently applies to buffered requests/responses,
-sync/async streamed response bodies, and streaming request bodies passed through
-`content=`. Cookies and advanced auth helpers are planned later and may extend
-the lifecycle model.
+sync/async streamed response bodies, streaming request bodies passed through
+`content=`, and synchronous callable auth hooks. Cookies and provider-specific
+authentication flows may extend the lifecycle model later.
 
 FogHTTP exposes socket lifecycle telemetry for the current HTTP/1 path, but
 HTTP/2 stream-level connection limits are planned with HTTP/2 support rather

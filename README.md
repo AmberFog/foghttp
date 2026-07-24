@@ -141,12 +141,15 @@ async with foghttp.AsyncClient() as client:
   safety
 - shared Tokio runtime by default, with opt-in dedicated runtime worker tuning
 - grouped HTTP status constants and reusable HTTP method constants
+- client-level Basic and synchronous callable authentication with retry refresh
+  and cross-origin credential stripping
 
 ## Documentation
 
 - [Documentation](https://github.com/AmberFog/foghttp/blob/main/docs/index.md)
 - [Quickstart](https://github.com/AmberFog/foghttp/blob/main/docs/quickstart.md)
 - [Request builder compatibility](https://github.com/AmberFog/foghttp/blob/main/docs/request-builder.md)
+- [Authentication](https://github.com/AmberFog/foghttp/blob/main/docs/auth.md)
 - [Client lifecycle](https://github.com/AmberFog/foghttp/blob/main/docs/lifecycle.md)
 - [Packaging and Python compatibility](https://github.com/AmberFog/foghttp/blob/main/docs/packaging.md)
 - [Timeout model](https://github.com/AmberFog/foghttp/blob/main/docs/timeouts.md)
@@ -174,10 +177,11 @@ cleanup rules. HTTP proxy routing and HTTPS proxy `CONNECT` tunnelling are
 available through `proxy=` and `trust_env=True` when the proxy endpoint itself
 uses `http://`. Proxy-routed requests fail closed when `SSRFPolicy` is enabled
 because the client cannot prove which target address a remote proxy resolves.
-Cookies, auth helpers, HTTP/2, automatic `Accept-Encoding` negotiation,
-streaming decompression, and per-request connect timeout reconfiguration are
-planned for later versions. Physical connection caps currently apply to the
-HTTP/1.1 connector path; HTTP/2 will require separate stream-level limits.
+Cookies, provider-specific OAuth flows, HTTP/2, automatic `Accept-Encoding`
+negotiation, streaming decompression, and per-request connect timeout
+reconfiguration are planned for later versions. Physical connection caps
+currently apply to the HTTP/1.1 connector path; HTTP/2 will require separate
+stream-level limits.
 Response body read timeout is available for buffered and streaming response
 bodies; request body write timeout is available for buffered and streaming
 request bodies. Socket lifecycle telemetry is available for the current HTTP/1

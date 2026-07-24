@@ -10,6 +10,7 @@ use crate::messages::{
 use hyper::StatusCode;
 use pyo3::Python;
 use std::sync::{Arc, Once};
+use tokio::runtime::Builder;
 
 const INITIAL_URL: &str = "http://example.com/start";
 const READ_TIMEOUT: f64 = 10.0;
@@ -109,8 +110,8 @@ fn explicit_proxy_tunnels_https_redirect_via_connect() {
 
     assert_eq!(state.url.as_str(), "https://example.com/secure");
     assert_eq!(
-        state
-            .transport_route(1)
+        test_runtime()
+            .block_on(state.transport_route(1))
             .expect("explicit proxy routes https targets through the proxy"),
         TransportRoute::Proxy
     );
@@ -121,6 +122,10 @@ fn explicit_proxy_tunnels_https_redirect_via_connect() {
             .proxy_authorization,
         None,
     );
+}
+
+fn test_runtime() -> tokio::runtime::Runtime {
+    Builder::new_current_thread().build().unwrap()
 }
 
 #[test]
@@ -151,6 +156,8 @@ fn transport_request(body: Option<Vec<u8>>, body_replayable: bool) -> TransportR
         method: POST.to_owned(),
         url: INITIAL_URL.to_owned(),
         headers: HeaderPairs::new(),
+        auth_override_headers: None,
+        auth_removed_headers: Vec::new(),
         body,
         body_stream: None,
         body_replayable,
@@ -166,6 +173,7 @@ fn transport_request(body: Option<Vec<u8>>, body_replayable: bool) -> TransportR
         max_redirects: 20,
         retry_policy: None,
         ssrf_policy: None,
+        auth: None,
         policy_hooks: None,
         extensions: None,
     }

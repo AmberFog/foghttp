@@ -1,14 +1,14 @@
 __all__ = ("ClientConfig",)
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from .. import telemetry, timeouts
 from ..lifecycle_debug import AsyncLifecycleDebugConfig
 from ..limits import Limits
 from ..policy import RetryPolicy, SSRFPolicy, TransportPolicyHooks
-from ..telemetry import TelemetryConfig
-from ..timeouts import Timeouts
 from ..tls import TLSConfig
+from .auth import AuthConfig, normalize_auth
 from .options import ClientOptions, validate_client_options
 from .proxy import (
     ProxyResolver,
@@ -22,13 +22,13 @@ from .runtime.mode import RuntimeMode, runtime_mode
 
 
 _DEFAULT_LIMITS = Limits()
-_DEFAULT_TIMEOUTS = Timeouts()
+_DEFAULT_TIMEOUTS = timeouts.Timeouts()
 
 
 @dataclass(frozen=True, slots=True)
 class ClientConfig:
     limits: Limits
-    timeouts: Timeouts
+    timeouts: timeouts.Timeouts
     follow_redirects: bool
     max_redirects: int
     trust_env: bool
@@ -41,9 +41,10 @@ class ClientConfig:
     policy_hooks: TransportPolicyHooks | None
     retry: RetryPolicy | None
     ssrf: SSRFPolicy | None
-    telemetry: TelemetryConfig | None
+    telemetry: telemetry.TelemetryConfig | None
     lifecycle_debug: AsyncLifecycleDebugConfig | None
     request_defaults: RequestBuildDefaults
+    auth: AuthConfig | None = field(default=None, repr=False)
 
     @classmethod
     def from_options(
@@ -80,6 +81,7 @@ class ClientConfig:
             ssrf=options.ssrf,
             telemetry=options.telemetry,
             lifecycle_debug=options.lifecycle_debug,
+            auth=normalize_auth(options.auth),
             request_defaults=(
                 DEFAULT_REQUEST_BUILD_DEFAULTS
                 if options.base_url is None and options.headers is None and options.params is None

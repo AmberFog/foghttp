@@ -26,6 +26,8 @@ pub struct RawRequestInfo {
     pub url: String,
     #[pyo3(get)]
     pub headers: HeaderPairs,
+    #[pyo3(get)]
+    pub sensitive_headers: Vec<String>,
 }
 
 impl Clone for RawRequestInfo {
@@ -34,6 +36,7 @@ impl Clone for RawRequestInfo {
             method: self.method.clone(),
             url: self.url.clone(),
             headers: self.headers.clone(),
+            sensitive_headers: self.sensitive_headers.clone(),
         }
     }
 }

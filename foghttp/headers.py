@@ -3,7 +3,7 @@ __all__ = ("HeaderPairs", "HeaderSource", "Headers")
 from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from typing import TypeAlias
 
-from ._redaction import redact_header_value
+from ._redaction import REDACTED_VALUE, redact_header_value
 
 
 HeaderPairs: TypeAlias = list[tuple[str, str]]
@@ -17,8 +17,13 @@ class Headers(MutableMapping[str, str]):
 
     def __init__(self, headers: HeaderSource = None) -> None:
         self._items: list[tuple[str, str, str]] = []
+        self._mutation_serial = 0
+        self._mutation_versions: dict[str, int] | None = None
+        self._sensitive_names: frozenset[str] = frozenset()
         if headers is None:
             return
+        if isinstance(headers, Headers):
+            self._sensitive_names = headers._sensitive_names  # noqa: SLF001
         source = headers.multi_items() if isinstance(headers, Headers) else headers
         source = source.items() if isinstance(source, Mapping) else source
         for name, value in source:
@@ -40,6 +45,7 @@ class Headers(MutableMapping[str, str]):
         self._items = [item for item in self._items if item[1] != lower_name]
         if len(self._items) == original_len:
             raise KeyError(name)
+        self._record_mutation(lower_name)
 
     def __iter__(self) -> Iterator[str]:
         seen: set[str] = set()
@@ -56,12 +62,15 @@ class Headers(MutableMapping[str, str]):
         return f"{self.__class__.__name__}({self._redacted_items()!r})"
 
     def add(self, name: str, value: str) -> None:
-        self._items.append((name, normalize_header_name(name), value))
+        lower_name = normalize_header_name(name)
+        self._items.append((name, lower_name, value))
+        self._record_mutation(lower_name)
 
     def set(self, name: str, value: str) -> None:
         lower_name = normalize_header_name(name)
         self._items = [item for item in self._items if item[1] != lower_name]
         self._items.append((name, lower_name, value))
+        self._record_mutation(lower_name)
 
     def get_list(self, name: str) -> list[str]:
         lower_name = normalize_header_name(name)
@@ -71,10 +80,35 @@ class Headers(MutableMapping[str, str]):
         return [(name, value) for name, _lower_name, value in self._items]
 
     def copy(self) -> "Headers":
-        return Headers(self.multi_items())
+        return Headers(self)
+
+    def _mark_sensitive(self, names: Iterable[str]) -> None:
+        self._sensitive_names = self._sensitive_names | frozenset(normalize_header_name(name) for name in names)
+
+    def _mutation_checkpoint(self) -> int:
+        if self._mutation_versions is None:
+            self._mutation_versions = {}
+        return self._mutation_serial
+
+    def _mutations_after(self, checkpoint: int) -> frozenset[str]:
+        if self._mutation_versions is None:
+            return frozenset()
+        return frozenset(name for name, version in self._mutation_versions.items() if version > checkpoint)
+
+    def _record_mutation(self, lower_name: str) -> None:
+        if self._mutation_versions is None:
+            return
+        self._mutation_serial += 1
+        self._mutation_versions[lower_name] = self._mutation_serial
 
     def _redacted_items(self) -> HeaderPairs:
-        return [(name, redact_header_value(name, value)) for name, _lower_name, value in self._items]
+        return [
+            (
+                name,
+                REDACTED_VALUE if lower_name in self._sensitive_names else redact_header_value(name, value),
+            )
+            for name, lower_name, value in self._items
+        ]
 
 
 def normalize_header_name(name: str) -> str:

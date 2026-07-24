@@ -243,6 +243,8 @@ def _raw_request_options(
         "method": GET,
         "url": url,
         "headers": [],
+        "auth_override_headers": None,
+        "auth_removed_headers": [],
         "extensions": None,
         "body": None,
         "body_stream": BODY_STREAM,

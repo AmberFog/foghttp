@@ -67,7 +67,7 @@ body where only some parts can be safely replayed.
 
 Do not model replayability as a public boolean. Redirects and the opt-in
 [retry policy](./retries.md) use provider/factory shape to decide whether a
-body can be safely replayed; future auth refresh follows the same boundary.
+body can be safely replayed; auth refresh runs before each resulting transport attempt.
 
 ## Ownership And Cleanup
 

@@ -24,6 +24,8 @@ def raw_client_options(**overrides: object) -> dict[str, object]:
         "http_proxy_authorization": None,
         "https_proxy_url": None,
         "https_proxy_authorization": None,
+        "auth_basic_authorization": None,
+        "auth_hook": None,
         "policy_hooks": None,
         "retry_retries": None,
         "retry_backoff": 0.0,

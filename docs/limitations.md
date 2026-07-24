@@ -91,7 +91,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | HTTPS proxy `CONNECT` | Available for `https://` targets through explicit `proxy=` or `trust_env=True` when the proxy endpoint itself uses `http://`; TLS is validated against the target host |
 | TLS-to-proxy endpoints | `https://proxy.example:443` proxy endpoint URLs are rejected; TLS-to-proxy is not implemented yet |
 | Environment proxy redirects | Same-origin redirects can continue; cross-origin redirects under `trust_env=True` proxy policy fail closed until per-hop environment proxy recomputation is implemented |
-| Auth helpers | Use manual headers for simple cases |
+| Authentication | Basic credentials and synchronous callable header refresh are available through client-level `auth=`; cookie jars, async hooks, OAuth flows, and provider SDKs are not built in |
 | Disabling TLS verification | Not available by design; use `TLSConfig` with explicit CA certificates |
 | OS trust store integration | Not available; FogHTTP uses bundled WebPKI roots unless `trust_webpki_roots=False` is set |
 | HTTP/2 | Not available |
@@ -105,7 +105,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | socket lifecycle telemetry granularity | `TransportStats` and `dump_transport_state()["origins"]` expose opened, open-failed, closed, reused, aborted, idle-timeout eviction, active, and idle tracked connection counters for the current HTTP/1 path; dedicated failed-reuse and close-reason taxonomy are not exposed yet because current connector hooks do not provide a stable reason signal |
 | telemetry hook granularity | `TelemetryConfig` currently dispatches Python-level request/response lifecycle events; lower-level Rust pool acquire and connection lifecycle event delivery is planned before Prometheus/OpenTelemetry exporters |
 | transport policy hook execution | `TransportPolicyHooks` callbacks are synchronous, inline, non-reentrant, and may run on Rust transport worker threads; `after_response_body` observes only redirect bodies consumed internally, not the final response body returned to the caller |
-| retry scope | Retry is client-level and opt-in. It covers configured response statuses and pre-header `NetworkError` only; response-body errors, FogHTTP timeouts, local upload-provider failures, auth refresh, hedging, and circuit breaking are not retried. |
+| retry scope | Retry is client-level and opt-in. It covers configured response statuses and pre-header `NetworkError` only; response-body errors, FogHTTP timeouts, local upload-provider failures, auth-hook failures, hedging, and circuit breaking are not retried. Auth headers are refreshed before a retry selected for a supported transport outcome. |
 | SSRF protection scope | `SSRFPolicy` is client-level and opt-in. It validates initial and redirected destinations plus every resolved address, but it is not a replacement for network egress policy. Proxy routes fail closed because a remote proxy can resolve the target independently. |
 | diagnostic snapshot transactionality | `stats()`, `dump_transport_state()`, and `dump_pool_diagnostics()` include `schema_version` and a monotonic `snapshot_sequence`, but the `dump_*` APIs remain diagnostic snapshots rather than lock-protected SLA transactions; use `stats()` for alert-oriented low-cardinality metrics |
 
@@ -119,7 +119,7 @@ Use FogHTTP today when:
   default
 - requests are JSON-heavy, use small form-urlencoded bodies, multipart file
   uploads, or explicit streaming upload bodies
-- redirects are simple and do not require cookie jar or auth helper integration
+- redirects are compatible with FogHTTP auth scope and do not require a cookie jar
 - sync and async clients with explicit lifecycle are enough
 - async request cancellation and sync/async stream cleanup behavior are useful
 - global/per-origin request-slot backpressure and opt-in global/per-host

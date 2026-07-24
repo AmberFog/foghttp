@@ -21,6 +21,7 @@ from ._client.telemetry import (
 )
 from ._client.transport import RawSyncTransport, SyncTransport
 from ._upload_body import SyncRequestContent
+from .auth import Auth
 from .headers import HeaderSource
 from .limits import Limits
 from .methods import DELETE, GET, HEAD, PATCH, POST, PUT, QUERY
@@ -51,6 +52,7 @@ class Client(ClientCore):
         *,
         base_url: str | URL | None = None,
         headers: HeaderSource = None,
+        auth: Auth = None,
         params: QueryParams = None,
         limits: Limits | None = None,
         timeouts: Timeouts | None = None,
@@ -73,6 +75,7 @@ class Client(ClientCore):
                 ClientOptions(
                     base_url=base_url,
                     headers=headers,
+                    auth=auth,
                     params=params,
                     limits=limits,
                     timeouts=timeouts,

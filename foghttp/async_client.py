@@ -28,6 +28,7 @@ from ._client.telemetry import (
     start_request_telemetry,
 )
 from ._upload_body import AsyncRequestContent
+from .auth import Auth
 from .errors import LifecycleError
 from .headers import HeaderSource
 from .lifecycle_debug import (
@@ -60,6 +61,7 @@ class AsyncClient(ClientCore):
         *,
         base_url: str | URL | None = None,
         headers: HeaderSource = None,
+        auth: Auth = None,
         params: QueryParams = None,
         limits: Limits | None = None,
         timeouts: Timeouts | None = None,
@@ -83,6 +85,7 @@ class AsyncClient(ClientCore):
                 ClientOptions(
                     base_url=base_url,
                     headers=headers,
+                    auth=auth,
                     params=params,
                     limits=limits,
                     timeouts=timeouts,

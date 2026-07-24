@@ -66,6 +66,8 @@ FogHTTP is designed around a few engineering priorities:
   gating, bounded backoff, typed decisions, and immutable attempt traces
 - opt-in Rust-owned SSRF destination policy with per-hop allowlists,
   post-resolution IP checks, and DNS rebinding mitigation
+- client-level Basic authentication and synchronous request-aware auth hooks
+  with retry refresh and cross-origin credential stripping
 - versioned telemetry snapshots that separate alert-oriented stats from
   diagnostic dump APIs
 - opt-in async lifecycle debug snapshots for tests, staging, and incident
@@ -78,6 +80,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 
 - [Quickstart](./quickstart.md)
 - [Request builder compatibility](./request-builder.md)
+- [Authentication](./auth.md)
 - [Client lifecycle](./lifecycle.md)
 - [Packaging and Python compatibility](./packaging.md)
 - [Timeout model](./timeouts.md)
@@ -105,6 +108,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - bounded sync and async response streaming
 - prepared requests that can be inspected before sending
 - opt-in safe retries with request-scoped attempt diagnostics
+- client-level Basic or callable authentication with explicit redirect scope
 - direct service clients that need an opt-in SSRF guard for partially trusted
   destination URLs
 - simple benchmarks against other buffered HTTP clients
@@ -115,6 +119,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, and RFC 10008 `QUERY`
 - `base_url` for reusable API clients and relative request paths
 - default client headers and query params for reusable API clients
+- client-level `auth=` for Basic credentials or synchronous header refresh
 - query params with repeated keys, JSON, form-urlencoded data, buffered
   bytes/text bodies, file-like bodies, streaming bytes-like iterables, and
   multipart `files=` uploads
@@ -162,7 +167,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 ## Not Yet
 
 FogHTTP does not yet implement cookies, HTTP/2, automatic `Accept-Encoding`
-negotiation, streaming decompression, or advanced authentication helpers.
+negotiation, streaming decompression, or provider-specific authentication flows.
 `trust_env` supports HTTP proxy routing, HTTPS
 `CONNECT` tunnelling through `http://` proxy endpoints, and `SSL_CERT_FILE`.
 Disabling TLS verification is intentionally not supported. See

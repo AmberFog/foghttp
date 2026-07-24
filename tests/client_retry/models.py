@@ -1,6 +1,6 @@
 __all__ = ("RetryRequest", "RetryServerSnapshot")
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True, slots=True)
@@ -9,6 +9,7 @@ class RetryRequest:
     method: str
     body: bytes
     connection_id: int
+    authorization: str | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)

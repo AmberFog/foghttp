@@ -13,8 +13,8 @@ class RequestMergeContract:
     """Apply the client defaults merge contract for prepared requests.
 
     URL order is base URL resolution, request URL query, client params, then
-    per-request params. Header order is client defaults, reserved future
-    auth-managed headers, then per-request headers.
+    per-request params. Header order is client defaults, auth-managed headers,
+    then per-request and body-generated headers.
     """
 
     defaults: RequestBuildDefaults = DEFAULT_REQUEST_BUILD_DEFAULTS
@@ -26,7 +26,7 @@ class RequestMergeContract:
         return str(request_url.with_params(params))
 
     def headers(self, headers: HeaderSource) -> Headers:
-        request_headers = Headers(headers)
+        request_headers = headers if isinstance(headers, Headers) else Headers(headers)
         merged = Headers(
             self._default_headers_without_overrides(
                 override_names=self._header_names(request_headers),

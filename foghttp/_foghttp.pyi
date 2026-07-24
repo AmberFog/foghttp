@@ -21,6 +21,8 @@ class RawRequestInfo:
     def url(self) -> str: ...
     @property
     def headers(self) -> HeaderPairs: ...
+    @property
+    def sensitive_headers(self) -> Sequence[str]: ...
 
 class RawRetryAttempt:
     @property
@@ -409,6 +411,8 @@ class RawClient:
         http_proxy_authorization: str | None,
         https_proxy_url: str | None,
         https_proxy_authorization: str | None,
+        auth_basic_authorization: str | None,
+        auth_hook: object | None,
         policy_hooks: object | None,
         retry_retries: int | None,
         retry_backoff: float,
@@ -426,6 +430,8 @@ class RawClient:
         method: str,
         url: str,
         headers: HeaderPairs,
+        auth_override_headers: Sequence[str] | None,
+        auth_removed_headers: Sequence[str],
         extensions: object | None = None,
         body: bytes | None,
         body_stream: RawUploadBody | None,
@@ -443,6 +449,8 @@ class RawClient:
         method: str,
         url: str,
         headers: HeaderPairs,
+        auth_override_headers: Sequence[str] | None,
+        auth_removed_headers: Sequence[str],
         extensions: object | None = None,
         body: bytes | None,
         body_stream: RawUploadBody | None,
@@ -460,6 +468,8 @@ class RawClient:
         method: str,
         url: str,
         headers: HeaderPairs,
+        auth_override_headers: Sequence[str] | None,
+        auth_removed_headers: Sequence[str],
         extensions: object | None = None,
         body: bytes | None,
         body_stream: RawUploadBody | None,
@@ -477,6 +487,8 @@ class RawClient:
         method: str,
         url: str,
         headers: HeaderPairs,
+        auth_override_headers: Sequence[str] | None,
+        auth_removed_headers: Sequence[str],
         extensions: object | None = None,
         body: bytes | None,
         body_stream: RawUploadBody | None,
