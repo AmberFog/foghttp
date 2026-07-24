@@ -24,7 +24,7 @@ the current FogHTTP API. The same flow is available as a runnable example in
 | `content` | Supported | Accepts buffered `bytes` or `str`, binary file-like objects, sync bytes-like iterables, zero-arg byte-stream factories, and async bytes-like iterables/factories on `AsyncClient`. Strings are encoded as UTF-8. No semantic content type is added. |
 | `data` | Supported | Mappings and repeated pairs are encoded as `application/x-www-form-urlencoded`. Raw `bytes` or `str` are sent as buffered body content without adding a semantic content type. |
 | `files` | Supported | Builds `multipart/form-data` uploads. Accepts bytes-like file parts, binary file-like objects, sync byte streams, byte-stream factories, and async byte streams/factories on `AsyncClient`. Can be combined with mapping or repeated-pair `data=` form fields. |
-| `auth` | Planned | Use explicit `Authorization` headers for simple static tokens. |
+| `auth` | Supported | Client-level Basic credentials or a synchronous callable. See [Authentication](./auth.md). |
 | cookies/session jar | Planned | `cookies=True` is rejected today. |
 | proxy / `trust_env` | Supported | HTTP proxy routing and HTTPS `CONNECT` tunnelling through client-level `proxy=` or `trust_env=True` when the proxy endpoint uses `http://`. |
 | `timeout` | Partly supported | Per-request `pool`, `read`, `write`, and `total` timeouts are supported. Per-request `connect` does not reconfigure the connector. |
@@ -79,15 +79,17 @@ FogHTTP applies request values in this order:
 | Area | Order |
 |---|---|
 | URL | `base_url` resolution, request URL query, client params, per-request params |
-| Headers | client headers, future auth-managed headers, per-request headers |
+| Headers | client headers, auth-managed headers, per-request and body-generated headers |
 | Body | one body source: `json=`, `data=`, `content=`, or `files=`; `files=` may include form fields from mapping or repeated-pair `data=` |
 
 Repeated query keys are preserved. Per-request params are appended after client
 defaults instead of replacing them, which keeps API-version, tenant, locale, and
 feature flag defaults visible in the final URL.
 
-Per-request headers override client defaults case-insensitively. Repeated
-headers from defaults are preserved when the request does not override that
+Auth-managed headers override client defaults. Per-request and body-generated
+headers then override both layers case-insensitively. A later mutation of a
+prepared request is also request-owned and remains authoritative. Repeated
+headers from defaults are preserved when neither later layer overrides that
 header name.
 
 ## Request Extensions
@@ -332,8 +334,8 @@ upload/download workflows with observable request limits.
 
 Current intentional gaps:
 
-- no cookie jar
-- no `auth=` helper
+- no cookie jar or provider-specific OAuth helper
+- no asynchronous auth callable
 - no streaming decompression helpers yet
 - no disabling TLS verification
 

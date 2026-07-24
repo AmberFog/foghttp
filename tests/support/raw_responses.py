@@ -57,6 +57,7 @@ SECURITY_HEADER_NAMES = (
     "referer",
     "repr-digest",
     "transfer-encoding",
+    "x-api-key",
 )
 
 

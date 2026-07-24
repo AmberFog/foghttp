@@ -10,10 +10,10 @@ __all__ = (
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from inspect import isasyncgenfunction, iscoroutinefunction
 from typing import Literal, TypeAlias
 
 from ._redaction import redact_url
+from ._validation.callables import is_async_callable
 from .request_extensions import (
     RequestExtensions,
     empty_request_extensions,
@@ -105,12 +105,6 @@ def _validate_hook(name: str, hook: object | None) -> None:
     if not callable(hook):
         message = f"{name} transport policy hook must be callable or None"
         raise TypeError(message)
-    hook_call = type(hook).__call__
-    if (
-        iscoroutinefunction(hook)
-        or isasyncgenfunction(hook)
-        or iscoroutinefunction(hook_call)
-        or isasyncgenfunction(hook_call)
-    ):
+    if is_async_callable(hook):
         message = f"{name} transport policy hook must be synchronous"
         raise TypeError(message)

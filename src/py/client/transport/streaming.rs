@@ -89,7 +89,7 @@ async fn send_stream_request_attempts(
     loop {
         state.begin_transport_hop();
         let redirect_hop = history.len();
-        let route = state.transport_route(redirect_hop)?;
+        let route = state.transport_route(redirect_hop).await?;
         let origin = state.origin();
         let permit = acquire_request_slot(
             acquire_gate,

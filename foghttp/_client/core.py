@@ -50,9 +50,10 @@ class ClientCore:
         self._lifecycle_debug = AsyncLifecycleDebugTracker(config.lifecycle_debug)
         self._request_builder = (
             _DEFAULT_REQUEST_BUILDER
-            if config.request_defaults is DEFAULT_REQUEST_BUILD_DEFAULTS
+            if config.request_defaults is DEFAULT_REQUEST_BUILD_DEFAULTS and config.auth is None
             else RequestBuilder(
                 merge_contract=RequestMergeContract(defaults=config.request_defaults),
+                track_auth_header_provenance=config.auth is not None,
             )
         )
 

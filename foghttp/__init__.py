@@ -8,6 +8,9 @@ __all__ = (
     "AsyncLifecycleDebugRequestMode",
     "AsyncLifecycleDebugSnapshot",
     "AsyncStreamResponse",
+    "Auth",
+    "AuthHook",
+    "AuthRequest",
     "Client",
     "ClientClosedError",
     "ConnectTimeout",
@@ -66,6 +69,7 @@ __all__ = (
 )
 
 from .async_client import AsyncClient
+from .auth import Auth, AuthHook, AuthRequest
 from .client import Client
 from .errors.base import (
     FogHTTPError,

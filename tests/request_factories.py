@@ -14,10 +14,6 @@ def non_replayable_request(
     headers: HeaderSource = None,
     extensions: RequestExtensionsSource = None,
 ) -> Request:
-    return Request._from_body(  # noqa: SLF001
-        method,
-        url,
-        headers=headers,
-        body=RequestBody.non_replayable_body(content),
-        extensions=extensions,
-    )
+    request = Request(method, url, headers=headers, extensions=extensions)
+    request._body = RequestBody.non_replayable_body(content)  # noqa: SLF001
+    return request

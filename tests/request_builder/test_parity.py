@@ -95,6 +95,11 @@ async def test_sync_and_async_build_request_normalize_mixed_case_method(faker: F
     assert async_request.method == GET
 
 
+def test_build_request_validates_url_before_encoding_body() -> None:
+    with foghttp.Client() as client, pytest.raises(ValueError, match="relative URL without a base"):
+        client.build_request(POST, "not a url", json=object())
+
+
 def _fail_on_transport_creation(monkeypatch: pytest.MonkeyPatch) -> None:
     def create_raw_client_probe(*_args: object, **_kwargs: object) -> object:
         msg = "build_request() must not create a RawClient"

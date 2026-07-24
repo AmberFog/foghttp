@@ -29,6 +29,8 @@ class RawRequestOptions:
     proxy_policy: ProxyTransportPolicy
     timeouts: Timeouts
     extensions: RequestExtensions | None = None
+    auth_override_headers: Sequence[str] | None = None
+    auth_removed_headers: Sequence[str] = ()
 
 
 def send_raw_request(
@@ -42,6 +44,8 @@ def send_raw_request(
             method=request.method.upper(),
             url=request.url,
             headers=request.headers,
+            auth_override_headers=request.auth_override_headers,
+            auth_removed_headers=request.auth_removed_headers,
             extensions=request.extensions,
             body=body.buffered_body,
             body_stream=body.raw_body,
@@ -70,6 +74,8 @@ def send_raw_stream_request(
             method=request.method.upper(),
             url=request.url,
             headers=request.headers,
+            auth_override_headers=request.auth_override_headers,
+            auth_removed_headers=request.auth_removed_headers,
             extensions=request.extensions,
             body=body.buffered_body,
             body_stream=body.raw_body,
@@ -98,6 +104,8 @@ async def send_raw_request_async(
             method=request.method.upper(),
             url=request.url,
             headers=request.headers,
+            auth_override_headers=request.auth_override_headers,
+            auth_removed_headers=request.auth_removed_headers,
             extensions=request.extensions,
             body=body.buffered_body,
             body_stream=body.raw_body,
@@ -126,6 +134,8 @@ async def send_raw_stream_request_async(
             method=request.method.upper(),
             url=request.url,
             headers=request.headers,
+            auth_override_headers=request.auth_override_headers,
+            auth_removed_headers=request.auth_removed_headers,
             extensions=request.extensions,
             body=body.buffered_body,
             body_stream=body.raw_body,

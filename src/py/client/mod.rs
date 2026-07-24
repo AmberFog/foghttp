@@ -1,5 +1,6 @@
 pub(crate) mod acquire;
 mod async_requests;
+mod auth;
 mod future;
 mod lifecycle;
 mod options;
@@ -25,6 +26,7 @@ use crate::py::client::async_requests::{
     spawn_async_request, spawn_async_stream_request, AsyncRequestRegistry, AsyncRequestSpawn,
     AsyncStreamRequestSpawn, RequestCompletion,
 };
+use crate::py::client::auth::PythonAuth;
 use crate::py::client::future::PythonFutureSetters;
 use crate::py::client::options::{
     validate_numeric_client_options, validate_request_timeouts, NumericClientOptions,
@@ -60,6 +62,7 @@ pub struct RawClient {
     follow_redirects: bool,
     max_redirects: usize,
     proxy_authorization: Option<String>,
+    auth: Option<Arc<PythonAuth>>,
     policy_hooks: Option<Arc<PythonPolicyHooks>>,
     retry_policy: Option<RetryPolicy>,
     ssrf_policy: Option<Arc<SsrfPolicy>>,
@@ -92,6 +95,8 @@ impl RawClient {
         http_proxy_authorization,
         https_proxy_url,
         https_proxy_authorization,
+        auth_basic_authorization,
+        auth_hook,
         policy_hooks,
         retry_retries,
         retry_backoff,
@@ -133,6 +138,8 @@ impl RawClient {
         http_proxy_authorization: Option<String>,
         https_proxy_url: Option<String>,
         https_proxy_authorization: Option<String>,
+        auth_basic_authorization: Option<String>,
+        auth_hook: Option<Py<PyAny>>,
         policy_hooks: Option<Py<PyAny>>,
         retry_retries: Option<usize>,
         retry_backoff: f64,
@@ -156,6 +163,7 @@ impl RawClient {
             idle_timeout,
             connect_timeout,
         })?;
+        let auth = PythonAuth::from_config(py, auth_basic_authorization, auth_hook)?;
         let policy_hooks = PythonPolicyHooks::from_config(py, policy_hooks)?;
         let retry_policy = retry_retries
             .map(|retries| {
@@ -271,6 +279,7 @@ impl RawClient {
             follow_redirects,
             max_redirects,
             proxy_authorization: http_proxy_authorization,
+            auth,
             policy_hooks,
             retry_policy,
             ssrf_policy,
@@ -283,6 +292,8 @@ impl RawClient {
         method,
         url,
         headers,
+        auth_override_headers,
+        auth_removed_headers,
         extensions=None,
         body,
         body_stream,
@@ -301,6 +312,8 @@ impl RawClient {
         method: String,
         url: String,
         headers: HeaderPairs,
+        auth_override_headers: Option<Vec<String>>,
+        auth_removed_headers: Vec<String>,
         extensions: Option<Py<PyAny>>,
         body: Option<Vec<u8>>,
         body_stream: Option<Py<RawUploadBody>>,
@@ -324,10 +337,11 @@ impl RawClient {
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         let proxy_authorization = self.proxy_authorization.clone();
+        let extensions = self.retained_request_extensions(extensions);
+        let auth = self.auth.clone();
         let policy_hooks = self.policy_hooks.clone();
         let retry_policy = self.retry_policy.clone();
         let ssrf_policy = self.ssrf_policy.clone();
-        let extensions = extensions.filter(|_| policy_hooks.is_some());
         self.metrics.request_started();
 
         let result = py.detach(|| {
@@ -341,6 +355,8 @@ impl RawClient {
                         method,
                         url,
                         headers,
+                        auth_override_headers,
+                        auth_removed_headers,
                         body,
                         body_stream,
                         body_replayable,
@@ -356,6 +372,7 @@ impl RawClient {
                         max_redirects,
                         retry_policy,
                         ssrf_policy,
+                        auth,
                         policy_hooks,
                         extensions,
                     },
@@ -373,6 +390,8 @@ impl RawClient {
         method,
         url,
         headers,
+        auth_override_headers,
+        auth_removed_headers,
         extensions=None,
         body,
         body_stream,
@@ -391,6 +410,8 @@ impl RawClient {
         method: String,
         url: String,
         headers: HeaderPairs,
+        auth_override_headers: Option<Vec<String>>,
+        auth_removed_headers: Vec<String>,
         extensions: Option<Py<PyAny>>,
         body: Option<Vec<u8>>,
         body_stream: Option<Py<RawUploadBody>>,
@@ -412,10 +433,11 @@ impl RawClient {
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         let proxy_authorization = self.proxy_authorization.clone();
+        let extensions = self.retained_request_extensions(extensions);
+        let auth = self.auth.clone();
         let policy_hooks = self.policy_hooks.clone();
         let retry_policy = self.retry_policy.clone();
         let ssrf_policy = self.ssrf_policy.clone();
-        let extensions = extensions.filter(|_| policy_hooks.is_some());
         spawn_async_request(
             py,
             runtime,
@@ -430,6 +452,8 @@ impl RawClient {
                     method,
                     url,
                     headers,
+                    auth_override_headers,
+                    auth_removed_headers,
                     body,
                     body_stream,
                     body_replayable,
@@ -445,6 +469,7 @@ impl RawClient {
                     max_redirects,
                     retry_policy,
                     ssrf_policy,
+                    auth,
                     policy_hooks,
                     extensions,
                 },
@@ -457,6 +482,8 @@ impl RawClient {
         method,
         url,
         headers,
+        auth_override_headers,
+        auth_removed_headers,
         extensions=None,
         body,
         body_stream,
@@ -475,6 +502,8 @@ impl RawClient {
         method: String,
         url: String,
         headers: HeaderPairs,
+        auth_override_headers: Option<Vec<String>>,
+        auth_removed_headers: Vec<String>,
         extensions: Option<Py<PyAny>>,
         body: Option<Vec<u8>>,
         body_stream: Option<Py<RawUploadBody>>,
@@ -500,10 +529,11 @@ impl RawClient {
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         let proxy_authorization = self.proxy_authorization.clone();
+        let extensions = self.retained_request_extensions(extensions);
+        let auth = self.auth.clone();
         let policy_hooks = self.policy_hooks.clone();
         let retry_policy = self.retry_policy.clone();
         let ssrf_policy = self.ssrf_policy.clone();
-        let extensions = extensions.filter(|_| policy_hooks.is_some());
         let completion = RequestCompletion::default();
         let request_completion = completion.clone();
         let future_setters = self.future_setters.clone_ref(py);
@@ -523,6 +553,8 @@ impl RawClient {
                         method,
                         url,
                         headers,
+                        auth_override_headers,
+                        auth_removed_headers,
                         body,
                         body_stream,
                         body_replayable,
@@ -538,6 +570,7 @@ impl RawClient {
                         max_redirects,
                         retry_policy,
                         ssrf_policy,
+                        auth,
                         policy_hooks,
                         extensions,
                     },
@@ -558,6 +591,8 @@ impl RawClient {
         method,
         url,
         headers,
+        auth_override_headers,
+        auth_removed_headers,
         extensions=None,
         body,
         body_stream,
@@ -576,6 +611,8 @@ impl RawClient {
         method: String,
         url: String,
         headers: HeaderPairs,
+        auth_override_headers: Option<Vec<String>>,
+        auth_removed_headers: Vec<String>,
         extensions: Option<Py<PyAny>>,
         body: Option<Vec<u8>>,
         body_stream: Option<Py<RawUploadBody>>,
@@ -597,10 +634,11 @@ impl RawClient {
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         let proxy_authorization = self.proxy_authorization.clone();
+        let extensions = self.retained_request_extensions(extensions);
+        let auth = self.auth.clone();
         let policy_hooks = self.policy_hooks.clone();
         let retry_policy = self.retry_policy.clone();
         let ssrf_policy = self.ssrf_policy.clone();
-        let extensions = extensions.filter(|_| policy_hooks.is_some());
         spawn_async_stream_request(
             py,
             runtime,
@@ -616,6 +654,8 @@ impl RawClient {
                     method,
                     url,
                     headers,
+                    auth_override_headers,
+                    auth_removed_headers,
                     body,
                     body_stream,
                     body_replayable,
@@ -631,6 +671,7 @@ impl RawClient {
                     max_redirects,
                     retry_policy,
                     ssrf_policy,
+                    auth,
                     policy_hooks,
                     extensions,
                 },
@@ -659,6 +700,12 @@ impl RawClient {
 }
 
 impl RawClient {
+    fn retained_request_extensions(&self, extensions: Option<Py<PyAny>>) -> Option<Py<PyAny>> {
+        extensions.filter(|_| {
+            self.policy_hooks.is_some() || self.auth.as_ref().is_some_and(|auth| auth.uses_hook())
+        })
+    }
+
     fn clients_unchecked(&self) -> PyResult<&TransportClients> {
         self.clients
             .as_ref()

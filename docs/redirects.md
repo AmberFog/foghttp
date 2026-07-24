@@ -137,6 +137,7 @@ before the next request is sent.
 | Transport routing, framing, proxy, and connection | `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`, `Keep-Alive`, `Proxy-Authorization`, `Proxy-Connection`, `TE`, `Trailer`, `Upgrade`, plus fields named by `Connection` | Always removed from the previous request. The transport derives fresh routing and framing fields for the new URL and body and applies proxy credentials for the selected route. |
 | Conditional validators | `If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since`, `If-Range` | Always removed because the validator describes the previous target resource. |
 | Origin-scoped credentials and metadata | `Authorization`, `Cookie`, `Origin`, `Referer` | Preserved for same-origin redirects and removed for cross-origin redirects. |
+| Callable auth output | Every header name actually applied from `auth=` during the logical request | Refreshed on same-origin redirects. Removed on the first cross-origin redirect, after which auth remains disabled for that logical request. Caller-owned values that prevented an auth update remain governed by the normal redirect matrix. |
 | Content metadata | Every `Content-*` field, including `Content-Type`, `Content-Encoding`, `Content-Language`, `Content-Location`, `Content-Range`, `Content-Disposition`, and `Content-Digest`; also legacy `Digest`, current `Repr-Digest`, and `Last-Modified` | Preserved only while the request body is preserved. Removed when a method rewrite or cross-origin policy drops the body. |
 | Other caller headers | For example, `Accept` and application-specific fields | Preserved. |
 
@@ -162,7 +163,7 @@ tokens, form data, and other request bodies from being forwarded to a different
 origin by a redirect response.
 
 FogHTTP also blocks `https -> http` redirects. Scheme downgrade redirects are
-too easy to misuse once credentials, cookies, body replay, or future auth helpers
+too easy to misuse once credentials, cookies, body replay, or auth hooks
 are involved, so the safe default is to fail the request instead of silently
 following the downgrade.
 

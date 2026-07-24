@@ -1,7 +1,9 @@
 __all__ = ("ClientOptions", "validate_client_options")
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from .. import telemetry, timeouts
+from ..auth import Auth
 from ..headers import HeaderSource
 from ..lifecycle_debug import AsyncLifecycleDebugConfig
 from ..limits import Limits
@@ -11,8 +13,6 @@ from ..messages import (
     MAX_REDIRECTS_INVALID,
 )
 from ..policy import RetryPolicy, SSRFPolicy, TransportPolicyHooks
-from ..telemetry import TelemetryConfig
-from ..timeouts import Timeouts
 from ..tls import TLSConfig
 from ..types import HttpVersions, QueryParams
 from ..url import URL
@@ -25,7 +25,7 @@ class ClientOptions:
     headers: HeaderSource
     params: QueryParams
     limits: Limits | None
-    timeouts: Timeouts | None
+    timeouts: timeouts.Timeouts | None
     http_versions: HttpVersions
     follow_redirects: bool
     max_redirects: int
@@ -38,8 +38,9 @@ class ClientOptions:
     policy_hooks: TransportPolicyHooks | None
     retry: RetryPolicy | None
     ssrf: SSRFPolicy | None
-    telemetry: TelemetryConfig | None
+    telemetry: telemetry.TelemetryConfig | None
     lifecycle_debug: AsyncLifecycleDebugConfig | None
+    auth: Auth = field(default=None, repr=False)
 
 
 def validate_client_options(options: ClientOptions) -> None:

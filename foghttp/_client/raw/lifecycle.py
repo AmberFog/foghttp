@@ -46,6 +46,8 @@ def create_raw_client(
             http_proxy_authorization=basic_proxy_authorization(config.http_proxy),
             https_proxy_url=None if config.https_proxy is None else config.https_proxy.endpoint_url,
             https_proxy_authorization=basic_proxy_authorization(config.https_proxy),
+            auth_basic_authorization=(None if config.auth is None else config.auth.basic_authorization),
+            auth_hook=None if config.auth is None else config.auth.hook,
             policy_hooks=config.policy_hooks,
             retry_retries=retry_options.retries,
             retry_backoff=retry_options.backoff,

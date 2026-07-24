@@ -18,10 +18,12 @@ from .retry_trace_mapping import retry_trace_from_raw
 
 
 def request_info_from_raw(raw: _foghttp.RawRequestInfo, *, extensions: RequestExtensions) -> RequestInfo:
+    headers = Headers(raw.headers)
+    headers._mark_sensitive(raw.sensitive_headers)  # noqa: SLF001
     return RequestInfo(
         method=raw.method,
         url=raw.url,
-        headers=Headers(raw.headers),
+        headers=headers,
         extensions=extensions,
     )
 

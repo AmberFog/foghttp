@@ -8,9 +8,9 @@ use crate::core::client::{
 use crate::core::headers::HeaderPairs;
 use crate::core::numeric::duration_from_secs;
 use crate::core::policy::{
-    redirect_headers, PolicyMutation, PolicyPipeline, PolicyRequest, RequestBodyMutation,
-    RequestBodyPolicy, ResponseHead, ResponsePolicyAction, RetryDecision, RetryPolicy,
-    RetryStopReason, SsrfPolicy, TransportRoute,
+    redirect_headers, PolicyMutation, PolicyPipeline, PolicyRequest, RedirectHeaderPolicy,
+    RequestBodyMutation, RequestBodyPolicy, ResponseHead, ResponsePolicyAction, RetryDecision,
+    RetryPolicy, RetryStopReason, SsrfPolicy, TransportRoute,
 };
 use crate::core::request::{build_request, RequestBodyParts, RequestParts};
 use crate::core::response::BufferedBodyBudget;
@@ -18,6 +18,7 @@ use crate::core::url::HttpUrl;
 use crate::errors::FogHttpError;
 use crate::messages::REQUEST_TOTAL_TIMEOUT;
 use crate::py::client::acquire::{AcquireGate, AcquirePermit};
+use crate::py::client::auth::PythonAuth;
 use crate::py::client::policy_hooks::PythonPolicyHooks;
 use crate::py::client::timeout_diagnostics::{
     remaining_duration, timeout_error, TimeoutContext, TimeoutPhase,
@@ -32,6 +33,7 @@ use hyper::Response;
 use hyper_util::client::legacy::Error as HyperClientError;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -39,6 +41,8 @@ pub struct TransportRequest {
     pub method: String,
     pub url: String,
     pub headers: HeaderPairs,
+    pub auth_override_headers: Option<Vec<String>>,
+    pub auth_removed_headers: Vec<String>,
     pub body: Option<Vec<u8>>,
     pub body_stream: Option<Py<RawUploadBody>>,
     pub body_replayable: bool,
@@ -54,8 +58,108 @@ pub struct TransportRequest {
     pub max_redirects: usize,
     pub retry_policy: Option<RetryPolicy>,
     pub ssrf_policy: Option<Arc<SsrfPolicy>>,
+    pub auth: Option<Arc<PythonAuth>>,
     pub policy_hooks: Option<Arc<PythonPolicyHooks>>,
     pub extensions: Option<Py<PyAny>>,
+}
+
+struct RequestAuthState {
+    provider: Arc<PythonAuth>,
+    base_headers: HeaderPairs,
+    active_headers: HashSet<String>,
+    sensitive_headers: HashSet<String>,
+    caller_owned_headers: HashSet<String>,
+    caller_removed_headers: HashSet<String>,
+}
+
+impl RequestAuthState {
+    fn new(
+        provider: Arc<PythonAuth>,
+        base_headers: HeaderPairs,
+        override_headers: Option<Vec<String>>,
+        removed_headers: Vec<String>,
+    ) -> Self {
+        let caller_owned_headers = match override_headers {
+            Some(names) => normalized_header_names(names),
+            None => base_headers
+                .iter()
+                .map(|(name, _value)| name.to_ascii_lowercase())
+                .collect(),
+        };
+        Self {
+            provider,
+            base_headers,
+            active_headers: HashSet::new(),
+            sensitive_headers: HashSet::new(),
+            caller_owned_headers,
+            caller_removed_headers: normalized_header_names(removed_headers),
+        }
+    }
+
+    fn can_apply_header(&self, name: &str, base_header_names: &HashSet<String>) -> bool {
+        !(self.caller_removed_headers.contains(name)
+            || self.caller_owned_headers.contains(name) && base_header_names.contains(name))
+    }
+
+    fn apply(
+        &mut self,
+        method: &str,
+        url: &str,
+        headers: &mut HeaderPairs,
+        redirect_hop: usize,
+        extensions: Option<&Py<PyAny>>,
+    ) -> PyResult<()> {
+        if !self.active_headers.is_empty() {
+            headers.clone_from(&self.base_headers);
+            self.active_headers.clear();
+        }
+        let base_header_names = headers
+            .iter()
+            .map(|(name, _value)| name.to_ascii_lowercase())
+            .collect::<HashSet<_>>();
+        let updates =
+            self.provider
+                .header_updates(method, url, headers, redirect_hop, extensions)?;
+        let mut applied_names = HashSet::new();
+        let mut applied_updates = Vec::with_capacity(updates.len());
+        for (name, value) in updates {
+            let normalized_name = name.to_ascii_lowercase();
+            if self.can_apply_header(&normalized_name, &base_header_names) {
+                applied_names.insert(normalized_name);
+                applied_updates.push((name, value));
+            }
+        }
+        headers.retain(|(name, _value)| !applied_names.contains(&name.to_ascii_lowercase()));
+        headers.extend(applied_updates);
+        self.sensitive_headers.extend(applied_names.iter().cloned());
+        self.active_headers = applied_names;
+        Ok(())
+    }
+
+    fn on_redirect(
+        &mut self,
+        body: RequestBodyMutation,
+        header_policy: RedirectHeaderPolicy,
+    ) -> HeaderPairs {
+        let cross_origin = header_policy == RedirectHeaderPolicy::CrossOrigin;
+        self.active_headers.clear();
+        let mut headers =
+            redirect_headers(std::mem::take(&mut self.base_headers), body, header_policy);
+        if cross_origin {
+            headers.retain(|(name, _value)| {
+                !self.sensitive_headers.contains(&name.to_ascii_lowercase())
+            });
+        } else {
+            self.base_headers.clone_from(&headers);
+        }
+        headers
+    }
+
+    fn sensitive_headers(&self) -> Vec<String> {
+        let mut headers = self.sensitive_headers.iter().cloned().collect::<Vec<_>>();
+        headers.sort_unstable();
+        headers
+    }
 }
 
 pub(super) struct RequestState {
@@ -65,6 +169,7 @@ pub(super) struct RequestState {
     pub(super) body: RequestBodyState,
     pub(super) body_policy: RequestBodyPolicy,
     policy: PolicyPipeline,
+    auth: Option<RequestAuthState>,
     policy_hooks: Option<Arc<PythonPolicyHooks>>,
     extensions: Option<Py<PyAny>>,
     pub(super) proxy_authorization: Option<String>,
@@ -102,10 +207,15 @@ impl RequestState {
     }
 
     pub(super) fn request_info(&self) -> RawRequestInfo {
+        let sensitive_headers = self
+            .auth
+            .as_ref()
+            .map_or_else(Vec::new, RequestAuthState::sensitive_headers);
         RawRequestInfo {
             method: self.method.clone(),
             url: self.url.as_str().to_owned(),
             headers: self.headers.clone(),
+            sensitive_headers,
         }
     }
 
@@ -165,12 +275,30 @@ impl RequestState {
         }
     }
 
-    pub(super) fn transport_route(&self, redirect_hop: usize) -> PyResult<TransportRoute> {
+    pub(super) async fn transport_route(
+        &mut self,
+        redirect_hop: usize,
+    ) -> PyResult<TransportRoute> {
         let request = self.policy_request();
         let route = self
             .policy
             .before_send(request)
             .map_err(|error| policy_error(&error))?;
+        if let Some(auth) = self.auth.as_mut() {
+            let hook_ran = auth.provider.uses_hook();
+            auth.apply(
+                &self.method,
+                self.url.as_str(),
+                &mut self.headers,
+                redirect_hop,
+                self.extensions.as_ref(),
+            )?;
+            if hook_ran {
+                // Let task aborts take effect before policy hooks or transport acquisition.
+                tokio::task::yield_now().await;
+            }
+        }
+        let request = self.policy_request();
         if let Some(hooks) = self.policy_hooks.as_ref() {
             hooks.before_send(request, redirect_hop, self.extensions.as_ref())?;
         }
@@ -344,7 +472,14 @@ impl RequestState {
 
         self.method = method.to_owned();
         self.url = url;
-        self.headers = redirect_headers(std::mem::take(&mut self.headers), body, header_policy);
+        self.headers = if let Some(auth) = self.auth.as_mut() {
+            auth.on_redirect(body, header_policy)
+        } else {
+            redirect_headers(std::mem::take(&mut self.headers), body, header_policy)
+        };
+        if header_policy == RedirectHeaderPolicy::CrossOrigin {
+            self.auth = None;
+        }
 
         if body == RequestBodyMutation::Drop {
             self.body = RequestBodyState::Empty;
@@ -375,6 +510,14 @@ impl RequestState {
         )
         .map_err(|error| policy_error(&error))?;
 
+        let auth = parts.auth.map(|provider| {
+            RequestAuthState::new(
+                provider,
+                parts.headers.clone(),
+                parts.auth_override_headers,
+                parts.auth_removed_headers,
+            )
+        });
         Ok(Self {
             method: parts.method.to_uppercase(),
             url,
@@ -382,6 +525,7 @@ impl RequestState {
             body,
             body_policy,
             policy,
+            auth,
             policy_hooks: parts.policy_hooks,
             extensions: parts.extensions,
             proxy_authorization: parts.proxy_authorization,
@@ -396,6 +540,13 @@ impl RequestState {
             retry_trace,
         })
     }
+}
+
+fn normalized_header_names(names: Vec<String>) -> HashSet<String> {
+    names
+        .into_iter()
+        .map(|name| name.to_ascii_lowercase())
+        .collect()
 }
 
 pub(super) async fn send_current_hop(

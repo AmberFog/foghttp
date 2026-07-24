@@ -225,22 +225,32 @@ with foghttp.Client(
 
 ## Usable With Constraints
 
-### Manual Bearer Tokens
+### Basic And Refreshable Authentication
 
-FogHTTP does not yet have an `auth=` API, but simple static tokens work through
-headers.
+Use client-level `auth=` for Basic credentials or a synchronous header-refresh
+callable.
 
 ```python
-headers = {"authorization": f"Bearer {token}"}
-response = client.get("https://api.example.com/me", headers=headers)
+with foghttp.Client(auth=("service-user", "service-password")) as client:
+    response = client.get("https://api.example.com/me")
 ```
 
-For one-upstream clients with a static token, client-level `headers=` can avoid
-repeating the same header at every call site.
+```python
+def authenticate(request: foghttp.AuthRequest) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token_store.current(request.extensions)}"}
 
-The opt-in retry policy can match `401`, but it cannot refresh a token or mutate
-authentication state between attempts. Keep token refresh, request signing, and
-OAuth flows outside FogHTTP until the planned auth layer exists.
+
+with foghttp.Client(auth=authenticate) as client:
+    response = client.get(
+        "https://api.example.com/me",
+        extensions={"example.tenant": "acme"},
+    )
+```
+
+The callable runs before each transport attempt, so retries and same-origin
+redirects receive fresh headers. Cross-origin redirects remove auth-managed
+headers and disable the callable for the rest of the logical request. See
+[Authentication](./auth.md) for merge order, thread-safety, and redaction rules.
 
 ### Buffered, Streaming, And Multipart Uploads
 
@@ -292,7 +302,7 @@ except foghttp.HTTPStatusError as exc:
 | Cookies/session jar | Not implemented |
 | Proxy routing | HTTP proxy routing and HTTPS `CONNECT` tunnelling through `http://` proxy endpoints are available; SOCKS, PAC, TLS-to-proxy endpoints and platform proxy discovery are not implemented |
 | HTTP/2 | Not implemented |
-| Cookie jar and auth helper integration | Not implemented; cross-origin redirects still strip sensitive headers and drop body replay |
+| Cookie jar and provider-specific OAuth integration | Not implemented; use the native callable auth hook for request headers |
 | Unbounded buffered large downloads | `max_response_body_size` defaults to 10 MiB and `max_buffered_response_bytes` defaults to 100 MiB for buffered fail-fast protection; use `stream()` for incremental byte downloads |
 | Automatic compression negotiation | Not implemented; pass `Accept-Encoding` manually when you want compressed buffered responses |
 
