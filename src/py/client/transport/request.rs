@@ -8,9 +8,9 @@ use crate::core::client::{
 use crate::core::headers::HeaderPairs;
 use crate::core::numeric::duration_from_secs;
 use crate::core::policy::{
-    redirect_headers, PolicyMutation, PolicyPipeline, PolicyRequest, RedirectHeaderPolicy,
-    RequestBodyMutation, RequestBodyPolicy, ResponseHead, ResponsePolicyAction, RetryDecision,
-    RetryPolicy, RetryStopReason, SsrfPolicy, TransportRoute,
+    redirect_headers, CookieJar, PolicyMutation, PolicyPipeline, PolicyRequest,
+    RedirectHeaderPolicy, RequestBodyMutation, RequestBodyPolicy, ResponseHead,
+    ResponsePolicyAction, RetryDecision, RetryPolicy, RetryStopReason, SsrfPolicy, TransportRoute,
 };
 use crate::core::request::{build_request, RequestBodyParts, RequestParts};
 use crate::core::response::BufferedBodyBudget;
@@ -37,6 +37,9 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
+const COOKIE_HEADER_NAME: &str = "cookie";
+const COOKIE_HEADER_WIRE_NAME: &str = "Cookie";
+
 pub struct TransportRequest {
     pub method: String,
     pub url: String,
@@ -58,9 +61,50 @@ pub struct TransportRequest {
     pub max_redirects: usize,
     pub retry_policy: Option<RetryPolicy>,
     pub ssrf_policy: Option<Arc<SsrfPolicy>>,
+    pub cookie_jar: Option<CookieJar>,
     pub auth: Option<Arc<PythonAuth>>,
     pub policy_hooks: Option<Arc<PythonPolicyHooks>>,
     pub extensions: Option<Py<PyAny>>,
+}
+
+struct RequestCookieState {
+    jar: CookieJar,
+    managed_header: bool,
+}
+
+impl RequestCookieState {
+    fn new(jar: CookieJar) -> Self {
+        Self {
+            jar,
+            managed_header: false,
+        }
+    }
+
+    fn attach(&mut self, url: &HttpUrl, headers: &mut HeaderPairs) {
+        if headers
+            .iter()
+            .any(|(name, _value)| name.eq_ignore_ascii_case(COOKIE_HEADER_NAME))
+        {
+            return;
+        }
+        let Some(value) = self.jar.request_header(url) else {
+            return;
+        };
+        headers.push((COOKIE_HEADER_WIRE_NAME.to_owned(), value));
+        self.managed_header = true;
+    }
+
+    fn store_response(&self, url: &HttpUrl, headers: &HeaderPairs) {
+        self.jar.store_response(url, headers);
+    }
+
+    fn remove_managed_header(&mut self, headers: &mut HeaderPairs) {
+        if !self.managed_header {
+            return;
+        }
+        headers.retain(|(name, _value)| !name.eq_ignore_ascii_case(COOKIE_HEADER_NAME));
+        self.managed_header = false;
+    }
 }
 
 struct RequestAuthState {
@@ -169,6 +213,7 @@ pub(super) struct RequestState {
     pub(super) body: RequestBodyState,
     pub(super) body_policy: RequestBodyPolicy,
     policy: PolicyPipeline,
+    cookies: Option<RequestCookieState>,
     auth: Option<RequestAuthState>,
     policy_hooks: Option<Arc<PythonPolicyHooks>>,
     extensions: Option<Py<PyAny>>,
@@ -279,6 +324,9 @@ impl RequestState {
         &mut self,
         redirect_hop: usize,
     ) -> PyResult<TransportRoute> {
+        if let Some(cookies) = self.cookies.as_mut() {
+            cookies.remove_managed_header(&mut self.headers);
+        }
         let request = self.policy_request();
         let route = self
             .policy
@@ -298,6 +346,9 @@ impl RequestState {
                 tokio::task::yield_now().await;
             }
         }
+        if let Some(cookies) = self.cookies.as_mut() {
+            cookies.attach(&self.url, &mut self.headers);
+        }
         let request = self.policy_request();
         if let Some(hooks) = self.policy_hooks.as_ref() {
             hooks.before_send(request, redirect_hop, self.extensions.as_ref())?;
@@ -311,6 +362,9 @@ impl RequestState {
         headers: &HeaderPairs,
         redirect_hop: usize,
     ) -> PyResult<Option<PendingResponsePolicyAction>> {
+        if let Some(cookies) = self.cookies.as_ref() {
+            cookies.store_response(&self.url, headers);
+        }
         self.retry_trace.observe_response(status_code, redirect_hop);
         let request = self.policy_request();
         let response = ResponseHead::new(status_code, headers);
@@ -470,6 +524,9 @@ impl RequestState {
             url,
         } = mutation;
 
+        if let Some(cookies) = self.cookies.as_mut() {
+            cookies.remove_managed_header(&mut self.headers);
+        }
         self.method = method.to_owned();
         self.url = url;
         self.headers = if let Some(auth) = self.auth.as_mut() {
@@ -518,6 +575,7 @@ impl RequestState {
                 parts.auth_removed_headers,
             )
         });
+        let cookies = parts.cookie_jar.map(RequestCookieState::new);
         Ok(Self {
             method: parts.method.to_uppercase(),
             url,
@@ -525,6 +583,7 @@ impl RequestState {
             body,
             body_policy,
             policy,
+            cookies,
             auth,
             policy_hooks: parts.policy_hooks,
             extensions: parts.extensions,

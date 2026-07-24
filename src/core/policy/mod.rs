@@ -1,3 +1,4 @@
+mod cookies;
 mod error;
 mod pipeline;
 mod proxy;
@@ -6,6 +7,7 @@ mod request;
 mod retry;
 mod ssrf;
 
+pub(crate) use cookies::CookieJar;
 pub(crate) use error::PolicyError;
 pub(crate) use pipeline::{PolicyMutation, PolicyPipeline, ResponsePolicyAction};
 pub(crate) use proxy::TransportRoute;

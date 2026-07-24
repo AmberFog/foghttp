@@ -143,6 +143,8 @@ async with foghttp.AsyncClient() as client:
 - grouped HTTP status constants and reusable HTTP method constants
 - client-level Basic and synchronous callable authentication with retry refresh
   and cross-origin credential stripping
+- opt-in client-owned cookie jar with bounded domain/path/expiry matching,
+  redirect/retry coordination, and redacted diagnostics
 
 ## Documentation
 
@@ -150,6 +152,7 @@ async with foghttp.AsyncClient() as client:
 - [Quickstart](https://github.com/AmberFog/foghttp/blob/main/docs/quickstart.md)
 - [Request builder compatibility](https://github.com/AmberFog/foghttp/blob/main/docs/request-builder.md)
 - [Authentication](https://github.com/AmberFog/foghttp/blob/main/docs/auth.md)
+- [Cookies](https://github.com/AmberFog/foghttp/blob/main/docs/cookies.md)
 - [Client lifecycle](https://github.com/AmberFog/foghttp/blob/main/docs/lifecycle.md)
 - [Packaging and Python compatibility](https://github.com/AmberFog/foghttp/blob/main/docs/packaging.md)
 - [Timeout model](https://github.com/AmberFog/foghttp/blob/main/docs/timeouts.md)
@@ -177,8 +180,8 @@ cleanup rules. HTTP proxy routing and HTTPS proxy `CONNECT` tunnelling are
 available through `proxy=` and `trust_env=True` when the proxy endpoint itself
 uses `http://`. Proxy-routed requests fail closed when `SSRFPolicy` is enabled
 because the client cannot prove which target address a remote proxy resolves.
-Cookies, provider-specific OAuth flows, HTTP/2, automatic `Accept-Encoding`
-negotiation, streaming decompression, and per-request connect timeout
+Provider-specific OAuth flows, HTTP/2, automatic `Accept-Encoding` negotiation,
+streaming decompression, and per-request connect timeout
 reconfiguration are planned for later versions. Physical connection caps
 currently apply to the HTTP/1.1 connector path; HTTP/2 will require separate
 stream-level limits.

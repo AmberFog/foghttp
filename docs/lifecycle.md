@@ -534,7 +534,9 @@ if diagnostics["pending_requests"]:
 
 The lifecycle contract currently applies to buffered requests/responses,
 sync/async streamed response bodies, streaming request bodies passed through
-`content=`, and synchronous callable auth hooks. Cookies and provider-specific
+`content=`, synchronous callable auth hooks, and the opt-in cookie jar. Cookie
+state belongs to one client and disappears when that client is closed or
+dropped; it is never persisted or shared globally. Provider-specific
 authentication flows may extend the lifecycle model later.
 
 FogHTTP exposes socket lifecycle telemetry for the current HTTP/1 path, but

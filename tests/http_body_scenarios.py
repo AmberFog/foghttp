@@ -18,6 +18,7 @@ from foghttp.status_codes.success import OK
 
 
 BODY_RESPONSE_DELAY = 0.25
+INCOMPLETE_BODY_SET_COOKIE = "incomplete_session=cookie-secret; Path=/"
 DELAYED_EOF_UNKNOWN_SIZE_BYTES_PATH = "/delayed-eof-unknown-size-bytes"
 INCOMPLETE_CHUNKED_BODY_PATH = "/incomplete-chunked-body"
 SLOW_BODY_PATH = "/slow-body"
@@ -64,6 +65,7 @@ async def write_async_body_safety_response(
                 [
                     ("content-type", "application/octet-stream"),
                     ("transfer-encoding", "chunked"),
+                    ("set-cookie", INCOMPLETE_BODY_SET_COOKIE),
                     ("connection", "close"),
                 ],
                 b"1\r\nx\r\n",
@@ -165,6 +167,7 @@ def _write_sync_incomplete_chunked_body(
     handler.send_response(OK)
     handler.send_header("content-type", "application/octet-stream")
     handler.send_header("transfer-encoding", "chunked")
+    handler.send_header("set-cookie", INCOMPLETE_BODY_SET_COOKIE)
     handler.send_header("connection", "close")
     handler.end_headers()
     with suppress(OSError):

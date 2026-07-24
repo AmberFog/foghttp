@@ -403,6 +403,7 @@ class RawClient:
         connect_timeout: float,
         follow_redirects: bool,
         max_redirects: int,
+        cookies_enabled: bool,
         ca_certificates: Sequence[bytes],
         trust_webpki_roots: bool,
         runtime: str,

@@ -61,6 +61,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - opt-in SSRF destination policy with scheme/origin/domain allowlists,
   per-redirect checks, post-resolution address validation, and typed redacted
   `SSRFError` reasons
+- opt-in client-owned cookie jar with bounded domain/path/expiry matching and
+  per-hop redirect/retry selection
 - opt-in async lifecycle debug snapshots for active async request handles,
   pending transport pressure, strict test checks, and unclosed-client context
 - default per-response and aggregate buffered response memory limits
@@ -86,12 +88,12 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | Multipart header values | Field names, filenames, and part content types are currently limited to printable ASCII; non-ASCII filenames need a later compatibility design |
 | Streaming uploads | Available through `content=` for binary file-like objects, sync bytes-like iterables, zero-arg byte-stream factories, and async bytes-like iterables/factories on `AsyncClient`; direct stream/file bodies are non-replayable for method-preserving redirects, while factories can replay by returning a fresh stream |
 | Upload typing contracts | Public provider/factory and multipart aliases are available for streaming `content=` and multipart `files=` APIs |
-| Cookie jar | `cookies=True` is rejected |
+| Cookie jar | Available through client-level `cookies=True`; storage is memory-only and client-owned, with no public-suffix-list or browser SameSite/third-party policy in v1 |
 | Plain HTTP proxy routing | Available for `http://` targets through explicit `proxy=` or `trust_env=True` environment config |
 | HTTPS proxy `CONNECT` | Available for `https://` targets through explicit `proxy=` or `trust_env=True` when the proxy endpoint itself uses `http://`; TLS is validated against the target host |
 | TLS-to-proxy endpoints | `https://proxy.example:443` proxy endpoint URLs are rejected; TLS-to-proxy is not implemented yet |
 | Environment proxy redirects | Same-origin redirects can continue; cross-origin redirects under `trust_env=True` proxy policy fail closed until per-hop environment proxy recomputation is implemented |
-| Authentication | Basic credentials and synchronous callable header refresh are available through client-level `auth=`; cookie jars, async hooks, OAuth flows, and provider SDKs are not built in |
+| Authentication | Basic credentials and synchronous callable header refresh are available through client-level `auth=`; async hooks, OAuth flows, and provider SDKs are not built in |
 | Disabling TLS verification | Not available by design; use `TLSConfig` with explicit CA certificates |
 | OS trust store integration | Not available; FogHTTP uses bundled WebPKI roots unless `trust_webpki_roots=False` is set |
 | HTTP/2 | Not available |
@@ -119,7 +121,7 @@ Use FogHTTP today when:
   default
 - requests are JSON-heavy, use small form-urlencoded bodies, multipart file
   uploads, or explicit streaming upload bodies
-- redirects are compatible with FogHTTP auth scope and do not require a cookie jar
+- redirects are compatible with FogHTTP auth and cookie scope
 - sync and async clients with explicit lifecycle are enough
 - async request cancellation and sync/async stream cleanup behavior are useful
 - global/per-origin request-slot backpressure and opt-in global/per-host
@@ -135,7 +137,7 @@ Wait before using FogHTTP when:
 - you need SOCKS, PAC, WPAD, or platform proxy discovery
 - you require proxy routing and application-layer SSRF protection on the same
   client; enforce destination policy at the proxy or network egress boundary
-- you rely on cookies across requests
+- you require browser-grade public-suffix, SameSite, partitioned, or third-party cookie policy
 - you need per-request connect timeout reconfiguration
 - you need automatic compression negotiation instead of manual
   `Accept-Encoding`

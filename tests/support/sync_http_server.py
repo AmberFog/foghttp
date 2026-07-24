@@ -19,6 +19,7 @@ from tests.support.http_routes import (
     SECURITY_HEADERS_PATH,
     TEXT_PATH,
     bytes_response_size,
+    cookie_response,
     redirect_status,
     redirect_to_location,
     redirect_to_status,
@@ -71,6 +72,7 @@ class SyncHTTPHandler(BaseHTTPRequestHandler):
         handled = any(
             handler()
             for handler in (
+                self._write_cookie_response,
                 self._write_redirect_to_location,
                 lambda: self._write_redirect_to_status(path),
                 lambda: self._write_redirect(path),
@@ -89,6 +91,25 @@ class SyncHTTPHandler(BaseHTTPRequestHandler):
             return
 
         self._write_json(body)
+
+    def _write_cookie_response(self) -> bool:
+        target = urlsplit(self.path)
+        response = cookie_response(
+            target.path,
+            target.query,
+            self.headers.get_all("cookie", []),
+        )
+        if response is None:
+            return False
+        status_code, headers, content = response
+        self.send_response(status_code)
+        for name, value in headers:
+            self.send_header(name, value)
+        self.send_header("content-length", str(len(content)))
+        self.send_header("connection", "close")
+        self.end_headers()
+        self.wfile.write(content)
+        return True
 
     def _write_redirect_to_location(self) -> bool:
         target = urlsplit(self.path)

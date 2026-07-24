@@ -18,7 +18,7 @@ use crate::core::client::{
 };
 use crate::core::headers::HeaderPairs;
 use crate::core::metrics::Metrics;
-use crate::core::policy::{RetryPolicy, SsrfPolicy};
+use crate::core::policy::{CookieJar, RetryPolicy, SsrfPolicy};
 use crate::core::response::BufferedBodyBudget;
 use crate::errors::FogHttpError;
 use crate::py::client::acquire::AcquireGate;
@@ -61,6 +61,7 @@ pub struct RawClient {
     buffered_body_budget: BufferedBodyBudget,
     follow_redirects: bool,
     max_redirects: usize,
+    cookie_jar: Option<CookieJar>,
     proxy_authorization: Option<String>,
     auth: Option<Arc<PythonAuth>>,
     policy_hooks: Option<Arc<PythonPolicyHooks>>,
@@ -87,6 +88,7 @@ impl RawClient {
         connect_timeout,
         follow_redirects,
         max_redirects,
+        cookies_enabled,
         ca_certificates,
         trust_webpki_roots,
         runtime,
@@ -130,6 +132,7 @@ impl RawClient {
         connect_timeout: f64,
         follow_redirects: bool,
         max_redirects: usize,
+        cookies_enabled: bool,
         ca_certificates: Vec<Vec<u8>>,
         trust_webpki_roots: bool,
         runtime: &str,
@@ -260,6 +263,7 @@ impl RawClient {
         );
         let runtime = ClientRuntime::build(py, max_active_requests, runtime_mode, runtime_workers)?;
         let future_setters = PythonFutureSetters::new(py)?;
+        let cookie_jar = cookies_enabled.then(CookieJar::new);
 
         Ok(Self {
             clients: Some(TransportClients::new(
@@ -278,6 +282,7 @@ impl RawClient {
             buffered_body_budget,
             follow_redirects,
             max_redirects,
+            cookie_jar,
             proxy_authorization: http_proxy_authorization,
             auth,
             policy_hooks,
@@ -336,6 +341,7 @@ impl RawClient {
         let buffered_body_budget = self.buffered_body_budget.clone();
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
+        let cookie_jar = self.cookie_jar.clone();
         let proxy_authorization = self.proxy_authorization.clone();
         let extensions = self.retained_request_extensions(extensions);
         let auth = self.auth.clone();
@@ -372,6 +378,7 @@ impl RawClient {
                         max_redirects,
                         retry_policy,
                         ssrf_policy,
+                        cookie_jar,
                         auth,
                         policy_hooks,
                         extensions,
@@ -432,6 +439,7 @@ impl RawClient {
         let buffered_body_budget = self.buffered_body_budget.clone();
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
+        let cookie_jar = self.cookie_jar.clone();
         let proxy_authorization = self.proxy_authorization.clone();
         let extensions = self.retained_request_extensions(extensions);
         let auth = self.auth.clone();
@@ -469,6 +477,7 @@ impl RawClient {
                     max_redirects,
                     retry_policy,
                     ssrf_policy,
+                    cookie_jar,
                     auth,
                     policy_hooks,
                     extensions,
@@ -528,6 +537,7 @@ impl RawClient {
         let buffered_body_budget = self.buffered_body_budget.clone();
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
+        let cookie_jar = self.cookie_jar.clone();
         let proxy_authorization = self.proxy_authorization.clone();
         let extensions = self.retained_request_extensions(extensions);
         let auth = self.auth.clone();
@@ -570,6 +580,7 @@ impl RawClient {
                         max_redirects,
                         retry_policy,
                         ssrf_policy,
+                        cookie_jar,
                         auth,
                         policy_hooks,
                         extensions,
@@ -633,6 +644,7 @@ impl RawClient {
         let buffered_body_budget = self.buffered_body_budget.clone();
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
+        let cookie_jar = self.cookie_jar.clone();
         let proxy_authorization = self.proxy_authorization.clone();
         let extensions = self.retained_request_extensions(extensions);
         let auth = self.auth.clone();
@@ -671,6 +683,7 @@ impl RawClient {
                     max_redirects,
                     retry_policy,
                     ssrf_policy,
+                    cookie_jar,
                     auth,
                     policy_hooks,
                     extensions,
@@ -728,6 +741,7 @@ impl RawClient {
     }
 
     fn close_resources(&mut self) {
+        self.cookie_jar.take();
         let current_process = self.process_id == current_process_id();
         if current_process {
             self.active_async_requests.abort_all();
