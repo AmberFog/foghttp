@@ -173,6 +173,7 @@ fn transport_request(body: Option<Vec<u8>>, body_replayable: bool) -> TransportR
         max_redirects: 20,
         retry_policy: None,
         ssrf_policy: None,
+        cookie_jar: None,
         auth: None,
         policy_hooks: None,
         extensions: None,

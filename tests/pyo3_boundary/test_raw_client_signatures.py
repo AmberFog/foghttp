@@ -17,6 +17,7 @@ RAW_CLIENT_KEYWORD_ONLY_PARAMETERS = (
     "connect_timeout",
     "follow_redirects",
     "max_redirects",
+    "cookies_enabled",
     "ca_certificates",
     "trust_webpki_roots",
     "runtime",

@@ -38,6 +38,7 @@ def create_raw_client(
             connect_timeout=config.timeouts.connect,
             follow_redirects=config.follow_redirects,
             max_redirects=config.max_redirects,
+            cookies_enabled=config.cookies,
             ca_certificates=ca_certificate_bytes(config.tls),
             trust_webpki_roots=trust_webpki_roots(config.tls),
             runtime=config.runtime,

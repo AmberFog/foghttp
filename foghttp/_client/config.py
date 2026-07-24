@@ -31,6 +31,7 @@ class ClientConfig:
     timeouts: timeouts.Timeouts
     follow_redirects: bool
     max_redirects: int
+    cookies: bool
     trust_env: bool
     tls: TLSConfig | None
     proxy_resolver: ProxyResolver
@@ -67,6 +68,7 @@ class ClientConfig:
             timeouts=_DEFAULT_TIMEOUTS if options.timeouts is None else options.timeouts,
             follow_redirects=options.follow_redirects,
             max_redirects=options.max_redirects,
+            cookies=options.cookies,
             trust_env=options.trust_env,
             tls=tls_from_trusted_environment(explicit_tls=options.tls, env_config=env_config),
             proxy_resolver=proxy_resolver,

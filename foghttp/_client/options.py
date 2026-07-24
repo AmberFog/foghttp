@@ -8,7 +8,6 @@ from ..headers import HeaderSource
 from ..lifecycle_debug import AsyncLifecycleDebugConfig
 from ..limits import Limits
 from ..messages import (
-    COOKIES_UNSUPPORTED,
     HTTP_VERSION_UNSUPPORTED,
     MAX_REDIRECTS_INVALID,
 )
@@ -50,7 +49,5 @@ def validate_client_options(options: ClientOptions) -> None:
         runtime=options.runtime,
         runtime_workers=options.runtime_workers,
     )
-    if options.cookies:
-        raise NotImplementedError(COOKIES_UNSUPPORTED)
     if options.http_versions and options.http_versions != ["HTTP/1.1"]:
         raise NotImplementedError(HTTP_VERSION_UNSUPPORTED)

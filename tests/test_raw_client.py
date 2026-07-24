@@ -41,6 +41,7 @@ RAW_CLIENT_INIT_ARGUMENTS = (
     "connect_timeout",
     "follow_redirects",
     "max_redirects",
+    "cookies_enabled",
     "ca_certificates",
     "trust_webpki_roots",
     "runtime",
@@ -94,6 +95,7 @@ def _client_config(
     proxy: str | None = None,
     tls: TLSConfig | None = None,
     policy_hooks: TransportPolicyHooks | None = None,
+    cookies: bool = False,
 ) -> ClientConfig:
     return ClientConfig.from_options(
         ClientOptions(
@@ -105,7 +107,7 @@ def _client_config(
             http_versions=None,
             follow_redirects=follow_redirects,
             max_redirects=max_redirects,
-            cookies=False,
+            cookies=cookies,
             trust_env=trust_env,
             proxy=proxy,
             tls=tls,
@@ -173,6 +175,7 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
             timeouts=timeouts,
             follow_redirects=follow_redirects,
             max_redirects=max_redirects,
+            cookies=True,
             runtime_workers=runtime_workers,
         ),
     )
@@ -193,6 +196,7 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
         "connect_timeout": timeouts.connect,
         "follow_redirects": follow_redirects,
         "max_redirects": max_redirects,
+        "cookies_enabled": True,
         "ca_certificates": (),
         "trust_webpki_roots": True,
         "runtime": "dedicated",

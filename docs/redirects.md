@@ -207,8 +207,15 @@ with foghttp.Client(follow_redirects=True, max_redirects=5) as client:
     response = client.get("https://example.com/redirect-loop")
 ```
 
-## Current Limitations
+## Cookie Scope
 
-FogHTTP does not yet implement cookie jar behavior. User-supplied `Cookie`
-headers are treated as sensitive and are not forwarded across origins during
-redirects.
+With `cookies=True`, FogHTTP removes its managed `Cookie` header before every
+redirect and selects again for the target URL. Host/domain, path, expiry, and
+`Secure` rules therefore decide what the next hop receives; a source cookie is
+never blindly copied to another host. Cookie scope does not include the TCP
+port, matching HTTP cookie semantics.
+
+A caller-supplied `Cookie` remains authoritative on same-origin redirects and
+is stripped by the normal cross-origin header policy. After that stripping, a
+cookie matching the redirect target may be selected from the managed jar. See
+[Cookies](./cookies.md) for the complete contract.

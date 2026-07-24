@@ -121,5 +121,8 @@ contents of an exception raised by the callable remain the application's
 responsibility.
 
 The API is intentionally FogHTTP-native rather than compatible with
-`httpx.Auth`. Cookie jars, OAuth flows, provider SDKs, async auth callables, and
-a public middleware framework remain outside this interface.
+`httpx.Auth`. The opt-in [cookie jar](./cookies.md) is a separate Rust-owned
+transport policy. If an auth hook supplies `Cookie`, that explicit value wins
+for the hop and the jar does not merge into it. OAuth flows, provider SDKs,
+async auth callables, and a public middleware framework remain outside this
+interface.

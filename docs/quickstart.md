@@ -555,6 +555,10 @@ with foghttp.Client() as client:
     response = client.get("https://httpbin.org/headers", headers=headers)
 ```
 
+Reading `Set-Cookie` directly does not enable session state. Use
+`Client(cookies=True)` or `AsyncClient(cookies=True)` for the opt-in managed
+jar described in [Cookies](./cookies.md).
+
 FogHTTP treats authority, framing, and hop-by-hop request headers as
 transport-managed. The safe API rejects manual `Host`, `Content-Length`,
 `Transfer-Encoding`, `TE`, `Trailer`, `Connection`, `Upgrade`, `Keep-Alive`,

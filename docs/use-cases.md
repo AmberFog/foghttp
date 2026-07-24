@@ -299,10 +299,10 @@ except foghttp.HTTPStatusError as exc:
 | Streaming decompression | Not implemented; buffered responses support transparent decoding |
 | Streaming uploads | Available through `content=`; streaming bodies are non-replayable for method-preserving redirects |
 | Multipart files | Available through `files=` |
-| Cookies/session jar | Not implemented |
+| Cookies/session jar | Available as an opt-in, memory-only client policy through `cookies=True` |
 | Proxy routing | HTTP proxy routing and HTTPS `CONNECT` tunnelling through `http://` proxy endpoints are available; SOCKS, PAC, TLS-to-proxy endpoints and platform proxy discovery are not implemented |
 | HTTP/2 | Not implemented |
-| Cookie jar and provider-specific OAuth integration | Not implemented; use the native callable auth hook for request headers |
+| Browser-grade cookies and provider-specific OAuth integration | Cookie domain/path/expiry sessions are available; public-suffix, SameSite/third-party browser policy and provider OAuth flows are not built in |
 | Unbounded buffered large downloads | `max_response_body_size` defaults to 10 MiB and `max_buffered_response_bytes` defaults to 100 MiB for buffered fail-fast protection; use `stream()` for incremental byte downloads |
 | Automatic compression negotiation | Not implemented; pass `Accept-Encoding` manually when you want compressed buffered responses |
 

@@ -3,6 +3,7 @@ name = "foghttp"
 version = "0.3.8"
 description = "Observable Rust-powered HTTP client for Python services."
 edition = "2021"
+rust-version = "1.88"
 homepage = "https://github.com/AmberFog/foghttp"
 license = "MIT"
 publish = false
@@ -23,6 +24,8 @@ fastrand = "2.3.0"
 flate2 = "1.1.9"
 http-body-util = "0.1.3"
 httpdate = "1.0.3"
+cookie = { version = "0.18.1", default-features = false }
+rfc_6265 = { version = "0.1.1", default-features = false, features = ["date", "idna", "path"] }
 url = "2.5.8"
 
 [dependencies.hyper]

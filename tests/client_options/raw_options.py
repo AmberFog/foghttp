@@ -16,6 +16,7 @@ def raw_client_options(**overrides: object) -> dict[str, object]:
         "connect_timeout": 2.0,
         "follow_redirects": False,
         "max_redirects": 20,
+        "cookies_enabled": False,
         "ca_certificates": (),
         "trust_webpki_roots": True,
         "runtime": "dedicated",

@@ -25,7 +25,7 @@ the current FogHTTP API. The same flow is available as a runnable example in
 | `data` | Supported | Mappings and repeated pairs are encoded as `application/x-www-form-urlencoded`. Raw `bytes` or `str` are sent as buffered body content without adding a semantic content type. |
 | `files` | Supported | Builds `multipart/form-data` uploads. Accepts bytes-like file parts, binary file-like objects, sync byte streams, byte-stream factories, and async byte streams/factories on `AsyncClient`. Can be combined with mapping or repeated-pair `data=` form fields. |
 | `auth` | Supported | Client-level Basic credentials or a synchronous callable. See [Authentication](./auth.md). |
-| cookies/session jar | Planned | `cookies=True` is rejected today. |
+| cookies/session jar | Supported | Client-level and opt-in through `cookies=True`. See [Cookies](./cookies.md). |
 | proxy / `trust_env` | Supported | HTTP proxy routing and HTTPS `CONNECT` tunnelling through client-level `proxy=` or `trust_env=True` when the proxy endpoint uses `http://`. |
 | `timeout` | Partly supported | Per-request `pool`, `read`, `write`, and `total` timeouts are supported. Per-request `connect` does not reconfigure the connector. |
 | `follow_redirects` | Supported | Client-level setting. GET/HEAD/POST/QUERY redirects use conservative security rules. |
@@ -334,7 +334,7 @@ upload/download workflows with observable request limits.
 
 Current intentional gaps:
 
-- no cookie jar or provider-specific OAuth helper
+- no provider-specific OAuth helper
 - no asynchronous auth callable
 - no streaming decompression helpers yet
 - no disabling TLS verification

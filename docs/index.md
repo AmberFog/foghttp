@@ -4,7 +4,7 @@ layout: "home"
 hero:
   name: "FogHTTP"
   text: "Rust-powered HTTP client for Python"
-  tagline: "Buffered JSON and form requests, streaming and multipart uploads, sync and async response streaming, transparent response decoding, base URL clients, default headers and params, opt-in safe retries and SSRF destination controls, redirects, custom CA certificates, cancellation, and observable request limits with pool diagnostics."
+  tagline: "Buffered JSON and form requests, streaming and multipart uploads, sync and async response streaming, transparent response decoding, base URL clients, default headers and params, opt-in cookies, safe retries and SSRF destination controls, redirects, custom CA certificates, cancellation, and observable request limits with pool diagnostics."
 
 features:
   - title: "Rust transport"
@@ -68,6 +68,8 @@ FogHTTP is designed around a few engineering priorities:
   post-resolution IP checks, and DNS rebinding mitigation
 - client-level Basic authentication and synchronous request-aware auth hooks
   with retry refresh and cross-origin credential stripping
+- opt-in client-owned cookie jar with bounded RFC-style domain, path, expiry,
+  redirect, and retry behavior
 - versioned telemetry snapshots that separate alert-oriented stats from
   diagnostic dump APIs
 - opt-in async lifecycle debug snapshots for tests, staging, and incident
@@ -81,6 +83,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - [Quickstart](./quickstart.md)
 - [Request builder compatibility](./request-builder.md)
 - [Authentication](./auth.md)
+- [Cookies](./cookies.md)
 - [Client lifecycle](./lifecycle.md)
 - [Packaging and Python compatibility](./packaging.md)
 - [Timeout model](./timeouts.md)
@@ -120,6 +123,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - `base_url` for reusable API clients and relative request paths
 - default client headers and query params for reusable API clients
 - client-level `auth=` for Basic credentials or synchronous header refresh
+- opt-in `cookies=True` session state; see [Cookies](./cookies.md)
 - query params with repeated keys, JSON, form-urlencoded data, buffered
   bytes/text bodies, file-like bodies, streaming bytes-like iterables, and
   multipart `files=` uploads
@@ -166,8 +170,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 
 ## Not Yet
 
-FogHTTP does not yet implement cookies, HTTP/2, automatic `Accept-Encoding`
-negotiation, streaming decompression, or provider-specific authentication flows.
+FogHTTP does not yet implement HTTP/2, automatic `Accept-Encoding` negotiation,
+streaming decompression, or provider-specific authentication flows.
 `trust_env` supports HTTP proxy routing, HTTPS
 `CONNECT` tunnelling through `http://` proxy endpoints, and `SSL_CERT_FILE`.
 Disabling TLS verification is intentionally not supported. See

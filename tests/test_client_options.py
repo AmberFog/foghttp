@@ -29,9 +29,9 @@ def test_limits_reject_negative_max_buffered_response_bytes() -> None:
         foghttp.Limits(max_buffered_response_bytes=-1)
 
 
-def test_client_rejects_cookies_until_supported() -> None:
-    with pytest.raises(NotImplementedError, match="cookies are planned after the MVP"):
-        foghttp.Client(cookies=True)
+def test_client_accepts_opt_in_cookies() -> None:
+    client = foghttp.Client(cookies=True)
+    client.close()
 
 
 def test_client_rejects_unsupported_http_versions() -> None:
