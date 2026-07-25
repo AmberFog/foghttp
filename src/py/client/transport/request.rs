@@ -1,9 +1,9 @@
 use super::client::TransportClients;
 use super::context::RawResponseContext;
-use super::errors::policy_error;
+use super::errors::{policy_error, transport_telemetry_error_type};
 use crate::core::client::{
-    with_connection_limit_timeout, with_request_write_timeout, ConnectionLimitContext,
-    RequestWriteTimeoutContext,
+    with_connection_limit_timeout, with_request_write_timeout, ConnectionAbortReason,
+    ConnectionLimitContext, ConnectionTelemetry, ConnectionUseGuard, RequestWriteTimeoutContext,
 };
 use crate::core::headers::HeaderPairs;
 use crate::core::numeric::duration_from_secs;
@@ -14,6 +14,7 @@ use crate::core::policy::{
 };
 use crate::core::request::{build_request, RequestBodyParts, RequestParts};
 use crate::core::response::BufferedBodyBudget;
+use crate::core::telemetry::{current_request_telemetry, RequestTelemetry, TelemetryErrorType};
 use crate::core::url::HttpUrl;
 use crate::errors::FogHttpError;
 use crate::messages::REQUEST_TOTAL_TIMEOUT;
@@ -29,16 +30,87 @@ use crate::py::retry::{
     RawRetryAttempt, RawRetryTrace, RetryAttemptCompletion, RetryTraceOutcome, RetryTraceRecorder,
 };
 use hyper::body::Incoming;
-use hyper::Response;
+use hyper::{http::Extensions, Response};
+use hyper_util::client::legacy::connect::{capture_connection, CaptureConnection};
 use hyper_util::client::legacy::Error as HyperClientError;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 use std::collections::HashSet;
+use std::future::{poll_fn, Future};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 const COOKIE_HEADER_NAME: &str = "cookie";
 const COOKIE_HEADER_WIRE_NAME: &str = "Cookie";
+
+struct CapturedConnectionUse {
+    capture: CaptureConnection,
+    request_telemetry: RequestTelemetry,
+    connection: Option<ConnectionTelemetry>,
+    guard: Option<ConnectionUseGuard>,
+}
+
+impl CapturedConnectionUse {
+    fn new(capture: CaptureConnection, request_telemetry: RequestTelemetry) -> Self {
+        Self {
+            capture,
+            request_telemetry,
+            connection: None,
+            guard: None,
+        }
+    }
+
+    fn observe(&mut self) {
+        let connection_telemetry = {
+            let metadata = self.capture.connection_metadata();
+            let Some(connected) = metadata.as_ref() else {
+                return;
+            };
+            let mut extensions = Extensions::new();
+            connected.get_extras(&mut extensions);
+            extensions.get::<ConnectionTelemetry>().cloned()
+        };
+        debug_assert!(
+            connection_telemetry.is_some(),
+            "instrumented connector must expose connection telemetry"
+        );
+        let Some(connection_telemetry) = connection_telemetry else {
+            return;
+        };
+        if self
+            .connection
+            .as_ref()
+            .is_some_and(|current| current.is_same_connection(&connection_telemetry))
+        {
+            return;
+        }
+        if let Some(guard) = self.guard.take() {
+            guard.superseded();
+        }
+        self.guard =
+            Some(connection_telemetry.request_started(Some(self.request_telemetry.clone())));
+        self.connection = Some(connection_telemetry);
+    }
+
+    fn into_guard(mut self) -> Option<ConnectionUseGuard> {
+        self.observe();
+        self.guard.take()
+    }
+
+    fn abort(mut self, reason: ConnectionAbortReason) {
+        self.observe();
+        if let Some(guard) = self.guard.take() {
+            guard.abort(reason);
+        }
+    }
+}
+
+impl Drop for CapturedConnectionUse {
+    fn drop(&mut self) {
+        self.observe();
+    }
+}
 
 pub struct TransportRequest {
     pub method: String,
@@ -616,7 +688,16 @@ pub(super) async fn send_current_hop(
     pool_timeout: f64,
     started: Instant,
     route: TransportRoute,
-) -> PyResult<Result<(Response<Incoming>, RawRequestInfo), HyperClientError>> {
+) -> PyResult<
+    Result<
+        (
+            Response<Incoming>,
+            RawRequestInfo,
+            Option<ConnectionUseGuard>,
+        ),
+        HyperClientError,
+    >,
+> {
     let request_info = state.request_info();
     let response_headers_timeout_context = TimeoutContext::new(
         TimeoutPhase::ResponseHeaders,
@@ -628,21 +709,85 @@ pub(super) async fn send_current_hop(
     let write_timeout_context = state.write_timeout_context(origin, redirect_hop);
     let connection_limit_context =
         RequestState::connection_limit_context(origin, redirect_hop, pool_timeout)?;
-    let request = build_request(state.take_request_parts(route)?)?;
+    let mut request = build_request(state.take_request_parts(route)?)?;
+    let request_telemetry = current_request_telemetry();
+    let mut captured_connection = request_telemetry
+        .clone()
+        .map(|telemetry| CapturedConnectionUse::new(capture_connection(&mut request), telemetry));
     let use_write_timeout_transport = write_timeout_context.is_some();
     debug_assert_eq!(use_write_timeout_transport, state.has_request_body());
     let client = clients.select(route, use_write_timeout_transport)?;
-    let response = tokio::time::timeout(
-        remaining_duration("Timeouts.total", &response_headers_timeout_context)?,
-        with_connection_limit_timeout(
-            Some(connection_limit_context),
-            with_request_write_timeout(write_timeout_context, client.request(request)),
-        ),
+    let timeout = remaining_duration("Timeouts.total", &response_headers_timeout_context)?;
+    let timeout_deadline = tokio::time::Instant::now() + timeout;
+    let mut response = Box::pin(with_connection_limit_timeout(
+        Some(connection_limit_context),
+        with_request_write_timeout(write_timeout_context, client.request(request)),
+    ));
+    let response = await_response_headers(
+        response.as_mut(),
+        &mut captured_connection,
+        request_telemetry.as_ref(),
+        timeout_deadline,
+    )
+    .await;
+    let response = match response {
+        Ok(response) => response,
+        Err(_elapsed) => {
+            if let Some(telemetry) = current_request_telemetry() {
+                telemetry.finish_active_phase_error(TelemetryErrorType::TimeoutError);
+            }
+            if let Some(captured_connection) = captured_connection {
+                captured_connection.abort(ConnectionAbortReason::Error(Some(
+                    TelemetryErrorType::TimeoutError,
+                )));
+            }
+            return Err(timeout_error(
+                &response_headers_timeout_context,
+                REQUEST_TOTAL_TIMEOUT,
+            ));
+        }
+    };
+
+    match response {
+        Ok(response) => Ok(Ok((
+            response,
+            request_info,
+            captured_connection.and_then(CapturedConnectionUse::into_guard),
+        ))),
+        Err(error) => {
+            if let Some(captured_connection) = captured_connection {
+                captured_connection.abort(ConnectionAbortReason::Error(Some(
+                    transport_telemetry_error_type(&error),
+                )));
+            }
+            Ok(Err(error))
+        }
+    }
+}
+
+async fn await_response_headers<F>(
+    mut response: Pin<&mut F>,
+    captured_connection: &mut Option<CapturedConnectionUse>,
+    request_telemetry: Option<&RequestTelemetry>,
+    timeout_deadline: tokio::time::Instant,
+) -> Result<F::Output, tokio::time::error::Elapsed>
+where
+    F: Future + ?Sized,
+{
+    tokio::time::timeout_at(
+        timeout_deadline,
+        poll_fn(|context| {
+            let _assignment = request_telemetry.map(RequestTelemetry::lock_connection_assignment);
+            let response = response.as_mut().poll(context);
+            // hyper-util publishes the assigned connection while polling this future.
+            // Observe it before cancellation can claim the terminal request state.
+            if let Some(captured_connection) = captured_connection.as_mut() {
+                captured_connection.observe();
+            }
+            response
+        }),
     )
     .await
-    .map_err(|_| timeout_error(&response_headers_timeout_context, REQUEST_TOTAL_TIMEOUT))?;
-
-    Ok(response.map(|response| (response, request_info)))
 }
 
 pub(super) async fn acquire_request_slot(
@@ -660,12 +805,36 @@ pub(super) async fn acquire_request_slot(
         origin,
         redirect_hop,
     );
-    tokio::time::timeout(
-        remaining_duration("Timeouts.total", &context)?,
+    let timeout = remaining_duration("Timeouts.total", &context)?;
+    let telemetry = current_request_telemetry();
+    if let Some(telemetry) = &telemetry {
+        telemetry.begin_pool_acquire(origin, redirect_hop);
+    }
+    match tokio::time::timeout(
+        timeout,
         acquire_gate.acquire(origin, pool_timeout, redirect_hop),
     )
     .await
-    .map_err(|_| timeout_error(&context, REQUEST_TOTAL_TIMEOUT))?
+    {
+        Ok(Ok(permit)) => {
+            if let Some(telemetry) = &telemetry {
+                telemetry.finish_pool_acquire_success();
+            }
+            Ok(permit)
+        }
+        Ok(Err(error)) => {
+            if let Some(telemetry) = &telemetry {
+                telemetry.finish_pool_acquire_error(TelemetryErrorType::PoolTimeout);
+            }
+            Err(error)
+        }
+        Err(_elapsed) => {
+            if let Some(telemetry) = &telemetry {
+                telemetry.finish_pool_acquire_error(TelemetryErrorType::TimeoutError);
+            }
+            Err(timeout_error(&context, REQUEST_TOTAL_TIMEOUT))
+        }
+    }
 }
 
 pub(super) struct PendingRetryDecision {
@@ -807,5 +976,50 @@ impl RequestBodyState {
                 })
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod response_header_timeout_tests {
+    use super::await_response_headers;
+    use std::future::{poll_fn, Future};
+    use std::task::Poll;
+    use std::time::Duration;
+    use tokio::runtime::Builder;
+
+    #[test]
+    fn total_timeout_survives_exhausted_cooperative_budget() {
+        let runtime = Builder::new_current_thread().enable_time().build().unwrap();
+
+        runtime.block_on(async {
+            let mut polls = 0;
+            let mut response = Box::pin(poll_fn(move |context| {
+                polls += 1;
+                if polls > 1_024 {
+                    return Poll::Ready(());
+                }
+                loop {
+                    let mut consume_budget = Box::pin(tokio::task::consume_budget());
+                    match consume_budget.as_mut().poll(context) {
+                        Poll::Ready(()) => {}
+                        Poll::Pending => return Poll::Pending,
+                    }
+                }
+            }));
+            let mut captured_connection = None;
+            let expired_deadline = tokio::time::Instant::now()
+                .checked_sub(Duration::from_millis(1))
+                .expect("test deadline remains representable");
+
+            let result = await_response_headers(
+                response.as_mut(),
+                &mut captured_connection,
+                None,
+                expired_deadline,
+            )
+            .await;
+
+            assert!(result.is_err());
+        });
     }
 }

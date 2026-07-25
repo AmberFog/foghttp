@@ -124,7 +124,7 @@ impl RawStreamResponse {
         let runtime_handle = self.runtime_handle.take();
         if self.process_id == current_process_id() {
             if let Some(state) = state {
-                state.abort();
+                state.close();
             }
             drop(runtime_handle);
         } else {
@@ -152,7 +152,7 @@ impl RawStreamResponse {
             return;
         }
         if let Some(state) = &self.state {
-            state.abort();
+            state.close();
         }
     }
 
@@ -181,13 +181,18 @@ impl RawStreamResponse {
             return Err(FogHttpError::new_err(STREAM_RESPONSE_READ_ABORTED));
         }
         if start_sender.send(()).is_err() {
-            state.abort();
+            state.fail(None);
             return Err(FogHttpError::new_err(STREAM_RESPONSE_READ_ABORTED));
         }
 
         let result = py.detach(|| runtime_handle.block_on(result_receiver));
         state.finish_read_delivery();
-        result.map_err(|_| FogHttpError::new_err(STREAM_RESPONSE_READ_ABORTED))?
+        if let Ok(result) = result {
+            result
+        } else {
+            state.fail(None);
+            Err(FogHttpError::new_err(STREAM_RESPONSE_READ_ABORTED))
+        }
     }
 
     fn next_chunk_async(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
@@ -239,11 +244,11 @@ impl RawStreamResponse {
             .call_method1("add_done_callback", (callback,))
             .map(|_| ())
         {
-            state.abort();
+            state.fail(None);
             return Err(err);
         }
         if start_sender.send(()).is_err() {
-            state.abort();
+            state.fail(None);
         }
 
         Ok(future)

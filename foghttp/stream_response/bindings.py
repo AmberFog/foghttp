@@ -2,7 +2,7 @@ __all__ = ("bind_stream_lifecycle_debug", "bind_stream_telemetry")
 
 from collections.abc import Callable
 
-from foghttp._client.telemetry import TelemetryRequestContext
+from foghttp._client.telemetry import NativeTelemetryDrain, TelemetryRequestContext
 
 from .base import StreamResponseBase
 
@@ -10,8 +10,10 @@ from .base import StreamResponseBase
 def bind_stream_telemetry(
     response: StreamResponseBase,
     telemetry_context: TelemetryRequestContext,
+    finish_native_telemetry: NativeTelemetryDrain | None,
 ) -> None:
     object.__setattr__(response, "_telemetry_context", telemetry_context)
+    object.__setattr__(response, "_native_telemetry_finish", finish_native_telemetry)
 
 
 def bind_stream_lifecycle_debug(

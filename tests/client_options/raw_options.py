@@ -37,6 +37,7 @@ def raw_client_options(**overrides: object) -> dict[str, object]:
         "ssrf_allowed_schemes": None,
         "ssrf_allowed_origins": (),
         "ssrf_allowed_domains": (),
+        "telemetry_enabled": False,
     }
     options.update(overrides)
     return options

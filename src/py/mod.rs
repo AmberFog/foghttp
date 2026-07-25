@@ -3,6 +3,7 @@ mod pool_diagnostics;
 mod response;
 mod retry;
 mod stats;
+mod telemetry;
 mod transport_state;
 mod url;
 
@@ -13,6 +14,7 @@ pub use pool_diagnostics::{RawOriginPoolDiagnostics, RawPoolDiagnostics};
 pub use response::{RawRequestInfo, RawResponse};
 pub use retry::{RawRetryAttempt, RawRetryTrace};
 pub use stats::{RawOriginPressure, RawStats};
+pub use telemetry::RawTelemetryEvent;
 pub use transport_state::RawTransportState;
 pub use url::RawUrl;
 
@@ -28,6 +30,7 @@ pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<RawPoolDiagnostics>()?;
     module.add_class::<RawOriginPressure>()?;
     module.add_class::<RawStats>()?;
+    module.add_class::<RawTelemetryEvent>()?;
     module.add_class::<RawTransportState>()?;
     module.add_class::<RawUrl>()?;
     Ok(())

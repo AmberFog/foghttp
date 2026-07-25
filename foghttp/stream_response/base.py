@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from foghttp._client.process import current_process_id, forked_process_error
-from foghttp._client.telemetry import TelemetryRequestContext
+from foghttp._client.telemetry import NativeTelemetryDrain, TelemetryRequestContext
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 from foghttp._redaction import redact_url
 from foghttp._response.encoding import response_encoding
@@ -51,6 +51,11 @@ class StreamResponseBase(
     _closed: bool = field(default=False, init=False, repr=False)
     _body_started: bool = field(default=False, init=False, repr=False)
     _telemetry_context: TelemetryRequestContext | None = field(default=None, init=False, repr=False)
+    _native_telemetry_finish: NativeTelemetryDrain | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
     _telemetry_finished: bool = field(default=False, init=False, repr=False)
     _lifecycle_debug_finish: Callable[[], None] | None = field(default=None, init=False, repr=False)
     _lifecycle_debug_finished: bool = field(default=False, init=False, repr=False)
@@ -91,6 +96,7 @@ class StreamResponseBase(
             self._closed = True
             self._lifecycle_debug_finish = None
             self._telemetry_context = None
+            self._native_telemetry_finish = None
             return
         self._closed = True
         self._raw.close()

@@ -6,5 +6,6 @@ pub mod numeric;
 pub(crate) mod policy;
 pub mod request;
 pub mod response;
+pub(crate) mod telemetry;
 pub mod tls;
 pub mod url;

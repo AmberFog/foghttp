@@ -4,6 +4,11 @@ mod tests;
 use super::connection_limit::{ConnectionGate, ConnectionPermit};
 use super::write_timeout::{current_request_write_timeout, RequestWriteTimeoutContext};
 use crate::core::metrics::{Metrics, OriginMetrics, ResponseBodyLifecycleOutcome};
+use crate::core::policy::SsrfViolation;
+use crate::core::telemetry::{
+    current_request_telemetry, ClientTelemetry, ConnectionEventTelemetry, ConnectionOpenTelemetry,
+    RequestConnectionUseTelemetry, RequestTelemetry, TelemetryErrorType, TelemetryOutcome,
+};
 use crate::core::url::HttpUrl;
 use hyper::rt::{Read, ReadBufCursor, Write};
 use hyper::Uri;
@@ -26,6 +31,7 @@ pub(crate) struct InstrumentedConnector<C> {
     metrics: Arc<Metrics>,
     connection_gate: ConnectionGate,
     idle_timeout: Duration,
+    native_telemetry: Option<ClientTelemetry>,
 }
 
 #[derive(Clone)]
@@ -35,7 +41,16 @@ pub(crate) struct ConnectionTelemetry {
 
 pub(crate) struct ConnectionUseGuard {
     telemetry: ConnectionTelemetry,
+    request_telemetry: Option<RequestTelemetry>,
+    request_connection_use: Option<RequestConnectionUseTelemetry>,
     finished: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ConnectionAbortReason {
+    Closed,
+    Cancelled,
+    Error(Option<TelemetryErrorType>),
 }
 
 pub(crate) struct InstrumentedConnection<T> {
@@ -53,6 +68,8 @@ struct ConnectionTelemetryInner {
     idle_timeout: Duration,
     closed: AtomicBool,
     aborted: AtomicBool,
+    native_telemetry: Option<ConnectionEventTelemetry>,
+    origin: Option<String>,
 }
 
 #[derive(Default)]
@@ -68,12 +85,14 @@ impl<C> InstrumentedConnector<C> {
         metrics: Arc<Metrics>,
         connection_gate: ConnectionGate,
         idle_timeout: Duration,
+        native_telemetry: Option<ClientTelemetry>,
     ) -> Self {
         Self {
             inner,
             metrics,
             connection_gate,
             idle_timeout,
+            native_telemetry,
         }
     }
 }
@@ -99,19 +118,40 @@ where
         let idle_timeout = self.idle_timeout;
         let origin = origin_from_uri(&uri);
         let origin_metrics = origin.as_ref().map(|origin| metrics.origin_metrics(origin));
+        let request_telemetry = current_request_telemetry();
+        let mut native_open = self
+            .native_telemetry
+            .as_ref()
+            .map(|telemetry| telemetry.connection_open(origin.clone(), request_telemetry.clone()));
         let future = self.inner.call(uri);
 
         Box::pin(async move {
-            let connection_permit = connection_gate
+            let connection_permit = match connection_gate
                 .acquire(
                     origin.as_deref(),
                     Arc::clone(&metrics),
                     origin_metrics.clone(),
                 )
-                .await?;
+                .await
+            {
+                Ok(permit) => permit,
+                Err(error) => {
+                    if let Some(open) = native_open.take() {
+                        open.failed(TelemetryErrorType::PoolTimeout);
+                    }
+                    return Err(error);
+                }
+            };
             match future.await {
                 Ok(inner) => {
-                    let telemetry = ConnectionTelemetry::new(metrics, origin_metrics, idle_timeout);
+                    let native_telemetry = native_open.and_then(ConnectionOpenTelemetry::opened);
+                    let telemetry = ConnectionTelemetry::new_with_native_telemetry(
+                        metrics,
+                        origin_metrics,
+                        idle_timeout,
+                        native_telemetry,
+                        origin,
+                    );
                     Ok(InstrumentedConnection {
                         inner,
                         telemetry,
@@ -120,11 +160,15 @@ where
                     })
                 }
                 Err(error) => {
+                    let error = error.into();
+                    if let Some(open) = native_open {
+                        open.failed(connection_open_error_type(error.as_ref()));
+                    }
                     metrics.connection_open_failed();
                     if let Some(origin_metrics) = origin_metrics {
                         origin_metrics.connection_open_failed();
                     }
-                    Err(error.into())
+                    Err(error)
                 }
             }
         })
@@ -132,10 +176,21 @@ where
 }
 
 impl ConnectionTelemetry {
+    #[cfg(test)]
     fn new(
         metrics: Arc<Metrics>,
         origin_metrics: Option<Arc<OriginMetrics>>,
         idle_timeout: Duration,
+    ) -> Self {
+        Self::new_with_native_telemetry(metrics, origin_metrics, idle_timeout, None, None)
+    }
+
+    fn new_with_native_telemetry(
+        metrics: Arc<Metrics>,
+        origin_metrics: Option<Arc<OriginMetrics>>,
+        idle_timeout: Duration,
+        native_telemetry: Option<ConnectionEventTelemetry>,
+        origin: Option<String>,
     ) -> Self {
         metrics.connection_opened();
         if let Some(origin_metrics) = &origin_metrics {
@@ -151,31 +206,72 @@ impl ConnectionTelemetry {
                 idle_timeout,
                 closed: AtomicBool::new(false),
                 aborted: AtomicBool::new(false),
+                native_telemetry,
+                origin,
             }),
         }
     }
 
-    pub(crate) fn response_started(&self) -> ConnectionUseGuard {
+    pub(crate) fn request_started(
+        &self,
+        request_telemetry: Option<RequestTelemetry>,
+    ) -> ConnectionUseGuard {
         let _ = self.leave_idle();
         let previous_uses = self.inner.observed_uses.fetch_add(1, Ordering::Relaxed);
-        if previous_uses > 0 {
+        let reused = previous_uses > 0;
+        if reused {
             self.inner.metrics.connection_reused();
             if let Some(origin_metrics) = &self.inner.origin_metrics {
                 origin_metrics.connection_reused();
             }
         }
 
+        let request_connection_use = request_telemetry
+            .as_ref()
+            .zip(self.inner.origin.as_deref())
+            .and_then(|(telemetry, origin)| telemetry.begin_connection_use(origin, reused));
+
         ConnectionUseGuard {
             telemetry: self.clone(),
+            request_telemetry,
+            request_connection_use,
             finished: false,
         }
     }
 
-    fn response_finished(&self, outcome: ResponseBodyLifecycleOutcome) {
+    pub(crate) fn is_same_connection(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+
+    fn response_finished(
+        &self,
+        outcome: ResponseBodyLifecycleOutcome,
+        request_telemetry: Option<&RequestTelemetry>,
+        request_connection_use: Option<&RequestConnectionUseTelemetry>,
+    ) {
         match outcome {
-            ResponseBodyLifecycleOutcome::ReuseEligible => self.enter_idle(),
-            ResponseBodyLifecycleOutcome::Closed => {}
-            ResponseBodyLifecycleOutcome::Aborted => self.abort(),
+            ResponseBodyLifecycleOutcome::ReuseEligible | ResponseBodyLifecycleOutcome::Closed => {
+                if request_connection_use.is_some_and(|connection_use| !connection_use.finish()) {
+                    let reason = if request_telemetry.is_some_and(RequestTelemetry::is_cancelled) {
+                        ConnectionAbortReason::Cancelled
+                    } else {
+                        ConnectionAbortReason::Error(None)
+                    };
+                    self.abort_connection_use(request_telemetry, request_connection_use, reason);
+                    return;
+                }
+                if outcome == ResponseBodyLifecycleOutcome::ReuseEligible {
+                    self.enter_idle();
+                }
+            }
+            ResponseBodyLifecycleOutcome::Aborted => {
+                let reason = if request_telemetry.is_some_and(RequestTelemetry::is_cancelled) {
+                    ConnectionAbortReason::Cancelled
+                } else {
+                    ConnectionAbortReason::Error(None)
+                };
+                self.abort_connection_use(request_telemetry, request_connection_use, reason);
+            }
         }
     }
 
@@ -189,6 +285,9 @@ impl ConnectionTelemetry {
         self.inner.metrics.connection_closed();
         if let Some(origin_metrics) = &self.inner.origin_metrics {
             origin_metrics.connection_closed();
+        }
+        if let Some(native_telemetry) = &self.inner.native_telemetry {
+            native_telemetry.closed();
         }
         if idle_for.is_some_and(|elapsed| elapsed >= self.inner.idle_timeout) {
             self.inner.metrics.idle_timeout_eviction();
@@ -228,14 +327,41 @@ impl ConnectionTelemetry {
         Some(idle_for)
     }
 
-    fn abort(&self) {
+    fn abort(&self, request_telemetry: Option<&RequestTelemetry>, reason: ConnectionAbortReason) {
+        self.abort_connection_use(request_telemetry, None, reason);
+    }
+
+    fn abort_connection_use(
+        &self,
+        request_telemetry: Option<&RequestTelemetry>,
+        request_connection_use: Option<&RequestConnectionUseTelemetry>,
+        reason: ConnectionAbortReason,
+    ) {
         if self.inner.aborted.swap(true, Ordering::AcqRel) {
+            if let Some(connection_use) = request_connection_use {
+                connection_use.finish();
+            }
             return;
         }
 
         self.inner.metrics.connection_aborted();
         if let Some(origin_metrics) = &self.inner.origin_metrics {
             origin_metrics.connection_aborted();
+        }
+        if let Some(connection_use) = request_connection_use {
+            connection_use.abort(reason.outcome(), reason.error_type());
+        } else if let (Some(request_telemetry), Some(origin)) =
+            (request_telemetry, &self.inner.origin)
+        {
+            if !request_telemetry.abort_active_connection_use(reason.outcome(), reason.error_type())
+            {
+                request_telemetry.connection_aborted(
+                    origin,
+                    request_telemetry.current_redirect_hop(),
+                    reason.outcome(),
+                    reason.error_type(),
+                );
+            }
         }
     }
 
@@ -245,6 +371,17 @@ impl ConnectionTelemetry {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
     }
+}
+
+fn connection_open_error_type(error: &(dyn std::error::Error + 'static)) -> TelemetryErrorType {
+    let mut current = Some(error);
+    while let Some(error) = current {
+        if error.downcast_ref::<SsrfViolation>().is_some() {
+            return TelemetryErrorType::SsrfError;
+        }
+        current = error.source();
+    }
+    TelemetryErrorType::NetworkError
 }
 
 impl WriteTimeoutState {
@@ -285,7 +422,11 @@ impl<T> InstrumentedConnection<T> {
     fn poll_pending_write_timeout(&mut self, context: &mut Context<'_>) -> Poll<Error> {
         match self.write_timeout.poll_pending(context) {
             Poll::Ready(error) => {
-                self.telemetry.abort();
+                let request_telemetry = current_request_telemetry();
+                self.telemetry.abort(
+                    request_telemetry.as_ref(),
+                    ConnectionAbortReason::Error(Some(TelemetryErrorType::WriteTimeout)),
+                );
                 Poll::Ready(error)
             }
             Poll::Pending => Poll::Pending,
@@ -295,7 +436,30 @@ impl<T> InstrumentedConnection<T> {
 
 impl ConnectionUseGuard {
     pub(crate) fn finish(mut self, outcome: ResponseBodyLifecycleOutcome) {
-        self.telemetry.response_finished(outcome);
+        self.telemetry.response_finished(
+            outcome,
+            self.request_telemetry.as_ref(),
+            self.request_connection_use.as_ref(),
+        );
+        self.finished = true;
+    }
+
+    pub(crate) fn abort(mut self, reason: ConnectionAbortReason) {
+        self.telemetry.abort_connection_use(
+            self.request_telemetry.as_ref(),
+            self.request_connection_use.as_ref(),
+            reason,
+        );
+        self.finished = true;
+    }
+
+    pub(crate) fn superseded(mut self) {
+        // Hyper can replace an unstarted stale-pool assignment with a fresh connection.
+        self.telemetry.response_finished(
+            ResponseBodyLifecycleOutcome::Closed,
+            self.request_telemetry.as_ref(),
+            self.request_connection_use.as_ref(),
+        );
         self.finished = true;
     }
 }
@@ -303,8 +467,29 @@ impl ConnectionUseGuard {
 impl Drop for ConnectionUseGuard {
     fn drop(&mut self) {
         if !self.finished {
-            self.telemetry
-                .response_finished(ResponseBodyLifecycleOutcome::Aborted);
+            self.telemetry.response_finished(
+                ResponseBodyLifecycleOutcome::Aborted,
+                self.request_telemetry.as_ref(),
+                self.request_connection_use.as_ref(),
+            );
+        }
+    }
+}
+
+impl ConnectionAbortReason {
+    fn outcome(self) -> TelemetryOutcome {
+        match self {
+            Self::Closed => TelemetryOutcome::Closed,
+            Self::Cancelled => TelemetryOutcome::Cancelled,
+            Self::Error(_) => TelemetryOutcome::Error,
+        }
+    }
+
+    fn error_type(self) -> Option<TelemetryErrorType> {
+        match self {
+            Self::Closed => None,
+            Self::Cancelled => Some(TelemetryErrorType::CancelledError),
+            Self::Error(error_type) => error_type,
         }
     }
 }

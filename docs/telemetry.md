@@ -52,9 +52,9 @@ Current event fields include:
 | `schema_version` | Version of the telemetry event shape. The current version is `2`. |
 | `event_sequence` | Monotonic Python-side sequence within the current client event dispatcher. |
 | `observed_at_ns` | Monotonic observation timestamp, not Unix epoch. |
-| `request_id` | Client-local request correlation id for all events emitted for one request. |
-| `mode` | `buffered` or `stream`. |
-| `method`, `origin`, `redacted_url` | Safe request surface. URLs are redacted before they reach the hook. |
+| `request_id` | Client-local id for request-scoped events; `None` for client-scoped lifecycle events. |
+| `mode` | `buffered` or `stream` for request-scoped events. |
+| `method`, `origin`, `redacted_url` | Safe request surface when applicable. URLs are redacted before they reach the hook. |
 | `status_code`, `elapsed_ns`, `redirect_hop` | Response/redirect context when applicable. For stream completion events, `elapsed_ns` is `None` until FogHTTP exposes a separate body/request duration field. |
 | `retry_attempt`, `retry_decision`, `retry_reason`, `retry_backoff_ns` | Structured opt-in retry decision context. Attempt numbering starts at `1`; backoff is a duration in nanoseconds. |
 | `outcome`, `error_type` | Completion outcome and public error class name when applicable. |
@@ -79,19 +79,48 @@ If a request is already failing because of transport, timeout, cancellation, or
 stream cleanup, telemetry cleanup errors are suppressed so the original request
 failure is not masked.
 
-The typed event model reserves names for pool acquire and connection lifecycle
-phases. These enum members are not emitted by Python hooks yet. The current
-Python hook delivery emits request start, structured retry decisions, redirect
-decisions visible in response history, response headers received, response body
-finished, and request finished events. Native retry decisions are delivered
-when the transport returns or raises, in attempt order and before the final
-response lifecycle or request-failure event; they are not live Python callbacks
-during backoff. Caller cancellation can abort the native task before its
-pending decision batch reaches Python. Their origin is normalized and omits
-path/query data; no request or response body is included. The final
-`request_finished.outcome` remains the logical request outcome. Lower-level
-Rust pool and connection event delivery should be added as a follow-up before
-building Prometheus/OpenTelemetry exporters from event hooks.
+Pool acquire and connection lifecycle events are recorded in Rust when an
+opt-in sink is configured. Rust never invokes the Python sink directly. It
+writes compact records to a bounded, non-blocking client journal; Python drains
+request-scoped records when their owning request or stream boundary returns or
+raises. The same boundary also delivers client-scoped records already waiting
+in the journal, while records owned by other requests remain queued. Stream
+completion and close drain records produced while consuming the body, and
+client close drains anything still pending. Native retry decisions retain
+attempt order.
+
+The native journal holds at most 4,096 pending or foreign-request records.
+Producers never block when it is full. Delivering client-scoped records during
+a request keeps ordinary connection churn from occupying the journal until
+shutdown. A client-scoped sink failure under `raise` is deferred to client
+close, so an unrelated request is not failed; `warn` and `ignore` retain their
+configured behavior. A full client drain during close reports overflow through
+the same policy. Request-scoped records forced out by client shutdown are still
+delivered, but their hook failures are suppressed because cancellation or
+cleanup remains the primary outcome.
+Concurrent requests do not deliver each other's request-scoped records or
+inherit each other's `raise` hook failures. Use `request_id` for correlation;
+client-scoped callbacks and callbacks from concurrent request owners may still
+execute on different threads.
+
+Lower-level event semantics are:
+
+| event | scope and fields |
+| --- | --- |
+| `pool_acquire_started` | Request-scoped start marker; `elapsed_ns` and `outcome` are `None`. |
+| `pool_acquire_finished` | Request-scoped completion with acquire duration and `success`, `error`, or `cancelled` outcome. |
+| `connection_opened` | Client-scoped successful physical connection acquisition/open with duration, including connection-cap wait. Hyper may begin a physical connection speculatively while a pooled connection is also eligible, so this event is intentionally not owned by a logical request. |
+| `connection_open_failed` | Client-scoped failed or cancelled physical connection acquisition/open with duration and error context. |
+| `connection_reused` | Request-scoped marker emitted when Hyper assigns an existing connection, before response headers arrive. |
+| `connection_aborted` | Request-scoped non-reusable body/connection lifecycle outcome. Explicit close uses `closed` with no error; cancellation uses `cancelled` / `CancelledError`; known failures use `error` and the public error category. |
+| `connection_closed` | Client-scoped close marker. `request_id`, `mode`, `method`, and `redirect_hop` are `None`; `origin` remains available. |
+
+For native events, `elapsed_ns` is the Rust-measured duration of the represented
+phase. `observed_at_ns` and `event_sequence` are assigned later by the Python
+dispatcher, so they describe hook delivery rather than the original Rust event
+time. Origins are normalized and omit path, query, fragment, and userinfo; no
+headers or request/response body are included. The final
+`request_finished.outcome` remains the logical request outcome.
 
 ## Snapshot Metadata
 

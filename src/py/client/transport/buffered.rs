@@ -111,9 +111,10 @@ async fn send_request_attempts(
                 return Err(transport_error(&error));
             }
         };
-        let (response, request_info) = response;
+        let (response, request_info, connection_use) = response;
 
-        let response_lifecycle = ResponseLifecycleGuards::new(&response, metrics, &origin_metrics);
+        let response_lifecycle =
+            ResponseLifecycleGuards::new(&response, connection_use, metrics, &origin_metrics);
         let headers = response_headers(response.headers());
         let status_code = response.status().as_u16();
         let response_action = state.on_response_headers(status_code, &headers, redirect_hop)?;

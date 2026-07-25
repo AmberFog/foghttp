@@ -1,4 +1,5 @@
 use crate::core::metrics::Metrics;
+use crate::core::telemetry::RequestTelemetry;
 use crate::py::client::future::cancel_python_future;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
@@ -11,6 +12,7 @@ pub(super) struct ActiveAsyncRequest {
     loop_: Py<PyAny>,
     future: Py<PyAny>,
     metrics: Arc<Metrics>,
+    telemetry: Option<RequestTelemetry>,
     completion: RequestCompletion,
 }
 
@@ -20,6 +22,7 @@ impl ActiveAsyncRequest {
         loop_: Py<PyAny>,
         future: Py<PyAny>,
         metrics: Arc<Metrics>,
+        telemetry: Option<RequestTelemetry>,
         completion: RequestCompletion,
     ) -> Self {
         Self {
@@ -27,6 +30,7 @@ impl ActiveAsyncRequest {
             loop_,
             future,
             metrics,
+            telemetry,
             completion,
         }
     }
@@ -35,11 +39,15 @@ impl ActiveAsyncRequest {
         let Self {
             abort_handle,
             metrics,
+            telemetry,
             completion,
             ..
         } = self;
 
         if completion.finish() {
+            if let Some(telemetry) = telemetry {
+                telemetry.cancel();
+            }
             abort_handle.abort();
             metrics.request_finished(true);
         }
@@ -51,10 +59,14 @@ impl ActiveAsyncRequest {
             loop_,
             future,
             metrics,
+            telemetry,
             completion,
         } = self;
 
         if completion.finish() {
+            if let Some(telemetry) = telemetry {
+                telemetry.cancel();
+            }
             abort_handle.abort();
             metrics.request_finished(true);
         }

@@ -1,4 +1,5 @@
 use super::connection_limit::{current_connection_limit_context, with_connection_limit_timeout};
+use crate::core::telemetry::{current_request_telemetry, with_request_telemetry};
 use crate::messages::REQUEST_BODY_WRITE_TIMEOUT;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -109,9 +110,13 @@ where
     fn execute(&self, future: Fut) {
         let connection_context = current_connection_limit_context();
         let write_context = current_request_write_timeout();
+        let telemetry = current_request_telemetry();
         tokio::spawn(async move {
-            with_connection_limit_timeout(connection_context, async {
-                with_request_write_timeout(write_context, future).await
+            with_request_telemetry(telemetry, async {
+                with_connection_limit_timeout(connection_context, async {
+                    with_request_write_timeout(write_context, future).await
+                })
+                .await;
             })
             .await;
         });

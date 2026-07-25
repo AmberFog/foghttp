@@ -37,6 +37,7 @@ def send_raw_request(
     *,
     raw_client: _foghttp.RawClient,
     request: RawRequestOptions,
+    telemetry_request_id: int | None = None,
 ) -> _foghttp.RawResponse:
     body = prepare_sync_upload_body(request.body)
     try:
@@ -56,6 +57,7 @@ def send_raw_request(
             read_timeout=request.timeouts.read,
             write_timeout=request.timeouts.write,
             total_timeout=request.timeouts.total,
+            telemetry_request_id=telemetry_request_id,
         )
     except _foghttp.FogHttpError as exc:
         raise_public_raw_error(exc)
@@ -67,6 +69,7 @@ def send_raw_stream_request(
     *,
     raw_client: _foghttp.RawClient,
     request: RawRequestOptions,
+    telemetry_request_id: int | None = None,
 ) -> _foghttp.RawStreamResponse:
     body = prepare_sync_upload_body(request.body)
     try:
@@ -86,6 +89,7 @@ def send_raw_stream_request(
             read_timeout=request.timeouts.read,
             write_timeout=request.timeouts.write,
             total_timeout=request.timeouts.total,
+            telemetry_request_id=telemetry_request_id,
         )
     except _foghttp.FogHttpError as exc:
         raise_public_raw_error(exc)
@@ -97,6 +101,7 @@ async def send_raw_request_async(
     *,
     raw_client: _foghttp.RawClient,
     request: RawRequestOptions,
+    telemetry_request_id: int | None = None,
 ) -> _foghttp.RawResponse:
     body = prepare_async_upload_body(request.body)
     try:
@@ -116,6 +121,7 @@ async def send_raw_request_async(
             read_timeout=request.timeouts.read,
             write_timeout=request.timeouts.write,
             total_timeout=request.timeouts.total,
+            telemetry_request_id=telemetry_request_id,
         )
     except _foghttp.FogHttpError as exc:
         raise_public_raw_error(exc)
@@ -127,6 +133,7 @@ async def send_raw_stream_request_async(
     *,
     raw_client: _foghttp.RawClient,
     request: RawRequestOptions,
+    telemetry_request_id: int | None = None,
 ) -> _foghttp.RawStreamResponse:
     body = prepare_async_upload_body(request.body)
     try:
@@ -146,6 +153,7 @@ async def send_raw_stream_request_async(
             read_timeout=request.timeouts.read,
             write_timeout=request.timeouts.write,
             total_timeout=request.timeouts.total,
+            telemetry_request_id=telemetry_request_id,
         )
     except _foghttp.FogHttpError as exc:
         raise_public_raw_error(exc)

@@ -2,6 +2,7 @@ use super::active::{ActiveAsyncRequest, RequestCompletion};
 use super::callback::PythonFutureCancellation;
 use super::registry::AsyncRequestRegistry;
 use crate::core::metrics::Metrics;
+use crate::core::telemetry::{with_request_telemetry, RequestTelemetry};
 use crate::py::client::acquire::AcquireGate;
 use crate::py::client::future::{complete_python_future, PythonFutureSetters};
 use crate::py::client::transport::{send_request, TransportClients, TransportRequest};
@@ -15,6 +16,7 @@ pub struct AsyncRequestSpawn {
     pub clients: TransportClients,
     pub metrics: Arc<Metrics>,
     pub pool_timeout: f64,
+    pub telemetry: Option<RequestTelemetry>,
     pub future_setters: PythonFutureSetters,
     pub request: TransportRequest,
 }
@@ -30,6 +32,7 @@ pub fn spawn_async_request(
         clients,
         metrics,
         pool_timeout,
+        telemetry,
         future_setters,
         request,
     } = spawn;
@@ -47,15 +50,19 @@ pub fn spawn_async_request(
     let task_registry = registry.clone();
     let task_metrics = Arc::clone(&metrics);
     let task_completion = completion.clone();
+    let active_telemetry = telemetry.clone();
 
     metrics.request_started();
     let handle = runtime.spawn(async move {
-        let result = send_request(
-            clients,
-            acquire_gate,
-            Arc::clone(&task_metrics),
-            pool_timeout,
-            request,
+        let result = with_request_telemetry(
+            telemetry,
+            send_request(
+                clients,
+                acquire_gate,
+                Arc::clone(&task_metrics),
+                pool_timeout,
+                request,
+            ),
         )
         .await;
         if task_completion.finish() {
@@ -72,6 +79,7 @@ pub fn spawn_async_request(
             loop_.clone_ref(py),
             future.clone_ref(py),
             metrics,
+            active_telemetry,
             completion.clone(),
         ),
     );

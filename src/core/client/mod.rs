@@ -16,7 +16,9 @@ pub(crate) use connection_limit::{
 use proxy::parse_proxy_endpoint;
 pub(crate) use proxy::{HttpProxyConnector, HttpsTunnelConnector, ProxyTunnelTarget};
 pub(crate) use ssrf::SsrfResolver;
-pub(crate) use telemetry::{ConnectionTelemetry, ConnectionUseGuard, InstrumentedConnector};
+pub(crate) use telemetry::{
+    ConnectionAbortReason, ConnectionTelemetry, ConnectionUseGuard, InstrumentedConnector,
+};
 pub(crate) use write_timeout::{
     current_request_write_timeout, request_write_timeout_from_error, with_request_write_timeout,
     RequestTaskContextExecutor, RequestWriteTimeout, RequestWriteTimeoutContext,
@@ -25,6 +27,7 @@ pub(crate) use write_timeout::{
 use crate::core::metrics::Metrics;
 use crate::core::numeric::duration_from_secs;
 use crate::core::policy::SsrfPolicy;
+use crate::core::telemetry::ClientTelemetry;
 use crate::core::tls::build_tls_config;
 use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
 use hyper_util::client::legacy::connect::dns::GaiResolver;
@@ -58,11 +61,13 @@ pub fn build_client_with_connection_gate(
     options: &ClientOptions,
     metrics: Arc<Metrics>,
     connection_gate: ConnectionGate,
+    telemetry: Option<ClientTelemetry>,
 ) -> Result<HyperClient, String> {
     build_client_with_executor(
         options,
         metrics,
         connection_gate,
+        telemetry,
         RequestTaskContextExecutor,
         true,
     )
@@ -72,11 +77,13 @@ pub fn build_write_timeout_client_with_connection_gate(
     options: &ClientOptions,
     metrics: Arc<Metrics>,
     connection_gate: ConnectionGate,
+    telemetry: Option<ClientTelemetry>,
 ) -> Result<HyperClient, String> {
     build_client_with_executor(
         options,
         metrics,
         connection_gate,
+        telemetry,
         RequestTaskContextExecutor,
         false,
     )
@@ -86,6 +93,7 @@ fn build_client_with_executor<E>(
     options: &ClientOptions,
     metrics: Arc<Metrics>,
     connection_gate: ConnectionGate,
+    telemetry: Option<ClientTelemetry>,
     executor: E,
     pool_idle_connections: bool,
 ) -> Result<HyperClient, String>
@@ -124,8 +132,13 @@ where
         }
         None => HttpProxyConnector::direct(connector),
     };
-    let connector =
-        InstrumentedConnector::new(proxy_connector, metrics, connection_gate, idle_timeout);
+    let connector = InstrumentedConnector::new(
+        proxy_connector,
+        metrics,
+        connection_gate,
+        idle_timeout,
+        telemetry,
+    );
 
     let mut builder = Client::builder(executor);
     builder.pool_max_idle_per_host(if pool_idle_connections && options.keepalive {

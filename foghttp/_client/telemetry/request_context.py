@@ -10,13 +10,14 @@ from .emission import (
     TelemetryCompletion,
     TelemetryContextData,
     TelemetryEmission,
+    TelemetryEventContext,
     TelemetryRedirect,
     TelemetryResponseMetadata,
 )
 
 
 class TelemetryEmitter(Protocol):
-    def emit(self, context: TelemetryContextData, emission: TelemetryEmission) -> None: ...
+    def emit(self, context: TelemetryEventContext, emission: TelemetryEmission) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)

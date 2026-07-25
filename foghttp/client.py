@@ -17,6 +17,7 @@ from ._client.telemetry import (
     emit_buffered_response_telemetry,
     emit_request_error_telemetry,
     emit_stream_response_headers_telemetry,
+    native_request_id_scope,
     start_request_telemetry,
 )
 from ._client.transport import RawSyncTransport, SyncTransport
@@ -111,37 +112,10 @@ class Client(ClientCore):
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        self.close()
+        self._close(suppress_hook_errors=exc_type is not None)
 
     def close(self) -> None:
-        if not self._is_current_process():
-            self._close_after_fork()
-            return
-
-        raw_client = None
-        with self._lifecycle_condition:
-            if self._closed:
-                while not self._close_complete:
-                    self._lifecycle_condition.wait()
-                return
-
-            self._closed = True
-            while self._active_sync_send_tokens:
-                self._lifecycle_condition.wait()
-            raw_client = self._client
-            self._client = None
-            if raw_client is None:
-                self._close_complete = True
-                self._lifecycle_condition.notify_all()
-                return
-
-        if raw_client is not None:
-            try:
-                close_raw_client(raw_client)
-            finally:
-                with self._lifecycle_condition:
-                    self._close_complete = True
-                    self._lifecycle_condition.notify_all()
+        self._close(suppress_hook_errors=False)
 
     def request(
         self,
@@ -180,9 +154,14 @@ class Client(ClientCore):
             self._begin_sync_send(sync_send_token)
             telemetry_started = start_request_telemetry(telemetry_context)
             validate_safe_request_headers(request.headers)
-            response = self._transport.send(request, timeouts=self._request_timeouts(timeout))
+            response = self._transport_send(
+                request,
+                timeout=timeout,
+                telemetry_context=telemetry_context,
+            )
         except BaseException as error:
             bind_error_retry_trace(error)
+            self._emit_native_telemetry(telemetry_context, suppress_hook_errors=True)
             emit_request_error_telemetry(
                 telemetry_context,
                 telemetry_started=telemetry_started,
@@ -190,6 +169,7 @@ class Client(ClientCore):
             )
             raise
         else:
+            self._emit_native_telemetry(telemetry_context, suppress_hook_errors=False)
             emit_buffered_response_telemetry(telemetry_context, response)
             return response
         finally:
@@ -389,6 +369,41 @@ class Client(ClientCore):
             timeout=timeout,
         )
 
+    def _close(self, *, suppress_hook_errors: bool) -> None:
+        if not self._is_current_process():
+            self._close_after_fork()
+            return
+
+        raw_client = None
+        with self._lifecycle_condition:
+            if self._closed:
+                while not self._close_complete:
+                    self._lifecycle_condition.wait()
+                return
+
+            self._closed = True
+            while self._active_sync_send_tokens:
+                self._lifecycle_condition.wait()
+            raw_client = self._client
+            self._client = None
+            if raw_client is None:
+                self._close_complete = True
+                self._lifecycle_condition.notify_all()
+                return
+
+        if raw_client is not None:
+            try:
+                close_raw_client(raw_client)
+            finally:
+                with self._lifecycle_condition:
+                    self._close_complete = True
+                    self._lifecycle_condition.notify_all()
+            self._telemetry.emit_native_events(
+                raw_client,
+                request_id=None,
+                suppress_hook_errors=suppress_hook_errors,
+            )
+
     def _send_stream(self, request: Request, *, timeout: Timeouts | None = None) -> StreamResponse:
         self._ensure_open()
         sync_send_token = object()
@@ -398,9 +413,14 @@ class Client(ClientCore):
             self._begin_sync_send(sync_send_token)
             telemetry_started = start_request_telemetry(telemetry_context)
             validate_safe_request_headers(request.headers)
-            response = self._transport.stream(request, timeouts=self._request_timeouts(timeout))
+            response = self._transport_stream(
+                request,
+                timeout=timeout,
+                telemetry_context=telemetry_context,
+            )
         except BaseException as error:
             bind_error_retry_trace(error)
+            self._emit_native_telemetry(telemetry_context, suppress_hook_errors=True)
             emit_request_error_telemetry(
                 telemetry_context,
                 telemetry_started=telemetry_started,
@@ -408,10 +428,40 @@ class Client(ClientCore):
             )
             raise
         else:
-            _bind_stream_response_telemetry(telemetry_context, response)
+            _bind_stream_response_telemetry(
+                self,
+                telemetry_context,
+                response,
+            )
             return response
         finally:
             self._finish_sync_send(sync_send_token)
+
+    def _transport_send(
+        self,
+        request: Request,
+        *,
+        timeout: Timeouts | None,
+        telemetry_context: TelemetryRequestContext | None,
+    ) -> Response:
+        request_timeouts = self._request_timeouts(timeout)
+        if telemetry_context is None:
+            return self._transport.send(request, timeouts=request_timeouts)
+        with native_request_id_scope(telemetry_context.data.request_id):
+            return self._transport.send(request, timeouts=request_timeouts)
+
+    def _transport_stream(
+        self,
+        request: Request,
+        *,
+        timeout: Timeouts | None,
+        telemetry_context: TelemetryRequestContext | None,
+    ) -> StreamResponse:
+        request_timeouts = self._request_timeouts(timeout)
+        if telemetry_context is None:
+            return self._transport.stream(request, timeouts=request_timeouts)
+        with native_request_id_scope(telemetry_context.data.request_id):
+            return self._transport.stream(request, timeouts=request_timeouts)
 
     def _begin_sync_send(self, token: object) -> None:
         with self._lifecycle_condition:
@@ -443,15 +493,21 @@ class Client(ClientCore):
 
 
 def _bind_stream_response_telemetry(
+    client: Client,
     telemetry_context: TelemetryRequestContext | None,
     response: StreamResponse,
 ) -> None:
     if telemetry_context is None:
         return
+    native_telemetry_drain = client._native_telemetry_drain(telemetry_context)  # noqa: SLF001
 
     try:
+        if native_telemetry_drain is not None:
+            native_telemetry_drain(suppress_hook_errors=False)
         emit_stream_response_headers_telemetry(telemetry_context, response)
     except BaseException:
         response.close()
+        if native_telemetry_drain is not None:
+            native_telemetry_drain(suppress_hook_errors=True)
         raise
-    bind_stream_telemetry(response, telemetry_context)
+    bind_stream_telemetry(response, telemetry_context, native_telemetry_drain)

@@ -4,19 +4,28 @@ import pytest
 
 import foghttp
 from foghttp.methods import GET
+from foghttp.status_codes.success import OK
 from tests.client_streaming import (
     constants as stream_constants,
     stream_readers,
 )
 from tests.client_streaming.server import SyncStreamingServer
-from tests.client_telemetry.assertions import assert_event_types, assert_stream_completion
+from tests.client_telemetry.assertions import (
+    assert_connection_abort,
+    assert_event_types,
+    assert_stream_completion,
+)
 from tests.client_telemetry.constants import STREAM_EVENT_TYPES
 from tests.client_telemetry.models import (
     FailingTelemetrySink,
+    FailOnceOnEventTelemetrySink,
     FailOnEventTelemetrySink,
     RecordingTelemetrySink,
 )
 from tests.support.transport_stats import wait_for_sync_transport_stats
+
+
+_APPLICATION_BODY_FAILURE = "application body failure"
 
 
 def test_sync_stream_full_consume_events(sync_http_server: str) -> None:
@@ -53,6 +62,11 @@ def test_sync_stream_early_close_events(sync_streaming_server: SyncStreamingServ
             assert stream_readers.next_sync_stream_chunk(iterator) == stream_constants.FIRST_CHUNK
 
     assert_event_types(sink.events, STREAM_EVENT_TYPES)
+    assert_connection_abort(
+        sink.events,
+        outcome=foghttp.TelemetryRequestOutcome.CLOSED,
+        error_type=None,
+    )
     assert_stream_completion(sink.events, outcome=foghttp.TelemetryRequestOutcome.CLOSED)
 
 
@@ -83,6 +97,11 @@ def test_sync_stream_timeout_uses_public_error(
         outcome=foghttp.TelemetryRequestOutcome.ERROR,
         error_type="ReadTimeout",
     )
+    assert_connection_abort(
+        sink.events,
+        outcome=foghttp.TelemetryRequestOutcome.ERROR,
+        error_type="ReadTimeout",
+    )
 
 
 def test_sync_header_hook_closes_body(
@@ -103,6 +122,50 @@ def test_sync_header_hook_closes_body(
                 lambda stats: stats.active_requests == 0 and stats.response_body_aborted == 1,
                 message="stream header hook failure should close and abort the streamed body",
             )
+
+
+def test_sync_native_hook_failure_releases_stream_with_retained_exception(
+    sync_streaming_server: SyncStreamingServer,
+    sync_http_server: str,
+) -> None:
+    sink = FailOnceOnEventTelemetrySink(foghttp.TelemetryEventType.POOL_ACQUIRE_STARTED)
+
+    with ExitStack() as stack:
+        stack.callback(sync_streaming_server.release_tail.set)
+        with foghttp.Client(telemetry=foghttp.TelemetryConfig(sink=sink)) as client:
+            url = f"{sync_streaming_server.base_url}{stream_constants.GATED_STREAM_PATH}"
+            with pytest.raises(foghttp.TelemetryHookError) as exc_info, client.stream(GET, url):
+                pytest.fail("stream context should not enter after native hook failure")
+
+            retained_error = exc_info.value
+            sync_streaming_server.release_tail.set()
+            wait_for_sync_transport_stats(
+                client,
+                lambda stats: stats.active_requests == 0 and stats.response_body_aborted == 1,
+                message="native stream hook failure should release the body permit",
+            )
+            recovery = client.get(f"{sync_http_server}/status/{OK}")
+
+    assert retained_error.__cause__ is not None
+    assert recovery.status_code == OK
+
+
+def test_sync_native_close_hook_does_not_mask_context_body_error(
+    sync_streaming_server: SyncStreamingServer,
+) -> None:
+    sink = FailOnEventTelemetrySink(foghttp.TelemetryEventType.CONNECTION_ABORTED)
+
+    with ExitStack() as stack:
+        stack.callback(sync_streaming_server.release_tail.set)
+        with (
+            foghttp.Client(telemetry=foghttp.TelemetryConfig(sink=sink)) as client,
+            pytest.raises(RuntimeError, match=_APPLICATION_BODY_FAILURE),
+            client.stream(
+                GET,
+                f"{sync_streaming_server.base_url}{stream_constants.GATED_STREAM_PATH}",
+            ),
+        ):
+            raise RuntimeError(_APPLICATION_BODY_FAILURE)
 
 
 def test_sync_close_hook_keeps_body_closed(

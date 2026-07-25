@@ -19,7 +19,7 @@ impl PythonStreamReadCallback {
 
     fn cancel_read(&self) {
         self.abort_handle.abort();
-        self.state.abort();
+        self.state.cancel();
     }
 
     fn complete_read(&self) {

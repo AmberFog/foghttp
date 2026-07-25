@@ -83,8 +83,11 @@ def test_sync_retries_status_and_reuses_drained_connection(
     assert retry_event.retry_backoff_ns == 0
     assert retry_event.origin == retry_server.url
     assert retry_event.redacted_url == retry_server.url
-    assert retry_event.request_id == sink.events[-1].request_id
-    assert sink.events[-1].outcome == foghttp.TelemetryRequestOutcome.SUCCESS
+    request_finished = next(
+        event for event in sink.events if event.event_type == foghttp.TelemetryEventType.REQUEST_FINISHED
+    )
+    assert retry_event.request_id == request_finished.request_id
+    assert request_finished.outcome == foghttp.TelemetryRequestOutcome.SUCCESS
 
 
 def test_sync_retryable_response_drain_failure_does_not_retry(
@@ -328,8 +331,11 @@ def test_sync_replay_factory_failure_preserves_prior_retry_telemetry(
     retry_event = single_retry_event(sink.events)
     assert retry_event.retry_decision == foghttp.TelemetryRetryDecision.RETRY
     assert retry_event.retry_reason == foghttp.TelemetryRetryReason.STATUS
-    assert sink.events[-1].outcome == foghttp.TelemetryRequestOutcome.ERROR
-    assert sink.events[-1].error_type == type(failure).__name__
+    request_failure = next(
+        event for event in sink.events if event.event_type == foghttp.TelemetryEventType.REQUEST_FINISHED
+    )
+    assert request_failure.outcome == foghttp.TelemetryRequestOutcome.ERROR
+    assert request_failure.error_type == type(failure).__name__
     assert content.calls == EXPECTED_ATTEMPTS
 
 

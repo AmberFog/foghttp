@@ -25,6 +25,7 @@ from ._client.telemetry import (
     emit_buffered_response_telemetry,
     emit_request_error_telemetry,
     emit_stream_response_headers_telemetry,
+    native_request_id_scope,
     start_request_telemetry,
 )
 from ._upload_body import AsyncRequestContent
@@ -170,9 +171,14 @@ class AsyncClient(ClientCore):
             lifecycle_debug_token = self._begin_async_request_lifecycle_debug(request, mode="buffered")
             telemetry_started = start_request_telemetry(telemetry_context)
             validate_safe_request_headers(request.headers)
-            response = await self._transport.send(request, timeouts=self._request_timeouts(timeout))
+            response = await self._transport_send(
+                request,
+                timeout=timeout,
+                telemetry_context=telemetry_context,
+            )
         except BaseException as error:
             bind_error_retry_trace(error)
+            self._emit_native_telemetry(telemetry_context, suppress_hook_errors=True)
             emit_request_error_telemetry(
                 telemetry_context,
                 telemetry_started=telemetry_started,
@@ -180,6 +186,7 @@ class AsyncClient(ClientCore):
             )
             raise
         else:
+            self._emit_native_telemetry(telemetry_context, suppress_hook_errors=False)
             emit_buffered_response_telemetry(telemetry_context, response)
             return response
         finally:
@@ -400,6 +407,13 @@ class AsyncClient(ClientCore):
                 self._client = None
         if raw_client is not None:
             close_raw_client(raw_client)
+            self._telemetry.emit_native_events(
+                raw_client,
+                request_id=None,
+                suppress_hook_errors=(
+                    not raise_strict_lifecycle_errors or (strict_snapshot is not None and strict_snapshot.has_leaks)
+                ),
+            )
         if raise_strict_lifecycle_errors and strict_snapshot is not None and strict_snapshot.has_leaks:
             raise LifecycleError(async_lifecycle_debug_leak_message(strict_snapshot))
 
@@ -430,9 +444,14 @@ class AsyncClient(ClientCore):
             lifecycle_debug_token = self._begin_async_request_lifecycle_debug(request, mode="stream")
             telemetry_started = start_request_telemetry(telemetry_context)
             validate_safe_request_headers(request.headers)
-            response = await self._transport.stream(request, timeouts=self._request_timeouts(timeout))
+            response = await self._transport_stream(
+                request,
+                timeout=timeout,
+                telemetry_context=telemetry_context,
+            )
         except BaseException as error:
             bind_error_retry_trace(error)
+            self._emit_native_telemetry(telemetry_context, suppress_hook_errors=True)
             emit_request_error_telemetry(
                 telemetry_context,
                 telemetry_started=telemetry_started,
@@ -446,11 +465,42 @@ class AsyncClient(ClientCore):
                     lambda: self._lifecycle_debug.finish_request(lifecycle_debug_token),
                 )
                 lifecycle_debug_bound = True
-            _bind_stream_response_telemetry(telemetry_context, response)
+
+            _bind_stream_response_telemetry(
+                self,
+                telemetry_context,
+                response,
+            )
             return response
         finally:
             if not lifecycle_debug_bound:
                 self._lifecycle_debug.finish_request(lifecycle_debug_token)
+
+    async def _transport_send(
+        self,
+        request: Request,
+        *,
+        timeout: Timeouts | None,
+        telemetry_context: TelemetryRequestContext | None,
+    ) -> Response:
+        request_timeouts = self._request_timeouts(timeout)
+        if telemetry_context is None:
+            return await self._transport.send(request, timeouts=request_timeouts)
+        with native_request_id_scope(telemetry_context.data.request_id):
+            return await self._transport.send(request, timeouts=request_timeouts)
+
+    async def _transport_stream(
+        self,
+        request: Request,
+        *,
+        timeout: Timeouts | None,
+        telemetry_context: TelemetryRequestContext | None,
+    ) -> AsyncStreamResponse:
+        request_timeouts = self._request_timeouts(timeout)
+        if telemetry_context is None:
+            return await self._transport.stream(request, timeouts=request_timeouts)
+        with native_request_id_scope(telemetry_context.data.request_id):
+            return await self._transport.stream(request, timeouts=request_timeouts)
 
     def _strict_lifecycle_debug_snapshot_locked(self) -> AsyncLifecycleDebugSnapshot | None:
         if not self._lifecycle_debug.strict:
@@ -474,15 +524,21 @@ class AsyncClient(ClientCore):
 
 
 def _bind_stream_response_telemetry(
+    client: AsyncClient,
     telemetry_context: TelemetryRequestContext | None,
     response: AsyncStreamResponse,
 ) -> None:
     if telemetry_context is None:
         return
+    native_telemetry_drain = client._native_telemetry_drain(telemetry_context)  # noqa: SLF001
 
     try:
+        if native_telemetry_drain is not None:
+            native_telemetry_drain(suppress_hook_errors=False)
         emit_stream_response_headers_telemetry(telemetry_context, response)
     except BaseException:
         response.close()
+        if native_telemetry_drain is not None:
+            native_telemetry_drain(suppress_hook_errors=True)
         raise
-    bind_stream_telemetry(response, telemetry_context)
+    bind_stream_telemetry(response, telemetry_context, native_telemetry_drain)
