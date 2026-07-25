@@ -2,6 +2,7 @@ use super::active::{ActiveAsyncRequest, RequestCompletion};
 use super::callback::PythonFutureCancellation;
 use super::registry::AsyncRequestRegistry;
 use crate::core::metrics::Metrics;
+use crate::core::telemetry::{with_request_telemetry, RequestTelemetry};
 use crate::errors::FogHttpError;
 use crate::messages::STREAM_REQUEST_TASK_START_FAILED;
 use crate::py::client::acquire::AcquireGate;
@@ -20,6 +21,7 @@ pub struct AsyncStreamRequestSpawn {
     pub metrics: Arc<Metrics>,
     pub active_streams: StreamRegistry,
     pub pool_timeout: f64,
+    pub telemetry: Option<RequestTelemetry>,
     pub future_setters: PythonFutureSetters,
     pub request: TransportRequest,
 }
@@ -36,6 +38,7 @@ pub fn spawn_async_stream_request(
         metrics,
         active_streams,
         pool_timeout,
+        telemetry,
         future_setters,
         request,
     } = spawn;
@@ -54,6 +57,7 @@ pub fn spawn_async_stream_request(
     let task_registry = registry.clone();
     let task_metrics = Arc::clone(&metrics);
     let task_completion = completion.clone();
+    let active_telemetry = telemetry.clone();
     let (start_sender, start_receiver) = oneshot::channel();
 
     metrics.request_started();
@@ -61,16 +65,19 @@ pub fn spawn_async_stream_request(
         if start_receiver.await.is_err() {
             return;
         }
-        let result = send_stream_request(
-            clients,
-            acquire_gate,
-            Arc::clone(&task_metrics),
-            active_streams,
-            runtime_handle,
-            pool_timeout,
-            future_setters,
-            request,
-            task_completion.clone(),
+        let result = with_request_telemetry(
+            telemetry,
+            send_stream_request(
+                clients,
+                acquire_gate,
+                Arc::clone(&task_metrics),
+                active_streams,
+                runtime_handle,
+                pool_timeout,
+                future_setters,
+                request,
+                task_completion.clone(),
+            ),
         )
         .await;
         task_registry.remove(request_id);
@@ -87,6 +94,7 @@ pub fn spawn_async_stream_request(
             loop_.clone_ref(py),
             future.clone_ref(py),
             metrics,
+            active_telemetry,
             completion.clone(),
         ),
     );

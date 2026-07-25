@@ -2,6 +2,7 @@ use crate::core::client::{
     connection_acquire_timeout_from_error, request_write_timeout_from_error,
 };
 use crate::core::policy::{PolicyError, SsrfViolation};
+use crate::core::telemetry::TelemetryErrorType;
 use crate::errors::{transport_error_message, FogHttpError, FogHttpNetworkError, FogHttpSsrfError};
 use crate::messages::CONNECTION_ACQUIRE_TIMEOUT;
 use crate::py::client::timeout_diagnostics::{
@@ -19,25 +20,38 @@ pub(super) fn policy_error(error: &PolicyError) -> PyErr {
 }
 
 pub(super) fn transport_error(error: &(dyn Error + 'static)) -> PyErr {
-    if let Some(timeout) = request_write_timeout_from_error(error) {
-        return write_timeout_error(timeout);
+    match transport_error_kind(error) {
+        TransportErrorKind::WriteTimeout => write_timeout_error(
+            request_write_timeout_from_error(error)
+                .expect("write timeout kind must retain its source"),
+        ),
+        TransportErrorKind::PoolTimeout => {
+            let timeout = connection_acquire_timeout_from_error(error)
+                .expect("pool timeout kind must retain its source");
+            connection_acquire_timeout_error(
+                CONNECTION_ACQUIRE_TIMEOUT,
+                timeout.elapsed(),
+                timeout.timeout(),
+                timeout.origin(),
+                timeout.redirect_hop(),
+            )
+        }
+        TransportErrorKind::Ssrf => ssrf_error(
+            ssrf_violation_from_error(error).expect("SSRF error kind must retain its source"),
+        ),
+        TransportErrorKind::Request => FogHttpError::new_err(transport_error_message(error)),
+        TransportErrorKind::Network => FogHttpNetworkError::new_err(transport_error_message(error)),
     }
-    if let Some(timeout) = connection_acquire_timeout_from_error(error) {
-        return connection_acquire_timeout_error(
-            CONNECTION_ACQUIRE_TIMEOUT,
-            timeout.elapsed(),
-            timeout.timeout(),
-            timeout.origin(),
-            timeout.redirect_hop(),
-        );
+}
+
+pub(super) fn transport_telemetry_error_type(error: &(dyn Error + 'static)) -> TelemetryErrorType {
+    match transport_error_kind(error) {
+        TransportErrorKind::WriteTimeout => TelemetryErrorType::WriteTimeout,
+        TransportErrorKind::PoolTimeout => TelemetryErrorType::PoolTimeout,
+        TransportErrorKind::Ssrf => TelemetryErrorType::SsrfError,
+        TransportErrorKind::Request => TelemetryErrorType::RequestError,
+        TransportErrorKind::Network => TelemetryErrorType::NetworkError,
     }
-    if let Some(violation) = ssrf_violation_from_error(error) {
-        return ssrf_error(violation);
-    }
-    if error_chain_contains_user_error(error) {
-        return FogHttpError::new_err(transport_error_message(error));
-    }
-    FogHttpNetworkError::new_err(transport_error_message(error))
 }
 
 fn ssrf_error(violation: &SsrfViolation) -> PyErr {
@@ -48,10 +62,30 @@ fn ssrf_error(violation: &SsrfViolation) -> PyErr {
 }
 
 pub(super) fn is_retryable_network_error(error: &(dyn Error + 'static)) -> bool {
-    request_write_timeout_from_error(error).is_none()
-        && connection_acquire_timeout_from_error(error).is_none()
-        && ssrf_violation_from_error(error).is_none()
-        && !error_chain_contains_user_error(error)
+    transport_error_kind(error) == TransportErrorKind::Network
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TransportErrorKind {
+    WriteTimeout,
+    PoolTimeout,
+    Ssrf,
+    Request,
+    Network,
+}
+
+fn transport_error_kind(error: &(dyn Error + 'static)) -> TransportErrorKind {
+    if request_write_timeout_from_error(error).is_some() {
+        TransportErrorKind::WriteTimeout
+    } else if connection_acquire_timeout_from_error(error).is_some() {
+        TransportErrorKind::PoolTimeout
+    } else if ssrf_violation_from_error(error).is_some() {
+        TransportErrorKind::Ssrf
+    } else if error_chain_contains_user_error(error) {
+        TransportErrorKind::Request
+    } else {
+        TransportErrorKind::Network
+    }
 }
 
 fn ssrf_violation_from_error<'a>(

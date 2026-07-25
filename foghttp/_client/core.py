@@ -30,7 +30,7 @@ from .request_builder.defaults import DEFAULT_REQUEST_BUILD_DEFAULTS
 from .request_builder.merge import RequestMergeContract
 from .request_builder.models import RequestBuildOptions
 from .stats import stats_from_raw
-from .telemetry import TelemetryDispatcher
+from .telemetry import NativeTelemetryDrain, TelemetryDispatcher, TelemetryRequestContext
 from .transport_snapshot_mapping import empty_transport_state, transport_state_from_raw
 
 
@@ -174,6 +174,30 @@ class ClientCore:
 
     def _request_timeouts(self, timeout: Timeouts | None) -> Timeouts:
         return timeout or self._config.timeouts
+
+    def _emit_native_telemetry(
+        self,
+        telemetry_context: TelemetryRequestContext | None,
+        *,
+        suppress_hook_errors: bool,
+    ) -> None:
+        drain = self._native_telemetry_drain(telemetry_context)
+        if drain is None:
+            return
+        drain(suppress_hook_errors=suppress_hook_errors)
+
+    def _native_telemetry_drain(
+        self,
+        telemetry_context: TelemetryRequestContext | None,
+    ) -> NativeTelemetryDrain | None:
+        raw_client = self._client
+        if raw_client is None or telemetry_context is None:
+            return None
+        return NativeTelemetryDrain(
+            self._telemetry,
+            raw_client,
+            request_id=telemetry_context.data.request_id,
+        )
 
     def _unclosed_client_message(self) -> str:
         return UNCLOSED_CLIENT

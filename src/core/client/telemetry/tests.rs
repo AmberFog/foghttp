@@ -1,9 +1,15 @@
-use super::{ConnectionTelemetry, InstrumentedConnection, WriteTimeoutState};
+use super::{
+    ConnectionAbortReason, ConnectionTelemetry, InstrumentedConnection, WriteTimeoutState,
+};
 use crate::core::client::{
     request_write_timeout_from_error, with_request_write_timeout, ConnectionGate,
     InstrumentedConnector, RequestTaskContextExecutor, RequestWriteTimeoutContext,
 };
 use crate::core::metrics::{Metrics, OriginMetricsSnapshot, ResponseBodyLifecycleOutcome};
+use crate::core::telemetry::{
+    with_request_telemetry, ClientTelemetry, TelemetryErrorType, TelemetryEventType,
+    TelemetryOutcome, TelemetryRequestMode,
+};
 use bytes::Bytes;
 use http_body_util::Full;
 use hyper::rt::{Read, ReadBufCursor, Write};
@@ -32,9 +38,9 @@ fn telemetry_tracks_reuse_idle_abort_and_close_once() {
         ConnectionTelemetry::new(Arc::clone(&metrics), Some(origin_metrics), IDLE_TIMEOUT);
 
     telemetry
-        .response_started()
+        .request_started(None)
         .finish(ResponseBodyLifecycleOutcome::ReuseEligible);
-    drop(telemetry.response_started());
+    drop(telemetry.request_started(None));
     telemetry.connection_closed();
     telemetry.connection_closed();
 
@@ -58,12 +64,108 @@ fn telemetry_tracks_reuse_idle_abort_and_close_once() {
 }
 
 #[test]
+fn connection_abort_preserves_typed_cancellation_context() {
+    let metrics = Arc::new(Metrics::default());
+    let client_telemetry = ClientTelemetry::new();
+    let request_telemetry =
+        client_telemetry.request(1, TelemetryRequestMode::Stream, "GET".to_owned());
+    let connection = ConnectionTelemetry::new_with_native_telemetry(
+        Arc::clone(&metrics),
+        None,
+        IDLE_TIMEOUT,
+        client_telemetry
+            .connection_open(Some(ORIGIN.to_owned()), None)
+            .opened(),
+        Some(ORIGIN.to_owned()),
+    );
+
+    connection.abort(Some(&request_telemetry), ConnectionAbortReason::Cancelled);
+
+    let event = client_telemetry
+        .drain(Some(1))
+        .events
+        .pop()
+        .expect("connection abort event");
+    assert_eq!(event.event_type, TelemetryEventType::ConnectionAborted);
+    assert_eq!(event.outcome, Some(TelemetryOutcome::Cancelled));
+    assert_eq!(event.error_type, Some(TelemetryErrorType::CancelledError));
+}
+
+#[test]
+fn request_cancellation_claims_connection_abort_before_guard_drop() {
+    runtime().block_on(async {
+        let metrics = Arc::new(Metrics::default());
+        let client_telemetry = ClientTelemetry::new();
+        let request_telemetry =
+            client_telemetry.request(1, TelemetryRequestMode::Buffered, "GET".to_owned());
+        let connection = ConnectionTelemetry::new_with_native_telemetry(
+            Arc::clone(&metrics),
+            None,
+            IDLE_TIMEOUT,
+            client_telemetry
+                .connection_open(Some(ORIGIN.to_owned()), None)
+                .opened(),
+            Some(ORIGIN.to_owned()),
+        );
+        let _ = client_telemetry.drain(None);
+        let connection_use = connection.request_started(Some(request_telemetry.clone()));
+
+        request_telemetry.cancel();
+        drop(connection_use);
+
+        let event = client_telemetry
+            .drain(Some(1))
+            .events
+            .into_iter()
+            .find(|event| event.event_type == TelemetryEventType::ConnectionAborted)
+            .expect("connection abort event");
+        assert_eq!(event.outcome, Some(TelemetryOutcome::Cancelled));
+        assert_eq!(metrics.snapshot().connections_aborted, 1);
+    });
+}
+
+#[test]
+fn superseded_connection_assignment_leaves_terminal_outcome_to_the_replacement() {
+    let metrics = Arc::new(Metrics::default());
+    let client_telemetry = ClientTelemetry::new();
+    let request_telemetry =
+        client_telemetry.request(1, TelemetryRequestMode::Buffered, "GET".to_owned());
+    let connection = || {
+        ConnectionTelemetry::new_with_native_telemetry(
+            Arc::clone(&metrics),
+            None,
+            IDLE_TIMEOUT,
+            client_telemetry
+                .connection_open(Some(ORIGIN.to_owned()), None)
+                .opened(),
+            Some(ORIGIN.to_owned()),
+        )
+    };
+    let first = connection();
+    let second = connection();
+    let _ = client_telemetry.drain(None);
+
+    first
+        .request_started(Some(request_telemetry.clone()))
+        .superseded();
+    second
+        .request_started(Some(request_telemetry))
+        .abort(ConnectionAbortReason::Cancelled);
+
+    let events = client_telemetry.drain(Some(1)).events;
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_type, TelemetryEventType::ConnectionAborted);
+    assert_eq!(events[0].outcome, Some(TelemetryOutcome::Cancelled));
+    assert_eq!(metrics.snapshot().connections_aborted, 1);
+}
+
+#[test]
 fn closed_connection_does_not_reenter_idle_after_successful_body_finish() {
     let metrics = Arc::new(Metrics::default());
     let origin_metrics = metrics.origin_metrics(ORIGIN);
     let telemetry =
         ConnectionTelemetry::new(Arc::clone(&metrics), Some(origin_metrics), IDLE_TIMEOUT);
-    let connection_use = telemetry.response_started();
+    let connection_use = telemetry.request_started(None);
 
     telemetry.connection_closed();
     connection_use.finish(ResponseBodyLifecycleOutcome::ReuseEligible);
@@ -95,7 +197,7 @@ fn idle_connection_closed_after_timeout_records_idle_timeout_eviction() {
         ConnectionTelemetry::new(Arc::clone(&metrics), Some(origin_metrics), Duration::ZERO);
 
     telemetry
-        .response_started()
+        .request_started(None)
         .finish(ResponseBodyLifecycleOutcome::ReuseEligible);
     telemetry.connection_closed();
 
@@ -120,9 +222,9 @@ fn reused_idle_connection_does_not_record_idle_timeout_eviction() {
         ConnectionTelemetry::new(Arc::clone(&metrics), Some(origin_metrics), IDLE_TIMEOUT);
 
     telemetry
-        .response_started()
+        .request_started(None)
         .finish(ResponseBodyLifecycleOutcome::ReuseEligible);
-    drop(telemetry.response_started());
+    drop(telemetry.request_started(None));
     telemetry.connection_closed();
 
     let snapshot = metrics.snapshot();
@@ -141,24 +243,30 @@ fn pending_socket_write_expires_request_write_timeout() {
     runtime().block_on(async {
         let metrics = Arc::new(Metrics::default());
         let mut connection = pending_write_connection(Arc::clone(&metrics));
+        let telemetry = ClientTelemetry::new();
+        let request_telemetry =
+            telemetry.request(1, TelemetryRequestMode::Buffered, "POST".to_owned());
 
-        let result = with_request_write_timeout(
-            Some(RequestWriteTimeoutContext::new(
-                WRITE_TIMEOUT,
-                WRITE_TIMEOUT.as_secs_f64(),
-                ORIGIN.to_owned(),
-                0,
-            )),
-            async {
-                tokio::time::timeout(Duration::from_secs(1), async {
-                    poll_fn(|context| {
-                        Pin::new(&mut connection).poll_write(context, b"request body")
+        let result = with_request_telemetry(
+            Some(request_telemetry),
+            with_request_write_timeout(
+                Some(RequestWriteTimeoutContext::new(
+                    WRITE_TIMEOUT,
+                    WRITE_TIMEOUT.as_secs_f64(),
+                    ORIGIN.to_owned(),
+                    0,
+                )),
+                async {
+                    tokio::time::timeout(Duration::from_secs(1), async {
+                        poll_fn(|context| {
+                            Pin::new(&mut connection).poll_write(context, b"request body")
+                        })
+                        .await
                     })
                     .await
-                })
-                .await
-                .expect("expected write timeout before test timeout")
-            },
+                    .expect("expected write timeout before test timeout")
+                },
+            ),
         )
         .await;
 
@@ -166,6 +274,13 @@ fn pending_socket_write_expires_request_write_timeout() {
         assert_eq!(error.kind(), ErrorKind::TimedOut);
         assert_eq!(error.to_string(), "request body write timeout expired");
         assert_eq!(metrics.snapshot().connections_aborted, 1);
+        let event = telemetry
+            .drain(Some(1))
+            .events
+            .into_iter()
+            .find(|event| event.event_type == TelemetryEventType::ConnectionAborted)
+            .expect("expected connection abort telemetry event");
+        assert_eq!(event.error_type, Some(TelemetryErrorType::WriteTimeout));
     });
 }
 
@@ -178,6 +293,7 @@ fn hyper_dispatcher_sees_write_timeout_context_on_isolated_client() {
             Arc::clone(&metrics),
             ConnectionGate::new(Some(1), None),
             IDLE_TIMEOUT,
+            None,
         );
         let client = Client::builder(RequestTaskContextExecutor)
             .pool_max_idle_per_host(0)
@@ -286,7 +402,13 @@ fn instrumented_connection(
     let origin_metrics = metrics.origin_metrics(ORIGIN);
     InstrumentedConnection {
         inner,
-        telemetry: ConnectionTelemetry::new(metrics, Some(origin_metrics), IDLE_TIMEOUT),
+        telemetry: ConnectionTelemetry::new_with_native_telemetry(
+            metrics,
+            Some(origin_metrics),
+            IDLE_TIMEOUT,
+            None,
+            Some(ORIGIN.to_owned()),
+        ),
         write_timeout: WriteTimeoutState::default(),
         _connection_permit: crate::core::client::connection_limit::ConnectionPermit::default(),
     }

@@ -111,7 +111,7 @@ async fn send_stream_request_attempts(
             route,
         )
         .await?;
-        let (response, request_info) = match response {
+        let (response, request_info, connection_use) = match response {
             Ok(response) => response,
             Err(error) => {
                 if retry_after_network_error(
@@ -130,7 +130,8 @@ async fn send_stream_request_attempts(
             }
         };
 
-        let response_lifecycle = ResponseLifecycleGuards::new(&response, metrics, &origin_metrics);
+        let response_lifecycle =
+            ResponseLifecycleGuards::new(&response, connection_use, metrics, &origin_metrics);
         let headers = response_headers(response.headers());
         let status_code = response.status().as_u16();
         let response_action = state.on_response_headers(status_code, &headers, redirect_hop)?;

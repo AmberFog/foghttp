@@ -1,8 +1,9 @@
 use super::constants::{MAX_READY_FRAME_COALESCE_COUNT, READY_FRAME_COALESCE_TARGET_BYTES};
 use super::read::next_stream_body_frame;
 use super::registry::StreamRegistry;
-use crate::core::client::ConnectionUseGuard;
+use crate::core::client::{ConnectionAbortReason, ConnectionUseGuard};
 use crate::core::metrics::{Metrics, ResponseBodyLifecycleOutcome};
+use crate::core::telemetry::TelemetryErrorType;
 use crate::errors::FogHttpError;
 use crate::py::client::acquire::AcquirePermit;
 use crate::py::client::async_requests::RequestCompletion;
@@ -194,8 +195,19 @@ impl StreamState {
         self.fields().finished
     }
 
-    pub(super) fn abort(&self) {
-        self.finish(StreamFinish::Abort, true);
+    pub(super) fn close(&self) {
+        self.finish(StreamFinish::Abort(ConnectionAbortReason::Closed), true);
+    }
+
+    pub(super) fn cancel(&self) {
+        self.finish(StreamFinish::Abort(ConnectionAbortReason::Cancelled), true);
+    }
+
+    pub(super) fn fail(&self, error_type: Option<TelemetryErrorType>) {
+        self.finish(
+            StreamFinish::Abort(ConnectionAbortReason::Error(error_type)),
+            true,
+        );
     }
 
     pub(super) fn finish_read_delivery(&self) {
@@ -220,8 +232,8 @@ impl StreamState {
         self.finish(StreamFinish::Success, false);
     }
 
-    fn abort_from_read(&self) {
-        self.finish(StreamFinish::Abort, false);
+    fn abort_from_read(&self, reason: ConnectionAbortReason) {
+        self.finish(StreamFinish::Abort(reason), false);
     }
 
     fn finish(&self, finish: StreamFinish, abort_read_task: bool) {
@@ -241,7 +253,7 @@ impl StreamState {
             fields.body.take();
             match finish {
                 StreamFinish::Success => fields.finish_successful_body(),
-                StreamFinish::Abort => fields.finish_aborted_body(),
+                StreamFinish::Abort(reason) => fields.finish_aborted_body(reason),
             }
             fields.permit.take();
             let metrics = Arc::clone(&fields.metrics);
@@ -254,7 +266,7 @@ impl StreamState {
         }
 
         if finished_request {
-            let failed = matches!(finish, StreamFinish::Abort);
+            let failed = matches!(finish, StreamFinish::Abort(_));
             metrics.request_finished(failed);
         }
     }
@@ -305,9 +317,9 @@ impl StreamStateFields {
         self.lifecycle.take();
     }
 
-    fn finish_aborted_body(&mut self) {
+    fn finish_aborted_body(&mut self, reason: ConnectionAbortReason) {
         if let Some(connection_use) = self.connection_use.take() {
-            connection_use.finish(ResponseBodyLifecycleOutcome::Aborted);
+            connection_use.abort(reason);
         }
         if let Some(lifecycle) = &mut self.lifecycle {
             lifecycle.finish(ResponseBodyLifecycleOutcome::Aborted);
@@ -319,6 +331,10 @@ impl StreamStateFields {
 impl StreamReadGuard {
     pub(super) async fn read_next_chunk(mut self) -> PyResult<Option<Vec<u8>>> {
         if let Some(error) = self.deferred_body_error.take() {
+            self.state
+                .abort_from_read(ConnectionAbortReason::Error(Some(
+                    TelemetryErrorType::RequestError,
+                )));
             return Err(FogHttpError::new_err(error));
         }
 
@@ -327,14 +343,24 @@ impl StreamReadGuard {
             let read_timeout_secs = self.read_timeout_secs;
             let origin = self.origin.clone();
             let redirect_hop = self.redirect_hop;
-            let frame = next_stream_body_frame(
+            let frame = match next_stream_body_frame(
                 self.body_mut(),
                 read_timeout,
                 read_timeout_secs,
                 &origin,
                 redirect_hop,
             )
-            .await?;
+            .await
+            {
+                Ok(frame) => frame,
+                Err(error) => {
+                    self.state
+                        .abort_from_read(ConnectionAbortReason::Error(Some(
+                            TelemetryErrorType::ReadTimeout,
+                        )));
+                    return Err(error);
+                }
+            };
             if self.state.is_finished() {
                 return Ok(None);
             }
@@ -342,7 +368,16 @@ impl StreamReadGuard {
                 self.finish_success_from_read();
                 return Ok(None);
             };
-            let frame = frame.map_err(|err| FogHttpError::new_err(err.to_string()))?;
+            let frame = match frame {
+                Ok(frame) => frame,
+                Err(error) => {
+                    self.state
+                        .abort_from_read(ConnectionAbortReason::Error(Some(
+                            TelemetryErrorType::RequestError,
+                        )));
+                    return Err(FogHttpError::new_err(error.to_string()));
+                }
+            };
             let Ok(data) = frame.into_data() else {
                 continue;
             };
@@ -433,7 +468,7 @@ impl Drop for StreamReadGuard {
     fn drop(&mut self) {
         if !self.disarmed {
             self.body.take();
-            self.state.abort_from_read();
+            self.state.abort_from_read(ConnectionAbortReason::Cancelled);
         }
     }
 }
@@ -462,7 +497,7 @@ fn drain_ready_data_frames_with(
 #[derive(Clone, Copy)]
 enum StreamFinish {
     Success,
-    Abort,
+    Abort(ConnectionAbortReason),
 }
 
 #[cfg(test)]

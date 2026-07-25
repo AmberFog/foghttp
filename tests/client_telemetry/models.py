@@ -33,6 +33,19 @@ class FailOnEventTelemetrySink:
             raise RuntimeError(event.event_type.value)
 
 
+@dataclass(slots=True)
+class FailOnceOnEventTelemetrySink:
+    fail_on: TelemetryEventType
+    events: list[TelemetryEvent] = field(default_factory=list)
+    _failed: bool = field(default=False, init=False, repr=False)
+
+    def emit(self, event: TelemetryEvent) -> None:
+        self.events.append(event)
+        if event.event_type == self.fail_on and not self._failed:
+            self._failed = True
+            raise RuntimeError(event.event_type.value)
+
+
 class FailingTelemetrySink:
     def emit(self, event: TelemetryEvent) -> None:
         raise RuntimeError(event.event_type.value)

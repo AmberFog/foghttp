@@ -1,10 +1,15 @@
 use super::body::{collect_response_body, drain_response_body, response_body_can_be_decoded};
 use super::context::{RawResponseContext, RawStreamResponseContext};
-use crate::core::client::{ConnectionTelemetry, ConnectionUseGuard};
+use crate::core::client::{ConnectionAbortReason, ConnectionTelemetry, ConnectionUseGuard};
 use crate::core::headers::HeaderPairs;
 use crate::core::metrics::{Metrics, OriginMetrics, ResponseBodyLifecycleOutcome};
 use crate::core::numeric::duration_from_secs;
 use crate::core::response::{decode_body, decoded_response_headers, response_body_decoding_plan};
+use crate::core::telemetry::TelemetryErrorType;
+use crate::errors::{
+    FogHttpReadTimeoutError, FogHttpResponseBodyBudgetExceededError,
+    FogHttpResponseBodyTooLargeError, FogHttpTimeoutError,
+};
 use crate::py::client::lifecycle::{successful_response_body_outcome, ResponseBodyLifecycle};
 use crate::py::client::streams::{RawStreamResponse, RawStreamResponseParts};
 use crate::py::response::{RawRequestInfo, RawResponse, RawResponseParts};
@@ -22,15 +27,19 @@ pub(super) struct ResponseLifecycleGuards {
 impl ResponseLifecycleGuards {
     pub(super) fn new(
         response: &Response<Incoming>,
+        connection_use: Option<ConnectionUseGuard>,
         metrics: &Arc<Metrics>,
         origin_metrics: &Arc<OriginMetrics>,
     ) -> Self {
-        Self {
-            body: ResponseBodyLifecycle::new(Arc::clone(metrics), Arc::clone(origin_metrics)),
-            connection_use: response
+        let connection_use = connection_use.or_else(|| {
+            response
                 .extensions()
                 .get::<ConnectionTelemetry>()
-                .map(ConnectionTelemetry::response_started),
+                .map(|telemetry| telemetry.request_started(None))
+        });
+        Self {
+            body: ResponseBodyLifecycle::new(Arc::clone(metrics), Arc::clone(origin_metrics)),
+            connection_use,
             successful_body_outcome: successful_response_body_outcome(
                 response.version(),
                 response.headers(),
@@ -47,6 +56,14 @@ impl ResponseLifecycleGuards {
     fn finish_body(&mut self) {
         self.body.finish(self.successful_body_outcome);
     }
+
+    fn abort_connection(&mut self, error: &PyErr) {
+        if let Some(connection_use) = self.connection_use.take() {
+            connection_use.abort(ConnectionAbortReason::Error(Some(
+                response_body_error_type(error),
+            )));
+        }
+    }
 }
 
 pub(super) async fn drain_response(
@@ -56,7 +73,10 @@ pub(super) async fn drain_response(
 ) -> PyResult<()> {
     let read_timeout = duration_from_secs("Timeouts.read", context.read_timeout)
         .map_err(pyo3::exceptions::PyValueError::new_err)?;
-    drain_response_body(response.into_body(), &context, read_timeout).await?;
+    if let Err(error) = drain_response_body(response.into_body(), &context, read_timeout).await {
+        lifecycle.abort_connection(&error);
+        return Err(error);
+    }
     lifecycle.finish_connection();
     lifecycle.finish_body();
     Ok(())
@@ -76,7 +96,14 @@ pub(super) async fn raw_response(
         .then(|| response_body_decoding_plan(response.headers()));
     let read_timeout = duration_from_secs("Timeouts.read", context.read_timeout)
         .map_err(pyo3::exceptions::PyValueError::new_err)?;
-    let collected = collect_response_body(response.into_body(), &context, read_timeout).await?;
+    let collected = match collect_response_body(response.into_body(), &context, read_timeout).await
+    {
+        Ok(collected) => collected,
+        Err(error) => {
+            lifecycle.abort_connection(&error);
+            return Err(error);
+        }
+    };
     lifecycle.finish_connection();
     let (headers, response_content, body_reservation) = if let Some(decoding_plan) = decoding_plan {
         let body = decode_body(collected, decoding_plan, context.max_response_body_size)?;
@@ -103,6 +130,22 @@ pub(super) async fn raw_response(
         retry_trace: None,
         body_reservation: Some(body_reservation),
     }))
+}
+
+fn response_body_error_type(error: &PyErr) -> TelemetryErrorType {
+    Python::attach(|py| {
+        if error.is_instance_of::<FogHttpReadTimeoutError>(py) {
+            TelemetryErrorType::ReadTimeout
+        } else if error.is_instance_of::<FogHttpTimeoutError>(py) {
+            TelemetryErrorType::TimeoutError
+        } else if error.is_instance_of::<FogHttpResponseBodyTooLargeError>(py) {
+            TelemetryErrorType::ResponseBodyTooLargeError
+        } else if error.is_instance_of::<FogHttpResponseBodyBudgetExceededError>(py) {
+            TelemetryErrorType::ResponseBodyBudgetExceededError
+        } else {
+            TelemetryErrorType::RequestError
+        }
+    })
 }
 
 pub(super) fn raw_stream_response(

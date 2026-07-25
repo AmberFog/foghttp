@@ -62,6 +62,7 @@ RAW_CLIENT_INIT_ARGUMENTS = (
     "ssrf_allowed_schemes",
     "ssrf_allowed_origins",
     "ssrf_allowed_domains",
+    "telemetry_enabled",
 )
 
 RAW_REQUEST_ARGUMENTS = (
@@ -80,6 +81,7 @@ RAW_REQUEST_ARGUMENTS = (
     "read_timeout",
     "write_timeout",
     "total_timeout",
+    "telemetry_request_id",
 )
 
 
@@ -217,6 +219,7 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
         "ssrf_allowed_schemes": None,
         "ssrf_allowed_origins": [],
         "ssrf_allowed_domains": [],
+        "telemetry_enabled": False,
     }
 
 
@@ -504,6 +507,7 @@ def _expected_raw_request_options(
         "read_timeout": timeouts.read,
         "write_timeout": timeouts.write,
         "total_timeout": timeouts.total,
+        "telemetry_request_id": None,
     }
     assert set(options) == set(RAW_REQUEST_ARGUMENTS)
     return options

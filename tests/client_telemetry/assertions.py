@@ -9,13 +9,14 @@ from foghttp.telemetry import (
     TelemetryRequestMode,
     TelemetryRequestOutcome,
 )
+from tests.client_telemetry.constants import LOWER_LEVEL_EVENT_TYPES
 
 
 def assert_event_types(
     events: Sequence[TelemetryEvent],
     expected: tuple[TelemetryEventType, ...],
 ) -> None:
-    actual = tuple(event.event_type for event in events)
+    actual = tuple(event.event_type for event in events if event.event_type not in LOWER_LEVEL_EVENT_TYPES)
     if actual != expected:
         raise AssertionError(actual)
 
@@ -35,8 +36,14 @@ def assert_event_sequences_are_unique(events: Sequence[TelemetryEvent]) -> None:
 
 
 def assert_single_request_id(events: Sequence[TelemetryEvent]) -> None:
-    request_ids = {event.request_id for event in events}
-    if len(request_ids) != 1 or None in request_ids:
+    request_ids = {event.request_id for event in events if event.request_id is not None}
+    client_scoped_types = {event.event_type for event in events if event.request_id is None}
+    allowed_client_scoped_types = {
+        TelemetryEventType.CONNECTION_OPENED,
+        TelemetryEventType.CONNECTION_OPEN_FAILED,
+        TelemetryEventType.CONNECTION_CLOSED,
+    }
+    if len(request_ids) != 1 or client_scoped_types - allowed_client_scoped_types:
         raise AssertionError(request_ids)
 
 
@@ -52,8 +59,8 @@ def assert_stream_completion(
     outcome: TelemetryRequestOutcome,
     error_type: str | None = None,
 ) -> None:
-    body_event = events[-2]
-    request_event = events[-1]
+    body_event = _event(events, TelemetryEventType.RESPONSE_BODY_FINISHED)
+    request_event = _event(events, TelemetryEventType.REQUEST_FINISHED)
     actual_values = {
         "body_elapsed_ns": body_event.elapsed_ns,
         "body_outcome": body_event.outcome,
@@ -74,10 +81,23 @@ def assert_stream_completion(
         raise AssertionError(actual_values)
 
 
+def assert_connection_abort(
+    events: Sequence[TelemetryEvent],
+    *,
+    outcome: TelemetryRequestOutcome,
+    error_type: str | None,
+) -> None:
+    event = _event(events, TelemetryEventType.CONNECTION_ABORTED)
+    actual = (event.outcome, event.error_type)
+    expected = (outcome, error_type)
+    if actual != expected:
+        raise AssertionError(actual)
+
+
 def assert_buffered_redirect_contract(events: Sequence[TelemetryEvent]) -> None:
-    start_event = events[0]
-    redirect_event = events[1]
-    finish_event = events[-1]
+    start_event = _event(events, TelemetryEventType.REQUEST_STARTED)
+    redirect_event = _event(events, TelemetryEventType.REDIRECT_DECISION)
+    finish_event = _event(events, TelemetryEventType.REQUEST_FINISHED)
 
     expected_values = {
         "start_mode": TelemetryRequestMode.BUFFERED,
@@ -101,3 +121,13 @@ def assert_buffered_redirect_contract(events: Sequence[TelemetryEvent]) -> None:
         raise AssertionError(actual_values)
     if "token=<redacted>" not in (start_event.redacted_url or ""):
         raise AssertionError(start_event.redacted_url)
+
+
+def _event(
+    events: Sequence[TelemetryEvent],
+    event_type: TelemetryEventType,
+) -> TelemetryEvent:
+    matches = tuple(event for event in events if event.event_type == event_type)
+    if len(matches) != 1:
+        raise AssertionError((event_type, len(matches)))
+    return matches[0]

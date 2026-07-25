@@ -59,6 +59,7 @@ def create_raw_client(
             ssrf_allowed_schemes=ssrf_options.schemes,
             ssrf_allowed_origins=ssrf_options.origins,
             ssrf_allowed_domains=ssrf_options.domains,
+            telemetry_enabled=config.telemetry is not None and config.telemetry.enabled,
         )
     except _foghttp.FogHttpError as exc:
         raise ValueError(str(exc)) from exc

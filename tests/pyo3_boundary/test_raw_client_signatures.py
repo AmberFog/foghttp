@@ -38,6 +38,7 @@ RAW_CLIENT_KEYWORD_ONLY_PARAMETERS = (
     "ssrf_allowed_schemes",
     "ssrf_allowed_origins",
     "ssrf_allowed_domains",
+    "telemetry_enabled",
 )
 
 RAW_REQUEST_KEYWORD_ONLY_PARAMETERS = (
@@ -56,6 +57,7 @@ RAW_REQUEST_KEYWORD_ONLY_PARAMETERS = (
     "read_timeout",
     "write_timeout",
     "total_timeout",
+    "telemetry_request_id",
 )
 
 

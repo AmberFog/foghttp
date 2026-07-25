@@ -20,6 +20,9 @@ use crate::core::headers::HeaderPairs;
 use crate::core::metrics::Metrics;
 use crate::core::policy::{CookieJar, RetryPolicy, SsrfPolicy};
 use crate::core::response::BufferedBodyBudget;
+use crate::core::telemetry::{
+    with_request_telemetry, ClientTelemetry, RequestTelemetry, TelemetryRequestMode,
+};
 use crate::errors::FogHttpError;
 use crate::py::client::acquire::AcquireGate;
 use crate::py::client::async_requests::{
@@ -40,6 +43,7 @@ use crate::py::client::transport::{
 };
 use crate::py::response::RawResponse;
 use crate::py::stats::RawStats;
+use crate::py::telemetry::{raw_telemetry_batch, RawTelemetryEvent};
 use crate::py::{RawPoolDiagnostics, RawTransportState};
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
@@ -67,6 +71,7 @@ pub struct RawClient {
     policy_hooks: Option<Arc<PythonPolicyHooks>>,
     retry_policy: Option<RetryPolicy>,
     ssrf_policy: Option<Arc<SsrfPolicy>>,
+    telemetry: Option<ClientTelemetry>,
     process_id: ProcessId,
 }
 
@@ -108,7 +113,8 @@ impl RawClient {
         retry_network_errors,
         ssrf_allowed_schemes,
         ssrf_allowed_origins,
-        ssrf_allowed_domains
+        ssrf_allowed_domains,
+        telemetry_enabled
     ))]
     #[allow(
         clippy::fn_params_excessive_bools,
@@ -153,6 +159,7 @@ impl RawClient {
         ssrf_allowed_schemes: Option<Vec<String>>,
         ssrf_allowed_origins: Vec<String>,
         ssrf_allowed_domains: Vec<String>,
+        telemetry_enabled: bool,
     ) -> PyResult<Self> {
         validate_numeric_client_options(NumericClientOptions {
             max_active_requests,
@@ -196,6 +203,7 @@ impl RawClient {
 
         let runtime_mode = parse_runtime_mode(runtime)?;
         let metrics = Arc::new(Metrics::default());
+        let telemetry = telemetry_enabled.then(ClientTelemetry::new);
         let connection_gate = ConnectionGate::new(max_connections, max_connections_per_host);
         let client_options = ClientOptions {
             max_idle_connections_per_host,
@@ -213,12 +221,14 @@ impl RawClient {
             &client_options,
             Arc::clone(&metrics),
             connection_gate.clone(),
+            telemetry.clone(),
         )
         .map_err(FogHttpError::new_err)?;
         let write_timeout_client = build_write_timeout_client_with_connection_gate(
             &client_options,
             Arc::clone(&metrics),
             connection_gate.clone(),
+            telemetry.clone(),
         )
         .map_err(FogHttpError::new_err)?;
         let proxy_options = if http_proxy_url.is_some() || https_proxy_url.is_some() {
@@ -238,6 +248,7 @@ impl RawClient {
                     options,
                     Arc::clone(&metrics),
                     connection_gate.clone(),
+                    telemetry.clone(),
                 )
             })
             .transpose()
@@ -249,6 +260,7 @@ impl RawClient {
                     options,
                     Arc::clone(&metrics),
                     connection_gate.clone(),
+                    telemetry.clone(),
                 )
             })
             .transpose()
@@ -288,6 +300,7 @@ impl RawClient {
             policy_hooks,
             retry_policy,
             ssrf_policy,
+            telemetry,
             process_id: current_process_id(),
         })
     }
@@ -308,7 +321,8 @@ impl RawClient {
         pool_timeout,
         read_timeout,
         write_timeout,
-        total_timeout
+        total_timeout,
+        telemetry_request_id=None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn request(
@@ -329,6 +343,7 @@ impl RawClient {
         read_timeout: f64,
         write_timeout: f64,
         total_timeout: f64,
+        telemetry_request_id: Option<u64>,
     ) -> PyResult<RawResponse> {
         self.ensure_current_process()?;
         validate_request_timeouts(pool_timeout, read_timeout, write_timeout, total_timeout)?;
@@ -348,10 +363,15 @@ impl RawClient {
         let policy_hooks = self.policy_hooks.clone();
         let retry_policy = self.retry_policy.clone();
         let ssrf_policy = self.ssrf_policy.clone();
+        let telemetry = self.request_telemetry(
+            telemetry_request_id,
+            TelemetryRequestMode::Buffered,
+            &method,
+        );
         self.metrics.request_started();
 
         let result = py.detach(|| {
-            runtime.block_on(async move {
+            runtime.block_on(with_request_telemetry(telemetry, async move {
                 send_request(
                     clients,
                     acquire_gate,
@@ -385,7 +405,7 @@ impl RawClient {
                     },
                 )
                 .await
-            })
+            }))
         });
 
         self.metrics.request_finished(result.is_err());
@@ -408,7 +428,8 @@ impl RawClient {
         pool_timeout,
         read_timeout,
         write_timeout,
-        total_timeout
+        total_timeout,
+        telemetry_request_id=None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn request_async(
@@ -429,6 +450,7 @@ impl RawClient {
         read_timeout: f64,
         write_timeout: f64,
         total_timeout: f64,
+        telemetry_request_id: Option<u64>,
     ) -> PyResult<Py<PyAny>> {
         self.ensure_current_process()?;
         validate_request_timeouts(pool_timeout, read_timeout, write_timeout, total_timeout)?;
@@ -446,6 +468,11 @@ impl RawClient {
         let policy_hooks = self.policy_hooks.clone();
         let retry_policy = self.retry_policy.clone();
         let ssrf_policy = self.ssrf_policy.clone();
+        let telemetry = self.request_telemetry(
+            telemetry_request_id,
+            TelemetryRequestMode::Buffered,
+            &method,
+        );
         spawn_async_request(
             py,
             runtime,
@@ -455,6 +482,7 @@ impl RawClient {
                 clients,
                 metrics: Arc::clone(&self.metrics),
                 pool_timeout,
+                telemetry,
                 future_setters: self.future_setters.clone_ref(py),
                 request: TransportRequest {
                     method,
@@ -502,7 +530,8 @@ impl RawClient {
         pool_timeout,
         read_timeout,
         write_timeout,
-        total_timeout
+        total_timeout,
+        telemetry_request_id=None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn request_stream(
@@ -523,6 +552,7 @@ impl RawClient {
         read_timeout: f64,
         write_timeout: f64,
         total_timeout: f64,
+        telemetry_request_id: Option<u64>,
     ) -> PyResult<RawStreamResponse> {
         self.ensure_current_process()?;
         validate_request_timeouts(pool_timeout, read_timeout, write_timeout, total_timeout)?;
@@ -544,13 +574,15 @@ impl RawClient {
         let policy_hooks = self.policy_hooks.clone();
         let retry_policy = self.retry_policy.clone();
         let ssrf_policy = self.ssrf_policy.clone();
+        let telemetry =
+            self.request_telemetry(telemetry_request_id, TelemetryRequestMode::Stream, &method);
         let completion = RequestCompletion::default();
         let request_completion = completion.clone();
         let future_setters = self.future_setters.clone_ref(py);
         self.metrics.request_started();
 
         let result = py.detach(|| {
-            runtime.block_on(async move {
+            runtime.block_on(with_request_telemetry(telemetry, async move {
                 send_stream_request(
                     clients,
                     acquire_gate,
@@ -588,7 +620,7 @@ impl RawClient {
                     request_completion,
                 )
                 .await
-            })
+            }))
         });
 
         if result.is_err() && completion.finish() {
@@ -613,7 +645,8 @@ impl RawClient {
         pool_timeout,
         read_timeout,
         write_timeout,
-        total_timeout
+        total_timeout,
+        telemetry_request_id=None
     ))]
     #[allow(clippy::too_many_arguments)]
     fn request_stream_async(
@@ -634,6 +667,7 @@ impl RawClient {
         read_timeout: f64,
         write_timeout: f64,
         total_timeout: f64,
+        telemetry_request_id: Option<u64>,
     ) -> PyResult<Py<PyAny>> {
         self.ensure_current_process()?;
         validate_request_timeouts(pool_timeout, read_timeout, write_timeout, total_timeout)?;
@@ -651,6 +685,8 @@ impl RawClient {
         let policy_hooks = self.policy_hooks.clone();
         let retry_policy = self.retry_policy.clone();
         let ssrf_policy = self.ssrf_policy.clone();
+        let telemetry =
+            self.request_telemetry(telemetry_request_id, TelemetryRequestMode::Stream, &method);
         spawn_async_stream_request(
             py,
             runtime,
@@ -661,6 +697,7 @@ impl RawClient {
                 metrics: Arc::clone(&self.metrics),
                 active_streams: self.active_streams.clone(),
                 pool_timeout,
+                telemetry,
                 future_setters: self.future_setters.clone_ref(py),
                 request: TransportRequest {
                     method,
@@ -707,12 +744,42 @@ impl RawClient {
         Ok(self.acquire_gate.diagnostics().into())
     }
 
+    #[pyo3(signature = (request_id=None))]
+    fn drain_telemetry_events(
+        &self,
+        request_id: Option<u64>,
+    ) -> PyResult<(Vec<RawTelemetryEvent>, u64)> {
+        self.ensure_current_process()?;
+        Ok(raw_telemetry_batch(self.drain_telemetry(request_id)))
+    }
+
     fn close(&mut self) {
         self.close_resources();
     }
 }
 
 impl RawClient {
+    fn request_telemetry(
+        &self,
+        request_id: Option<u64>,
+        mode: TelemetryRequestMode,
+        method: &str,
+    ) -> Option<RequestTelemetry> {
+        self.telemetry
+            .as_ref()
+            .zip(request_id)
+            .map(|(telemetry, request_id)| telemetry.request(request_id, mode, method.to_owned()))
+    }
+
+    fn drain_telemetry(
+        &self,
+        request_id: Option<u64>,
+    ) -> crate::core::telemetry::TelemetryEventBatch {
+        self.telemetry
+            .as_ref()
+            .map_or_else(Default::default, |telemetry| telemetry.drain(request_id))
+    }
+
     fn retained_request_extensions(&self, extensions: Option<Py<PyAny>>) -> Option<Py<PyAny>> {
         extensions.filter(|_| {
             self.policy_hooks.is_some() || self.auth.as_ref().is_some_and(|auth| auth.uses_hook())
@@ -746,6 +813,9 @@ impl RawClient {
         if current_process {
             self.active_async_requests.abort_all();
             self.active_streams.abort_all();
+            if let Some(telemetry) = &self.telemetry {
+                telemetry.close_connections();
+            }
             self.clients.take();
             if let Some(runtime) = self.runtime.take() {
                 runtime.shutdown_background();

@@ -23,7 +23,7 @@ impl StreamRegistry {
         };
 
         for stream in active_streams {
-            stream.abort();
+            stream.close();
         }
     }
 

@@ -112,7 +112,8 @@ def test_sync_query_preserves_metadata_and_telemetry(
     assert url_secret not in representation
     assert body_secret not in representation
     assert sink.events
-    assert {event.method for event in sink.events} == {QUERY}
+    assert {event.method for event in sink.events if event.request_id is not None} == {QUERY}
+    assert all(event.method is None for event in sink.events if event.request_id is None)
     assert body_secret not in repr(sink.events)
     assert all(url_secret not in (event.redacted_url or "") for event in sink.events)
 

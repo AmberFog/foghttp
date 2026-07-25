@@ -125,8 +125,9 @@ async with foghttp.AsyncClient() as client:
 - bounded global and per-origin request slots with a bounded FIFO pending queue
 - opt-in global/per-origin HTTP/1.1 connection caps with separate connection
   acquire pressure and idle lifecycle diagnostics
-- opt-in typed telemetry event hooks for request, redirect, response headers,
-  response body, and request completion lifecycle
+- opt-in typed telemetry event hooks for pool acquire, HTTP/1 connection,
+  request, redirect, response headers, response body, and request completion
+  lifecycle
 - opt-in typed transport policy hooks for lightweight request admission and
   response-head checks without default-path Python callbacks
 - opt-in Rust-owned retry policy for selected statuses and pre-header network

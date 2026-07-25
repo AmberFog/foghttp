@@ -28,7 +28,10 @@ async def test_async_buffered_core_events(http_server: str) -> None:
     assert_event_sequence_is_monotonic(sink.events)
     assert_single_request_id(sink.events)
     assert sink.events[0].mode == TelemetryRequestMode.BUFFERED
-    assert sink.events[-1].outcome == TelemetryRequestOutcome.SUCCESS
+    request_finished = next(
+        event for event in sink.events if event.event_type == foghttp.TelemetryEventType.REQUEST_FINISHED
+    )
+    assert request_finished.outcome == TelemetryRequestOutcome.SUCCESS
 
 
 async def test_async_hook_ignore_keeps_request_running(http_server: str) -> None:

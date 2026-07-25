@@ -1,12 +1,15 @@
 __all__ = (
+    "NativeTelemetryContextData",
     "TelemetryCompletion",
     "TelemetryContextData",
     "TelemetryEmission",
+    "TelemetryEventContext",
     "TelemetryRedirect",
     "TelemetryResponseMetadata",
 )
 
 from dataclasses import dataclass
+from typing import TypeAlias
 
 from ...telemetry import (
     TelemetryEventType,
@@ -24,6 +27,18 @@ class TelemetryContextData:
     method: str
     origin: str | None
     redacted_url: str
+
+
+@dataclass(frozen=True, slots=True)
+class NativeTelemetryContextData:
+    request_id: int | None
+    mode: TelemetryRequestMode | None
+    method: str | None
+    origin: str | None
+    redacted_url: str | None
+
+
+TelemetryEventContext: TypeAlias = TelemetryContextData | NativeTelemetryContextData
 
 
 @dataclass(frozen=True, slots=True)
