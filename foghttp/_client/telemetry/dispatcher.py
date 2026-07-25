@@ -166,7 +166,7 @@ class TelemetryDispatcher:
         should_deliver, deferred_client_error = self._native_delivery.begin_close()
         if not should_deliver:
             return
-        request_error, client_error = deliver_native_events(
+        _, client_error = deliver_native_events(
             raw_client,
             request_id=None,
             emit=self.emit,
@@ -176,8 +176,6 @@ class TelemetryDispatcher:
         client_error = deferred_client_error or client_error
         if client_error is not None and not suppress_hook_errors:
             raise client_error
-        if request_error is not None:
-            raise request_error
 
 
 class NativeTelemetryDrain:

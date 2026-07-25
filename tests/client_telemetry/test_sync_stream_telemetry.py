@@ -196,6 +196,41 @@ def test_sync_close_hook_keeps_body_closed(
             )
 
 
+def test_sync_native_close_hook_error_is_raised_after_body_cleanup(
+    sync_streaming_server: SyncStreamingServer,
+) -> None:
+    sink = FailOnceOnEventTelemetrySink(foghttp.TelemetryEventType.CONNECTION_ABORTED)
+
+    with ExitStack() as stack:
+        stack.callback(sync_streaming_server.release_tail.set)
+        with (
+            foghttp.Client(telemetry=foghttp.TelemetryConfig(sink=sink)) as client,
+            client.stream(
+                GET,
+                f"{sync_streaming_server.base_url}{stream_constants.GATED_STREAM_PATH}",
+            ) as response,
+        ):
+            iterator = response.iter_bytes()
+            assert stream_readers.next_sync_stream_chunk(iterator) == stream_constants.FIRST_CHUNK
+            with pytest.raises(foghttp.TelemetryHookError):
+                response.close()
+            response.close()
+
+            sync_streaming_server.release_tail.set()
+            wait_for_sync_transport_stats(
+                client,
+                lambda stats: stats.active_requests == 0 and stats.response_body_aborted == 1,
+                message="native close hook failure should not prevent body cleanup",
+            )
+
+    assert_connection_abort(
+        sink.events,
+        outcome=foghttp.TelemetryRequestOutcome.CLOSED,
+        error_type=None,
+    )
+    assert_stream_completion(sink.events, outcome=foghttp.TelemetryRequestOutcome.CLOSED)
+
+
 def test_sync_hook_ignore_keeps_stream(sync_http_server: str) -> None:
     with (
         foghttp.Client(
