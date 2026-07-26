@@ -150,8 +150,7 @@ uv run --extra dev --with "maturin>=1.7,<2" maturin develop
 Run the Python test suite with coverage:
 
 ```bash
-uv run --extra dev coverage run -m pytest
-uv run --extra dev coverage report -m
+uv run --extra dev coverage run -m pytest && uv run --extra dev coverage report -m
 ```
 
 Run the project checks:

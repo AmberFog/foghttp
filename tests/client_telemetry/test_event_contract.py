@@ -109,6 +109,48 @@ def test_stream_completion_timestamp_precedes_observer_delivery(
     )
 
 
+@pytest.mark.parametrize(
+    ("completed_at_ns", "body_started_at_ns", "expected_message"),
+    [
+        pytest.param(
+            None,
+            _BODY_STARTED_AT_NS,
+            "stream telemetry is missing its completion timestamp",
+            id="completion-timestamp",
+        ),
+        pytest.param(
+            _COMPLETED_AT_NS,
+            None,
+            "stream telemetry is missing its body start timestamp",
+            id="body-start-timestamp",
+        ),
+    ],
+)
+def test_stream_completion_rejects_incomplete_timing_state(
+    completed_at_ns: int | None,
+    body_started_at_ns: int | None,
+    expected_message: str,
+) -> None:
+    calls: list[str] = []
+    context = _TimingTelemetryContext(calls)
+    response = _StreamTelemetryHarness(
+        context=context,
+        finish_native=_record_native_finish(calls),
+        calls=calls,
+    )
+    response._telemetry_body_started_at_ns = body_started_at_ns  # noqa: SLF001 - inject invalid timing state.
+
+    with pytest.raises(RuntimeError, match=expected_message):
+        response._finish_telemetry(  # noqa: SLF001 - exercise the guarded terminal boundary.
+            outcome=foghttp.TelemetryRequestOutcome.SUCCESS,
+            completed_at_ns=completed_at_ns,
+        )
+
+    assert not response._telemetry_finished  # noqa: SLF001 - verify atomic rejection.
+    assert context.completions == []
+    assert calls == []
+
+
 def test_native_journal_overflow_uses_hook_error_policy() -> None:
     dispatcher = TelemetryDispatcher(TelemetryConfig(sink=RecordingTelemetrySink()))
 

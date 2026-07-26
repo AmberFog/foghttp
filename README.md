@@ -197,7 +197,6 @@ Development requires a Rust toolchain with `cargo` available in `PATH`.
 
 ```bash
 uv run --extra dev --with "maturin>=1.7,<2" maturin develop --locked --skip-install
-uv run --extra dev coverage run -m pytest
-uv run --extra dev coverage report -m
+uv run --extra dev coverage run -m pytest && uv run --extra dev coverage report -m
 uv run --extra dev pre-commit run --all-files --show-diff-on-failure
 ```
