@@ -13,7 +13,8 @@ from foghttp._client.telemetry import (
     TelemetryRequestContext,
     start_request_telemetry,
 )
-from foghttp._client.telemetry.emission import TelemetryCompletion
+import foghttp._client.telemetry.dispatcher as telemetry_dispatcher
+from foghttp._client.telemetry.emission import TelemetryCompletion, TelemetryResponseMetadata
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 from foghttp._telemetry import TELEMETRY_EVENT_SCHEMA_VERSION
 from foghttp.methods import GET
@@ -29,6 +30,9 @@ _REQUEST_NOT_RELEASED = "request delivery was not released"
 _REQUEST_STARTED_AT_NS = 100
 _BODY_STARTED_AT_NS = 200
 _COMPLETED_AT_NS = 500
+_REQUEST_STARTED_HOOK_NS = 100
+_RESPONSE_HEADERS_HOOK_NS = 500
+_CALLER_BODY_NS = 300
 
 
 @pytest.mark.parametrize(
@@ -109,28 +113,46 @@ def test_stream_completion_timestamp_precedes_observer_delivery(
     )
 
 
-@pytest.mark.parametrize(
-    ("completed_at_ns", "body_started_at_ns", "expected_message"),
-    [
-        pytest.param(
-            None,
-            _BODY_STARTED_AT_NS,
-            "stream telemetry is missing its completion timestamp",
-            id="completion-timestamp",
-        ),
-        pytest.param(
-            _COMPLETED_AT_NS,
-            None,
-            "stream telemetry is missing its body start timestamp",
-            id="body-start-timestamp",
-        ),
-    ],
-)
-def test_stream_completion_rejects_incomplete_timing_state(
-    completed_at_ns: int | None,
-    body_started_at_ns: int | None,
-    expected_message: str,
+def test_stream_duration_includes_inline_hooks_before_body_handoff(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    clock = _ManualClock(_REQUEST_STARTED_AT_NS)
+    monkeypatch.setattr(telemetry_dispatcher, "time", SimpleNamespace(perf_counter_ns=clock.perf_counter_ns))
+    monkeypatch.setattr(stream_telemetry, "time", SimpleNamespace(perf_counter_ns=clock.perf_counter_ns))
+    sink = _AdvancingTelemetrySink(clock)
+    context = TelemetryDispatcher(TelemetryConfig(sink=sink)).request_context(
+        foghttp.Request(GET, "https://example.com/"),
+        mode=TelemetryRequestMode.STREAM,
+    )
+    assert context is not None
+
+    assert start_request_telemetry(context)
+    context.response_headers_received(
+        TelemetryResponseMetadata(
+            status_code=200,
+            elapsed_ns=50,
+            origin="https://example.com",
+            redacted_url="https://example.com/",
+        ),
+    )
+    calls: list[str] = []
+    response = _StreamTelemetryHarness(
+        context=context,
+        finish_native=_record_native_finish(calls),
+        calls=calls,
+    )
+    response._telemetry_body_started_at_ns = clock.perf_counter_ns()  # noqa: SLF001 - model handoff boundary.
+    clock.advance(_CALLER_BODY_NS)
+
+    response.finish()
+
+    body_event = next(event for event in sink.events if event.event_type is TelemetryEventType.RESPONSE_BODY_FINISHED)
+    request_event = next(event for event in sink.events if event.event_type is TelemetryEventType.REQUEST_FINISHED)
+    assert body_event.body_elapsed_ns == _CALLER_BODY_NS
+    assert request_event.request_elapsed_ns == (_REQUEST_STARTED_HOOK_NS + _RESPONSE_HEADERS_HOOK_NS + _CALLER_BODY_NS)
+
+
+def test_stream_completion_rejects_missing_body_start_timestamp() -> None:
     calls: list[str] = []
     context = _TimingTelemetryContext(calls)
     response = _StreamTelemetryHarness(
@@ -138,12 +160,12 @@ def test_stream_completion_rejects_incomplete_timing_state(
         finish_native=_record_native_finish(calls),
         calls=calls,
     )
-    response._telemetry_body_started_at_ns = body_started_at_ns  # noqa: SLF001 - inject invalid timing state.
+    response._telemetry_body_started_at_ns = None  # noqa: SLF001 - inject invalid timing state.
 
-    with pytest.raises(RuntimeError, match=expected_message):
+    with pytest.raises(RuntimeError, match="stream telemetry is missing its body start timestamp"):
         response._finish_telemetry(  # noqa: SLF001 - exercise the guarded terminal boundary.
             outcome=foghttp.TelemetryRequestOutcome.SUCCESS,
-            completed_at_ns=completed_at_ns,
+            completed_at_ns=_COMPLETED_AT_NS,
         )
 
     assert not response._telemetry_finished  # noqa: SLF001 - verify atomic rejection.
@@ -256,6 +278,30 @@ class _TimingTelemetryContext:
         self.completions.append(completion)
 
 
+class _ManualClock:
+    def __init__(self, now_ns: int) -> None:
+        self._now_ns = now_ns
+
+    def perf_counter_ns(self) -> int:
+        return self._now_ns
+
+    def advance(self, elapsed_ns: int) -> None:
+        self._now_ns += elapsed_ns
+
+
+class _AdvancingTelemetrySink:
+    def __init__(self, clock: _ManualClock) -> None:
+        self.events: list[TelemetryEvent] = []
+        self._clock = clock
+
+    def emit(self, event: TelemetryEvent) -> None:
+        self.events.append(event)
+        if event.event_type is TelemetryEventType.REQUEST_STARTED:
+            self._clock.advance(_REQUEST_STARTED_HOOK_NS)
+        elif event.event_type is TelemetryEventType.RESPONSE_HEADERS_RECEIVED:
+            self._clock.advance(_RESPONSE_HEADERS_HOOK_NS)
+
+
 def _record_native_finish(calls: list[str]) -> Callable[..., None]:
     def finish(*, suppress_hook_errors: bool) -> None:
         assert not suppress_hook_errors
@@ -268,7 +314,7 @@ class _StreamTelemetryHarness(StreamResponseTelemetryMixin):
     def __init__(
         self,
         *,
-        context: _TimingTelemetryContext,
+        context: TelemetryRequestContext | _TimingTelemetryContext,
         finish_native: Callable[..., None],
         calls: list[str],
     ) -> None:

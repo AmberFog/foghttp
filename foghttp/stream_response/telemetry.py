@@ -28,9 +28,10 @@ class StreamResponseTelemetryMixin:
         error: BaseException | None = None,
         suppress_hook_errors: bool,
     ) -> None:
-        completed_at_ns = None
-        if self._telemetry_context is not None:
-            completed_at_ns = time.perf_counter_ns()
+        if self._telemetry_context is None:
+            self._finish_lifecycle_debug()
+            return
+        completed_at_ns = time.perf_counter_ns()
         self._finish_lifecycle_debug()
         self._finish_telemetry(
             outcome=outcome,
@@ -45,14 +46,11 @@ class StreamResponseTelemetryMixin:
         outcome: TelemetryRequestOutcome,
         error: BaseException | None = None,
         suppress_hook_errors: bool = False,
-        completed_at_ns: int | None,
+        completed_at_ns: int,
     ) -> None:
         if self._telemetry_context is None or self._telemetry_finished:
             return
 
-        if completed_at_ns is None:
-            msg = "stream telemetry is missing its completion timestamp"
-            raise RuntimeError(msg)
         body_started_at_ns = self._telemetry_body_started_at_ns
         if body_started_at_ns is None:
             msg = "stream telemetry is missing its body start timestamp"

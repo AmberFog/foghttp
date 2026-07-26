@@ -6,6 +6,8 @@ from types import SimpleNamespace
 import pytest
 
 import foghttp
+import foghttp._client.core as client_core
+import foghttp._client.telemetry.dispatcher as telemetry_dispatcher
 from foghttp.methods import GET
 import foghttp.stream_response.bindings as stream_bindings
 import foghttp.stream_response.telemetry as stream_telemetry
@@ -22,6 +24,11 @@ from tests.client_telemetry.assertions import (
 )
 from tests.client_telemetry.constants import STREAM_EVENT_TYPES
 from tests.client_telemetry.models import RecordingTelemetrySink
+
+
+_PRE_HEADER_REQUEST_STARTED_AT_NS = 100
+_PRE_HEADER_REQUEST_COMPLETED_AT_NS = 500
+_APPLICATION_STREAM_ERROR = "application stream error"
 
 
 async def test_async_stream_full_consume_events(http_server: str) -> None:
@@ -83,6 +90,34 @@ async def test_async_stream_close_before_first_read_has_durations(
             pass
 
     assert_stream_completion(sink.events, outcome=foghttp.TelemetryRequestOutcome.CLOSED)
+
+
+async def test_async_stream_application_exception_is_closed(
+    streaming_server: AsyncStreamingServer,
+) -> None:
+    sink = RecordingTelemetrySink()
+
+    async with AsyncExitStack() as stack:
+        stack.callback(streaming_server.release_tail.set)
+        with pytest.raises(RuntimeError, match=_APPLICATION_STREAM_ERROR):
+            async with (
+                foghttp.AsyncClient(telemetry=foghttp.TelemetryConfig(sink=sink)) as client,
+                client.stream(
+                    GET,
+                    f"{streaming_server.base_url}{stream_constants.GATED_STREAM_PATH}",
+                ),
+            ):
+                raise RuntimeError(_APPLICATION_STREAM_ERROR)
+
+    assert_stream_completion(
+        sink.events,
+        outcome=foghttp.TelemetryRequestOutcome.CLOSED,
+    )
+    assert_connection_abort(
+        sink.events,
+        outcome=foghttp.TelemetryRequestOutcome.CLOSED,
+        error_type=None,
+    )
 
 
 async def test_async_stream_timeout_uses_public_error(
@@ -248,10 +283,36 @@ async def test_async_stream_body_error_has_durations(
     )
 
 
-async def test_async_stream_pre_header_error_has_request_duration(unused_tcp_port: int) -> None:
+async def test_async_stream_pre_header_error_has_request_duration(
+    monkeypatch: pytest.MonkeyPatch,
+    unused_tcp_port: int,
+) -> None:
     sink = RecordingTelemetrySink()
+    now_ns = _PRE_HEADER_REQUEST_STARTED_AT_NS
+    client = foghttp.AsyncClient(telemetry=foghttp.TelemetryConfig(sink=sink))
 
-    async with foghttp.AsyncClient(telemetry=foghttp.TelemetryConfig(sink=sink)) as client:
+    def request_clock() -> int:
+        return now_ns
+
+    def completion_clock() -> int:
+        nonlocal now_ns
+        stats = client.stats()
+        assert (stats.active_requests, stats.pending_requests) == (0, 0)
+        now_ns = _PRE_HEADER_REQUEST_COMPLETED_AT_NS
+        return now_ns
+
+    monkeypatch.setattr(
+        telemetry_dispatcher,
+        "time",
+        SimpleNamespace(perf_counter_ns=request_clock),
+    )
+    monkeypatch.setattr(
+        client_core,
+        "time",
+        SimpleNamespace(perf_counter_ns=completion_clock),
+    )
+
+    async with client:
         with pytest.raises(foghttp.NetworkError):
             async with client.stream(
                 GET,
@@ -261,6 +322,12 @@ async def test_async_stream_pre_header_error_has_request_duration(unused_tcp_por
                 pytest.fail("stream context should not enter after a connection error")
 
     assert_stream_request_failure(sink.events, error_type="NetworkError")
+    request_finished = next(
+        event for event in sink.events if event.event_type is foghttp.TelemetryEventType.REQUEST_FINISHED
+    )
+    assert request_finished.request_elapsed_ns == (
+        _PRE_HEADER_REQUEST_COMPLETED_AT_NS - _PRE_HEADER_REQUEST_STARTED_AT_NS
+    )
 
 
 async def _cancel_pending_stream_read(response: foghttp.AsyncStreamResponse) -> None:

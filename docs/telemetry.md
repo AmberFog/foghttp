@@ -76,17 +76,33 @@ It therefore includes caller pauses and backpressure between body reads. An
 explicit close before the first read still has a body duration measured from
 that handoff.
 
-Both intervals end at the same monotonic terminal instant. FogHTTP records it
-after the transport has reached clean EOF or `close` has completed transport
-abort/cleanup, and before lifecycle diagnostics, native event draining, or the
-completion sink callbacks run. The completion outcome identifies the terminal
-state:
+These are logical wall-clock durations for the instrumented request, not
+transport-only timings. Hooks run inline, so `request_elapsed_ns` includes hook
+work that runs between its start and terminal boundaries. For a successfully
+handed-off stream, this includes `request_started` plus any native, retry,
+redirect, or response-header events delivered before body handoff.
+`body_elapsed_ns` starts after those pre-handoff events and excludes their
+delivery time. Neither duration includes terminal completion callbacks.
+Consequently, `request_elapsed_ns - body_elapsed_ns` is not a network or
+response-header latency measurement.
 
-- clean EOF uses `success`;
-- explicit or early close uses `closed`;
-- async task cancellation propagated through a body read or open stream context
-  uses `cancelled`;
-- timeout and other body failures use `error` with the public error class name.
+Both intervals end at the same monotonic terminal instant. FogHTTP records it
+after clean EOF or after close/cancel has terminalized stream ownership,
+released request accounting, and requested cancellation of any in-flight read.
+The cancelled Tokio task may finish aborting asynchronously after that instant.
+The timestamp is captured before lifecycle diagnostics, native event draining,
+or completion sink callbacks run. The first terminal state wins:
+
+| situation | completion outcome | `error_type` |
+| --- | --- | --- |
+| Clean EOF | `success` | `None` |
+| Explicit close, early context exit, or ordinary application exception inside a stream block | `closed` | `None` |
+| `asyncio.CancelledError` escaping an async stream block | `cancelled` | `CancelledError` |
+| Cancellation of a pending async body read | `cancelled` | `CancelledError` |
+| Read timeout or another body transport failure | `error` | Public FogHTTP error class |
+
+Application exceptions and cancellations still propagate to the caller; this
+table describes the stream terminal telemetry classification.
 
 If a streaming request fails before response headers and no body is handed to
 the caller, FogHTTP emits only `request_finished`: `request_elapsed_ns` is set,
