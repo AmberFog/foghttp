@@ -79,6 +79,7 @@ class TelemetryDispatcher:
         if self._sink is None:
             return None
 
+        started_at_ns = time.perf_counter_ns()
         with self._lock:
             request_id = self._next_request_id
             self._next_request_id += 1
@@ -91,6 +92,7 @@ class TelemetryDispatcher:
                 origin=url_origin(request.url),
                 redacted_url=redacted_url(request.url),
             ),
+            started_at_ns=started_at_ns,
         )
 
     def emit(self, context: TelemetryEventContext, emission: TelemetryEmission) -> None:
@@ -216,6 +218,8 @@ def _event_from_emission(
         redacted_url=event_context.redacted_url,
         status_code=emission.status_code,
         elapsed_ns=emission.elapsed_ns,
+        body_elapsed_ns=emission.body_elapsed_ns,
+        request_elapsed_ns=emission.request_elapsed_ns,
         redirect_hop=emission.redirect_hop,
         retry_attempt=emission.retry_attempt,
         retry_decision=emission.retry_decision,

@@ -1,20 +1,38 @@
+from collections.abc import Callable
+from dataclasses import fields
 from threading import Event, Thread
+from types import SimpleNamespace
 from typing import cast
 
 import pytest
 
 import foghttp
-from foghttp._client.telemetry import TelemetryDispatcher, start_request_telemetry
+from foghttp._client.telemetry import (
+    NativeTelemetryDrain,
+    TelemetryDispatcher,
+    TelemetryRequestContext,
+    start_request_telemetry,
+)
+import foghttp._client.telemetry.dispatcher as telemetry_dispatcher
+from foghttp._client.telemetry.emission import TelemetryCompletion, TelemetryResponseMetadata
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 from foghttp._telemetry import TELEMETRY_EVENT_SCHEMA_VERSION
 from foghttp.methods import GET
+import foghttp.stream_response.telemetry as stream_telemetry
+from foghttp.stream_response.telemetry import StreamResponseTelemetryMixin
 from foghttp.telemetry import TelemetryConfig, TelemetryEvent, TelemetryEventType, TelemetryRequestMode
 from tests.client_telemetry.models import RecordingTelemetrySink
 
 
-EXPECTED_EVENT_SCHEMA_VERSION = 2
+EXPECTED_EVENT_SCHEMA_VERSION = 3
 _DELIVERY_TIMEOUT = 1.0
 _REQUEST_NOT_RELEASED = "request delivery was not released"
+_REQUEST_STARTED_AT_NS = 100
+_BODY_STARTED_AT_NS = 200
+_COMPLETED_AT_NS = 500
+_REQUEST_STARTED_HOOK_NS = 100
+_RESPONSE_HEADERS_HOOK_NS = 500
+_CALLER_BODY_NS = 300
 
 
 @pytest.mark.parametrize(
@@ -47,6 +65,112 @@ def test_event_schema_uses_event_constant() -> None:
 
     assert event.schema_version == TELEMETRY_EVENT_SCHEMA_VERSION
     assert event.schema_version == EXPECTED_EVENT_SCHEMA_VERSION
+    assert event.body_elapsed_ns is None
+    assert event.request_elapsed_ns is None
+
+
+def test_duration_fields_preserve_existing_positional_event_contract() -> None:
+    field_names = tuple(field.name for field in fields(TelemetryEvent))
+
+    assert field_names[field_names.index("schema_version") :] == (
+        "schema_version",
+        "body_elapsed_ns",
+        "request_elapsed_ns",
+    )
+
+
+def test_stream_completion_timestamp_precedes_observer_delivery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    context = _TimingTelemetryContext(calls)
+    response = _StreamTelemetryHarness(
+        context=context,
+        finish_native=_record_native_finish(calls),
+        calls=calls,
+    )
+
+    def completion_clock() -> int:
+        calls.append("clock")
+        return _COMPLETED_AT_NS
+
+    monkeypatch.setattr(
+        stream_telemetry,
+        "time",
+        SimpleNamespace(perf_counter_ns=completion_clock),
+    )
+
+    response.finish()
+
+    assert calls == ["clock", "lifecycle_debug", "native", "body", "request"]
+    expected_durations = (
+        _COMPLETED_AT_NS - _BODY_STARTED_AT_NS,
+        _COMPLETED_AT_NS - _REQUEST_STARTED_AT_NS,
+    )
+    assert tuple((completion.body_elapsed_ns, completion.request_elapsed_ns) for completion in context.completions) == (
+        expected_durations,
+        expected_durations,
+    )
+
+
+def test_stream_duration_includes_inline_hooks_before_body_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = _ManualClock(_REQUEST_STARTED_AT_NS)
+    monkeypatch.setattr(telemetry_dispatcher, "time", SimpleNamespace(perf_counter_ns=clock.perf_counter_ns))
+    monkeypatch.setattr(stream_telemetry, "time", SimpleNamespace(perf_counter_ns=clock.perf_counter_ns))
+    sink = _AdvancingTelemetrySink(clock)
+    context = TelemetryDispatcher(TelemetryConfig(sink=sink)).request_context(
+        foghttp.Request(GET, "https://example.com/"),
+        mode=TelemetryRequestMode.STREAM,
+    )
+    assert context is not None
+
+    assert start_request_telemetry(context)
+    context.response_headers_received(
+        TelemetryResponseMetadata(
+            status_code=200,
+            elapsed_ns=50,
+            origin="https://example.com",
+            redacted_url="https://example.com/",
+        ),
+    )
+    calls: list[str] = []
+    response = _StreamTelemetryHarness(
+        context=context,
+        finish_native=_record_native_finish(calls),
+        calls=calls,
+    )
+    response._telemetry_body_started_at_ns = clock.perf_counter_ns()  # noqa: SLF001 - model handoff boundary.
+    clock.advance(_CALLER_BODY_NS)
+
+    response.finish()
+
+    body_event = next(event for event in sink.events if event.event_type is TelemetryEventType.RESPONSE_BODY_FINISHED)
+    request_event = next(event for event in sink.events if event.event_type is TelemetryEventType.REQUEST_FINISHED)
+    assert body_event.body_elapsed_ns == _CALLER_BODY_NS
+    assert request_event.request_elapsed_ns == (_REQUEST_STARTED_HOOK_NS + _RESPONSE_HEADERS_HOOK_NS + _CALLER_BODY_NS)
+
+
+def test_stream_completion_rejects_missing_body_start_timestamp() -> None:
+    calls: list[str] = []
+    context = _TimingTelemetryContext(calls)
+    response = _StreamTelemetryHarness(
+        context=context,
+        finish_native=_record_native_finish(calls),
+        calls=calls,
+    )
+    response._telemetry_body_started_at_ns = None  # noqa: SLF001 - inject invalid timing state.
+
+    with pytest.raises(RuntimeError, match="stream telemetry is missing its body start timestamp"):
+        response._finish_telemetry(  # noqa: SLF001 - exercise the guarded terminal boundary.
+            outcome=foghttp.TelemetryRequestOutcome.SUCCESS,
+            completed_at_ns=_COMPLETED_AT_NS,
+        )
+
+    assert not response._telemetry_finished  # noqa: SLF001 - verify atomic rejection.
+    assert context.completions == []
+    assert calls == []
 
 
 def test_native_journal_overflow_uses_hook_error_policy() -> None:
@@ -137,6 +261,79 @@ class _DroppedEventRawClient:
     ) -> tuple[list[_foghttp.RawTelemetryEvent], int]:
         assert request_id is None
         return [], 1
+
+
+class _TimingTelemetryContext:
+    def __init__(self, calls: list[str]) -> None:
+        self.started_at_ns = _REQUEST_STARTED_AT_NS
+        self.completions: list[TelemetryCompletion] = []
+        self._calls = calls
+
+    def response_body_finished(self, completion: TelemetryCompletion) -> None:
+        self._calls.append("body")
+        self.completions.append(completion)
+
+    def request_finished(self, completion: TelemetryCompletion) -> None:
+        self._calls.append("request")
+        self.completions.append(completion)
+
+
+class _ManualClock:
+    def __init__(self, now_ns: int) -> None:
+        self._now_ns = now_ns
+
+    def perf_counter_ns(self) -> int:
+        return self._now_ns
+
+    def advance(self, elapsed_ns: int) -> None:
+        self._now_ns += elapsed_ns
+
+
+class _AdvancingTelemetrySink:
+    def __init__(self, clock: _ManualClock) -> None:
+        self.events: list[TelemetryEvent] = []
+        self._clock = clock
+
+    def emit(self, event: TelemetryEvent) -> None:
+        self.events.append(event)
+        if event.event_type is TelemetryEventType.REQUEST_STARTED:
+            self._clock.advance(_REQUEST_STARTED_HOOK_NS)
+        elif event.event_type is TelemetryEventType.RESPONSE_HEADERS_RECEIVED:
+            self._clock.advance(_RESPONSE_HEADERS_HOOK_NS)
+
+
+def _record_native_finish(calls: list[str]) -> Callable[..., None]:
+    def finish(*, suppress_hook_errors: bool) -> None:
+        assert not suppress_hook_errors
+        calls.append("native")
+
+    return finish
+
+
+class _StreamTelemetryHarness(StreamResponseTelemetryMixin):
+    def __init__(
+        self,
+        *,
+        context: TelemetryRequestContext | _TimingTelemetryContext,
+        finish_native: Callable[..., None],
+        calls: list[str],
+    ) -> None:
+        self.status_code = 200
+        self.url = "https://example.com/"
+        self._telemetry_context = cast("TelemetryRequestContext", context)
+        self._telemetry_body_started_at_ns = _BODY_STARTED_AT_NS
+        self._native_telemetry_finish = cast("NativeTelemetryDrain", finish_native)
+        self._telemetry_finished = False
+        self._calls = calls
+
+    def finish(self) -> None:
+        self._finish_observability(
+            outcome=foghttp.TelemetryRequestOutcome.SUCCESS,
+            suppress_hook_errors=False,
+        )
+
+    def _finish_lifecycle_debug(self) -> None:
+        self._calls.append("lifecycle_debug")
 
 
 class _BlockingDroppedEventRawClient:

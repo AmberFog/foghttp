@@ -85,8 +85,10 @@ class AsyncStreamResponse(StreamResponseBase):
                 chunk = await self._next_chunk()
                 if chunk is None:
                     self._closed = True
-                    self._finish_lifecycle_debug()
-                    self._finish_telemetry(outcome=TelemetryRequestOutcome.SUCCESS)
+                    self._finish_observability(
+                        outcome=TelemetryRequestOutcome.SUCCESS,
+                        suppress_hook_errors=False,
+                    )
                     return
                 yield chunk
         except asyncio.CancelledError as cancelled_error:

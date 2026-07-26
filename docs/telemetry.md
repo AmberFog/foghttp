@@ -49,13 +49,15 @@ Current event fields include:
 
 | field | meaning |
 | --- | --- |
-| `schema_version` | Version of the telemetry event shape. The current version is `2`. |
+| `schema_version` | Version of the telemetry event shape. The current version is `3`. |
 | `event_sequence` | Monotonic Python-side sequence within the current client event dispatcher. |
 | `observed_at_ns` | Monotonic observation timestamp, not Unix epoch. |
 | `request_id` | Client-local id for request-scoped events; `None` for client-scoped lifecycle events. |
 | `mode` | `buffered` or `stream` for request-scoped events. |
 | `method`, `origin`, `redacted_url` | Safe request surface when applicable. URLs are redacted before they reach the hook. |
-| `status_code`, `elapsed_ns`, `redirect_hop` | Response/redirect context when applicable. For stream completion events, `elapsed_ns` is `None` until FogHTTP exposes a separate body/request duration field. |
+| `status_code`, `elapsed_ns`, `redirect_hop` | Response/redirect context when applicable. `elapsed_ns` keeps its existing header- or native-phase-oriented meaning and is always `None` on stream completion events. |
+| `body_elapsed_ns` | Monotonic stream-body duration on `response_body_finished`; `None` on every other event and for buffered requests. |
+| `request_elapsed_ns` | Monotonic logical stream-request duration on `request_finished`; `None` on every other event and for buffered requests. |
 | `retry_attempt`, `retry_decision`, `retry_reason`, `retry_backoff_ns` | Structured opt-in retry decision context. Attempt numbering starts at `1`; backoff is a duration in nanoseconds. |
 | `outcome`, `error_type` | Completion outcome and public error class name when applicable. |
 
@@ -63,6 +65,52 @@ FogHTTP never passes raw request or response bodies to telemetry hooks. Hook
 URLs are redacted with the same policy used by `repr()` and public error
 messages. Headers are intentionally not included in the first event payload
 shape; future header surfaces must be explicit and redacted.
+
+### Streaming duration semantics
+
+For an enabled streaming request, `request_elapsed_ns` starts when FogHTTP
+creates the request telemetry context on entry to the client request path.
+`body_elapsed_ns` starts later, when the successfully initialized stream is
+bound for handoff to the caller after response-header telemetry has completed.
+It therefore includes caller pauses and backpressure between body reads. An
+explicit close before the first read still has a body duration measured from
+that handoff.
+
+These are logical wall-clock durations for the instrumented request, not
+transport-only timings. Hooks run inline, so `request_elapsed_ns` includes hook
+work that runs between its start and terminal boundaries. For a successfully
+handed-off stream, this includes `request_started` plus any native, retry,
+redirect, or response-header events delivered before body handoff.
+`body_elapsed_ns` starts after those pre-handoff events and excludes their
+delivery time. Neither duration includes terminal completion callbacks.
+Consequently, `request_elapsed_ns - body_elapsed_ns` is not a network or
+response-header latency measurement.
+
+Both intervals end at the same monotonic terminal instant. FogHTTP records it
+after clean EOF or after close/cancel has terminalized stream ownership,
+released request accounting, and requested cancellation of any in-flight read.
+The cancelled Tokio task may finish aborting asynchronously after that instant.
+The timestamp is captured before lifecycle diagnostics, native event draining,
+or completion sink callbacks run. The first terminal state wins:
+
+| situation | completion outcome | `error_type` |
+| --- | --- | --- |
+| Clean EOF | `success` | `None` |
+| Explicit close, early context exit, or ordinary application exception inside a stream block | `closed` | `None` |
+| `asyncio.CancelledError` escaping an async stream block | `cancelled` | `CancelledError` |
+| Cancellation of a pending async body read | `cancelled` | `CancelledError` |
+| Read timeout or another body transport failure | `error` | Public FogHTTP error class |
+
+Application exceptions and cancellations still propagate to the caller; this
+table describes the stream terminal telemetry classification.
+
+If a streaming request fails before response headers and no body is handed to
+the caller, FogHTTP emits `request_finished` but no `response_body_finished`:
+`request_elapsed_ns` is set while body duration is unavailable. Request-start
+and applicable native lifecycle events are still delivered. These durations
+are not Unix timestamps and are not defined as a sum of response-header
+`elapsed_ns` and body time; their start boundaries intentionally describe
+different lifecycle scopes.
 
 `TelemetryConfig.on_hook_error` controls sink failures. The default is `raise`
 so development and tests catch broken hooks early. Production exporters usually

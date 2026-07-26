@@ -14,6 +14,7 @@ from tests.client_telemetry.assertions import (
     assert_connection_abort,
     assert_event_types,
     assert_stream_completion,
+    assert_stream_request_failure,
 )
 from tests.client_telemetry.constants import STREAM_EVENT_TYPES
 from tests.client_telemetry.models import (
@@ -70,6 +71,25 @@ def test_sync_stream_early_close_events(sync_streaming_server: SyncStreamingServ
     assert_stream_completion(sink.events, outcome=foghttp.TelemetryRequestOutcome.CLOSED)
 
 
+def test_sync_stream_close_before_first_read_has_durations(
+    sync_streaming_server: SyncStreamingServer,
+) -> None:
+    sink = RecordingTelemetrySink()
+
+    with ExitStack() as stack:
+        stack.callback(sync_streaming_server.release_tail.set)
+        with (
+            foghttp.Client(telemetry=foghttp.TelemetryConfig(sink=sink)) as client,
+            client.stream(
+                GET,
+                f"{sync_streaming_server.base_url}{stream_constants.GATED_STREAM_PATH}",
+            ),
+        ):
+            pass
+
+    assert_stream_completion(sink.events, outcome=foghttp.TelemetryRequestOutcome.CLOSED)
+
+
 def test_sync_stream_timeout_uses_public_error(
     sync_streaming_server: SyncStreamingServer,
 ) -> None:
@@ -102,6 +122,23 @@ def test_sync_stream_timeout_uses_public_error(
         outcome=foghttp.TelemetryRequestOutcome.ERROR,
         error_type="ReadTimeout",
     )
+
+
+def test_sync_stream_pre_header_error_has_request_duration(unused_tcp_port: int) -> None:
+    sink = RecordingTelemetrySink()
+
+    with (
+        foghttp.Client(telemetry=foghttp.TelemetryConfig(sink=sink)) as client,
+        pytest.raises(foghttp.NetworkError),
+        client.stream(
+            GET,
+            f"http://127.0.0.1:{unused_tcp_port}/",
+            timeout=stream_constants.STREAM_NETWORK_ERROR_TIMEOUTS,
+        ),
+    ):
+        pytest.fail("stream context should not enter after a connection error")
+
+    assert_stream_request_failure(sink.events, error_type="NetworkError")
 
 
 def test_sync_header_hook_closes_body(

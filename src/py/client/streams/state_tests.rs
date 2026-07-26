@@ -4,6 +4,7 @@ use super::{
 };
 use crate::core::metrics::{Metrics, ResponseBodyLifecycleOutcome};
 use crate::py::client::async_requests::RequestCompletion;
+use crate::py::client::lifecycle::ResponseBodyLifecycle;
 use crate::py::client::streams::constants::{
     MAX_READY_FRAME_COALESCE_COUNT, READY_FRAME_COALESCE_TARGET_BYTES,
 };
@@ -55,6 +56,38 @@ fn finished_read_state() -> StreamState {
     }
 }
 
+fn active_lifecycle_state() -> (StreamState, Arc<Metrics>, RequestCompletion) {
+    let metrics = Arc::new(Metrics::default());
+    let completion = RequestCompletion::default();
+    let registry = StreamRegistry::default();
+    let inner = Arc::new(StreamStateInner {
+        stream_id: TEST_STREAM_ID,
+        registry: registry.clone(),
+        fields: Mutex::new(StreamStateFields {
+            body: None,
+            permit: None,
+            lifecycle: Some(ResponseBodyLifecycle::new(
+                Arc::clone(&metrics),
+                metrics.origin_metrics(TEST_ORIGIN),
+            )),
+            connection_use: None,
+            read_task: None,
+            read_in_progress: false,
+            finished: false,
+            successful_body_outcome: ResponseBodyLifecycleOutcome::Closed,
+            metrics: Arc::clone(&metrics),
+            completion: completion.clone(),
+            read_timeout: Duration::from_secs(1),
+            read_timeout_secs: TEST_READ_TIMEOUT_SECS,
+            origin: TEST_ORIGIN.to_string(),
+            redirect_hop: 0,
+            deferred_body_error: None,
+        }),
+    });
+    registry.insert(TEST_STREAM_ID, &inner);
+    (StreamState { inner }, metrics, completion)
+}
+
 fn new_future(py: Python<'_>) -> PyResult<(Py<PyAny>, Py<PyAny>)> {
     let asyncio = py.import("asyncio")?;
     let event_loop = asyncio.call_method0("new_event_loop")?.unbind();
@@ -103,6 +136,37 @@ fn rejected_read_task_cancels_python_future_instead_of_reporting_eof() {
         .block_on(handle)
         .expect_err("rejected stream read task should be aborted");
     assert!(join_error.is_cancelled());
+}
+
+#[test]
+fn cancel_is_idempotent_and_wins_over_later_close() {
+    let (state, metrics, completion) = active_lifecycle_state();
+
+    state.cancel();
+    state.close();
+    state.cancel();
+
+    assert!(state.is_finished());
+    assert!(!completion.finish());
+    let snapshot = metrics.snapshot();
+    assert_eq!(snapshot.failed_requests, 1);
+    assert_eq!(snapshot.response_body_aborted, 1);
+    assert_eq!(snapshot.response_body_closed, 0);
+}
+
+#[test]
+fn cancel_after_success_does_not_reclassify_stream() {
+    let (state, metrics, completion) = active_lifecycle_state();
+
+    state.finish_success_from_read();
+    state.cancel();
+
+    assert!(state.is_finished());
+    assert!(!completion.finish());
+    let snapshot = metrics.snapshot();
+    assert_eq!(snapshot.failed_requests, 0);
+    assert_eq!(snapshot.response_body_aborted, 0);
+    assert_eq!(snapshot.response_body_closed, 1);
 }
 
 #[test]

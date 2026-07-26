@@ -51,6 +51,7 @@ class StreamResponseBase(
     _closed: bool = field(default=False, init=False, repr=False)
     _body_started: bool = field(default=False, init=False, repr=False)
     _telemetry_context: TelemetryRequestContext | None = field(default=None, init=False, repr=False)
+    _telemetry_body_started_at_ns: int | None = field(default=None, init=False, repr=False)
     _native_telemetry_finish: NativeTelemetryDrain | None = field(
         default=None,
         init=False,
@@ -99,9 +100,11 @@ class StreamResponseBase(
             self._native_telemetry_finish = None
             return
         self._closed = True
-        self._raw.close()
-        self._finish_lifecycle_debug()
-        self._finish_telemetry(
+        if outcome is TelemetryRequestOutcome.CANCELLED:
+            self._raw.cancel()
+        else:
+            self._raw.close()
+        self._finish_observability(
             outcome=outcome,
             error=error,
             suppress_hook_errors=suppress_telemetry_errors,
