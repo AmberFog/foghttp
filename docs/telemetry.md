@@ -105,11 +105,12 @@ Application exceptions and cancellations still propagate to the caller; this
 table describes the stream terminal telemetry classification.
 
 If a streaming request fails before response headers and no body is handed to
-the caller, FogHTTP emits only `request_finished`: `request_elapsed_ns` is set,
-while no `response_body_finished` event exists. These durations are not Unix
-timestamps and are not defined as a sum of response-header `elapsed_ns` and
-body time; their start boundaries intentionally describe different lifecycle
-scopes.
+the caller, FogHTTP emits `request_finished` but no `response_body_finished`:
+`request_elapsed_ns` is set while body duration is unavailable. Request-start
+and applicable native lifecycle events are still delivered. These durations
+are not Unix timestamps and are not defined as a sum of response-header
+`elapsed_ns` and body time; their start boundaries intentionally describe
+different lifecycle scopes.
 
 `TelemetryConfig.on_hook_error` controls sink failures. The default is `raise`
 so development and tests catch broken hooks early. Production exporters usually
