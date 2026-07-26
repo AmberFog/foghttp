@@ -6,7 +6,6 @@ from types import TracebackType
 from ..errors import LifecycleError
 from ..messages import STREAM_CONTEXT_REENTERED
 from ..stream_response import AsyncStreamResponse, StreamResponse
-from ..telemetry import TelemetryRequestOutcome
 
 
 class StreamContext:
@@ -30,10 +29,7 @@ class StreamContext:
         traceback: TracebackType | None,
     ) -> None:
         if self._response is not None:
-            self._response._close(  # noqa: SLF001
-                outcome=TelemetryRequestOutcome.CLOSED,
-                suppress_telemetry_errors=exc_type is not None,
-            )
+            self._response.__exit__(exc_type, exc, traceback)
 
 
 class AsyncStreamContext:
@@ -57,7 +53,4 @@ class AsyncStreamContext:
         traceback: TracebackType | None,
     ) -> None:
         if self._response is not None:
-            self._response._close(  # noqa: SLF001
-                outcome=TelemetryRequestOutcome.CLOSED,
-                suppress_telemetry_errors=exc_type is not None,
-            )
+            await self._response.__aexit__(exc_type, exc, traceback)

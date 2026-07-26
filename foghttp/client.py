@@ -419,9 +419,7 @@ class Client(ClientCore):
                 telemetry_context=telemetry_context,
             )
         except BaseException as error:
-            bind_error_retry_trace(error)
-            self._emit_native_telemetry(telemetry_context, suppress_hook_errors=True)
-            emit_request_error_telemetry(
+            self._emit_stream_request_error_telemetry(
                 telemetry_context,
                 telemetry_started=telemetry_started,
                 error=error,

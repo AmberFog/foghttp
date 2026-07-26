@@ -24,6 +24,7 @@ class TelemetryEmitter(Protocol):
 class TelemetryRequestContext:
     dispatcher: TelemetryEmitter
     data: TelemetryContextData
+    started_at_ns: int
 
     def request_started(self) -> None:
         self.dispatcher.emit(
@@ -114,6 +115,12 @@ class TelemetryRequestContext:
             event_type=event_type,
             status_code=None if response is None else response.status_code,
             elapsed_ns=None if response is None else response.elapsed_ns,
+            body_elapsed_ns=(
+                completion.body_elapsed_ns if event_type is TelemetryEventType.RESPONSE_BODY_FINISHED else None
+            ),
+            request_elapsed_ns=(
+                completion.request_elapsed_ns if event_type is TelemetryEventType.REQUEST_FINISHED else None
+            ),
             origin=None if response is None else response.origin,
             redacted_url=None if response is None else response.redacted_url,
             outcome=completion.outcome,

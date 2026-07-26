@@ -21,6 +21,7 @@ def emit_request_error_telemetry(
     *,
     telemetry_started: bool,
     error: BaseException,
+    request_elapsed_ns: int | None = None,
 ) -> None:
     if telemetry_context is None or not telemetry_started:
         return
@@ -35,6 +36,7 @@ def emit_request_error_telemetry(
             outcome=_request_error_outcome(error),
             error=error,
             suppress_hook_errors=True,
+            request_elapsed_ns=request_elapsed_ns,
         ),
     )
 

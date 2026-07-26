@@ -61,6 +61,8 @@ class TelemetryCompletion:
     outcome: TelemetryRequestOutcome
     error: BaseException | None = None
     suppress_hook_errors: bool = False
+    body_elapsed_ns: int | None = None
+    request_elapsed_ns: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +71,8 @@ class TelemetryEmission:
     method: str | None = None
     status_code: int | None = None
     elapsed_ns: int | None = None
+    body_elapsed_ns: int | None = None
+    request_elapsed_ns: int | None = None
     redirect_hop: int | None = None
     retry_attempt: int | None = None
     retry_decision: TelemetryRetryDecision | None = None

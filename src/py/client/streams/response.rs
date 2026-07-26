@@ -156,6 +156,15 @@ impl RawStreamResponse {
         }
     }
 
+    fn cancel(&self) {
+        if self.process_id != current_process_id() {
+            return;
+        }
+        if let Some(state) = &self.state {
+            state.cancel();
+        }
+    }
+
     fn next_chunk(&self, py: Python<'_>) -> PyResult<Option<Vec<u8>>> {
         self.ensure_current_process()?;
         let Some(state) = self.state.clone() else {

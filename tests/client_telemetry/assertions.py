@@ -62,23 +62,62 @@ def assert_stream_completion(
     body_event = _event(events, TelemetryEventType.RESPONSE_BODY_FINISHED)
     request_event = _event(events, TelemetryEventType.REQUEST_FINISHED)
     actual_values = {
-        "body_elapsed_ns": body_event.elapsed_ns,
+        "body_header_elapsed_ns": body_event.elapsed_ns,
+        "body_request_elapsed_ns": body_event.request_elapsed_ns,
         "body_outcome": body_event.outcome,
         "body_error_type": body_event.error_type,
-        "request_elapsed_ns": request_event.elapsed_ns,
+        "request_header_elapsed_ns": request_event.elapsed_ns,
+        "request_body_elapsed_ns": request_event.body_elapsed_ns,
         "request_outcome": request_event.outcome,
         "request_error_type": request_event.error_type,
     }
     expected_values = {
-        "body_elapsed_ns": None,
+        "body_header_elapsed_ns": None,
+        "body_request_elapsed_ns": None,
         "body_outcome": outcome,
         "body_error_type": error_type,
-        "request_elapsed_ns": None,
+        "request_header_elapsed_ns": None,
+        "request_body_elapsed_ns": None,
         "request_outcome": outcome,
         "request_error_type": error_type,
     }
     if actual_values != expected_values:
         raise AssertionError(actual_values)
+    body_elapsed_ns = body_event.body_elapsed_ns
+    request_elapsed_ns = request_event.request_elapsed_ns
+    if body_elapsed_ns is None or body_elapsed_ns < 0:
+        raise AssertionError(body_elapsed_ns)
+    if request_elapsed_ns is None or request_elapsed_ns < body_elapsed_ns:
+        raise AssertionError((request_elapsed_ns, body_elapsed_ns))
+
+
+def assert_stream_request_failure(
+    events: Sequence[TelemetryEvent],
+    *,
+    error_type: str,
+) -> None:
+    body_events = tuple(event for event in events if event.event_type is TelemetryEventType.RESPONSE_BODY_FINISHED)
+    if body_events:
+        raise AssertionError(body_events)
+    request_event = _event(events, TelemetryEventType.REQUEST_FINISHED)
+    actual_values = {
+        "mode": request_event.mode,
+        "elapsed_ns": request_event.elapsed_ns,
+        "body_elapsed_ns": request_event.body_elapsed_ns,
+        "outcome": request_event.outcome,
+        "error_type": request_event.error_type,
+    }
+    expected_values = {
+        "mode": TelemetryRequestMode.STREAM,
+        "elapsed_ns": None,
+        "body_elapsed_ns": None,
+        "outcome": TelemetryRequestOutcome.ERROR,
+        "error_type": error_type,
+    }
+    if actual_values != expected_values:
+        raise AssertionError(actual_values)
+    if request_event.request_elapsed_ns is None or request_event.request_elapsed_ns < 0:
+        raise AssertionError(request_event.request_elapsed_ns)
 
 
 def assert_connection_abort(
@@ -97,6 +136,7 @@ def assert_connection_abort(
 def assert_buffered_redirect_contract(events: Sequence[TelemetryEvent]) -> None:
     start_event = _event(events, TelemetryEventType.REQUEST_STARTED)
     redirect_event = _event(events, TelemetryEventType.REDIRECT_DECISION)
+    body_event = _event(events, TelemetryEventType.RESPONSE_BODY_FINISHED)
     finish_event = _event(events, TelemetryEventType.REQUEST_FINISHED)
 
     expected_values = {
@@ -119,6 +159,14 @@ def assert_buffered_redirect_contract(events: Sequence[TelemetryEvent]) -> None:
     }
     if actual_values != expected_values:
         raise AssertionError(actual_values)
+    duration_values = (
+        body_event.body_elapsed_ns,
+        body_event.request_elapsed_ns,
+        finish_event.body_elapsed_ns,
+        finish_event.request_elapsed_ns,
+    )
+    if duration_values != (None, None, None, None):
+        raise AssertionError(duration_values)
     if "token=<redacted>" not in (start_event.redacted_url or ""):
         raise AssertionError(start_event.redacted_url)
 

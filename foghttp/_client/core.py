@@ -1,6 +1,7 @@
 __all__ = ("ClientCore",)
 
 import threading
+import time
 from typing import Any, cast
 import warnings
 
@@ -29,8 +30,14 @@ from .request_builder.builder import RequestBuilder
 from .request_builder.defaults import DEFAULT_REQUEST_BUILD_DEFAULTS
 from .request_builder.merge import RequestMergeContract
 from .request_builder.models import RequestBuildOptions
+from .retry import bind_error_retry_trace
 from .stats import stats_from_raw
-from .telemetry import NativeTelemetryDrain, TelemetryDispatcher, TelemetryRequestContext
+from .telemetry import (
+    NativeTelemetryDrain,
+    TelemetryDispatcher,
+    TelemetryRequestContext,
+    emit_request_error_telemetry,
+)
 from .transport_snapshot_mapping import empty_transport_state, transport_state_from_raw
 
 
@@ -185,6 +192,25 @@ class ClientCore:
         if drain is None:
             return
         drain(suppress_hook_errors=suppress_hook_errors)
+
+    def _emit_stream_request_error_telemetry(
+        self,
+        telemetry_context: TelemetryRequestContext | None,
+        *,
+        telemetry_started: bool,
+        error: BaseException,
+    ) -> None:
+        request_elapsed_ns = None
+        if telemetry_started and telemetry_context is not None:
+            request_elapsed_ns = time.perf_counter_ns() - telemetry_context.started_at_ns
+        bind_error_retry_trace(error)
+        self._emit_native_telemetry(telemetry_context, suppress_hook_errors=True)
+        emit_request_error_telemetry(
+            telemetry_context,
+            telemetry_started=telemetry_started,
+            error=error,
+            request_elapsed_ns=request_elapsed_ns,
+        )
 
     def _native_telemetry_drain(
         self,

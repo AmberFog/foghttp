@@ -77,3 +77,5 @@ class TelemetryEvent:
     outcome: TelemetryRequestOutcome | None = None
     error_type: str | None = None
     schema_version: int = TELEMETRY_EVENT_SCHEMA_VERSION
+    body_elapsed_ns: int | None = None
+    request_elapsed_ns: int | None = None
