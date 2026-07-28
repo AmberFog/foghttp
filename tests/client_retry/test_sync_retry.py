@@ -415,11 +415,16 @@ def test_sync_total_timeout_covers_retry_backoff(
     attempt_error_type: str | None,
     reason: foghttp.TelemetryRetryReason,
 ) -> None:
+    sink = RecordingTelemetrySink()
     policy = foghttp.RetryPolicy(retries=1, backoff=0.2, jitter=0)
     timeouts = foghttp.Timeouts(total=0.05)
 
     with (
-        foghttp.Client(retry=policy, timeouts=timeouts) as client,
+        foghttp.Client(
+            retry=policy,
+            telemetry=foghttp.TelemetryConfig(sink=sink),
+            timeouts=timeouts,
+        ) as client,
         pytest.raises(foghttp.TimeoutError, match="request total timeout expired") as exc_info,
     ):
         client.get(retry_server.url + path)
@@ -443,6 +448,11 @@ def test_sync_total_timeout_covers_retry_backoff(
     assert attempt.decision_elapsed == attempt.completed_elapsed
     assert attempt.decision_elapsed <= attempt.completed_elapsed < trace.elapsed
     assert len(retry_server.snapshot().requests_for(path)) == 1
+    request_finished = next(
+        event for event in sink.events if event.event_type is foghttp.TelemetryEventType.REQUEST_FINISHED
+    )
+    assert request_finished.retry_attempts == 0
+    assert request_finished.timeout_phase == "retry_backoff"
 
 
 def test_sync_stream_retries_before_exposing_response(retry_server: RetryTestServer) -> None:

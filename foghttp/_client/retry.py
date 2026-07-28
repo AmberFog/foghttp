@@ -1,6 +1,7 @@
 __all__ = (
     "bind_error_retry_trace",
     "bind_retry_trace",
+    "public_retry_attempt_count",
     "public_retry_decisions",
     "public_retry_trace",
 )
@@ -39,6 +40,14 @@ def public_retry_decisions(source: object) -> tuple[RetryAttempt, ...]:
     if trace is None:
         return ()
     return tuple(filter(_has_retry_decision, trace.attempts))
+
+
+def public_retry_attempt_count(source: object) -> int | None:
+    """Return additional attempts that actually began after the first attempt."""
+    trace = public_retry_trace(source)
+    if trace is None:
+        return None
+    return max(len(trace.attempts) - 1, 0)
 
 
 def _has_retry_decision(attempt: RetryAttempt) -> bool:

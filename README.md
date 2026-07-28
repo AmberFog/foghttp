@@ -31,6 +31,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - typed telemetry event hooks with redacted request/response lifecycle events
 - versioned telemetry snapshots that separate alert-oriented stats from
   diagnostic dump APIs
+- optional Prometheus/OpenMetrics adapters with bounded labels and no
+  diagnostic-dump alert series
 - opt-in Rust-owned retries with replayability gates and immutable attempt
   traces, plus opt-in per-hop and post-DNS SSRF destination controls
 - opt-in async lifecycle debug snapshots for staging and tests
@@ -43,6 +45,12 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 
 ```bash
 pip install foghttp
+```
+
+Prometheus/OpenMetrics integration is an optional extra:
+
+```bash
+pip install "foghttp[prometheus]"
 ```
 
 Runtime requirements:
@@ -162,6 +170,7 @@ async with foghttp.AsyncClient() as client:
 - [Retry policy](https://github.com/AmberFog/foghttp/blob/main/docs/retries.md)
 - [SSRF protection](https://github.com/AmberFog/foghttp/blob/main/docs/ssrf.md)
 - [Telemetry contract](https://github.com/AmberFog/foghttp/blob/main/docs/telemetry.md)
+- [Prometheus and OpenMetrics](https://github.com/AmberFog/foghttp/blob/main/docs/prometheus.md)
 - [Response streaming](https://github.com/AmberFog/foghttp/blob/main/docs/streaming.md)
 - [Proxy and trust_env](https://github.com/AmberFog/foghttp/blob/main/docs/proxies.md)
 - [TLS trust](https://github.com/AmberFog/foghttp/blob/main/docs/tls.md)

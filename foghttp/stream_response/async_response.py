@@ -90,6 +90,8 @@ class AsyncStreamResponse(StreamResponseBase):
                         suppress_hook_errors=False,
                     )
                     return
+                if self._telemetry_context is not None:
+                    self._telemetry_body_bytes += len(chunk)
                 yield chunk
         except asyncio.CancelledError as cancelled_error:
             self._close(

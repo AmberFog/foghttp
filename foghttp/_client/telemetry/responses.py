@@ -6,7 +6,7 @@ __all__ = (
 from typing import Protocol
 
 from ...telemetry import TelemetryRequestOutcome
-from ..retry import public_retry_decisions
+from ..retry import public_retry_attempt_count, public_retry_decisions
 from .clock import elapsed_seconds_to_ns
 from .emission import TelemetryCompletion, TelemetryRedirect, TelemetryResponseMetadata
 from .request_context import TelemetryRequestContext
@@ -30,9 +30,14 @@ class ResponseTelemetrySource(ResponseTelemetryItem, Protocol):
     def history(self) -> tuple[ResponseTelemetryItem, ...]: ...
 
 
+class BufferedResponseTelemetrySource(ResponseTelemetrySource, Protocol):
+    @property
+    def content(self) -> bytes: ...
+
+
 def emit_buffered_response_telemetry(
     telemetry_context: TelemetryRequestContext | None,
-    response: ResponseTelemetrySource,
+    response: BufferedResponseTelemetrySource,
 ) -> None:
     if telemetry_context is None:
         return
@@ -45,8 +50,14 @@ def emit_buffered_response_telemetry(
     )
     _emit_redirect_telemetry(telemetry_context, response.history)
     telemetry_context.response_headers_received(metadata)
-    telemetry_context.response_body_finished(_success_completion(metadata))
-    telemetry_context.request_finished(_success_completion(metadata))
+    completion = TelemetryCompletion(
+        response=metadata,
+        outcome=TelemetryRequestOutcome.SUCCESS,
+        response_body_bytes=len(response.content),
+        retry_attempts=public_retry_attempt_count(response),
+    )
+    telemetry_context.response_body_finished(completion)
+    telemetry_context.request_finished(completion)
 
 
 def emit_stream_response_headers_telemetry(
@@ -84,11 +95,4 @@ def _response_metadata(response: ResponseTelemetryItem) -> TelemetryResponseMeta
         elapsed_ns=elapsed_seconds_to_ns(response.elapsed),
         origin=url_origin(response.url),
         redacted_url=redacted_url(response.url),
-    )
-
-
-def _success_completion(response: TelemetryResponseMetadata) -> TelemetryCompletion:
-    return TelemetryCompletion(
-        response=response,
-        outcome=TelemetryRequestOutcome.SUCCESS,
     )

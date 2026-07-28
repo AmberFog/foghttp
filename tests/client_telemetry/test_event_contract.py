@@ -24,7 +24,7 @@ from foghttp.telemetry import TelemetryConfig, TelemetryEvent, TelemetryEventTyp
 from tests.client_telemetry.models import RecordingTelemetrySink
 
 
-EXPECTED_EVENT_SCHEMA_VERSION = 3
+EXPECTED_EVENT_SCHEMA_VERSION = 4
 _DELIVERY_TIMEOUT = 1.0
 _REQUEST_NOT_RELEASED = "request delivery was not released"
 _REQUEST_STARTED_AT_NS = 100
@@ -67,6 +67,9 @@ def test_event_schema_uses_event_constant() -> None:
     assert event.schema_version == EXPECTED_EVENT_SCHEMA_VERSION
     assert event.body_elapsed_ns is None
     assert event.request_elapsed_ns is None
+    assert event.response_body_bytes is None
+    assert event.retry_attempts is None
+    assert event.timeout_phase is None
 
 
 def test_duration_fields_preserve_existing_positional_event_contract() -> None:
@@ -76,6 +79,9 @@ def test_duration_fields_preserve_existing_positional_event_contract() -> None:
         "schema_version",
         "body_elapsed_ns",
         "request_elapsed_ns",
+        "response_body_bytes",
+        "retry_attempts",
+        "timeout_phase",
     )
 
 
@@ -322,6 +328,8 @@ class _StreamTelemetryHarness(StreamResponseTelemetryMixin):
         self.url = "https://example.com/"
         self._telemetry_context = cast("TelemetryRequestContext", context)
         self._telemetry_body_started_at_ns = _BODY_STARTED_AT_NS
+        self._telemetry_body_bytes = 0
+        self._retry_trace = None
         self._native_telemetry_finish = cast("NativeTelemetryDrain", finish_native)
         self._telemetry_finished = False
         self._calls = calls

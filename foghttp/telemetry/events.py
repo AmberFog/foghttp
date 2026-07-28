@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from .._telemetry import TELEMETRY_EVENT_SCHEMA_VERSION
+from ..timeout_diagnostics import TimeoutPhase
 
 
 class TelemetryEventType(StrEnum):
@@ -79,3 +80,6 @@ class TelemetryEvent:
     schema_version: int = TELEMETRY_EVENT_SCHEMA_VERSION
     body_elapsed_ns: int | None = None
     request_elapsed_ns: int | None = None
+    response_body_bytes: int | None = None
+    retry_attempts: int | None = None
+    timeout_phase: TimeoutPhase | None = None

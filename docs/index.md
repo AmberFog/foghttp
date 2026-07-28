@@ -60,6 +60,8 @@ FogHTTP is designed around a few engineering priorities:
   pressure, idle lifecycle snapshots, and stuck request diagnostics
 - opt-in typed telemetry event hooks with redacted request/response lifecycle
   events
+- optional Prometheus/OpenMetrics adapters over typed events and alert-oriented
+  transport stats
 - opt-in typed transport policy hooks for lightweight request admission and
   response-head checks, with Rust-owned redirect safety
 - opt-in Rust-owned retry policy with safe-method defaults, replayability
@@ -92,6 +94,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - [Retry policy](./retries.md)
 - [SSRF protection](./ssrf.md)
 - [Telemetry contract](./telemetry.md)
+- [Prometheus and OpenMetrics](./prometheus.md)
 - [Response streaming](./streaming.md)
 - [TLS trust](./tls.md)
 - [Proxy and trust_env](./proxies.md)

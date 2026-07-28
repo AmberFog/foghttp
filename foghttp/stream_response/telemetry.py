@@ -3,6 +3,7 @@ __all__ = ("StreamResponseTelemetryMixin",)
 from collections.abc import Callable
 import time
 
+from foghttp._client.retry import public_retry_attempt_count
 from foghttp._client.telemetry import NativeTelemetryDrain, TelemetryRequestContext
 from foghttp._client.telemetry.emission import TelemetryCompletion, TelemetryResponseMetadata
 from foghttp._client.telemetry.url import (
@@ -17,6 +18,7 @@ class StreamResponseTelemetryMixin:
     url: str
     _telemetry_context: TelemetryRequestContext | None
     _telemetry_body_started_at_ns: int | None
+    _telemetry_body_bytes: int
     _native_telemetry_finish: NativeTelemetryDrain | None
     _telemetry_finished: bool
     _finish_lifecycle_debug: Callable[[], None]
@@ -71,6 +73,8 @@ class StreamResponseTelemetryMixin:
             suppress_hook_errors=suppress_hook_errors or native_error is not None,
             body_elapsed_ns=completed_at_ns - body_started_at_ns,
             request_elapsed_ns=completed_at_ns - self._telemetry_context.started_at_ns,
+            response_body_bytes=self._telemetry_body_bytes,
+            retry_attempts=public_retry_attempt_count(self),
         )
         self._telemetry_context.response_body_finished(completion)
         self._telemetry_context.request_finished(completion)

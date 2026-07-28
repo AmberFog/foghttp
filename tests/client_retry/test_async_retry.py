@@ -138,6 +138,13 @@ async def test_async_cancellation_during_backoff_releases_request_lifecycle(
     assert recovery.status_code == OK
     assert getattr(exc_info.value, "retry_trace", None) is None
     assert retry_events(sink.events) == ()
+    cancelled_finished = next(
+        event
+        for event in sink.events
+        if event.event_type is foghttp.TelemetryEventType.REQUEST_FINISHED
+        and event.outcome is foghttp.TelemetryRequestOutcome.CANCELLED
+    )
+    assert cancelled_finished.retry_attempts is None
     assert len(retry_server.snapshot().requests_for(STATUS_THEN_OK_PATH)) == 1
     assert stats.active_requests == 0
     assert stats.pending_requests == 0
@@ -176,6 +183,13 @@ async def test_async_stream_cancellation_during_backoff_releases_request_lifecyc
     assert recovery.status_code == OK
     assert getattr(exc_info.value, "retry_trace", None) is None
     assert retry_events(sink.events) == ()
+    cancelled_finished = next(
+        event
+        for event in sink.events
+        if event.event_type is foghttp.TelemetryEventType.REQUEST_FINISHED
+        and event.outcome is foghttp.TelemetryRequestOutcome.CANCELLED
+    )
+    assert cancelled_finished.retry_attempts is None
     assert len(retry_server.snapshot().requests_for(STATUS_THEN_OK_PATH)) == 1
     assert stats.active_requests == 0
     assert stats.pending_requests == 0
