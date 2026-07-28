@@ -3,6 +3,7 @@ __all__ = ("TelemetryRequestContext",)
 from dataclasses import dataclass
 from typing import Protocol
 
+from ...errors import TimeoutError
 from ...retry_trace import RetryAttempt
 from ...telemetry import TelemetryEventType
 from .clock import elapsed_seconds_to_ns
@@ -121,6 +122,9 @@ class TelemetryRequestContext:
             request_elapsed_ns=(
                 completion.request_elapsed_ns if event_type is TelemetryEventType.REQUEST_FINISHED else None
             ),
+            response_body_bytes=completion.response_body_bytes,
+            retry_attempts=(completion.retry_attempts if event_type is TelemetryEventType.REQUEST_FINISHED else None),
+            timeout_phase=(completion.error.phase if isinstance(completion.error, TimeoutError) else None),
             origin=None if response is None else response.origin,
             redacted_url=None if response is None else response.redacted_url,
             outcome=completion.outcome,

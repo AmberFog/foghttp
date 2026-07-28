@@ -49,7 +49,7 @@ Current event fields include:
 
 | field | meaning |
 | --- | --- |
-| `schema_version` | Version of the telemetry event shape. The current version is `3`. |
+| `schema_version` | Version of the telemetry event shape. The current version is `4`. |
 | `event_sequence` | Monotonic Python-side sequence within the current client event dispatcher. |
 | `observed_at_ns` | Monotonic observation timestamp, not Unix epoch. |
 | `request_id` | Client-local id for request-scoped events; `None` for client-scoped lifecycle events. |
@@ -58,10 +58,14 @@ Current event fields include:
 | `status_code`, `elapsed_ns`, `redirect_hop` | Response/redirect context when applicable. `elapsed_ns` keeps its existing header- or native-phase-oriented meaning and is always `None` on stream completion events. |
 | `body_elapsed_ns` | Monotonic stream-body duration on `response_body_finished`; `None` on every other event and for buffered requests. |
 | `request_elapsed_ns` | Monotonic logical stream-request duration on `request_finished`; `None` on every other event and for buffered requests. |
+| `response_body_bytes` | Final-response bytes read into FogHTTP's public body-consumption pipeline. Buffered responses report decoded `response.content` bytes; streams report bytes read from the native stream before any buffering by text/line iterators. It is set on body/request completion events when a buffered `Response` exists or a stream is terminalized. Failures before a buffered `Response` is constructed, including buffered-body read failures, use `None`. |
+| `retry_attempts` | Additional retry attempts that actually began after the initial attempt. It is set on `request_finished` when a completed `RetryTrace` is available. External cancellation may leave it `None`; a retry selected but not started during backoff is never counted. |
+| `timeout_phase` | Typed `TimeoutDiagnostic.phase` on terminal timeout events when diagnostics are available; otherwise `None`. |
 | `retry_attempt`, `retry_decision`, `retry_reason`, `retry_backoff_ns` | Structured opt-in retry decision context. Attempt numbering starts at `1`; backoff is a duration in nanoseconds. |
 | `outcome`, `error_type` | Completion outcome and public error class name when applicable. |
 
-FogHTTP never passes raw request or response bodies to telemetry hooks. Hook
+FogHTTP never passes raw request or response bodies to telemetry hooks; only
+the delivered response byte count is exposed. Hook
 URLs are redacted with the same policy used by `repr()` and public error
 messages. Headers are intentionally not included in the first event payload
 shape; future header surfaces must be explicit and redacted.
@@ -234,8 +238,8 @@ strict SLA data source.
 
 ## Exporter Rules
 
-Future Prometheus/OpenMetrics support must use only fields with suitable
-guarantees:
+The optional [Prometheus/OpenMetrics adapters](./prometheus.md) use only fields
+with suitable guarantees:
 
 - use `TransportStats` cumulative counters for rates
 - use `TransportStats` current gauges for saturation and memory pressure
@@ -245,7 +249,7 @@ guarantees:
   may be skipped for Rust-side telemetry streams
 - avoid deriving alert-critical counters from `dump_transport_state()` retries
   or `dump_pool_diagnostics()` waiter snapshots
-- benchmark exporter/versioning overhead before adding work to request hot paths
+- keep exporter/versioning work outside the default request path
 
 When stricter SLA-grade telemetry is needed, FogHTTP should add an event-derived
 or versioned metrics source of truth in Rust rather than strengthening the

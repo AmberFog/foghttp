@@ -3,7 +3,7 @@ __all__ = ("emit_request_error_telemetry", "start_request_telemetry")
 import asyncio
 
 from ...telemetry import TelemetryRequestOutcome
-from ..retry import public_retry_decisions
+from ..retry import public_retry_attempt_count, public_retry_decisions
 from .emission import TelemetryCompletion
 from .request_context import TelemetryRequestContext
 from .retries import emit_retry_decisions
@@ -37,6 +37,7 @@ def emit_request_error_telemetry(
             error=error,
             suppress_hook_errors=True,
             request_elapsed_ns=request_elapsed_ns,
+            retry_attempts=public_retry_attempt_count(error),
         ),
     )
 

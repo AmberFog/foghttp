@@ -47,6 +47,10 @@ async def test_async_stream_full_consume_events(http_server: str) -> None:
     assert_event_types(sink.events, STREAM_EVENT_TYPES)
     assert sink.events[0].mode == foghttp.TelemetryRequestMode.STREAM
     assert_stream_completion(sink.events, outcome=foghttp.TelemetryRequestOutcome.SUCCESS)
+    request_finished = next(
+        event for event in sink.events if event.event_type is foghttp.TelemetryEventType.REQUEST_FINISHED
+    )
+    assert request_finished.response_body_bytes == len(content)
 
 
 async def test_async_stream_early_close_events(streaming_server: AsyncStreamingServer) -> None:
@@ -147,6 +151,11 @@ async def test_async_stream_timeout_uses_public_error(
         outcome=foghttp.TelemetryRequestOutcome.ERROR,
         error_type="ReadTimeout",
     )
+    request_finished = next(
+        event for event in sink.events if event.event_type is foghttp.TelemetryEventType.REQUEST_FINISHED
+    )
+    assert request_finished.response_body_bytes == len(stream_constants.FIRST_CHUNK)
+    assert request_finished.timeout_phase == "response_body"
     assert_connection_abort(
         sink.events,
         outcome=foghttp.TelemetryRequestOutcome.ERROR,

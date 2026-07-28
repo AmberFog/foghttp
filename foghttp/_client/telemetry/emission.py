@@ -18,6 +18,7 @@ from ...telemetry import (
     TelemetryRetryDecision,
     TelemetryRetryReason,
 )
+from ...timeout_diagnostics import TimeoutPhase
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +64,8 @@ class TelemetryCompletion:
     suppress_hook_errors: bool = False
     body_elapsed_ns: int | None = None
     request_elapsed_ns: int | None = None
+    response_body_bytes: int | None = None
+    retry_attempts: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +76,9 @@ class TelemetryEmission:
     elapsed_ns: int | None = None
     body_elapsed_ns: int | None = None
     request_elapsed_ns: int | None = None
+    response_body_bytes: int | None = None
+    retry_attempts: int | None = None
+    timeout_phase: TimeoutPhase | None = None
     redirect_hop: int | None = None
     retry_attempt: int | None = None
     retry_decision: TelemetryRetryDecision | None = None

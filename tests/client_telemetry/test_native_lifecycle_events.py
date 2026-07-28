@@ -153,6 +153,9 @@ def test_buffered_read_timeout_has_connection_abort_context(
     aborted = _single_event(sink.events, foghttp.TelemetryEventType.CONNECTION_ABORTED)
     assert aborted.outcome == foghttp.TelemetryRequestOutcome.ERROR
     assert aborted.error_type == "ReadTimeout"
+    request_finished = _single_event(sink.events, foghttp.TelemetryEventType.REQUEST_FINISHED)
+    assert request_finished.response_body_bytes is None
+    assert request_finished.timeout_phase == "response_body"
 
 
 def test_buffered_body_transport_error_uses_public_request_error_category() -> None:

@@ -84,6 +84,8 @@ class StreamResponse(StreamResponseBase):
                         suppress_hook_errors=False,
                     )
                     return
+                if self._telemetry_context is not None:
+                    self._telemetry_body_bytes += len(chunk)
                 yield chunk
         finally:
             if not self._closed:

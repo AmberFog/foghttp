@@ -204,6 +204,9 @@ def test_sync_status_retry_trace_is_ordered_bounded_redacted_and_matches_telemet
     trace = require_retry_trace(response)
     retry_attempt, terminal_attempt = trace.attempts
     retry_event = single_retry_event(sink.events)
+    request_finished = next(
+        event for event in sink.events if event.event_type is foghttp.TelemetryEventType.REQUEST_FINISHED
+    )
     assert trace.outcome == foghttp.RetryTraceOutcome.RESPONSE
     assert trace.status_code == OK
     assert trace.error_type is None
@@ -252,6 +255,8 @@ def test_sync_status_retry_trace_is_ordered_bounded_redacted_and_matches_telemet
     assert retry_event.retry_reason == retry_attempt.reason
     assert retry_event.retry_backoff_ns == 0
     assert retry_event.elapsed_ns == round(retry_attempt.decision_elapsed * 1_000_000_000)
+    assert request_finished.retry_attempts == policy.retries
+    assert request_finished.response_body_bytes == len(response.content)
     assert query_secret not in repr(trace)
     assert header_secret not in repr(trace)
     assert body_secret not in repr(trace)

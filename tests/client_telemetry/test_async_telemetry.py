@@ -32,6 +32,8 @@ async def test_async_buffered_core_events(http_server: str) -> None:
         event for event in sink.events if event.event_type == foghttp.TelemetryEventType.REQUEST_FINISHED
     )
     assert request_finished.outcome == TelemetryRequestOutcome.SUCCESS
+    assert request_finished.response_body_bytes == len(response.content)
+    assert request_finished.retry_attempts is None
 
 
 async def test_async_hook_ignore_keeps_request_running(http_server: str) -> None:

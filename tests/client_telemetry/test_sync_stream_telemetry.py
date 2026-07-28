@@ -45,6 +45,10 @@ def test_sync_stream_full_consume_events(sync_http_server: str) -> None:
     assert_event_types(sink.events, STREAM_EVENT_TYPES)
     assert sink.events[0].mode == foghttp.TelemetryRequestMode.STREAM
     assert_stream_completion(sink.events, outcome=foghttp.TelemetryRequestOutcome.SUCCESS)
+    request_finished = next(
+        event for event in sink.events if event.event_type is foghttp.TelemetryEventType.REQUEST_FINISHED
+    )
+    assert request_finished.response_body_bytes == len(content)
 
 
 def test_sync_stream_early_close_events(sync_streaming_server: SyncStreamingServer) -> None:
@@ -69,6 +73,29 @@ def test_sync_stream_early_close_events(sync_streaming_server: SyncStreamingServ
         error_type=None,
     )
     assert_stream_completion(sink.events, outcome=foghttp.TelemetryRequestOutcome.CLOSED)
+
+
+def test_sync_line_iteration_counts_bytes_read_into_body_pipeline(
+    sync_streaming_server: SyncStreamingServer,
+) -> None:
+    sink = RecordingTelemetrySink()
+
+    with (
+        foghttp.Client(telemetry=foghttp.TelemetryConfig(sink=sink)) as client,
+        client.stream(
+            GET,
+            f"{sync_streaming_server.base_url}{stream_constants.TEXT_LINES_STREAM_PATH}",
+        ) as response,
+    ):
+        first_line = next(response.iter_lines())
+
+    request_finished = next(
+        event for event in sink.events if event.event_type is foghttp.TelemetryEventType.REQUEST_FINISHED
+    )
+    assert first_line == stream_constants.TEXT_LINES[0]
+    assert request_finished.response_body_bytes is not None
+    assert len(first_line.encode()) < request_finished.response_body_bytes
+    assert request_finished.response_body_bytes <= len(stream_constants.TEXT_LINES_BODY.encode())
 
 
 def test_sync_stream_close_before_first_read_has_durations(
@@ -117,6 +144,11 @@ def test_sync_stream_timeout_uses_public_error(
         outcome=foghttp.TelemetryRequestOutcome.ERROR,
         error_type="ReadTimeout",
     )
+    request_finished = next(
+        event for event in sink.events if event.event_type is foghttp.TelemetryEventType.REQUEST_FINISHED
+    )
+    assert request_finished.response_body_bytes == len(stream_constants.FIRST_CHUNK)
+    assert request_finished.timeout_phase == "response_body"
     assert_connection_abort(
         sink.events,
         outcome=foghttp.TelemetryRequestOutcome.ERROR,

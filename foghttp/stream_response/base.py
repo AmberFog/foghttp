@@ -52,6 +52,7 @@ class StreamResponseBase(
     _body_started: bool = field(default=False, init=False, repr=False)
     _telemetry_context: TelemetryRequestContext | None = field(default=None, init=False, repr=False)
     _telemetry_body_started_at_ns: int | None = field(default=None, init=False, repr=False)
+    _telemetry_body_bytes: int = field(default=0, init=False, repr=False)
     _native_telemetry_finish: NativeTelemetryDrain | None = field(
         default=None,
         init=False,
