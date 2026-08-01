@@ -1,6 +1,7 @@
 """Typed telemetry event contract."""
 
 __all__ = (
+    "StructuredLoggingTelemetrySink",
     "TelemetryConfig",
     "TelemetryEvent",
     "TelemetryEventSink",
@@ -23,4 +24,5 @@ from .events import (
     TelemetryRetryDecision,
     TelemetryRetryReason,
 )
+from .logging import StructuredLoggingTelemetrySink
 from .sinks import TelemetryEventSink
