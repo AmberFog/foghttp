@@ -4,6 +4,9 @@ FogHTTP exposes public typing contracts for streaming request body providers and
 multipart `files=` uploads. These names let application code and wrappers type
 body providers without importing internal classes.
 
+Request and response metadata contracts are documented separately in
+[Public typing contracts](./typing.md).
+
 The runtime request API accepts streaming bodies through `content=` and
 multipart uploads through `files=`.
 

@@ -5,7 +5,9 @@ __all__ = (
     "TransportPolicyBodyState",
     "TransportPolicyHooks",
     "TransportPolicyRequest",
+    "TransportPolicyRequestHook",
     "TransportPolicyResponse",
+    "TransportPolicyResponseHook",
 )
 
 from collections.abc import Callable
@@ -70,6 +72,10 @@ class TransportPolicyResponse:
         return f"{class_name}(request={request!r}, status_code={status_code!r}, headers=<{header_count} headers>)"
 
 
+TransportPolicyRequestHook: TypeAlias = Callable[[TransportPolicyRequest], None]
+TransportPolicyResponseHook: TypeAlias = Callable[[TransportPolicyResponse], None]
+
+
 @dataclass(frozen=True, slots=True)
 class TransportPolicyHooks:
     """Opt-in synchronous transport policy observers.
@@ -78,9 +84,9 @@ class TransportPolicyHooks:
     ``None`` and cannot mutate requests, responses, or transport resources.
     """
 
-    before_send: Callable[[TransportPolicyRequest], None] | None = field(default=None, repr=False)
-    on_response_headers: Callable[[TransportPolicyResponse], None] | None = field(default=None, repr=False)
-    after_response_body: Callable[[TransportPolicyResponse], None] | None = field(default=None, repr=False)
+    before_send: TransportPolicyRequestHook | None = field(default=None, repr=False)
+    on_response_headers: TransportPolicyResponseHook | None = field(default=None, repr=False)
+    after_response_body: TransportPolicyResponseHook | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         _validate_hook("before_send", self.before_send)

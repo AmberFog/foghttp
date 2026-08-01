@@ -1,7 +1,9 @@
 import foghttp
 import foghttp.methods
 import foghttp.models
+import foghttp.policy
 import foghttp.stats
+import foghttp.types
 
 
 def test_top_level_exports() -> None:
@@ -62,3 +64,24 @@ def test_query_method_is_exported() -> None:
     assert foghttp.methods.QUERY in foghttp.methods.HTTP_METHODS
     assert foghttp.methods.HTTP_METHODS.count(foghttp.methods.QUERY) == 1
     assert "QUERY" in foghttp.methods.__all__
+
+
+def test_public_typing_protocols_do_not_open_transport_adapters() -> None:
+    assert foghttp.types.RequestProtocol is not None
+    assert foghttp.types.ResponseProtocol is not None
+    assert foghttp.types.BufferedResponseProtocol is not None
+    assert foghttp.types.StreamResponseProtocol is not None
+    assert foghttp.types.AsyncStreamResponseProtocol is not None
+    assert not hasattr(foghttp, "SyncTransport")
+    assert not hasattr(foghttp, "AsyncTransport")
+    assert not hasattr(foghttp.types, "SyncTransport")
+    assert not hasattr(foghttp.types, "AsyncTransport")
+
+
+def test_policy_contracts_are_identical_at_the_package_root() -> None:
+    assert foghttp.TransportPolicyBodyState is foghttp.policy.TransportPolicyBodyState
+    assert foghttp.TransportPolicyHooks is foghttp.policy.TransportPolicyHooks
+    assert foghttp.TransportPolicyRequest is foghttp.policy.TransportPolicyRequest
+    assert foghttp.TransportPolicyRequestHook is foghttp.policy.TransportPolicyRequestHook
+    assert foghttp.TransportPolicyResponse is foghttp.policy.TransportPolicyResponse
+    assert foghttp.TransportPolicyResponseHook is foghttp.policy.TransportPolicyResponseHook

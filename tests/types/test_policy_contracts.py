@@ -1,41 +1,37 @@
-from collections.abc import Callable
 from typing import assert_type
 
 import foghttp
-from foghttp.policy import (
-    TransportPolicyHooks,
-    TransportPolicyRequest,
-    TransportPolicyResponse,
-)
 
 
-def observe_request(request: TransportPolicyRequest) -> None:
+def observe_request(request: foghttp.TransportPolicyRequest) -> None:
     assert request.method
     assert_type(request.extensions, foghttp.RequestExtensions)
 
 
-def observe_response(response: TransportPolicyResponse) -> None:
+def observe_response(response: foghttp.TransportPolicyResponse) -> None:
     assert response.status_code > 0
 
 
 def test_policy_hook_callable_contracts() -> None:
-    hooks = TransportPolicyHooks(
-        before_send=observe_request,
-        on_response_headers=observe_response,
-        after_response_body=observe_response,
+    request_hook: foghttp.TransportPolicyRequestHook = observe_request
+    response_hook: foghttp.TransportPolicyResponseHook = observe_response
+    hooks = foghttp.TransportPolicyHooks(
+        before_send=request_hook,
+        on_response_headers=response_hook,
+        after_response_body=response_hook,
     )
 
     assert_type(
         hooks.before_send,
-        Callable[[TransportPolicyRequest], None] | None,
+        foghttp.TransportPolicyRequestHook | None,
     )
     assert_type(
         hooks.on_response_headers,
-        Callable[[TransportPolicyResponse], None] | None,
+        foghttp.TransportPolicyResponseHook | None,
     )
     assert_type(
         hooks.after_response_body,
-        Callable[[TransportPolicyResponse], None] | None,
+        foghttp.TransportPolicyResponseHook | None,
     )
     assert hooks.enabled is True
 

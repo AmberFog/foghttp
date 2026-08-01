@@ -62,7 +62,9 @@ __all__ = (
     "TransportPolicyBodyState",
     "TransportPolicyHooks",
     "TransportPolicyRequest",
+    "TransportPolicyRequestHook",
     "TransportPolicyResponse",
+    "TransportPolicyResponseHook",
     "TransportState",
     "TransportStats",
     "UnclosedClientError",
@@ -108,7 +110,9 @@ from .policy import (
     TransportPolicyBodyState,
     TransportPolicyHooks,
     TransportPolicyRequest,
+    TransportPolicyRequestHook,
     TransportPolicyResponse,
+    TransportPolicyResponseHook,
 )
 from .pool_diagnostics import OriginPoolDiagnostics, PoolBlockingReason, PoolDiagnostics
 from .request import Request

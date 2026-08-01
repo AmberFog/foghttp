@@ -90,6 +90,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - [Client lifecycle](./lifecycle.md)
 - [Packaging and Python compatibility](./packaging.md)
 - [Timeout model](./timeouts.md)
+- [Public typing contracts](./typing.md)
 - [Upload typing contracts](./upload-types.md)
 - [Transport policy hooks](./policy-hooks.md)
 - [Retry policy](./retries.md)
@@ -138,6 +139,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - immutable request `extensions` for policy/application metadata outside the HTTP message
 - public upload typing contracts for streaming request bodies and multipart
   `files=` providers
+- public structural request, response, auth, telemetry, and policy typing
+  contracts for downstream integrations
 - case-insensitive `Headers` with repeated value support
 - safe policy for transport-managed request headers
 - redacted repr/error surfaces for sensitive headers, URL credentials,
