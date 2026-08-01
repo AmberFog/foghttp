@@ -29,6 +29,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - bounded global/per-origin request backpressure, FIFO pending-acquire limits,
   explicit HTTP/1.1 connection caps, and per-origin pressure diagnostics
 - typed telemetry event hooks with redacted request/response lifecycle events
+- opt-in structured lifecycle debug logging through standard Python `logging`
 - versioned telemetry snapshots that separate alert-oriented stats from
   diagnostic dump APIs
 - optional Prometheus/OpenMetrics adapters with bounded labels and no

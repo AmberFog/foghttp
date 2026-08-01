@@ -43,6 +43,7 @@ __all__ = (
     "SSRFPolicy",
     "SSRFViolationReason",
     "StreamResponse",
+    "StructuredLoggingTelemetrySink",
     "TLSConfig",
     "TelemetryConfig",
     "TelemetryEvent",
@@ -129,6 +130,7 @@ from .telemetry import (
     TelemetryRequestOutcome,
 )
 from .telemetry.events import TelemetryRetryDecision, TelemetryRetryReason
+from .telemetry.logging import StructuredLoggingTelemetrySink
 from .timeout_diagnostics import TimeoutDiagnostic, TimeoutPhase
 from .timeouts import Timeouts
 from .tls import TLSConfig

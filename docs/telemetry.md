@@ -131,6 +131,60 @@ If a request is already failing because of transport, timeout, cancellation, or
 stream cleanup, telemetry cleanup errors are suppressed so the original request
 failure is not masked.
 
+## Structured debug logging
+
+`StructuredLoggingTelemetrySink` projects selected lifecycle events onto the
+standard-library logger named `foghttp.lifecycle` at `DEBUG` level. FogHTTP does
+not install handlers, configure the root logger, or enable the sink implicitly.
+Applications opt in through the existing telemetry contract:
+
+```python
+import logging
+
+from foghttp import Client, StructuredLoggingTelemetrySink, TelemetryConfig
+
+
+logging.basicConfig(level=logging.DEBUG)
+logging.getLogger("foghttp.lifecycle").setLevel(logging.DEBUG)
+
+with Client(
+    telemetry=TelemetryConfig(sink=StructuredLoggingTelemetrySink()),
+) as client:
+    client.get("https://api.example.com/items?token=secret")
+```
+
+The sink emits connection opened/open-failed/reused/closed/aborted events,
+redirect and retry decisions, and terminal request events representing a
+timeout. Other request, response-header, and body-completion events are not
+logged by this adapter.
+
+Every emitted `LogRecord` has the following `extra` attributes. Fields that do
+not apply to an event are present with value `None`, so a formatter attached to
+the dedicated logger can use a stable field set.
+
+| field | meaning |
+| --- | --- |
+| `foghttp_event_type` | Typed lifecycle event name. |
+| `foghttp_schema_version` | Telemetry event schema version. |
+| `foghttp_event_sequence`, `foghttp_observed_at_ns` | Client-local ordering and monotonic observation time. |
+| `foghttp_request_id`, `foghttp_mode`, `foghttp_method` | Request correlation fields when applicable. |
+| `foghttp_origin` | Normalized scheme/host/port only; never userinfo, path, query, or fragment. |
+| `foghttp_status_code`, `foghttp_elapsed_ns`, `foghttp_redirect_hop` | Response or lifecycle phase context when applicable. |
+| `foghttp_retry_attempt`, `foghttp_retry_decision`, `foghttp_retry_reason`, `foghttp_retry_backoff_ns` | Retry decision context. |
+| `foghttp_outcome`, `foghttp_error_type`, `foghttp_timeout_phase` | Terminal outcome and typed error/timeout context. |
+
+The adapter deliberately does not copy `redacted_url`, headers, or body data
+into log records. It normalizes `origin` again at the logging boundary, so raw
+userinfo, path, query, and fragment data cannot cross through that field.
+
+The default client path remains unchanged: without
+`TelemetryConfig(sink=...)`, FogHTTP creates no telemetry events and makes no
+logging calls. The sink also checks `Logger.isEnabledFor(DEBUG)` before building
+structured fields. Once installed, however, telemetry callbacks and configured
+logging handlers run inline on the request thread or event loop; keep handlers
+fast or route records through application-owned non-blocking logging
+infrastructure.
+
 Pool acquire and connection lifecycle events are recorded in Rust when an
 opt-in sink is configured. Rust never invokes the Python sink directly. It
 writes compact records to a bounded, non-blocking client journal; Python drains

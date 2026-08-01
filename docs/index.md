@@ -60,6 +60,7 @@ FogHTTP is designed around a few engineering priorities:
   pressure, idle lifecycle snapshots, and stuck request diagnostics
 - opt-in typed telemetry event hooks with redacted request/response lifecycle
   events
+- opt-in structured lifecycle debug logging through standard Python `logging`
 - optional Prometheus/OpenMetrics adapters over typed events and alert-oriented
   transport stats
 - opt-in typed transport policy hooks for lightweight request admission and
