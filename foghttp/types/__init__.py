@@ -5,8 +5,10 @@ __all__ = (
     "AsyncMultipartFileTuple",
     "AsyncMultipartFileValue",
     "AsyncMultipartFiles",
+    "AsyncStreamResponseProtocol",
     "BinaryFile",
     "BodyChunk",
+    "BufferedResponseProtocol",
     "HttpVersion",
     "HttpVersions",
     "QueryParamItem",
@@ -17,6 +19,9 @@ __all__ = (
     "RequestDataItem",
     "RequestDataItems",
     "RequestDataValue",
+    "RequestProtocol",
+    "ResponseProtocol",
+    "StreamResponseProtocol",
     "SyncByteStream",
     "SyncByteStreamFactory",
     "SyncMultipartFileContent",
@@ -29,6 +34,13 @@ from typing import TypeAlias
 
 from . import multipart as multipart_types
 from .http import HttpVersion, HttpVersions
+from .protocols import (
+    AsyncStreamResponseProtocol,
+    BufferedResponseProtocol,
+    RequestProtocol,
+    ResponseProtocol,
+    StreamResponseProtocol,
+)
 from .request import (
     QueryParamItem,
     QueryParamItems,

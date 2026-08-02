@@ -166,6 +166,7 @@ async with foghttp.AsyncClient() as client:
 - [Client lifecycle](https://github.com/AmberFog/foghttp/blob/main/docs/lifecycle.md)
 - [Packaging and Python compatibility](https://github.com/AmberFog/foghttp/blob/main/docs/packaging.md)
 - [Timeout model](https://github.com/AmberFog/foghttp/blob/main/docs/timeouts.md)
+- [Public typing contracts](https://github.com/AmberFog/foghttp/blob/main/docs/typing.md)
 - [Upload typing contracts](https://github.com/AmberFog/foghttp/blob/main/docs/upload-types.md)
 - [Transport policy hooks](https://github.com/AmberFog/foghttp/blob/main/docs/policy-hooks.md)
 - [Retry policy](https://github.com/AmberFog/foghttp/blob/main/docs/retries.md)
