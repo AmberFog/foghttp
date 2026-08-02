@@ -218,7 +218,7 @@ class AsyncClient(ClientCore):
             files=files,
             json=json,
         )
-        return AsyncStreamContext(self._send_stream(request, timeout=timeout))
+        return AsyncStreamContext(lambda: self._send_stream(request, timeout=timeout))
 
     async def get(
         self,

@@ -8,13 +8,11 @@ import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
 from .._request_body import RequestBody
 from ..messages import SYNC_CLIENT_ASYNC_BODY_UNSUPPORTED
-from .feeders import (
-    close_async_source,
-    close_sync_source,
-    feed_async_upload_body,
-    feed_sync_upload_body,
+from . import (
+    cleanup as upload_cleanup,
+    models as upload_models,
 )
-from .models import AsyncUploadBody, SyncUploadBody
+from .feeders import feed_async_upload_body, feed_sync_upload_body
 from .predicates import is_async_stream
 
 
@@ -52,17 +50,18 @@ class _SyncStreamingUploadBody:
             None,
         )
         self._source = source
+        self._source_cleanups = [] if replayable else [upload_cleanup.UploadSourceCleanup(source)]
         self._threads: list[threading.Thread] = []
         self._replayable = replayable
 
     def start(self, raw_body: _foghttp.RawUploadBody) -> None:
-        source = self._fresh_source()
+        source, source_cleanup = self._fresh_source()
         if is_async_stream(source):
-            close_sync_source(source)
+            source_cleanup.aclose_from_sync()
             raise TypeError(SYNC_CLIENT_ASYNC_BODY_UNSUPPORTED)
         thread = threading.Thread(
             target=feed_sync_upload_body,
-            args=(raw_body, source),
+            args=(raw_body, source, source_cleanup),
             daemon=True,
         )
         self._threads.append(thread)
@@ -71,19 +70,25 @@ class _SyncStreamingUploadBody:
     def close(self) -> None:
         if self.raw_body is not None:
             self.raw_body.close()
-        if not self._threads:
-            if not self._replayable:
-                close_sync_source(self._source)
-            return
+        for source_cleanup in self._source_cleanups:
+            source_cleanup.close()
         current_thread = threading.current_thread()
         for thread in self._threads:
             if current_thread is not thread:
                 thread.join(UPLOAD_FEEDER_JOIN_TIMEOUT)
 
-    def _fresh_source(self) -> object:
+    def _fresh_source(self) -> tuple[object, upload_cleanup.UploadSourceCleanup]:
         if self._replayable:
-            return _call_body_factory(self._source)
-        return self._source
+            source, source_cleanup, source_error = _prepare_factory_source(self._source)
+            self._source_cleanups.append(source_cleanup)
+            if source_error is not None:
+                if is_async_stream(source):
+                    source_cleanup.aclose_from_sync()
+                else:
+                    source_cleanup.close()
+                raise source_error
+            return source, source_cleanup
+        return self._source, self._source_cleanups[0]
 
 
 class _AsyncStreamingUploadBody:
@@ -105,41 +110,44 @@ class _AsyncStreamingUploadBody:
         self._loop = asyncio.get_running_loop()
         self._ready = asyncio.Event()
         self._futures: list[Future[None]] = []
-        self._owned_sources: list[object] = []
+        self._source_cleanups = [] if replayable else [upload_cleanup.UploadSourceCleanup(source)]
         self._replayable = replayable
 
     def start(self, raw_body: _foghttp.RawUploadBody) -> None:
-        source = self._fresh_source()
+        source, source_cleanup = self._fresh_source()
         future = asyncio.run_coroutine_threadsafe(
-            feed_async_upload_body(raw_body, source, self._ready),
+            feed_async_upload_body(raw_body, source, source_cleanup, self._ready),
             self._loop,
         )
         self._futures.append(future)
 
     async def aclose(self) -> None:
-        if not self._futures:
-            if self.raw_body is not None:
-                self.raw_body.close()
-            if not self._replayable:
-                await close_async_source(self._source)
-            return
+        if self.raw_body is not None:
+            self.raw_body.close()
         for pending_future in self._futures:
             if not pending_future.done():
                 pending_future.cancel()
-        await self._drain_futures()
-        await self._close_owned_sources()
-        if self.raw_body is not None:
-            self.raw_body.close()
+        try:
+            await self._drain_futures()
+        except BaseException:
+            for source_cleanup in self._source_cleanups:
+                source_cleanup.start_async_cleanup()
+            raise
+        for source_cleanup in self._source_cleanups:
+            source_cleanup.start_async_cleanup()
+        await self._close_sources()
 
-    def _fresh_source(self) -> object:
+    def _fresh_source(self) -> tuple[object, upload_cleanup.UploadSourceCleanup]:
         if self._replayable:
-            source = _call_body_factory(self._source)
-            self._owned_sources.append(source)
-            return source
-        return self._source
+            source, source_cleanup, source_error = _prepare_factory_source(self._source)
+            self._source_cleanups.append(source_cleanup)
+            if source_error is not None:
+                raise source_error
+            return source, source_cleanup
+        return self._source, self._source_cleanups[0]
 
-    async def _close_owned_sources(self) -> None:
-        close_tasks = [_close_owned_source(source) for source in self._owned_sources]
+    async def _close_sources(self) -> None:
+        close_tasks = [source_cleanup.aclose() for source_cleanup in self._source_cleanups]
         if close_tasks:
             await asyncio.gather(*close_tasks, return_exceptions=True)
 
@@ -163,10 +171,13 @@ class _AsyncStreamingUploadBody:
         if running_loop is self._loop:
             self._ready.set()
             return
-        self._loop.call_soon_threadsafe(self._ready.set)
+        try:
+            self._loop.call_soon_threadsafe(self._ready.set)
+        except RuntimeError:
+            return
 
 
-def prepare_sync_upload_body(body: RequestBody) -> SyncUploadBody:
+def prepare_sync_upload_body(body: RequestBody) -> upload_models.SyncUploadBody:
     if body.stream is None:
         return _BufferedUploadBody(body.content)
     if is_async_stream(body.stream):
@@ -178,7 +189,7 @@ def prepare_sync_upload_body(body: RequestBody) -> SyncUploadBody:
     )
 
 
-def prepare_async_upload_body(body: RequestBody) -> AsyncUploadBody:
+def prepare_async_upload_body(body: RequestBody) -> upload_models.AsyncUploadBody:
     if body.stream is None:
         return _BufferedUploadBody(body.content)
     return _AsyncStreamingUploadBody(
@@ -188,12 +199,10 @@ def prepare_async_upload_body(body: RequestBody) -> AsyncUploadBody:
     )
 
 
-def _call_body_factory(source: object) -> object:
-    return source()  # type: ignore[operator]
-
-
-async def _close_owned_source(source: object) -> None:
-    if is_async_stream(source):
-        await close_async_source(source)
-        return
-    close_sync_source(source)
+def _prepare_factory_source(
+    source_factory: object,
+) -> tuple[object, upload_cleanup.UploadSourceCleanup, BaseException | None]:
+    source = source_factory()  # type: ignore[operator]
+    if isinstance(source, upload_cleanup.UploadSourceFactoryFailure):
+        return source.source, upload_cleanup.UploadSourceCleanup(source.source), source.error
+    return source, upload_cleanup.UploadSourceCleanup(source), None

@@ -7,6 +7,18 @@ import threading
 ASYNC_SYNC_FEEDER_CANCEL_TIMEOUT = 1.0
 
 
+async def run_sync_in_daemon(callback: Callable[[], None]) -> None:
+    loop = asyncio.get_running_loop()
+    done: asyncio.Future[None] = loop.create_future()
+    thread = threading.Thread(
+        target=_run_feeder,
+        args=(callback, lambda: None, loop, done),
+        daemon=True,
+    )
+    thread.start()
+    await asyncio.shield(done)
+
+
 async def run_sync_upload_feeder(
     feeder: Callable[[], None],
     cancel: Callable[[], None],
@@ -38,15 +50,18 @@ def _run_feeder(
         feeder()
     except Exception as exc:  # noqa: BLE001
         completed = True
-        loop.call_soon_threadsafe(_set_future_exception, done, exc)
+        with suppress(RuntimeError):
+            loop.call_soon_threadsafe(_set_future_exception, done, exc)
     else:
         completed = True
-        loop.call_soon_threadsafe(_set_future_result, done)
+        with suppress(RuntimeError):
+            loop.call_soon_threadsafe(_set_future_result, done)
     finally:
         if not completed:
             with suppress(Exception):
                 cancel()
-            loop.call_soon_threadsafe(_set_future_result, done)
+            with suppress(RuntimeError):
+                loop.call_soon_threadsafe(_set_future_result, done)
 
 
 def _set_future_result(future: asyncio.Future[None]) -> None:

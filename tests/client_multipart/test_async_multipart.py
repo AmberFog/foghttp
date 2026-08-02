@@ -16,12 +16,20 @@ from tests.client_multipart.assertions import (
     parse_multipart_parts,
 )
 from tests.client_multipart.models import MultipartPart
-from tests.client_multipart.sources import AsyncChunks, BlockingAsyncChunks, BlockingSyncChunks, ClosingBytesFile
+from tests.client_multipart.sources import (
+    AsyncChunks,
+    BlockingAsyncChunks,
+    BlockingSyncChunks,
+    CallableAsyncChunks,
+    ClosingBytesFile,
+    TrackedFactory,
+)
 from tests.redirect_helpers import SECURITY_HEADERS_PATH
 from tests.support.transport_stats import wait_for_async_transport_stats
 
 
 EXPECTED_REPLAY_FACTORY_CALLS = 2
+MULTIPART_FACTORY_FAILURE = "multipart factory failed"
 CANCELLATION_TIMEOUT = 2.0
 MULTIPART_TOTAL_TIMEOUT = 3.0
 MULTIPART_WRITE_TIMEOUT = 0.05
@@ -101,6 +109,21 @@ async def test_async_client_streams_sync_file_multipart_without_closing_external
     )
 
 
+async def test_callable_async_provider_uses_direct_multipart_ownership(http_server: str) -> None:
+    source = CallableAsyncChunks((b"direct-provider",))
+
+    async with foghttp.AsyncClient(timeouts=FAST_MULTIPART_TIMEOUTS) as client:
+        response = await client.post(
+            f"{http_server}{SECURITY_HEADERS_PATH}",
+            files={"file": ("callable.bin", source)},
+        )
+
+    assert b"direct-provider" in response.content
+    assert source.calls == 0
+    assert source.close_calls == 0
+    await source.aclose()
+
+
 async def test_async_stream_multipart_rejects_method_preserving_redirect(http_server: str) -> None:
     async with foghttp.AsyncClient(follow_redirects=True, timeouts=FAST_MULTIPART_TIMEOUTS) as client:
         with pytest.raises(foghttp.RequestError, match="non-replayable request body"):
@@ -143,16 +166,18 @@ async def test_async_factory_multipart_replays_method_preserving_redirect(http_s
         sources.append(source)
         return source
 
+    factory = TrackedFactory(content)
     async with foghttp.AsyncClient(follow_redirects=True, timeouts=FAST_MULTIPART_TIMEOUTS) as client:
         response = await client.post(
             f"{http_server}/redirect/{TEMPORARY_REDIRECT}",
-            files={"file": ("factory.txt", content)},
+            files={"file": ("factory.txt", factory)},
         )
 
     assert response.status_code == OK
     assert len(response.history) == 1
     assert len(sources) == EXPECTED_REPLAY_FACTORY_CALLS
-    assert all(source.closed for source in sources)
+    assert factory.close_calls == 0
+    assert all(source.close_calls == 1 for source in sources)
     assert_multipart_parts(
         parse_multipart_parts(
             content_type=response.request.headers["content-type"],
@@ -209,7 +234,7 @@ async def test_async_multipart_cancellation_closes_sync_source(http_server: str)
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(task, timeout=CANCELLATION_TIMEOUT)
 
-        assert source.closed is True
+        assert source.close_calls == 1
         assert await asyncio.to_thread(source.finished.wait, 2.0)
         await wait_for_async_transport_stats(
             client,
@@ -234,7 +259,7 @@ async def test_async_multipart_cancellation_keeps_direct_async_source_open(http_
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(task, timeout=CANCELLATION_TIMEOUT)
 
-        assert source.closed is False
+        assert source.close_calls == 0
         await asyncio.wait_for(source.finished.wait(), timeout=2.0)
         await wait_for_async_transport_stats(
             client,
@@ -268,7 +293,7 @@ async def test_async_multipart_cancellation_closes_factory_async_source(http_ser
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(task, timeout=CANCELLATION_TIMEOUT)
 
-        assert source.closed is True
+        assert source.close_calls == 1
         await asyncio.wait_for(source.finished.wait(), timeout=2.0)
         await wait_for_async_transport_stats(
             client,
@@ -321,3 +346,26 @@ async def test_async_multipart_coroutine_factory_fails_cleanly(http_server: str)
             lambda stats: stats.active_requests == 0 and stats.pending_requests == 0,
             message="multipart factory failure did not release request slot",
         )
+
+
+async def test_async_multipart_closes_sources_when_later_factory_fails(http_server: str) -> None:
+    source = AsyncChunks((b"opened",))
+    first_factory = TrackedFactory(lambda: source)
+
+    def failing_part() -> object:
+        raise RuntimeError(MULTIPART_FACTORY_FAILURE)
+
+    second_factory = TrackedFactory(failing_part)
+    async with foghttp.AsyncClient(timeouts=FAST_MULTIPART_TIMEOUTS) as client:
+        with pytest.raises(RuntimeError, match=MULTIPART_FACTORY_FAILURE):
+            await client.post(
+                f"{http_server}{SECURITY_HEADERS_PATH}",
+                files=[
+                    ("first", ("first.bin", first_factory)),
+                    ("second", ("second.bin", second_factory)),
+                ],
+            )
+
+    assert first_factory.close_calls == 0
+    assert second_factory.close_calls == 0
+    assert source.close_calls == 1
