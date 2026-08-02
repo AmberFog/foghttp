@@ -74,20 +74,42 @@ body can be safely replayed; auth refresh runs before each resulting transport a
 
 ## Ownership And Cleanup
 
-Passing a direct streaming or file-like provider to `content=` transfers
-request-scope cleanup ownership to FogHTTP. Providers are closed after use when
-they expose `close()` or `aclose()`. Cleanup runs on success, timeout,
-cancellation, redirect rejection, transport error, and client close.
+| Body source | Ownership and cleanup |
+|---|---|
+| Buffered `bytes` or `str` through `content=` | FogHTTP copies or retains the immutable value for the request. There is no provider to close. |
+| Mapping, repeated pairs, `bytes`, or `str` through `data=` | FogHTTP keeps an immutable `bytes` value as-is; `str`, mappings, and repeated pairs are encoded to buffered bytes while building the request. File-like objects, sync or async providers, and factories are unsupported: FogHTTP rejects them and leaves them caller-owned. When `data=` supplies multipart form fields alongside `files=`, those field values are also encoded eagerly. |
+| Direct file-like or streaming provider through `content=` | Ownership transfers when FogHTTP hands a validated request to the transport, before pool admission or provider iteration. FogHTTP calls `close()` or `aclose()` after use on success, timeout, cancellation, redirect rejection, transport error, and client close. Before transport handoff, the caller owns the provider. |
+| Zero-argument factory through `content=` | The factory remains caller-owned and is not closed. FogHTTP owns each returned provider and invokes its applicable cleanup method once after that request attempt. |
+| Buffered bytes-like part through `files=` | FogHTTP copies mutable bytes-like values before transport use. There is no external provider to close. |
+| Direct file-like or streaming part through `files=` | The provider remains caller-owned. FogHTTP consumes it but never calls `close()` or `aclose()`; the caller closes it after the request completes, including failure and cancellation paths. |
+| Zero-argument part factory through `files=` | The factory remains caller-owned and is not closed. FogHTTP owns each returned provider and invokes its applicable cleanup method once after that multipart attempt. |
 
-Passing a direct file-like or stream provider through `files=` does not transfer
-ownership. The caller remains responsible for closing external file objects and
-streams after the request completes. Providers returned by multipart factories
-are request-attempt objects and FogHTTP closes them after that attempt.
+The direct-provider difference is intentional. A `content=` provider represents
+the complete one-shot request body, so its lifetime is the request runtime's
+cleanup responsibility. A direct `files=` provider is an externally supplied
+multipart part, commonly managed by the caller's own context manager; closing it
+inside FogHTTP would unexpectedly take ownership of that external resource.
+Factories remove that ambiguity because every returned provider is a fresh
+request-attempt object created solely for FogHTTP to consume.
 
-Use a zero-argument factory when caller code needs to keep ownership of the
-outer object or reopen a fresh provider for each replay attempt. The factory
-itself is not closed; providers returned by the factory are closed after their
-request attempt.
+FogHTTP-owned provider cleanup is best effort: FogHTTP invokes the applicable
+`close()` or `aclose()` method at most once and suppresses cleanup errors so they
+do not mask the request outcome. Waiting for `aclose()` is bounded so a broken
+cleanup implementation cannot indefinitely hold request completion or
+cancellation; the cleanup may continue in a dedicated daemon thread. An async
+client does not run a synchronous provider's `close()` on its event-loop thread.
+If a sync client must reject an async provider returned by a factory, `aclose()`
+runs on a dedicated thread under the same best-effort contract.
+
+Request construction, pre-transport validation, an unsent prepared request, and
+a stream context that was created but never entered have not handed the request
+to the transport. Their direct `content=` providers therefore remain
+caller-owned and must be closed by the caller. A sync client also rejects a
+direct async provider before transport handoff and does not call `aclose()` on
+it. If an object is both callable and a file-like, sync-stream, or async-stream
+provider, the direct provider capability takes precedence over factory
+classification; the ownership and replayability rules for a direct provider
+apply.
 
 Providers should yield `bytes`, `bytearray`, or `memoryview` chunks. Mutable
 chunks are copied before they cross the Rust transport boundary. Text, paths,

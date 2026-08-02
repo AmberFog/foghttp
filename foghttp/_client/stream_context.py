@@ -33,8 +33,8 @@ class StreamContext:
 
 
 class AsyncStreamContext:
-    def __init__(self, response: Awaitable[AsyncStreamResponse]) -> None:
-        self._response_awaitable = response
+    def __init__(self, response_factory: Callable[[], Awaitable[AsyncStreamResponse]]) -> None:
+        self._response_factory = response_factory
         self._response: AsyncStreamResponse | None = None
         self._entered = False
 
@@ -42,7 +42,7 @@ class AsyncStreamContext:
         if self._entered:
             raise LifecycleError(STREAM_CONTEXT_REENTERED)
         self._entered = True
-        response = await self._response_awaitable
+        response = await self._response_factory()
         self._response = response
         return response
 

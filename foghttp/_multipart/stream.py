@@ -4,8 +4,11 @@ from dataclasses import replace
 from inspect import isawaitable
 from typing import cast
 
-from .._upload_body.feeders import close_async_source, close_sync_source
-from .._upload_body.predicates import is_async_stream
+from .._upload_body import (
+    file_source as upload_file_source,
+    predicates as upload_predicates,
+)
+from .._upload_body.cleanup import UploadSourceFactoryFailure, close_async_source, close_sync_source
 from ..messages import MULTIPART_FILES_UNSUPPORTED
 from .constants import CRLF
 from .encoding import closing_boundary, file_header
@@ -67,11 +70,12 @@ class MultipartStreamFactory:
     def __init__(self, payload: MultipartPayload) -> None:
         self._payload = payload
 
-    def __call__(self) -> MultipartStream | AsyncMultipartStream:
-        payload = _fresh_payload(self._payload)
-        if payload.async_source:
-            return AsyncMultipartStream(payload)
-        return MultipartStream(payload)
+    def __call__(self) -> MultipartStream | AsyncMultipartStream | UploadSourceFactoryFailure:
+        payload, source_error = _fresh_payload(self._payload)
+        stream = AsyncMultipartStream(payload) if payload.async_source else MultipartStream(payload)
+        if source_error is not None:
+            return UploadSourceFactoryFailure(stream, source_error)
+        return stream
 
 
 def multipart_buffer(payload: MultipartPayload) -> bytes:
@@ -79,15 +83,18 @@ def multipart_buffer(payload: MultipartPayload) -> bytes:
 
 
 async def _close_file_content(file: MultipartFile) -> None:
-    if file.async_source:
-        await close_async_source(file.content)
-        return
-    close_sync_source(file.content)
+    await close_async_source(file.content)
 
 
-def _fresh_payload(payload: MultipartPayload) -> MultipartPayload:
-    files = tuple(_fresh_file(file) for file in payload.files)
-    return replace(payload, files=files)
+def _fresh_payload(payload: MultipartPayload) -> tuple[MultipartPayload, BaseException | None]:
+    files: list[MultipartFile] = []
+    try:
+        files.extend(_fresh_file(file) for file in payload.files)
+    except asyncio.CancelledError as exc:
+        return replace(payload, files=tuple(files)), exc
+    except Exception as exc:  # noqa: BLE001
+        return replace(payload, files=tuple(files)), exc
+    return replace(payload, files=tuple(files)), None
 
 
 def _fresh_file(file: MultipartFile) -> MultipartFile:
@@ -98,10 +105,12 @@ def _fresh_file(file: MultipartFile) -> MultipartFile:
     if isawaitable(content):
         close_sync_source(content)
         raise TypeError(MULTIPART_FILES_UNSUPPORTED)
+    if upload_predicates.is_binary_file(content):
+        content = upload_file_source.FileUploadSource(content)
     return replace(
         file,
         content=content,
-        async_source=is_async_stream(content),
+        async_source=upload_predicates.is_async_stream(content),
         source_factory=False,
         close_source=True,
     )

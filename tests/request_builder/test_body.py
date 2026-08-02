@@ -1,3 +1,4 @@
+import io
 from typing import Any
 
 from faker import Faker
@@ -9,6 +10,7 @@ from foghttp._request_body import request_body
 from foghttp.messages import BODY_CONTENT_UNSUPPORTED, BODY_DATA_UNSUPPORTED, BODY_PARAMETER_CONFLICT
 from foghttp.methods import POST
 from foghttp.types import RequestData
+from tests.client_multipart.sources import AsyncChunks, ClosingBytesFile, SyncChunks, TrackedFactory
 
 
 def test_json_body_adds_content_type_when_missing(faker: Faker) -> None:
@@ -85,6 +87,16 @@ def test_build_request_accepts_streaming_content(faker: Faker) -> None:
     assert request.content is None
     assert body.stream is content
     assert body.replayable is False
+
+
+def test_unsent_prepared_content_provider_remains_caller_owned(faker: Faker) -> None:
+    content = io.BytesIO(b"unsent")
+
+    with foghttp.Client() as client:
+        client.build_request(POST, faker.url(), content=content)
+
+    assert content.closed is False
+    content.close()
 
 
 def test_build_request_accepts_replayable_streaming_factory(faker: Faker) -> None:
@@ -180,6 +192,28 @@ def test_raw_data_body_matrix(data: RequestData, expected_body: bytes, faker: Fa
     assert "content-type" not in request.headers
     assert "content-length" not in request.headers
     assert "transfer-encoding" not in request.headers
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        pytest.param(ClosingBytesFile(b"file-like"), id="file-like"),
+        pytest.param(SyncChunks((b"sync-provider",)), id="sync-provider"),
+        pytest.param(AsyncChunks((b"async-provider",)), id="async-provider"),
+        pytest.param(TrackedFactory(lambda: SyncChunks((b"factory-product",))), id="factory"),
+    ],
+)
+async def test_data_rejects_providers_without_taking_ownership(data: Any, faker: Faker) -> None:
+    with foghttp.Client() as client, pytest.raises(TypeError, match=BODY_DATA_UNSUPPORTED):
+        client.build_request(POST, faker.url(), data=data)
+
+    assert data.close_calls == 0
+    if isinstance(data, TrackedFactory):
+        assert data.calls == 0
+    if isinstance(data, AsyncChunks):
+        await data.aclose()
+    else:
+        data.close()
 
 
 def test_form_data_body_preserves_explicit_content_type(faker: Faker) -> None:

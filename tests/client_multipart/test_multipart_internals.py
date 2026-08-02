@@ -1,3 +1,4 @@
+import asyncio
 import threading
 
 import pytest
@@ -12,12 +13,19 @@ from foghttp._multipart.stream import (
     MultipartStreamFactory,
 )
 from foghttp._upload_body.chunks import body_chunk
+from foghttp._upload_body.cleanup import UploadSourceFactoryFailure
+from foghttp._upload_body.file_source import UPLOAD_CHUNK_SIZE
 from foghttp.messages import (
     MULTIPART_CONTENT_TYPE_UNSUPPORTED,
     MULTIPART_FILES_UNSUPPORTED,
     STREAMING_BODY_CHUNK_UNSUPPORTED,
 )
-from tests.client_multipart.sources import AsyncChunks, SyncChunks, ThreadTrackingSyncChunks
+from tests.client_multipart.sources import (
+    AsyncChunks,
+    ClosingBytesFile,
+    SyncChunks,
+    ThreadTrackingSyncChunks,
+)
 
 
 def test_body_chunk_accepts_mutable_bytes_like_values() -> None:
@@ -239,6 +247,34 @@ async def test_async_multipart_stream_reads_sync_parts_off_event_loop() -> None:
     assert loop_thread_id not in sync_source.thread_ids
 
 
+async def test_async_multipart_stream_closes_sync_parts_off_event_loop() -> None:
+    sync_source = ThreadTrackingSyncChunks((b"sync",))
+    loop_thread_id = threading.get_ident()
+    stream = AsyncMultipartStream(
+        MultipartPayload(
+            boundary="boundary",
+            fields=(),
+            files=(
+                MultipartFile(
+                    name="sync",
+                    filename="sync.bin",
+                    content=sync_source,
+                    content_type="application/octet-stream",
+                    content_length=None,
+                    replayable=False,
+                    async_source=False,
+                    close_source=True,
+                ),
+            ),
+        ),
+    )
+
+    await stream.aclose()
+
+    assert sync_source.close_thread_ids
+    assert loop_thread_id not in sync_source.close_thread_ids
+
+
 async def test_async_multipart_stream_closes_owned_async_source() -> None:
     source = AsyncChunks((b"payload",))
     stream = AsyncMultipartStream(
@@ -296,6 +332,42 @@ def test_multipart_stream_factory_creates_fresh_sync_stream() -> None:
 
     assert isinstance(stream, MultipartStream)
     assert b"sync" in b"".join(stream)
+
+
+def test_multipart_stream_factory_chunks_file_like_product() -> None:
+    source = ClosingBytesFile(b"x" * (UPLOAD_CHUNK_SIZE + 1))
+    payload = _factory_payload(lambda: source)
+
+    stream = MultipartStreamFactory(payload)()
+
+    assert isinstance(stream, MultipartStream)
+    assert b"x" * (UPLOAD_CHUNK_SIZE + 1) in b"".join(stream)
+    stream.close()
+    assert source.read_sizes == [UPLOAD_CHUNK_SIZE] * 3
+    assert source.close_calls == 1
+
+
+def test_multipart_stream_factory_preserves_partial_sources_on_cancel() -> None:
+    source = SyncChunks((b"opened",))
+
+    def cancelled_factory() -> object:
+        raise asyncio.CancelledError
+
+    first = _factory_payload(lambda: source)
+    second = _factory_payload(cancelled_factory)
+    payload = MultipartPayload(
+        boundary="boundary",
+        fields=(),
+        files=first.files + second.files,
+    )
+
+    result = MultipartStreamFactory(payload)()
+
+    assert isinstance(result, UploadSourceFactoryFailure)
+    assert isinstance(result.error, asyncio.CancelledError)
+    assert isinstance(result.source, MultipartStream)
+    result.source.close()
+    assert source.close_calls == 1
 
 
 async def test_multipart_stream_factory_creates_fresh_async_stream() -> None:
