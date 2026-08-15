@@ -1,3 +1,4 @@
+from os import PathLike
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,11 @@ import foghttp
 from .certificates import TLSCertificateBundle
 from .constants import TLS_INVALID_CA_BODY, TLS_OK_BODY, TLS_PATH
 from .models import TLSServer
+
+
+class _FailingCertificatePath(PathLike[str]):
+    def __fspath__(self) -> str:
+        raise TypeError
 
 
 def test_client_accepts_single_ca_certificate_path(
@@ -88,9 +94,20 @@ def test_client_rejects_missing_ca_certificate_file(
 
     with (
         foghttp.Client(tls=tls) as client,
-        pytest.raises(ValueError, match="failed to read CA certificate"),
+        pytest.raises(foghttp.ConfigurationError, match="failed to read CA certificate"),
     ):
         client.get(sync_http_server)
+
+
+def test_client_maps_lazy_certificate_path_type_error_to_configuration_error(
+    sync_http_server: str,
+) -> None:
+    tls = foghttp.TLSConfig(ca_certificates=_FailingCertificatePath())
+
+    with foghttp.Client(tls=tls) as client, pytest.raises(foghttp.ConfigurationError) as exc_info:
+        client.get(sync_http_server)
+
+    assert isinstance(exc_info.value.__cause__, TypeError)
 
 
 def test_client_rejects_invalid_ca_certificate_pem(
@@ -103,6 +120,6 @@ def test_client_rejects_invalid_ca_certificate_pem(
 
     with (
         foghttp.Client(tls=tls) as client,
-        pytest.raises(ValueError, match="CA certificate PEM did not contain certificates"),
+        pytest.raises(foghttp.ConfigurationError, match="CA certificate PEM did not contain certificates"),
     ):
         client.get(sync_http_server)

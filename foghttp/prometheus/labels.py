@@ -25,6 +25,7 @@ _STABLE_ERROR_CLASSES = frozenset(
     (
         "CancelledError",
         "ClientClosedError",
+        "ConfigurationError",
         "ConnectTimeout",
         "FogHTTPError",
         "HTTPStatusError",

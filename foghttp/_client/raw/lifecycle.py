@@ -4,12 +4,15 @@ from dataclasses import dataclass
 
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
-from ...errors import NetworkError
+from ...errors import ConfigurationError, NetworkError
 from ...retry import RetryPolicy
 from ...ssrf import SSRFPolicy
 from ..config import ClientConfig
 from ..proxy.auth import basic_proxy_authorization
 from ..tls import ca_certificate_bytes, trust_webpki_roots
+
+
+_RAW_CLIENT_SETUP_ERRORS = (TypeError, ValueError, OverflowError, _foghttp.FogHttpError)
 
 
 def close_raw_client(raw_client: _foghttp.RawClient) -> None:
@@ -61,8 +64,8 @@ def create_raw_client(
             ssrf_allowed_domains=ssrf_options.domains,
             telemetry_enabled=config.telemetry is not None and config.telemetry.enabled,
         )
-    except _foghttp.FogHttpError as exc:
-        raise ValueError(str(exc)) from exc
+    except _RAW_CLIENT_SETUP_ERRORS as exc:
+        raise ConfigurationError(str(exc)) from exc
 
 
 @dataclass(frozen=True, slots=True)

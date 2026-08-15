@@ -1,4 +1,5 @@
 import foghttp
+import foghttp.errors
 import foghttp.methods
 import foghttp.models
 import foghttp.policy
@@ -8,6 +9,7 @@ import foghttp.types
 
 def test_top_level_exports() -> None:
     assert foghttp.Client is not None
+    assert foghttp.ConfigurationError is foghttp.errors.ConfigurationError
     assert foghttp.AsyncLifecycleDebugConfig is not None
     assert foghttp.AsyncLifecycleDebugRequest is not None
     assert foghttp.AsyncLifecycleDebugRequestMode is not None
@@ -35,6 +37,8 @@ def test_top_level_exports() -> None:
     assert foghttp.TransportState is not None
     assert foghttp.OriginPressureState is not None
     assert foghttp.URL is not None
+    assert issubclass(foghttp.ConfigurationError, foghttp.FogHTTPError)
+    assert issubclass(foghttp.ConfigurationError, ValueError)
     assert issubclass(foghttp.NetworkError, foghttp.RequestError)
     assert issubclass(foghttp.SSRFError, foghttp.RequestError)
 
