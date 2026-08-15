@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import pytest
@@ -10,7 +9,7 @@ from .constants import TLS_INVALID_CA_BODY, TLS_OK_BODY, TLS_PATH
 from .models import TLSServer
 
 
-class _FailingCertificatePath(os.PathLike[str]):
+class _FailingCertificatePath:
     def __fspath__(self) -> str:
         raise TypeError
 
