@@ -146,6 +146,14 @@ Wait before using FogHTTP when:
 
 ## Error Surface
 
+Python-side option validation still raises `TypeError` or `ValueError` eagerly
+when the client configuration object is built. Failures discovered during lazy Rust
+transport setup, including unreadable or invalid CA certificates and native
+runtime/configuration rejection, raise `ConfigurationError` on the first
+request. `ConfigurationError` is both a `FogHTTPError` and a `ValueError`, so
+existing `except ValueError` handlers remain compatible; callers should branch
+on the exception type instead of parsing its diagnostic message.
+
 Pre-header transport failures map to `NetworkError`, a `RequestError` subtype;
 local request-provider and other request failures remain `RequestError`. Pool acquire timeout and
 queue-full conditions map to `PoolTimeout`. Response body progress timeout maps

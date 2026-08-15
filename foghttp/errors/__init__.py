@@ -2,6 +2,7 @@
 
 __all__ = (
     "ClientClosedError",
+    "ConfigurationError",
     "ConnectTimeout",
     "FogHTTPError",
     "HTTPStatusError",
@@ -21,6 +22,7 @@ __all__ = (
 )
 
 from .base import FogHTTPError, NetworkError, RequestError
+from .configuration import ConfigurationError
 from .lifecycle import ClientClosedError, LifecycleError, UnclosedClientError
 from .response import (
     HTTPStatusError,

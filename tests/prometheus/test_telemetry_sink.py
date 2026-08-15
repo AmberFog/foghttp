@@ -183,6 +183,33 @@ def test_terminal_request_maps_stable_labels_and_duration() -> None:
     )
 
 
+def test_configuration_error_keeps_stable_failure_label() -> None:
+    registry = CollectorRegistry()
+    sink = PrometheusTelemetrySink(registry=registry)
+
+    sink.emit(
+        _request_event(
+            status_code=None,
+            outcome=foghttp.TelemetryRequestOutcome.ERROR,
+            error_type=foghttp.ConfigurationError.__name__,
+        ),
+    )
+
+    assert (
+        _metric_value(
+            registry,
+            "foghttp_request_failures_total",
+            {
+                "method": "GET",
+                "origin": "all",
+                "status_class": "none",
+                "error_class": "ConfigurationError",
+            },
+        )
+        == 1
+    )
+
+
 def test_body_and_pool_histograms_use_seconds() -> None:
     registry = CollectorRegistry()
     sink = PrometheusTelemetrySink(registry=registry)

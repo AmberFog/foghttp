@@ -13,6 +13,7 @@ __all__ = (
     "AuthRequest",
     "Client",
     "ClientClosedError",
+    "ConfigurationError",
     "ConnectTimeout",
     "FogHTTPError",
     "HTTPStatusError",
@@ -79,6 +80,7 @@ from .errors.base import (
     NetworkError,
     RequestError,
 )
+from .errors.configuration import ConfigurationError
 from .errors.lifecycle import (
     ClientClosedError,
     LifecycleError,

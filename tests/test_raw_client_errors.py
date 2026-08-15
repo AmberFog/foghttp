@@ -4,7 +4,7 @@ import pickle
 from faker import Faker
 import pytest
 
-from foghttp import _foghttp
+import foghttp
 from foghttp._client.config import ClientConfig
 from foghttp._client.constants import DEFAULT_MAX_REDIRECTS
 from foghttp._client.options import ClientOptions
@@ -12,8 +12,10 @@ from foghttp._client.proxy import ProxyTransportPolicy
 from foghttp._client.raw.errors import public_raw_error
 from foghttp._client.raw.lifecycle import create_raw_client
 from foghttp._client.raw.requests import RawRequestOptions, send_raw_request, send_raw_request_async
+import foghttp._foghttp as _foghttp  # noqa: PLR0402
 from foghttp._request_body import RequestBody
 from foghttp.errors import (
+    ConfigurationError,
     PoolTimeout,
     ReadTimeout,
     ResponseBodyBudgetExceededError,
@@ -83,6 +85,7 @@ BYTEARRAY_REDIRECT_HOP_RAW_ARGS = (
     "https://example.com",
     bytearray(b"not-an-int"),
 )
+RAW_CLIENT_SETUP_FAILURE = "runtime setup failed"
 
 
 def _default_client_config() -> ClientConfig:
@@ -200,17 +203,56 @@ class BodyBudgetExceededRawClient:
         raise _foghttp.FogHttpResponseBodyBudgetExceededError(msg)
 
 
-def test_raw_client_constructor_error_maps_to_value_error(
+def _fail_raw_client_setup(**_kwargs: object) -> object:
+    raise _foghttp.FogHttpError(RAW_CLIENT_SETUP_FAILURE)
+
+
+def test_raw_client_constructor_error_maps_to_configuration_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fail_raw_client(**_kwargs: object) -> object:
-        msg = "runtime failed"
-        raise _foghttp.FogHttpError(msg)
+    monkeypatch.setattr(_foghttp, "RawClient", _fail_raw_client_setup)
 
-    monkeypatch.setattr(_foghttp, "RawClient", fail_raw_client)
-
-    with pytest.raises(ValueError, match="runtime failed"):
+    with pytest.raises(ConfigurationError) as exc_info:
         create_raw_client(config=_default_client_config())
+
+    assert RAW_CLIENT_SETUP_FAILURE in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, _foghttp.FogHttpError)
+
+
+def test_raw_client_numeric_overflow_maps_to_configuration_error(
+    faker: Faker,
+) -> None:
+    with (
+        foghttp.Client(max_redirects=2**64) as client,
+        pytest.raises(foghttp.ConfigurationError) as exc_info,
+    ):
+        client.get(faker.url())
+
+    assert isinstance(exc_info.value.__cause__, OverflowError)
+
+
+def test_sync_client_setup_error_uses_public_configuration_error(
+    monkeypatch: pytest.MonkeyPatch,
+    faker: Faker,
+) -> None:
+    monkeypatch.setattr(_foghttp, "RawClient", _fail_raw_client_setup)
+
+    with (
+        foghttp.Client() as client,
+        pytest.raises(foghttp.ConfigurationError),
+    ):
+        client.get(faker.url())
+
+
+async def test_async_client_setup_error_uses_public_configuration_error(
+    monkeypatch: pytest.MonkeyPatch,
+    faker: Faker,
+) -> None:
+    monkeypatch.setattr(_foghttp, "RawClient", _fail_raw_client_setup)
+
+    async with foghttp.AsyncClient() as client:
+        with pytest.raises(foghttp.ConfigurationError):
+            await client.get(faker.url())
 
 
 def test_sync_raw_timeout_maps_to_public_timeout(faker: Faker) -> None:
