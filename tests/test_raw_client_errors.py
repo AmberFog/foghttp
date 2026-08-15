@@ -5,7 +5,6 @@ from faker import Faker
 import pytest
 
 import foghttp
-from foghttp import _foghttp
 from foghttp._client.config import ClientConfig
 from foghttp._client.constants import DEFAULT_MAX_REDIRECTS
 from foghttp._client.options import ClientOptions
@@ -13,6 +12,7 @@ from foghttp._client.proxy import ProxyTransportPolicy
 from foghttp._client.raw.errors import public_raw_error
 from foghttp._client.raw.lifecycle import create_raw_client
 from foghttp._client.raw.requests import RawRequestOptions, send_raw_request, send_raw_request_async
+import foghttp._foghttp as _foghttp  # noqa: PLR0402
 from foghttp._request_body import RequestBody
 from foghttp.errors import (
     ConfigurationError,
