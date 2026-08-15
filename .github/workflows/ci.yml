@@ -121,7 +121,7 @@ jobs:
           path: dist
 
       - name: Smoke test wheel install
-        run: python scripts/install_wheel_smoke.py --dist-dir dist
+        run: python -I -S scripts/install_wheel_smoke.py --dist-dir dist
 
   tests:
     name: Tests (Python ${{ matrix.python-version }})

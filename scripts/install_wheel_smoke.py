@@ -4,90 +4,61 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
-import textwrap
 
 
-SMOKE_SCRIPT = textwrap.dedent(
-    """
-    import asyncio
-    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-    from importlib.metadata import version
-    import threading
-
-    import foghttp
-
-
-    OK_BODY = b"OK"
-
-
-    class SmokeHandler(BaseHTTPRequestHandler):
-        protocol_version = "HTTP/1.1"
-
-        def do_GET(self):
-            self.send_response(200)
-            self.send_header("content-length", str(len(OK_BODY)))
-            self.send_header("connection", "close")
-            self.end_headers()
-            self.wfile.write(OK_BODY)
-
-        def log_message(self, _format, *_args):
-            return
-
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), SmokeHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    host, port = server.server_address
-    url = f"http://{host}:{port}/smoke"
-
-    try:
-        assert version("foghttp")
-        assert str(foghttp.URL("HTTPS://Example.COM:443/path?q=1")) == "https://example.com/path?q=1"
-
-        with foghttp.Client() as client:
-            response = client.get(url)
-            assert response.status_code == 200
-            assert response.content == OK_BODY
-            assert response.request.method == "GET"
-
-        async def smoke_async_client():
-            async with foghttp.AsyncClient() as client:
-                response = await client.get(url)
-                assert response.status_code == 200
-                assert response.content == OK_BODY
-                assert response.request.url == url
-
-        asyncio.run(smoke_async_client())
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=1)
-    """,
-)
+DEFAULT_EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples"
+SMOKE_RUNTIME = Path(__file__).with_name("wheel_smoke_runtime.py").resolve()
 
 
 def main() -> int:
+    if not sys.flags.isolated or not sys.flags.no_site:
+        msg = "wheel smoke installer must run with python -I -S"
+        raise SystemExit(msg)
+
     args = parse_args()
     wheel_path = find_wheel(args.dist_dir)
+    examples_dir = args.examples_dir.resolve()
+    if not examples_dir.is_dir():
+        msg = f"examples directory does not exist: {examples_dir}"
+        raise SystemExit(msg)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         smoke_dir = Path(tmp_dir)
+        installer_dir = smoke_dir / "installer"
         target_dir = smoke_dir / "site-packages"
         target_dir.mkdir()
+        run(
+            [sys.executable, "-I", "-S", "-m", "venv", str(installer_dir)],
+            cwd=smoke_dir,
+        )
+        installer_python = installer_dir / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
         run(
             [
-                sys.executable,
+                str(installer_python),
+                "-I",
                 "-m",
                 "pip",
                 "install",
+                "--isolated",
                 "--disable-pip-version-check",
                 "--target",
                 str(target_dir),
                 str(wheel_path),
             ],
+            cwd=smoke_dir,
         )
-        run([sys.executable, "-c", SMOKE_SCRIPT], cwd=smoke_dir, python_path=target_dir)
+        run(
+            [
+                sys.executable,
+                "-I",
+                "-S",
+                str(SMOKE_RUNTIME),
+                str(target_dir),
+                str(examples_dir),
+            ],
+            cwd=smoke_dir,
+        )
 
     return 0
 
@@ -95,6 +66,7 @@ def main() -> int:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Install a built FogHTTP wheel and run a smoke test.")
     parser.add_argument("--dist-dir", type=Path, required=True)
+    parser.add_argument("--examples-dir", type=Path, default=DEFAULT_EXAMPLES_DIR)
     return parser.parse_args()
 
 
@@ -106,13 +78,10 @@ def find_wheel(dist_dir: Path) -> Path:
     return wheel_paths[0].resolve()
 
 
-def run(command: list[str], *, cwd: Path | None = None, python_path: Path | None = None) -> None:
+def run(command: list[str], *, cwd: Path | None = None) -> None:
     env = os.environ.copy()
     env.pop("PYTHONHOME", None)
-    if python_path is None:
-        env.pop("PYTHONPATH", None)
-    else:
-        env["PYTHONPATH"] = str(python_path)
+    env.pop("PYTHONPATH", None)
     subprocess.run(command, check=True, cwd=cwd, env=env)  # noqa: S603
 
 

@@ -108,7 +108,7 @@ jobs:
           path: dist
 
       - name: Smoke test wheel install
-        run: python scripts/install_wheel_smoke.py --dist-dir dist
+        run: python -I -S scripts/install_wheel_smoke.py --dist-dir dist
 
   macos-wheels:
     name: Build macOS wheel (${{ matrix.platform.name }})
@@ -179,7 +179,7 @@ jobs:
           path: dist
 
       - name: Smoke test wheel install
-        run: python scripts/install_wheel_smoke.py --dist-dir dist
+        run: python -I -S scripts/install_wheel_smoke.py --dist-dir dist
 
   windows-wheels:
     name: Build Windows wheel (x64)
@@ -236,7 +236,7 @@ jobs:
           path: dist
 
       - name: Smoke test wheel install
-        run: python scripts/install_wheel_smoke.py --dist-dir dist
+        run: python -I -S scripts/install_wheel_smoke.py --dist-dir dist
 
   audit-wheels:
     name: Audit stable ABI wheels

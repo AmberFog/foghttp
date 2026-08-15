@@ -40,9 +40,15 @@ Pull-request CI builds one Linux `cp311-abi3` wheel, audits it with
 `abi3audit --strict`, and installs that exact artifact on CPython 3.11-3.14.
 The release workflow repeats the ABI audit for every platform wheel and runs
 the install smoke described above. The smoke exercises imports, URL handling,
-and real sync and async requests against a local HTTP server. Native builds use
+every top-level `examples/*.py` file under a non-`__main__` module name, and real
+sync and async requests against a local HTTP server. Example imports use the
+installed wheel and do not make outbound network requests. Native builds use
 `Cargo.lock` with `maturin --locked` so Rust dependency resolution cannot drift
 in CI or during a release.
+
+Before publishing, the release-readiness record also captures the installed-
+wheel example smoke runs and the bounded benchmark smoke evidence defined in
+[benchmarks.md](./benchmarks.md).
 
 Python versions newer than the currently tested 3.11-3.14 range may be ABI
 compatible, but they are not part of the release compatibility claim until

@@ -30,6 +30,22 @@ uv run examples/ssrf_policy.py
 uv run examples/telemetry_hooks.py
 ```
 
+## Smoke Check
+
+All current examples are external-service examples when their `main` blocks
+run. Normal pull-request CI therefore imports every top-level `examples/*.py`
+file under a non-`__main__` module name instead of making outbound requests.
+This catches syntax errors, missing imports, and public API references evaluated
+at module import time without relying on `httpbin.org`:
+
+```bash
+uv run --extra dev pytest -q tests/examples
+```
+
+The release wheel-smoke jobs repeat the same import check against the installed
+wheel before exercising the sync and async clients against their local HTTP
+server. Full example execution remains a manual, network-dependent check.
+
 ## Good Examples
 
 - [sync_json_api.py](./sync_json_api.py): sync JSON request/response flow.

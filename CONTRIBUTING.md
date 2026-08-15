@@ -159,6 +159,13 @@ Run the project checks:
 uv run --extra dev pre-commit run --all-files --show-diff-on-failure
 ```
 
+Check that every top-level `examples/*.py` file still imports without running
+its network-dependent `main` block:
+
+```bash
+uv run --extra dev pytest -q tests/examples
+```
+
 When changing Rust code, also run the relevant Rust checks:
 
 ```bash
@@ -239,10 +246,13 @@ Before requesting review, please check:
 - Python tests pass
 - Rust tests pass when Rust code changed
 - pre-commit passes
+- every top-level `examples/*.py` file passes the import smoke check
 - public API changes update types, docs, and examples
 - security-sensitive behavior has regression tests
 - new errors and diagnostics avoid leaking secrets
 - limitations are documented honestly if the feature is partial
+- release pull requests complete every evidence field for the example and
+  benchmark smoke gates in [docs/benchmarks.md](./docs/benchmarks.md)
 
 The project is small on purpose. A contribution that preserves that clarity is
 usually easier to merge than a broad change that tries to solve several future
