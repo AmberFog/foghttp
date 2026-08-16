@@ -17,6 +17,13 @@ workloads where explicit lifecycle, predictable resource usage, cancellation,
 redirect history, and request backpressure visibility matter more than
 browser-like feature parity.
 
+The supported production path is an explicitly owned `Client` or
+`AsyncClient`, normally reused for one application lifecycle. FogHTTP does not
+create a hidden module-level HTTP client or shared connection pool. See
+[Client lifecycle](https://github.com/AmberFog/foghttp/blob/main/docs/lifecycle.md#explicit-client-ownership)
+for the ownership contract and the limits any future convenience helpers must
+preserve.
+
 Until version `0.5.0`, backward compatibility is not guaranteed. I will still
 try to keep public interfaces stable and avoid unnecessary breaking changes.
 

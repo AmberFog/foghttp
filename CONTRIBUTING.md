@@ -216,6 +216,13 @@ Tests should prove observable behavior. For lifecycle, cancellation, metrics,
 redirects, TLS, and resource-limit changes, assert on public state, errors, or
 diagnostics where possible.
 
+Any future convenience helper must satisfy the normative
+[explicit client ownership contract](docs/lifecycle.md#explicit-client-ownership).
+Treat its lifecycle and test matrix as required review gates, including sync
+and async coverage where applicable, runtime isolation, borrowed-client
+usability, streaming cleanup, and terminal quiescence without resource leaks.
+Do not introduce a hidden global client or shared connection pool.
+
 ## Commit Messages
 
 Use Conventional Commits:

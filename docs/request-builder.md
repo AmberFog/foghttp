@@ -8,6 +8,24 @@ This page maps common `requests`, `httpx`, and `zapros` request parameters to
 the current FogHTTP API. The same flow is available as a runnable example in
 [request_builder_compatibility.py](../examples/request_builder_compatibility.py).
 
+## Client Ownership When Migrating
+
+The parameter mappings on this page do not imply a module-level request API.
+For production workloads, create and reuse an explicit `Client` or
+`AsyncClient` at the application, service, worker, or other clear lifecycle
+boundary. This preserves connection reuse and keeps configuration, cookies,
+policies, limits, diagnostics, and shutdown attached to one visible owner.
+
+FogHTTP does not currently expose top-level `get()` or `post()` functions and
+does not keep a hidden global client or shared connection pool. A future helper
+that creates a short-lived client would use a dedicated runtime with one worker
+and pay runtime worker plus transport setup and shutdown costs whenever the
+request reaches lazy transport initialization. A helper that accepts a
+caller-owned client would borrow it without closing it. Neither path replaces
+explicit client reuse for repeated production requests. See
+[Explicit client ownership](./lifecycle.md#explicit-client-ownership) for the
+normative lifecycle contract.
+
 ## Compatibility Matrix
 
 | Common parameter | FogHTTP today | Notes |

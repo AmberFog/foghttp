@@ -40,6 +40,11 @@ FogHTTP is designed around a few engineering priorities:
 - stay focused on production service workloads before expanding into broader
   feature parity
 
+Production code should explicitly own and reuse a `Client` or `AsyncClient`.
+FogHTTP does not create a hidden module-level HTTP client or shared connection
+pool. The full rule, including constraints on future convenience APIs, lives in
+[Client lifecycle](./lifecycle.md#explicit-client-ownership).
+
 ## Key Advantages
 
 - one API shape for sync scripts, workers, and asyncio services
