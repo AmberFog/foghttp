@@ -17,7 +17,7 @@ repos:
           - "--autofix"
       - id: check-json
       - id: check-yaml
-        exclude: ^\.github/
+        exclude: ^\.github/workflows/
       - id: check-toml
       - id: end-of-file-fixer
       - id: trailing-whitespace
