@@ -19,8 +19,8 @@ from .helpers import (
 )
 
 
-class SyntheticBaseException(BaseException):
-    pass
+class SyntheticBaseException(BaseException):  # noqa: WPS418
+    """Represent non-Exception control flow during lifecycle admission."""
 
 
 def test_sync_close_waits_for_send_in_validation_window(

@@ -95,7 +95,8 @@ def test_loopback_server_closes_when_thread_setup_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeServer:
-        closed = False
+        def __init__(self) -> None:
+            self.closed = False
 
         def serve_forever(self) -> None:
             pytest.fail("server thread must not run")

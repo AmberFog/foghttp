@@ -1,6 +1,7 @@
 __all__ = ("secondary_sync_http_server", "sync_http_server")
 
 from collections.abc import Iterator
+from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
 from typing import Any, BinaryIO
@@ -74,17 +75,17 @@ class SyncHTTPHandler(BaseHTTPRequestHandler):
             for handler in (
                 self._write_cookie_response,
                 self._write_redirect_to_location,
-                lambda: self._write_redirect_to_status(path),
-                lambda: self._write_redirect(path),
-                lambda: self._write_status(path),
-                lambda: write_sync_body_safety_response(self, path),
-                lambda: self._write_bytes(path),
-                lambda: self._write_unknown_size_bytes(path),
-                lambda: self._write_text(path),
-                lambda: self._write_repeated_headers(path),
-                lambda: self._write_obs_text_headers(path),
-                lambda: self._write_echo_headers(path),
-                lambda: self._write_security_headers(path, body),
+                partial(self._write_redirect_to_status, path),
+                partial(self._write_redirect, path),
+                partial(self._write_status, path),
+                partial(write_sync_body_safety_response, self, path),
+                partial(self._write_bytes, path),
+                partial(self._write_unknown_size_bytes, path),
+                partial(self._write_text, path),
+                partial(self._write_repeated_headers, path),
+                partial(self._write_obs_text_headers, path),
+                partial(self._write_echo_headers, path),
+                partial(self._write_security_headers, path, body),
             )
         )
         if handled:

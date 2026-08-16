@@ -5,7 +5,7 @@ import foghttp
 from foghttp.methods import DELETE, GET, HEAD, PATCH, POST, PUT, QUERY
 
 
-SHORTCUT_METHODS = [
+SHORTCUT_METHODS = (
     ("get", GET),
     ("head", HEAD),
     ("post", POST),
@@ -13,19 +13,19 @@ SHORTCUT_METHODS = [
     ("put", PUT),
     ("patch", PATCH),
     ("delete", DELETE),
-]
+)
 
-BODYLESS_SHORTCUT_NAMES = [
+BODYLESS_SHORTCUT_NAMES = (
     "get",
     "head",
-]
+)
 
-BODY_KWARGS = [
-    pytest.param({"content": b"body"}, id="content"),
-    pytest.param({"data": {"field": "value"}}, id="data"),
-    pytest.param({"files": {"file": b"body"}}, id="files"),
-    pytest.param({"json": {"field": "value"}}, id="json"),
-]
+BODY_KWARG_NAMES = (
+    "content",
+    "data",
+    "files",
+    "json",
+)
 
 
 @pytest.mark.parametrize(
@@ -49,6 +49,7 @@ def test_sync_shortcuts_use_request_builder_pipeline_without_transport(
         *,
         timeout: foghttp.Timeouts | None = None,
     ) -> foghttp.Response:
+        assert timeout is None
         captured_requests.append(request)
         return _response_for(request)
 
@@ -93,6 +94,7 @@ async def test_async_shortcuts_use_request_builder_pipeline_without_transport(
         *,
         timeout: foghttp.Timeouts | None = None,
     ) -> foghttp.Response:
+        assert timeout is None
         captured_requests.append(request)
         return _response_for(request)
 
@@ -117,12 +119,13 @@ async def test_async_shortcuts_use_request_builder_pipeline_without_transport(
 
 
 @pytest.mark.parametrize("shortcut_name", BODYLESS_SHORTCUT_NAMES)
-@pytest.mark.parametrize("body_kwargs", BODY_KWARGS)
+@pytest.mark.parametrize("body_kwarg_name", BODY_KWARG_NAMES)
 def test_sync_get_head_shortcuts_reject_body_parameters(
     shortcut_name: str,
-    body_kwargs: dict[str, object],
+    body_kwarg_name: str,
     faker: Faker,
 ) -> None:
+    body_kwargs = _body_kwargs(body_kwarg_name)
     with foghttp.Client() as client:
         shortcut = getattr(client, shortcut_name)
         with pytest.raises(TypeError, match="unexpected keyword argument"):
@@ -130,12 +133,13 @@ def test_sync_get_head_shortcuts_reject_body_parameters(
 
 
 @pytest.mark.parametrize("shortcut_name", BODYLESS_SHORTCUT_NAMES)
-@pytest.mark.parametrize("body_kwargs", BODY_KWARGS)
+@pytest.mark.parametrize("body_kwarg_name", BODY_KWARG_NAMES)
 async def test_async_get_head_shortcuts_reject_body_parameters(
     shortcut_name: str,
-    body_kwargs: dict[str, object],
+    body_kwarg_name: str,
     faker: Faker,
 ) -> None:
+    body_kwargs = _body_kwargs(body_kwarg_name)
     async with foghttp.AsyncClient() as client:
         shortcut = getattr(client, shortcut_name)
         with pytest.raises(TypeError, match="unexpected keyword argument"):
@@ -164,6 +168,7 @@ def test_sync_request_allows_explicit_get_head_body_without_transport(
         *,
         timeout: foghttp.Timeouts | None = None,
     ) -> foghttp.Response:
+        assert timeout is None
         captured_requests.append(request)
         return _response_for(request)
 
@@ -198,6 +203,7 @@ async def test_async_request_allows_explicit_get_head_body_without_transport(
         *,
         timeout: foghttp.Timeouts | None = None,
     ) -> foghttp.Response:
+        assert timeout is None
         captured_requests.append(request)
         return _response_for(request)
 
@@ -212,6 +218,14 @@ async def test_async_request_allows_explicit_get_head_body_without_transport(
 
 def _base_url(faker: Faker) -> str:
     return f"https://{faker.domain_name()}/{faker.uri_path(deep=1)}?debug=1"
+
+
+def _body_kwargs(name: str) -> dict[str, object]:
+    if name == "content":
+        return {name: b"body"}
+    if name == "files":
+        return {name: {"file": b"body"}}
+    return {name: {"field": "value"}}
 
 
 def _assert_shortcut_request(

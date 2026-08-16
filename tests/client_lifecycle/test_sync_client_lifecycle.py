@@ -58,18 +58,17 @@ def test_sync_closed_client_rejects_stats(
 
 
 @pytest.mark.parametrize(
-    ("action_name", "action"),
+    "action",
     [
-        pytest.param("stats", foghttp.Client.stats, id="stats"),
-        pytest.param("transport state", foghttp.Client.dump_transport_state, id="transport-state"),
-        pytest.param("pool diagnostics", foghttp.Client.dump_pool_diagnostics, id="pool-diagnostics"),
+        pytest.param(foghttp.Client.stats, id="stats"),
+        pytest.param(foghttp.Client.dump_transport_state, id="transport-state"),
+        pytest.param(foghttp.Client.dump_pool_diagnostics, id="pool-diagnostics"),
     ],
 )
+@pytest.mark.usefixtures("sync_noop_transport")
 def test_sync_client_maps_raw_lifecycle_errors(
     lifecycle_error_sync_client_factory: type[foghttp.Client],
-    sync_noop_transport: None,
     faker: Faker,
-    action_name: str,
     action: Callable[[foghttp.Client], object],
 ) -> None:
     client = lifecycle_error_sync_client_factory()
@@ -82,9 +81,9 @@ def test_sync_client_maps_raw_lifecycle_errors(
         client.close()
 
 
+@pytest.mark.usefixtures("sync_noop_transport")
 def test_sync_client_rejects_stale_process_owner_without_closing_raw_parent_copy(
     sync_client_factory: type[foghttp.Client],
-    sync_noop_transport: None,
     raw_client: CloseTrackingRawClient,
     faker: Faker,
 ) -> None:
@@ -111,7 +110,7 @@ def test_inherited_client_copy_does_not_warn_about_parent_owned_resources() -> N
         warnings.simplefilter("always")
         collect_unclosed_client(inherited_client_factory)
 
-    assert not [item for item in caught if issubclass(item.category, foghttp.UnclosedClientError)]
+    assert not any(issubclass(item.category, foghttp.UnclosedClientError) for item in caught)
 
 
 def test_sync_stream_context_rechecks_process_owner_on_enter(faker: Faker) -> None:
@@ -187,11 +186,11 @@ def test_sync_dump_transport_state_before_first_request_do_not_create_raw_client
     assert raw_client_factory.calls == 0
 
 
+@pytest.mark.usefixtures("sync_noop_transport")
 def test_sync_close_closes_opened_raw_client_once(
     sync_client_factory: type[foghttp.Client],
     raw_client: CloseTrackingRawClient,
     raw_client_factory: RawClientFactory,
-    sync_noop_transport: None,
     faker: Faker,
 ) -> None:
     client = sync_client_factory()
@@ -231,10 +230,10 @@ def test_sync_short_lived_clients_without_requests_do_not_create_raw_client(
     assert raw_client.close_calls == 0
 
 
+@pytest.mark.usefixtures("sync_noop_transport")
 def test_sync_reuses_lazy_raw_client(
     sync_client_factory: type[foghttp.Client],
     raw_client_factory: RawClientFactory,
-    sync_noop_transport: None,
     faker: Faker,
 ) -> None:
     urls = [faker.url(), faker.url()]
@@ -246,10 +245,10 @@ def test_sync_reuses_lazy_raw_client(
     assert raw_client_factory.calls == 1
 
 
+@pytest.mark.usefixtures("sync_noop_transport")
 def test_sync_concurrent_first_requests_share_lazy_raw_client(
     sync_client_factory: type[foghttp.Client],
     raw_client_factory: RawClientFactory,
-    sync_noop_transport: None,
     faker: Faker,
 ) -> None:
     raw_client_factory.delay = 0.01
@@ -271,11 +270,11 @@ def test_sync_concurrent_first_requests_share_lazy_raw_client(
     assert raw_client_factory.calls == 1
 
 
+@pytest.mark.usefixtures("sync_noop_transport")
 def test_sync_context_manager_closes_opened_raw_client(
     sync_client_factory: type[foghttp.Client],
     raw_client: CloseTrackingRawClient,
     raw_client_factory: RawClientFactory,
-    sync_noop_transport: None,
     faker: Faker,
 ) -> None:
     with sync_client_factory() as client:

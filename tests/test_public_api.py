@@ -1,15 +1,15 @@
 import foghttp
-import foghttp.errors
-import foghttp.methods
-import foghttp.models
-import foghttp.policy
-import foghttp.stats
-import foghttp.types
+import foghttp.errors as errors_module
+import foghttp.methods as methods_module
+import foghttp.models as models_module
+import foghttp.policy as policy_module
+import foghttp.stats as stats_module
+import foghttp.types as types_module
 
 
 def test_top_level_exports() -> None:
     assert foghttp.Client is not None
-    assert foghttp.ConfigurationError is foghttp.errors.ConfigurationError
+    assert foghttp.ConfigurationError is errors_module.ConfigurationError
     assert foghttp.AsyncLifecycleDebugConfig is not None
     assert foghttp.AsyncLifecycleDebugRequest is not None
     assert foghttp.AsyncLifecycleDebugRequestMode is not None
@@ -44,48 +44,48 @@ def test_top_level_exports() -> None:
 
 
 def test_compatibility_modules_reexport_models() -> None:
-    assert foghttp.models.Limits is foghttp.Limits
-    assert foghttp.models.AsyncLifecycleDebugConfig is foghttp.AsyncLifecycleDebugConfig
-    assert foghttp.models.AsyncLifecycleDebugRequest is foghttp.AsyncLifecycleDebugRequest
-    assert foghttp.models.AsyncLifecycleDebugRequestMode is foghttp.AsyncLifecycleDebugRequestMode
-    assert foghttp.models.AsyncLifecycleDebugSnapshot is foghttp.AsyncLifecycleDebugSnapshot
-    assert foghttp.models.Headers is foghttp.Headers
-    assert foghttp.models.Request is foghttp.Request
-    assert foghttp.models.RequestExtensions is foghttp.RequestExtensions
-    assert foghttp.models.Response is foghttp.Response
-    assert foghttp.models.AsyncStreamResponse is foghttp.AsyncStreamResponse
-    assert foghttp.models.StreamResponse is foghttp.StreamResponse
-    assert foghttp.models.TLSConfig is foghttp.TLSConfig
-    assert foghttp.models.TimeoutDiagnostic is foghttp.TimeoutDiagnostic
-    assert foghttp.models.TimeoutPhase is foghttp.TimeoutPhase
-    assert foghttp.models.Timeouts is foghttp.Timeouts
-    assert foghttp.models.URL is foghttp.URL
-    assert foghttp.stats.TransportStats is foghttp.TransportStats
+    assert models_module.Limits is foghttp.Limits
+    assert models_module.AsyncLifecycleDebugConfig is foghttp.AsyncLifecycleDebugConfig
+    assert models_module.AsyncLifecycleDebugRequest is foghttp.AsyncLifecycleDebugRequest
+    assert models_module.AsyncLifecycleDebugRequestMode is foghttp.AsyncLifecycleDebugRequestMode
+    assert models_module.AsyncLifecycleDebugSnapshot is foghttp.AsyncLifecycleDebugSnapshot
+    assert models_module.Headers is foghttp.Headers
+    assert models_module.Request is foghttp.Request
+    assert models_module.RequestExtensions is foghttp.RequestExtensions
+    assert models_module.Response is foghttp.Response
+    assert models_module.AsyncStreamResponse is foghttp.AsyncStreamResponse
+    assert models_module.StreamResponse is foghttp.StreamResponse
+    assert models_module.TLSConfig is foghttp.TLSConfig
+    assert models_module.TimeoutDiagnostic is foghttp.TimeoutDiagnostic
+    assert models_module.TimeoutPhase is foghttp.TimeoutPhase
+    assert models_module.Timeouts is foghttp.Timeouts
+    assert models_module.URL is foghttp.URL
+    assert stats_module.TransportStats is foghttp.TransportStats
 
 
 def test_query_method_is_exported() -> None:
-    assert foghttp.methods.QUERY == "QUERY"
-    assert foghttp.methods.QUERY in foghttp.methods.HTTP_METHODS
-    assert foghttp.methods.HTTP_METHODS.count(foghttp.methods.QUERY) == 1
-    assert "QUERY" in foghttp.methods.__all__
+    assert methods_module.QUERY == "QUERY"
+    assert methods_module.QUERY in methods_module.HTTP_METHODS
+    assert methods_module.HTTP_METHODS.count(methods_module.QUERY) == 1
+    assert "QUERY" in methods_module.__all__
 
 
 def test_public_typing_protocols_do_not_open_transport_adapters() -> None:
-    assert foghttp.types.RequestProtocol is not None
-    assert foghttp.types.ResponseProtocol is not None
-    assert foghttp.types.BufferedResponseProtocol is not None
-    assert foghttp.types.StreamResponseProtocol is not None
-    assert foghttp.types.AsyncStreamResponseProtocol is not None
+    assert types_module.RequestProtocol is not None
+    assert types_module.ResponseProtocol is not None
+    assert types_module.BufferedResponseProtocol is not None
+    assert types_module.StreamResponseProtocol is not None
+    assert types_module.AsyncStreamResponseProtocol is not None
     assert not hasattr(foghttp, "SyncTransport")
     assert not hasattr(foghttp, "AsyncTransport")
-    assert not hasattr(foghttp.types, "SyncTransport")
-    assert not hasattr(foghttp.types, "AsyncTransport")
+    assert not hasattr(types_module, "SyncTransport")
+    assert not hasattr(types_module, "AsyncTransport")
 
 
 def test_policy_contracts_are_identical_at_the_package_root() -> None:
-    assert foghttp.TransportPolicyBodyState is foghttp.policy.TransportPolicyBodyState
-    assert foghttp.TransportPolicyHooks is foghttp.policy.TransportPolicyHooks
-    assert foghttp.TransportPolicyRequest is foghttp.policy.TransportPolicyRequest
-    assert foghttp.TransportPolicyRequestHook is foghttp.policy.TransportPolicyRequestHook
-    assert foghttp.TransportPolicyResponse is foghttp.policy.TransportPolicyResponse
-    assert foghttp.TransportPolicyResponseHook is foghttp.policy.TransportPolicyResponseHook
+    assert foghttp.TransportPolicyBodyState is policy_module.TransportPolicyBodyState
+    assert foghttp.TransportPolicyHooks is policy_module.TransportPolicyHooks
+    assert foghttp.TransportPolicyRequest is policy_module.TransportPolicyRequest
+    assert foghttp.TransportPolicyRequestHook is policy_module.TransportPolicyRequestHook
+    assert foghttp.TransportPolicyResponse is policy_module.TransportPolicyResponse
+    assert foghttp.TransportPolicyResponseHook is policy_module.TransportPolicyResponseHook

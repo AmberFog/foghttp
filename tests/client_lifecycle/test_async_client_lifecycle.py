@@ -60,9 +60,9 @@ async def test_async_lifecycle_debug_snapshot_without_debug_does_not_create_raw_
     assert raw_client_factory.calls == 0
 
 
+@pytest.mark.usefixtures("async_noop_transport")
 async def test_async_lifecycle_debug_maps_raw_lifecycle_errors(
     lifecycle_error_async_client_factory: type[foghttp.AsyncClient],
-    async_noop_transport: None,
     faker: Faker,
 ) -> None:
     client = lifecycle_error_async_client_factory(
@@ -77,9 +77,9 @@ async def test_async_lifecycle_debug_maps_raw_lifecycle_errors(
         await client.aclose()
 
 
+@pytest.mark.usefixtures("async_noop_transport")
 async def test_async_client_rejects_stale_process_owner_without_closing_raw_parent_copy(
     async_client_factory: type[foghttp.AsyncClient],
-    async_noop_transport: None,
     raw_client: CloseTrackingRawClient,
     faker: Faker,
 ) -> None:
@@ -179,11 +179,11 @@ async def test_async_dump_transport_state_before_first_request_do_not_create_raw
     assert raw_client_factory.calls == 0
 
 
+@pytest.mark.usefixtures("async_noop_transport")
 async def test_async_close_closes_opened_raw_client_once(
     async_client_factory: type[foghttp.AsyncClient],
     raw_client: CloseTrackingRawClient,
     raw_client_factory: RawClientFactory,
-    async_noop_transport: None,
     faker: Faker,
 ) -> None:
     client = async_client_factory()
@@ -223,10 +223,10 @@ async def test_async_short_lived_clients_without_requests_do_not_create_raw_clie
     assert raw_client.close_calls == 0
 
 
+@pytest.mark.usefixtures("async_noop_transport")
 async def test_async_reuses_lazy_raw_client(
     async_client_factory: type[foghttp.AsyncClient],
     raw_client_factory: RawClientFactory,
-    async_noop_transport: None,
     faker: Faker,
 ) -> None:
     urls = [faker.url(), faker.url()]
@@ -238,10 +238,10 @@ async def test_async_reuses_lazy_raw_client(
     assert raw_client_factory.calls == 1
 
 
+@pytest.mark.usefixtures("async_noop_transport")
 async def test_async_concurrent_first_requests_share_lazy_raw_client(
     async_client_factory: type[foghttp.AsyncClient],
     raw_client_factory: RawClientFactory,
-    async_noop_transport: None,
     faker: Faker,
 ) -> None:
     urls = [faker.url(), faker.url()]
@@ -255,11 +255,11 @@ async def test_async_concurrent_first_requests_share_lazy_raw_client(
     assert raw_client_factory.calls == 1
 
 
+@pytest.mark.usefixtures("async_noop_transport")
 async def test_async_context_manager_closes_opened_raw_client(
     async_client_factory: type[foghttp.AsyncClient],
     raw_client: CloseTrackingRawClient,
     raw_client_factory: RawClientFactory,
-    async_noop_transport: None,
     faker: Faker,
 ) -> None:
     async with async_client_factory() as client:
