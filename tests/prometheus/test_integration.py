@@ -72,7 +72,7 @@ def test_wsgi_exposition_app_scrapes_the_explicit_registry() -> None:
 
     def start_response(
         status: str,
-        headers: list[tuple[str, str]],
+        _headers: list[tuple[str, str]],
     ) -> None:
         response_status.append(status)
 

@@ -21,7 +21,8 @@ SENSITIVE_USERNAME = "debug-user"
 VISIBLE_QUERY_VALUE = "visible-value"
 
 
-class ContextBodyError(Exception): ...
+class ContextBodyError(Exception):
+    """Represent an application error raised inside a client context."""
 
 
 def sensitive_url(base_url: str, path: str) -> str:

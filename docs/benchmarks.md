@@ -2,12 +2,102 @@
 
 Benchmark harness and full benchmark reports live in a separate repository:
 [github.com/AmberFog/FogHttpBenchmark](https://github.com/AmberFog/FogHttpBenchmark).
+Use the `README.md` from the exact recorded benchmark checkout as the canonical
+workflow for full-suite setup, execution, and report review.
 
 This page is a benchmark status snapshot, not a marketing scoreboard. Invalid
 rows, compatibility gaps, resource-limit errors, and weak spots stay visible
 because they are the inputs we use to improve FogHTTP.
 
-Last updated: `2026-07-02`.
+Benchmark snapshot last updated: `2026-07-02`.
+
+## Release Smoke Gate
+
+Normal pull-request CI does not use wall-clock benchmark thresholds. Shared CI
+hosts are too variable for a small timing delta to be a reliable pass/fail
+signal, and the full benchmark matrix is intentionally kept out of every PR.
+
+Before a release, start from a clean checkout of the separate benchmark
+repository at a recorded full commit SHA. Pin the exact FogHTTP release candidate
+by its full commit SHA and run this bounded local-server smoke from that checkout.
+For an unpublished candidate, update the benchmark checkout and verify its lock
+before running the smoke:
+
+```bash
+candidate_sha="<full-candidate-commit-sha>"
+uv add "foghttp @ git+https://github.com/AmberFog/foghttp.git" \
+  --rev "$candidate_sha"
+uv lock --check
+```
+
+After pinning, only the benchmark project manifest and lockfile may differ from
+the recorded clean checkout. Record SHA-256 digests of both exact files; any
+other harness change must be committed and become the new recorded benchmark
+repository SHA before the smoke runs.
+
+Then run:
+
+```bash
+candidate_sha="<full-candidate-commit-sha>"
+uv run --locked foghttp-benchmark \
+  --suite request-builder \
+  --clients foghttp \
+  --modes async,sync \
+  --iterations 100 \
+  --warmup 10 \
+  --repeats 3 \
+  --scenarios absolute-url,json-body,send-prepared-get \
+  --no-progress \
+  --output-dir "results/release-smoke-${candidate_sha}"
+```
+
+The smoke passes when the command exits successfully, the release tag, candidate,
+and FogHTTP lock entry all resolve to the same full commit SHA, the report's
+`metadata.package_versions.foghttp` value matches the candidate version, all
+FogHTTP rows are valid with no unexpected measured or warmup errors, and the
+report has no obvious regression against a same-host, same-Python, same-harness
+baseline produced with the same suite, clients, modes, iterations, warmup,
+repeats, scenarios, and progress settings. A timing change is reviewed as
+evidence, not rejected by a fixed percentage; a maintainer records the timing-
+review decision and rationale. Dependency-graph differences outside the
+intended FogHTTP baseline/candidate change must be explained there.
+Classify or rerun `warning`, `invalid`, and `needs-rerun` output before release.
+For changes to a specific hot path or resource lifecycle, run the corresponding
+full benchmark suite as described in the benchmark repository instead of
+expanding this smoke into the normal PR matrix.
+
+Record this evidence in the release-readiness issue or pull request before
+publishing:
+
+```text
+Candidate version and release-tag full commit SHA:
+Source examples smoke CI run URL and CPython 3.11-3.14 statuses:
+Installed-wheel smoke CI run URL and CPython 3.11-3.14 statuses:
+Benchmark smoke status:
+Benchmark repository full commit SHA and clean-start status:
+Benchmark project manifest and lockfile SHA-256:
+Candidate manifest/lock artifact URI or reproducible patch:
+Resolved FogHTTP lock full SHA:
+Report metadata FogHTTP version:
+Benchmark host, Python, and exact command:
+Candidate-specific report artifact URI and SHA-256:
+Baseline FogHTTP version and full commit SHA:
+Baseline benchmark repository full commit SHA and manifest/lockfile SHA-256:
+Baseline manifest/lock artifact URI or reproducible patch:
+Baseline host, Python, exact command, report artifact URI, and SHA-256:
+Timing-review decision, maintainer, and rationale:
+Warnings, reruns, or approved waiver with approver and rationale:
+```
+
+Release readiness requires both example smoke paths and either a valid benchmark
+report or a waiver approved by a maintainer. A waiver must identify why the
+benchmark is not applicable and record the approver; a missing or unknown status
+is not release-ready. Any candidate code change or release-tag move invalidates
+the record and requires evidence for the new full SHA. An unrecorded harness
+delta or manifest, lockfile, report, or baseline digest mismatch also invalidates
+the record. A baseline produced with a different harness identity or workload
+command is not comparable and cannot satisfy the gate. Local-only files that
+are not retained with the release evidence do not satisfy the artifact fields.
 
 ## Methodology
 

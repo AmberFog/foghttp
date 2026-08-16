@@ -163,4 +163,4 @@ def test_client_rejects_invalid_env_runtime_workers(
     ):
         foghttp.Client()
 
-    assert not [item for item in caught if issubclass(item.category, foghttp.UnclosedClientError)]
+    assert not any(issubclass(item.category, foghttp.UnclosedClientError) for item in caught)

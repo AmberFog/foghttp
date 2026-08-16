@@ -6,6 +6,7 @@ __all__ = (
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import threading
+from types import MappingProxyType
 from typing import Self, TypeAlias
 from urllib.parse import urlsplit
 
@@ -155,12 +156,14 @@ class ResponseDecompressionHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
-ENCODED_RESPONSE_ENCODINGS = {
-    BROTLI_ENCODING_PATH: "br",
-    GZIP_ENCODING_PATH: "gzip",
-    RAW_DEFLATE_ENCODING_PATH: "deflate",
-    ZLIB_DEFLATE_ENCODING_PATH: "deflate",
-}
+ENCODED_RESPONSE_ENCODINGS = MappingProxyType(
+    {
+        BROTLI_ENCODING_PATH: "br",
+        GZIP_ENCODING_PATH: "gzip",
+        RAW_DEFLATE_ENCODING_PATH: "deflate",
+        ZLIB_DEFLATE_ENCODING_PATH: "deflate",
+    },
+)
 ENCODED_PATHS = frozenset(ENCODED_RESPONSE_ENCODINGS)
 
 

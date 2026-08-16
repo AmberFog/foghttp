@@ -53,3 +53,7 @@ per-file-ignores =
     # Explicit guard/mapping functions are clearer as direct raises than as indirection tables.
     foghttp/_client/options.py: WPS238
     foghttp/_client/raw/errors.py: WPS238
+    # Tests require descriptive names, rich scenario setup, repeated fixtures/data,
+    # exact-value assertions, local doubles and explicit cleanup. Ruff's ALL profile
+    # owns their general correctness checks; Wemake still enforces all other rules.
+    tests/**: WPS100, WPS114, WPS118, WPS122, WPS201, WPS202, WPS204, WPS210, WPS211, WPS212, WPS213, WPS214, WPS217, WPS218, WPS219, WPS220, WPS221, WPS222, WPS223, WPS226, WPS228, WPS229, WPS230, WPS231, WPS232, WPS235, WPS237, WPS243, WPS324, WPS328, WPS336, WPS338, WPS342, WPS353, WPS358, WPS362, WPS414, WPS420, WPS430, WPS431, WPS432, WPS435, WPS441, WPS459, WPS476, WPS478, WPS501, WPS504, WPS505, WPS516, WPS520, WPS527

@@ -4,6 +4,7 @@ output-format = "grouped"
 target-version = "py311"
 
 [lint]
+external = ["WPS"]
 fixable = ["ALL"]
 select = ["ALL"]
 ignore = [
@@ -25,8 +26,7 @@ ignore = [
 "docs/**/*.py" = ["T201"]
 "examples/**/*.py" = ["T201"]
 "scripts/**/*.py" = ["INP001"]
-"tests/**/test_*.py" = ["ARG001", "S101", "S311"]
-"tests/**/conftest.py" = ["ARG001"]
+"tests/**/test_*.py" = ["S101"]
 "**/*_controller.py" = ["RUF012"]
 
 [lint.flake8-annotations]
