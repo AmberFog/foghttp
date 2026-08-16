@@ -99,6 +99,23 @@ FogHTTP currently makes several conservative choices:
 
 Security reports that weaken any of these guarantees are high priority.
 
+## Dependency Monitoring
+
+GitHub's dependency graph and Dependabot alerts monitor the Cargo and Python
+dependencies on `main`. Dependabot security updates are enabled for both
+ecosystems. The repository configuration uses `cargo` for `Cargo.toml` and
+`Cargo.lock`, and `uv` for `pyproject.toml` and `uv.lock`.
+
+Routine Dependabot version-update pull requests are intentionally disabled by
+setting `open-pull-requests-limit: 0` in `.github/dependabot.yml`. This does not
+disable security updates. A separate maintenance decision must define the
+cadence and triage policy before routine version updates are enabled.
+
+The project does not run `cargo audit` or `pip-audit` as mandatory pull-request
+checks. Any future repository audit starts as a scheduled or manually triggered
+workflow, with a triage and allowlist policy defined before it can block pull
+requests.
+
 ## Coordinated Disclosure
 
 The maintainer will make a best-effort attempt to:
