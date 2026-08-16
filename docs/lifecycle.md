@@ -31,17 +31,105 @@ with foghttp.Client() as client:
 
 :::
 
+## Explicit Client Ownership
+
+The supported production path is an explicitly owned `Client` or
+`AsyncClient`. Create it at a clear application boundary, reuse it for related
+requests, and close it when that owner shuts down. FogHTTP does not create a
+hidden module-level HTTP client, connection pool, or independent request
+service. Every transport request is admitted through and tracked by an
+explicitly scoped client with a named owner and deterministic close path.
+
+The documented process-wide Tokio runtime used by `runtime="shared"` is not a
+shared HTTP client, pool, configuration, or request owner. It executes
+client-scoped native request tasks, which may temporarily retain references to
+their client's request or transport state until they finish or cooperative
+cancellation unwinds. Each `Client` and `AsyncClient` owns and tracks its
+transport, pool, optional cookie jar when `cookies=True`, in-flight request
+state, diagnostics, and shutdown. Limits, policies, and telemetry configuration
+apply per client even when a caller reuses immutable configuration or a
+telemetry sink. Closing a client rejects new request execution through that
+client. `Client.close()` waits for admitted synchronous transport entries,
+while `AsyncClient.aclose()` cancels tracked async requests; transport shutdown
+closes active streams in both cases. For an async request blocked inside
+synchronous Python callback code, `aclose()` can cancel the Python awaiter and
+return before that callback does. The callback stops only when it returns. The
+underlying native task and callback-held references reach final quiescence after
+cooperative cancellation is observed at a later Rust future boundary. A client
+close does not close the shared executor used by other clients.
+
+FogHTTP currently exposes requests through client instances. Any future
+top-level convenience helper must preserve this ownership model by doing one of
+the following:
+
+- borrow an explicit caller-owned client without entering its context manager
+  or closing it
+- create one short-lived client with `runtime="dedicated", runtime_workers=1`
+  for one complete buffered operation and close it before returning
+- expose an explicit context-managed streaming lifetime that keeps an owned
+  one-worker dedicated-runtime client open until its response has closed or
+  aborted
+
+Every streaming helper, whether it borrows or owns a client, must expose an
+explicit context-managed response lifetime. It must not return a response
+without a deterministic owner for response cleanup.
+
+A borrowed client remains owned by its caller. The helper must not close or
+otherwise invalidate it. If the client was open and its caller does not close
+it concurrently, it remains usable after the helper returns or raises. A
+helper-created one-worker dedicated runtime enters its shutdown path with the
+client instead of becoming process-wide state. This adds runtime worker startup
+and shutdown to the existing transport setup and teardown cost of each
+helper-owned call that reaches lazy transport initialization.
+
+A helper must not retain a process-global client, connection pool, cookie jar,
+policy configuration, or other request state between calls. A helper-owned
+short-lived client cannot reuse connections across calls and pays transport
+setup and teardown costs, so it must not be presented as the production path
+for repeated requests. A streaming helper cannot return a response whose
+resource lifetime outlives its client. If a future context-managed streaming
+helper owns its client, it must create a one-worker dedicated-runtime client on
+context entry, keep that client open for the response lifetime, and close or
+abort a created response before closing the client on every exit path. If
+context entry fails before a response is created, the helper closes the client
+directly. A streaming helper that borrows an explicit caller-owned client must
+close or abort its response on every context exit and leave that client open.
+
+Any proposal for a process-global client or shared pool requires a separate
+public design decision covering configuration isolation, credentials and
+cookies, limits and backpressure, fork and event-loop behavior, diagnostics,
+and deterministic shutdown. It is not an incremental convenience change.
+
+Future helpers must have sync and async lifecycle tests where applicable. Tests
+for helper-owned clients must prove client closure and absence of client,
+transport, task, or stream leaks after success, request errors, timeouts,
+cancellation, and early context exit. Streaming tests must cover context-entry
+failure, full and partial consumption, and deterministic response cleanup for
+both ownership models; an owned path closes the response before the client,
+while a borrowed path closes the response but leaves the client usable. Tests
+that deliberately block inside a synchronous auth or transport policy hook must
+release the callback before asserting final quiescence because cancellation
+cannot preempt Python code that is already running. A policy-hook test must wait
+until cancellation is observed at a later Rust future boundary before asserting
+quiescence and absence of leaks. The suite must prove that a helper-owned path
+uses one runtime worker and does not initialize the process-wide shared runtime,
+including when `FOGHTTP_RUNTIME_WORKERS` is set, and that the helper leaves an
+open borrowed client usable when its caller does not close it concurrently.
+
 ## Lazy Transport Creation
 
 Constructing `Client` or `AsyncClient` does not create the Rust transport. The
-transport is created lazily on the first `send()`, `stream()`, or shortcut
-request such as `get()` or `post()`.
+transport is created lazily when the first `send()`, entry into the context
+returned by `stream()`, or shortcut request such as `get()` or `post()` reaches
+transport execution after request construction and pre-transport validation.
+Calls rejected before that boundary leave the transport uninitialized.
 
 These operations do not create the Rust transport:
 
 - constructing a client
 - entering a context manager
 - building a prepared `Request`
+- creating a stream context without entering it
 - calling `stats()` before the first request
 - calling `dump_transport_state()` before the first request
 - calling `dump_pool_diagnostics()` before the first request
@@ -208,9 +296,10 @@ except foghttp.ClientClosedError:
     pass
 ```
 
-`build_request()` is a pure request construction helper. It does not open the
-transport by itself; only `send()`, `stream()`, or shortcut request methods use
-transport state.
+`build_request()` is a pure request construction helper. It remains available
+after client shutdown and never opens transport state. See
+[Lazy Transport Creation](#lazy-transport-creation) for the exact initialization
+boundary.
 
 ## Sync Close Semantics
 
@@ -268,11 +357,16 @@ Calling `aclose()` closes the async client for everyone using it, cancels
 in-flight async requests, aborts active async streamed response bodies, and then
 shuts down the Rust transport.
 
-Cancellation is cooperative at Rust future boundaries. A synchronous auth hook
-that is already executing cannot be preempted by task cancellation or
-`aclose()`; it may continue until the callback returns. The transport request is
-still aborted and holds no request slot or socket because auth runs before
-acquisition.
+Cancellation is cooperative at Rust future boundaries. A synchronous auth or
+transport policy hook that is already executing cannot be preempted by task
+cancellation or `aclose()`. The Python awaiter may receive `CancelledError` and
+`aclose()` may return while that callback is still running; this is not proof
+that the callback or underlying native request task is quiescent. Auth runs
+before transport acquisition, while policy hooks may execute later in the
+transport lifecycle. Keep both fast and non-blocking. After the callback
+returns, the native task still needs to observe cancellation at a later Rust
+future boundary, and an already admitted operation may reach that boundary
+before cancellation is observed.
 
 ```python
 import asyncio
