@@ -61,6 +61,29 @@ jobs:
       - name: Run Rust tests
         run: cargo test --all-targets
 
+  rust-msrv:
+    name: Rust MSRV (1.88)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust MSRV
+        uses: dtolnay/rust-toolchain@1.88.0
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Show Rust version
+        run: rustc --version
+
+      - name: Run Rust tests at MSRV
+        run: cargo test --locked --all-targets
+
+      - name: Check release features at MSRV
+        run: cargo check --locked --all-targets --all-features
+
   abi3-wheel:
     name: Build and audit abi3 wheel
     runs-on: ubuntu-latest

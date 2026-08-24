@@ -122,7 +122,7 @@ are not retained with the release evidence do not satisfy the artifact fields.
   used as strong all-client performance baselines until the reason is
   classified or rerun.
 
-## Current Source Snapshots
+## Latest Retained Source Snapshots
 
 Primary benchmark data source for this page:
 
@@ -132,13 +132,19 @@ Primary benchmark data source for this page:
   httpxyz `0.31.2`, zapros `0.13.0`.
 - Platform: `macOS-26.5.1-arm64-arm-64bit-Mach-O`.
 - Python: `3.14.0`.
+- Benchmark repository revision:
+  [`861e7cddf9134003c7079cb521def6892235c8d2`](https://github.com/AmberFog/FogHttpBenchmark/tree/861e7cddf9134003c7079cb521def6892235c8d2).
+
+This `0.3.5` snapshot is the latest retained full baseline, not evidence for a
+`0.4.0` release candidate. A `0.4.0` candidate must still satisfy the release
+smoke gate above at its own full commit SHA before publication.
 
 Historical comparison sources:
 
 | Role | Result directory | Use |
 | --- | --- | --- |
-| Current release run | `results/full-pypi-foghttp-0.3.5-settled-20260702-200414` | Primary FogHTTP `0.3.5` evidence after run-settling. |
-| Previous release baseline | `results/full-current-deps-foghttp-0.3.4-20260607-121844` | Matching-row comparison against FogHTTP `0.3.4` on the same primary host lineage. |
+| Latest retained full run | `results/full-pypi-foghttp-0.3.5-settled-20260702-200414` | Primary FogHTTP `0.3.5` evidence after run-settling. |
+| Matching comparison baseline | `results/full-current-deps-foghttp-0.3.4-20260607-121844` | Matching-row comparison against FogHTTP `0.3.4` on the same primary host lineage. |
 | Valid proxy/CONNECT baseline | `results/proxy-connect-0.3.4-isolated-full-20260607-213445` | Previous proxy/CONNECT baseline for stability comparison. |
 | Earlier 0.3.5 attempts | `results/full-pypi-foghttp-0.3.5-20260702-162612`, `results/full-pypi-foghttp-0.3.5-rerun-20260702-172113`, `results/full-pypi-foghttp-0.3.5-settled-20260702-183136` | Diagnostic evidence that run settling removed false FogHTTP error contamination in request-style suites. |
 

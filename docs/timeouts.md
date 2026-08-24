@@ -72,10 +72,10 @@ except foghttp.TimeoutError as exc:
 ```
 
 Current diagnostic phases are `pool_acquire`, `connection_acquire`,
-`response_headers`, `response_body`, and `request_body`; the exported
-`TimeoutPhase` type matches this current emitted set. The `origin` field is
-normalized and never includes path, query, userinfo, headers, or body data.
-`elapsed` and `timeout` are seconds, and `redirect_hop` is zero-based.
+`request_body`, `retry_backoff`, `response_headers`, and `response_body`; the
+exported `TimeoutPhase` type matches this current emitted set. The `origin`
+field is normalized and never includes path, query, userinfo, headers, or body
+data. `elapsed` and `timeout` are seconds, and `redirect_hop` is zero-based.
 
 ## Client Defaults And Request Overrides
 

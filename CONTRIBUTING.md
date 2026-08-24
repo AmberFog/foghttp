@@ -2,11 +2,11 @@
 
 Thank you for taking the time to improve FogHTTP.
 
-FogHTTP is an early-stage HTTP client for Python with a Rust transport core. The
-project is intentionally focused: it is built for controlled service-to-service
-HTTP workloads where explicit lifecycle, predictable resource usage,
-cancellation, redirect safety, TLS trust boundaries, and request pressure
-visibility matter more than broad browser-like feature parity.
+FogHTTP is a focused pre-`0.5` HTTP client for Python with a Rust transport
+core. The project is intentionally focused: it is built for controlled
+service-to-service HTTP workloads where explicit lifecycle, predictable
+resource usage, cancellation, redirect safety, TLS trust boundaries, and
+request pressure visibility matter more than broad browser-like feature parity.
 
 The project values engineers who are interested in serious implementation work:
 debugging, measurement, API design, resource ownership, security boundaries, and

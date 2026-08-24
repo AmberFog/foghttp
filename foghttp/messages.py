@@ -45,7 +45,7 @@ BODY_PARAMETER_CONFLICT = (
 )
 CLIENT_CLOSED = "FogHTTP client is closed"
 CONNECTION_ACQUIRE_TIMEOUT = "connection acquire timeout expired"
-HTTP_VERSION_UNSUPPORTED = "only HTTP/1.1 is supported in the MVP"
+HTTP_VERSION_UNSUPPORTED = "only HTTP/1.1 is currently supported"
 MAX_REDIRECTS_INVALID = "max_redirects must be greater than or equal to 0"
 MULTIPART_DATA_UNSUPPORTED = "files can only be combined with mapping or repeated-pair form data"
 MULTIPART_FILE_FACTORY_MIX_UNSUPPORTED = (

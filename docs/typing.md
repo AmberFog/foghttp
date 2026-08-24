@@ -16,6 +16,11 @@ Concrete `Request`, `RequestInfo`, `Response`, `StreamResponse`, and
 `AsyncStreamResponse` objects satisfy the applicable protocols without
 inheriting from them.
 
+Client wrappers can also import `HttpVersion` and `HttpVersions` from
+`foghttp.types`. The current literal domain contains only `"HTTP/1.1"`, matching
+the explicit `Client` and `AsyncClient` `http_versions=` option; HTTP/2 is not
+implemented.
+
 ## Request And Response Protocols
 
 | Protocol | Stable surface |

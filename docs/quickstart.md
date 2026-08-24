@@ -147,6 +147,20 @@ Absolute request URLs ignore `base_url`.
 `base_url` must not include query parameters or a fragment. Use client-level or
 per-request `params=` for query parameters.
 
+## HTTP Version Selection
+
+Both clients use HTTP/1.1. Omit `http_versions` for the default behavior, or
+pass the only supported explicit selection:
+
+```python
+with foghttp.Client(http_versions=["HTTP/1.1"]) as client:
+    response = client.get("https://httpbin.org/get")
+```
+
+Any other non-empty selection raises `NotImplementedError`; HTTP/2 is not
+implemented. The public `HttpVersion` and `HttpVersions` aliases are available
+from `foghttp.types` for wrappers that expose this option.
+
 ## Default Headers
 
 Use client-level `headers=` for values that should be sent with every request
@@ -636,6 +650,7 @@ limits = foghttp.Limits(
     max_response_body_size=10 * 1024 * 1024,
     max_buffered_response_bytes=100 * 1024 * 1024,
     idle_timeout=30.0,
+    keepalive=True,
 )
 
 timeouts = foghttp.Timeouts(
@@ -659,9 +674,10 @@ response and raises `ReadTimeout` when body progress stalls.
 Timeout exceptions include a safe `diagnostic` object when FogHTTP can identify
 the phase, elapsed time, configured budget, normalized origin, and redirect hop.
 
-`Limits.max_active_requests` caps active buffered requests for the whole client.
+`Limits.max_active_requests` caps active transport requests for the whole
+client. A streaming request holds its slot until clean EOF or close.
 `Limits.max_active_requests_per_origin` defaults to `None`; set it to cap active
-buffered requests for one normalized origin. `Limits.max_pending_requests` caps
+transport requests for one normalized origin. `Limits.max_pending_requests` caps
 requests waiting in the Rust-side FIFO acquire queue. `Limits.max_response_body_size`
 defaults to `10 * 1024 * 1024` bytes and protects one response.
 `Limits.max_connections` defaults to `None`; set it to add an explicit global
@@ -683,6 +699,8 @@ under concurrency.
 `Limits.max_idle_connections_per_host` controls idle keep-alive pool capacity;
 it is not an active connection cap and is separate from request-slot and
 connection-slot backpressure.
+`Limits.keepalive` defaults to `True`; set it to `False` to prevent completed
+HTTP/1.1 connections from returning to the idle pool for reuse.
 
 `TransportStats.buffered_response_bytes` reports currently reserved in-flight
 buffered body bytes. `TransportStats.buffered_response_budget_rejections`

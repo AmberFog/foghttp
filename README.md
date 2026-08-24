@@ -8,8 +8,8 @@
   Rust-powered HTTP client for Python with sync and asyncio APIs.
 </p>
 
-FogHTTP is an early MVP HTTP client. The public API is Python-first, while the
-transport core is implemented in Rust on top of `hyper`.
+FogHTTP is a focused pre-`0.5` HTTP client. The public API is Python-first,
+while the transport core is implemented in Rust on top of `hyper`.
 
 FogHTTP is positioned as an observable, high-concurrency Rust-powered transport
 for Python services. It is built for controlled service-to-service HTTP

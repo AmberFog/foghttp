@@ -4,9 +4,11 @@ import py_compile
 import sys
 from types import ModuleType
 import unittest
+from unittest.mock import create_autospec
 
 import pytest
 
+import foghttp
 from scripts.wheel_smoke_runtime import discover_examples, loopback_server_url, run_example
 
 
@@ -216,3 +218,77 @@ def test_example_imports_without_running_main(example_path: Path) -> None:
     assert module.__name__ != "__main__"
     assert module.__spec__ is not None
     assert module.__spec__.name == module.__name__
+
+
+@pytest.mark.parametrize(
+    ("status_code", "exit_code"),
+    [
+        pytest.param(200, None, id="success"),
+        pytest.param(404, 1, id="error"),
+    ],
+)
+def test_http_proxy_example_redacts_output(
+    status_code: int,
+    exit_code: int | None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    proxy_sentinel = "proxy-password-sentinel"
+    userinfo_sentinel = "target-userinfo-sentinel"
+    path_sentinel = "target-path-sentinel"
+    query_sentinel = "target-query-sentinel"
+    proxy = f"http://user:{proxy_sentinel}@proxy.example:8080"
+    target = f"https://user:{userinfo_sentinel}@example.com/{path_sentinel}?code={query_sentinel}"
+    module = run_example(EXAMPLES_DIR / "http_proxy.py")
+    response = foghttp.Response(
+        status_code=status_code,
+        headers=foghttp.Headers(),
+        content=b"",
+        url=target,
+        request=foghttp.RequestInfo(
+            method="GET",
+            url=target,
+            headers=foghttp.Headers(),
+        ),
+        http_version="HTTP/1.1",
+        elapsed=0.0,
+    )
+    client = create_autospec(foghttp.Client, instance=True, spec_set=True)
+    client.__enter__.return_value = client
+    client.__exit__.return_value = False
+    client.get.return_value = response
+    client_factory = create_autospec(foghttp.Client, return_value=client)
+    monkeypatch.setattr(module.foghttp, "Client", client_factory)
+    monkeypatch.setenv("FOGHTTP_HTTP_PROXY", proxy)
+    monkeypatch.setenv("FOGHTTP_PROXY_TARGET_URL", target)
+
+    if exit_code is None:
+        module.main()
+    else:
+        with pytest.raises(SystemExit) as error_info:
+            module.main()
+        assert error_info.value.code == exit_code
+
+    captured = capsys.readouterr()
+    output = captured.out
+    assert proxy_sentinel not in output
+    assert userinfo_sentinel not in output
+    assert path_sentinel not in output
+    assert query_sentinel not in output
+    assert "proxy: configured" in output
+    assert "target origin: https://example.com" in output
+    assert f"status: {status_code}" in output
+    assert "request method: GET" in output
+    assert captured.err == ""
+    client_factory.assert_called_once_with(proxy=proxy)
+    client.get.assert_called_once_with(target)
+    client.__enter__.assert_called_once_with()
+    client.__exit__.assert_called_once()
+    if exit_code is None:
+        client.__exit__.assert_called_once_with(None, None, None)
+    else:
+        exit_type, exit_value, exit_traceback = client.__exit__.call_args.args
+        assert exit_type is SystemExit
+        assert isinstance(exit_value, SystemExit)
+        assert exit_value.code == exit_code
+        assert exit_traceback is not None
