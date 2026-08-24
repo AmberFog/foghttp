@@ -35,7 +35,7 @@ def test_client_accepts_opt_in_cookies() -> None:
 
 
 def test_client_rejects_unsupported_http_versions() -> None:
-    with pytest.raises(NotImplementedError, match=r"only HTTP/1\.1 is supported in the MVP"):
+    with pytest.raises(NotImplementedError, match=r"only HTTP/1\.1 is currently supported"):
         foghttp.Client(http_versions=["HTTP/2"])
 
 

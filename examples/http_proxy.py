@@ -22,12 +22,13 @@ def main() -> None:
 
     with foghttp.Client(proxy=proxy) as client:
         response = client.get(target_url)
-        response.raise_for_status()
 
-        print("proxy:", proxy or "direct")
-        print("target:", target_url)
+        print("proxy:", "configured" if proxy is not None else "direct")
+        print("target origin:", foghttp.URL(response.request.url).origin)
         print("status:", response.status_code)
-        print("request:", response.request.method, response.request.url)
+        print("request method:", response.request.method)
+        if response.is_error:
+            raise SystemExit(1)
 
 
 if __name__ == "__main__":

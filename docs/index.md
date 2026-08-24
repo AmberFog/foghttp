@@ -13,15 +13,15 @@ features:
   - title: "Sync and async"
     details: "Use Client in scripts and workers, or AsyncClient for high-concurrency asyncio workloads."
 
-  - title: "Focused MVP"
+  - title: "Focused service client"
     details: "FogHTTP is intentionally small today: buffered responses with gzip/deflate/br decoding, sync and async bytes/text/line streaming, JSON, form-urlencoded data, streaming and multipart uploads, base URL clients, redirects, async cancellation, bounded request queues, explicit HTTP/1.1 connection caps, and transport diagnostics."
 ---
 
 # FogHTTP Documentation
 
-FogHTTP is currently an MVP. It is already useful for controlled HTTP workloads
-that use buffered request/response bodies, JSON and form APIs, streaming or
-multipart uploads, explicit client lifecycle, and predictable redirect behavior.
+FogHTTP is a focused pre-`0.5` client for controlled HTTP workloads that use
+buffered request/response bodies, JSON and form APIs, streaming or multipart
+uploads, explicit client lifecycle, and predictable redirect behavior.
 
 ## Positioning
 

@@ -1,7 +1,7 @@
 # Limitations
 
-FogHTTP is an MVP. It can already be useful, but it is not trying to be a full
-`httpx` replacement yet.
+FogHTTP is a focused pre-`0.5` client. It is not trying to be a full `httpx`
+replacement yet.
 
 For request-parameter compatibility with common Python HTTP clients, see
 [Request builder compatibility](./request-builder.md).
@@ -96,7 +96,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | Authentication | Basic credentials and synchronous callable header refresh are available through client-level `auth=`; async hooks, OAuth flows, and provider SDKs are not built in |
 | Disabling TLS verification | Not available by design; use `TLSConfig` with explicit CA certificates |
 | OS trust store integration | Not available; FogHTTP uses bundled WebPKI roots unless `trust_webpki_roots=False` is set |
-| HTTP/2 | Not available |
+| HTTP version selection | HTTP/1.1 is the only supported version. Omit `http_versions` or pass `http_versions=["HTTP/1.1"]`; any other non-empty selection raises `NotImplementedError`. HTTP/2 is not available. |
 | automatic `Accept-Encoding` negotiation | Not implemented; send `Accept-Encoding` manually when you want compressed responses |
 | transport-managed request headers | Safe API rejects manual `Host`, `Content-Length`, `Transfer-Encoding`, `TE`, `Trailer`, `Connection`, `Upgrade`, `Keep-Alive`, `Proxy-Connection`, and `Proxy-Authorization` |
 | request body source conflicts | Use one body source among `json=`, `data=`, `content=`, and `files=`; `files=` can include form fields from mapping or repeated-pair `data=` |
@@ -105,7 +105,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | per-request connect timeout changes | `Timeouts.connect` configures the Rust connector from client-level settings when transport state is created; per-request `timeout.connect` does not reconfigure the connector |
 | separate read/write timeout semantics | `Timeouts.read` is implemented as a buffered and streamed response body progress timeout; `Timeouts.write` is implemented for buffered request body write progress and streaming upload chunk/write progress |
 | socket lifecycle telemetry granularity | `TransportStats` and `dump_transport_state()["origins"]` expose opened, open-failed, closed, reused, aborted, idle-timeout eviction, active, and idle tracked connection counters for the current HTTP/1 path; dedicated failed-reuse and close-reason taxonomy are not exposed yet because current connector hooks do not provide a stable reason signal |
-| telemetry hook granularity | `TelemetryConfig` currently dispatches Python-level request/response lifecycle events; lower-level Rust pool acquire and connection lifecycle event delivery is planned before Prometheus/OpenTelemetry exporters |
+| telemetry hook granularity | `TelemetryConfig` dispatches request/response events plus lower-level Rust pool-acquire and HTTP/1 connection lifecycle events from a bounded best-effort native journal. Prometheus/OpenMetrics adapters are available; OpenTelemetry integration is not built in. |
 | transport policy hook execution | `TransportPolicyHooks` callbacks are synchronous, inline, non-reentrant, and may run on Rust transport worker threads; `after_response_body` observes only redirect bodies consumed internally, not the final response body returned to the caller |
 | retry scope | Retry is client-level and opt-in. It covers configured response statuses and pre-header `NetworkError` only; response-body errors, FogHTTP timeouts, local upload-provider failures, auth-hook failures, hedging, and circuit breaking are not retried. Auth headers are refreshed before a retry selected for a supported transport outcome. |
 | SSRF protection scope | `SSRFPolicy` is client-level and opt-in. It validates initial and redirected destinations plus every resolved address, but it is not a replacement for network egress policy. Proxy routes fail closed because a remote proxy can resolve the target independently. |

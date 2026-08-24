@@ -135,9 +135,9 @@ The following are usually out of scope unless they demonstrate a concrete
 FogHTTP vulnerability:
 
 - attacks that require arbitrary code execution in the caller process
-- reports about unsupported features such as proxy transport behavior, cookie
-  jar behavior, multipart uploads, or HTTP/2 unless the current code exposes
-  unsafe behavior
+- reports about unsupported features such as HTTP/2, SOCKS/PAC proxy routing,
+  TLS-to-proxy endpoints, browser-grade cookie policy, or streaming response
+  decompression unless the current code exposes unsafe behavior
 - denial-of-service reports that ignore documented response and request limits
 - issues caused only by intentionally disabling security in user application
   code outside FogHTTP
