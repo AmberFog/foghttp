@@ -89,6 +89,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 ## Start Here
 
 - [Quickstart](./quickstart.md)
+- [Migrating from HTTPX](./httpx-migration.md)
 - [Request builder compatibility](./request-builder.md)
 - [Authentication](./auth.md)
 - [Cookies](./cookies.md)
