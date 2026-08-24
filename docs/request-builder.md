@@ -7,6 +7,8 @@ contract is used by sync clients, async clients, shortcut methods,
 This page maps common `requests`, `httpx`, and `zapros` request parameters to
 the current FogHTTP API. The same flow is available as a runnable example in
 [request_builder_compatibility.py](../examples/request_builder_compatibility.py).
+For end-to-end HTTPX adoption guidance, including client defaults and current
+feature boundaries, see [Migrating from HTTPX](./httpx-migration.md).
 
 ## Client Ownership When Migrating
 
