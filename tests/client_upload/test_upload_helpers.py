@@ -1627,7 +1627,7 @@ async def test_async_close_cleans_factory_source_registered_after_close(
 ) -> None:
     factory_started = threading.Event()
     factory_release = threading.Event()
-    source = AsyncChunks(())
+    source = _BlockingAsyncClose()
     factory_error = RuntimeError(UPLOAD_SOURCE_FAILURE)
 
     def source_factory() -> upload_cleanup.UploadSourceFactoryFailure:
@@ -1658,11 +1658,13 @@ async def test_async_close_cleans_factory_source_registered_after_close(
     await body.aclose()
     factory_release.set()
     await asyncio.to_thread(starter.join, 1.0)
-    for _attempt in range(10):
-        if source.close_calls:
-            break
-        await asyncio.sleep(0)
+    cleanup_started = await asyncio.to_thread(source.started.wait, 1.0)
+    source.release.set()
+    cleanup_finished = await asyncio.to_thread(source.finished.wait, 1.0)
 
+    assert starter.is_alive() is False
+    assert cleanup_started is True
+    assert cleanup_finished is True
     assert errors == [factory_error]
     assert source.close_calls == 1
 
