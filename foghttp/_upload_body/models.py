@@ -25,9 +25,11 @@ class BufferedUploadBody:
     buffered_body: bytes | None
     raw_body: "_foghttp.RawUploadBody | None" = None
 
-    def close(self) -> None: ...
+    def close(self) -> None:
+        """Close a buffered body that owns no resources."""
 
-    async def aclose(self) -> None: ...
+    async def aclose(self) -> None:
+        """Close a buffered body that owns no async resources."""
 
 
 class SyncUploadBody(Protocol):

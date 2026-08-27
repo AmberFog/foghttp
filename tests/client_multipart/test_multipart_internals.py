@@ -117,7 +117,8 @@ async def test_sync_iterator_runner_tracks_queued_request_during_active_next() -
 
     assert await first == b"first"
     assert await asyncio.to_thread(second_started.wait, 1.0)
-    assert runner.close() is True
+    closed = runner.close()
+    assert closed is True
     second_release.set()
     assert await second == b"second"
     await asyncio.wait_for(runner.wait_closed_bounded(), timeout=1.0)
@@ -135,7 +136,8 @@ async def test_sync_iterator_runner_bounds_blocking_iterator_close(
 
     await runner.next()
     assert await asyncio.to_thread(iterator.close_started.wait, 1.0)
-    assert runner.close() is False
+    closed = runner.close()
+    assert closed is False
     try:
         await asyncio.wait_for(runner.wait_closed_bounded(), timeout=1.0)
         assert iterator.close_finished.is_set() is False
