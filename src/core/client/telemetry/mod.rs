@@ -90,6 +90,7 @@ struct ActiveRequestWriteTimeout {
     context: Option<RequestWriteTimeoutContext>,
     request_telemetry: Option<RequestTelemetry>,
     request_body_completion: Option<RequestBodyCompletion>,
+    write_started: bool,
 }
 
 impl<C> InstrumentedConnector<C> {
@@ -440,8 +441,8 @@ impl ConnectionTelemetry {
         }
     }
 
-    fn reset_write_timeout_progress(&self) {
-        self.lock_write_timeout().reset_progress();
+    fn record_write_progress(&self) {
+        self.lock_write_timeout().record_write_progress();
     }
 
     fn request_transport_flushed(&self) {
@@ -628,6 +629,7 @@ impl WriteTimeoutState {
             context,
             request_telemetry,
             request_body_completion,
+            write_started: false,
         });
         pending_waker
     }
@@ -659,10 +661,19 @@ impl WriteTimeoutState {
         self.pending_waker = None;
     }
 
+    fn record_write_progress(&mut self) {
+        if let Some(active) = self.active.as_mut() {
+            active.write_started = true;
+        }
+        self.reset_progress();
+    }
+
     fn transport_flushed(&mut self) -> Option<Waker> {
+        self.active.as_ref()?;
         let request_complete = self
             .active
             .as_ref()
+            .filter(|active| active.write_started)
             .and_then(|active| active.request_body_completion.as_ref())
             .is_some_and(|completion| {
                 completion.mark_transport_flushed();
@@ -937,7 +948,7 @@ where
         match Pin::new(&mut connection.inner).poll_write(context, buffer) {
             Poll::Ready(Ok(written)) => {
                 if written > 0 {
-                    connection.telemetry.reset_write_timeout_progress();
+                    connection.telemetry.record_write_progress();
                 }
                 Poll::Ready(Ok(written))
             }
@@ -953,13 +964,6 @@ where
         let connection = self.get_mut();
         if let Err(error) = connection.telemetry.prepare_io_poll(context) {
             return Poll::Ready(Err(error));
-        }
-        if connection
-            .telemetry
-            .poll_request_write_ready(context)
-            .is_pending()
-        {
-            return Poll::Pending;
         }
         match Pin::new(&mut connection.inner).poll_flush(context) {
             Poll::Ready(result) => {
@@ -1006,7 +1010,7 @@ where
         match Pin::new(&mut connection.inner).poll_write_vectored(context, buffers) {
             Poll::Ready(Ok(written)) => {
                 if written > 0 {
-                    connection.telemetry.reset_write_timeout_progress();
+                    connection.telemetry.record_write_progress();
                 }
                 Poll::Ready(Ok(written))
             }

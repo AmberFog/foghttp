@@ -410,13 +410,18 @@ fn successful_flush_completes_unknown_length_request_body() {
         assert!(!completion.is_complete());
 
         let metrics = Arc::new(Metrics::default());
-        let mut connection =
-            instrumented_connection(FakeConnection::always_pending(), Arc::clone(&metrics));
+        let mut connection = instrumented_connection(
+            FakeConnection::with_write_sequence([Poll::Ready(Ok(1))]),
+            Arc::clone(&metrics),
+        );
         let connection_use = connection.telemetry.request_started_with_body_completion(
             None,
             None,
             Some(completion.clone()),
         );
+        poll_fn(|context| Pin::new(&mut connection).poll_write(context, b"request"))
+            .await
+            .unwrap();
         poll_fn(|context| Pin::new(&mut connection).poll_flush(context))
             .await
             .unwrap();
@@ -430,24 +435,22 @@ fn successful_flush_completes_unknown_length_request_body() {
 }
 
 #[test]
-fn transport_flush_waits_for_request_assignment() {
+fn idle_flush_before_bodyless_request_write_does_not_complete_body() {
     runtime().block_on(async {
-        let (sender, receiver) = upload_body_channel(1);
-        let (body, completion) = streaming_request_body(receiver, None, None);
-        assert_eq!(sender.send_nowait(Ok(Bytes::from_static(b"chunk"))), Ok(()));
-        sender.finish();
-        drop(body.collect().await.unwrap().to_bytes());
+        let (_body, completion) = buffered_request_body(None);
 
         let metrics = Arc::new(Metrics::default());
-        let mut connection =
-            instrumented_connection(FakeConnection::always_pending(), Arc::clone(&metrics));
+        let mut connection = instrumented_connection(
+            FakeConnection::with_write_sequence([Poll::Ready(Ok(1))]),
+            Arc::clone(&metrics),
+        );
         let wake_flag = Arc::new(WakeFlag::default());
         let waker = Waker::from(Arc::clone(&wake_flag));
         let mut context = Context::from_waker(&waker);
 
         assert!(Pin::new(&mut connection)
             .poll_flush(&mut context)
-            .is_pending());
+            .is_ready());
         assert!(!completion.is_complete());
         wake_flag.0.store(false, Ordering::Release);
 
@@ -457,6 +460,13 @@ fn transport_flush_waits_for_request_assignment() {
             Some(completion.clone()),
         );
         assert!(wake_flag.0.load(Ordering::Acquire));
+        assert!(Pin::new(&mut connection)
+            .poll_flush(&mut context)
+            .is_ready());
+        assert!(!completion.is_complete());
+        assert!(Pin::new(&mut connection)
+            .poll_write(&mut context, b"request")
+            .is_ready());
         assert!(Pin::new(&mut connection)
             .poll_flush(&mut context)
             .is_ready());
@@ -473,7 +483,7 @@ fn completed_upload_requires_a_flush_after_the_last_in_flight_frame() {
         let (body, completion) = buffered_request_body(Some(b"request body".to_vec()));
         let collected = body.collect().await.unwrap().to_bytes();
         let metrics = Arc::new(Metrics::default());
-        let inner = FakeConnection::with_write_sequence([Poll::Ready(Ok(1))]);
+        let inner = FakeConnection::with_write_sequence([Poll::Ready(Ok(1)), Poll::Ready(Ok(1))]);
         let writes = Arc::clone(&inner.writes);
         let mut connection = instrumented_connection(inner, metrics);
         let old_use = connection.telemetry.request_started_with_body_completion(
@@ -485,6 +495,9 @@ fn completed_upload_requires_a_flush_after_the_last_in_flight_frame() {
         let waker = Waker::from(Arc::clone(&wake_flag));
         let mut context = Context::from_waker(&waker);
 
+        assert!(Pin::new(&mut connection)
+            .poll_write(&mut context, b"request")
+            .is_ready());
         assert!(Pin::new(&mut connection)
             .poll_flush(&mut context)
             .is_ready());
@@ -502,7 +515,7 @@ fn completed_upload_requires_a_flush_after_the_last_in_flight_frame() {
         assert!(Pin::new(&mut connection)
             .poll_write(&mut context, b"next request")
             .is_pending());
-        assert_eq!(*writes.lock().unwrap(), 0);
+        assert_eq!(*writes.lock().unwrap(), 1);
         assert!(connection.telemetry.lock_write_timeout().active.is_none());
 
         let current_use = connection.telemetry.request_started(None, None);
@@ -510,7 +523,7 @@ fn completed_upload_requires_a_flush_after_the_last_in_flight_frame() {
         assert!(Pin::new(&mut connection)
             .poll_write(&mut context, b"next request")
             .is_ready());
-        assert_eq!(*writes.lock().unwrap(), 1);
+        assert_eq!(*writes.lock().unwrap(), 2);
 
         old_use.finish(ResponseBodyLifecycleOutcome::ReuseEligible);
         assert_eq!(
@@ -569,6 +582,9 @@ fn aborted_wire_finished_upload_blocks_the_next_request_until_assignment() {
         let mut context = Context::from_waker(waker);
 
         assert!(Pin::new(&mut connection)
+            .poll_write(&mut context, b"request")
+            .is_ready());
+        assert!(Pin::new(&mut connection)
             .poll_flush(&mut context)
             .is_ready());
         assert!(completion.is_wire_finished());
@@ -576,7 +592,7 @@ fn aborted_wire_finished_upload_blocks_the_next_request_until_assignment() {
         assert!(Pin::new(&mut connection)
             .poll_write(&mut context, b"next request")
             .is_pending());
-        assert_eq!(*writes.lock().unwrap(), 0);
+        assert_eq!(*writes.lock().unwrap(), 1);
 
         let current_use = connection.telemetry.request_started(None, None);
         let Poll::Ready(result) =
@@ -586,7 +602,7 @@ fn aborted_wire_finished_upload_blocks_the_next_request_until_assignment() {
         };
         let error = result.expect_err("aborted connection cannot be reused");
         assert_eq!(error.kind(), ErrorKind::ConnectionAborted);
-        assert_eq!(*writes.lock().unwrap(), 0);
+        assert_eq!(*writes.lock().unwrap(), 1);
         assert_eq!(metrics.snapshot().connections_aborted, 1);
 
         stale_use.finish(ResponseBodyLifecycleOutcome::ReuseEligible);

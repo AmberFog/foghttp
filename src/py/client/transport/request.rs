@@ -790,10 +790,26 @@ async fn await_response_headers<F>(
 where
     F: Future + ?Sized,
 {
+    let mut assignment_capture = captured_connection
+        .as_ref()
+        .map(|captured| captured.capture.clone());
+    let assignment = async move {
+        if let Some(capture) = assignment_capture.as_mut() {
+            let _ = capture.wait_for_connection_metadata().await;
+        }
+    };
+    tokio::pin!(assignment);
+    let mut assignment_observed = false;
     tokio::time::timeout_at(
         timeout_deadline,
         poll_fn(|context| {
             let _assignment = request_telemetry.map(RequestTelemetry::lock_connection_assignment);
+            if !assignment_observed && assignment.as_mut().poll(context).is_ready() {
+                assignment_observed = true;
+                if let Some(captured_connection) = captured_connection {
+                    captured_connection.observe();
+                }
+            }
             let response = response.as_mut().poll(context);
             // hyper-util publishes the assigned connection while polling this future.
             // Observe it before cancellation can claim the terminal request state.
