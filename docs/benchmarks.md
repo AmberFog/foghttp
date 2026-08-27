@@ -9,7 +9,60 @@ This page is a benchmark status snapshot, not a marketing scoreboard. Invalid
 rows, compatibility gaps, resource-limit errors, and weak spots stay visible
 because they are the inputs we use to improve FogHTTP.
 
-Benchmark snapshot last updated: `2026-07-02`.
+Benchmark snapshot last updated: `2026-08-27` for the prospective `0.4.1`
+request-body hotfix evidence below. The retained full-run tables remain on
+their recorded `0.3.5` lineage and are not treated as a comparable `0.4.1`
+baseline.
+
+## Prospective 0.4.1 Request-Body Keep-Alive Hotfix
+
+FogHTTP `0.4.0` routed every non-empty buffered or streaming request body
+through a no-idle transport client. That protected request-local write-timeout
+state, but it also closed every otherwise healthy HTTP/1.1 connection after the
+response. Repeated POST workloads therefore created one TCP connection per
+request and could exhaust ephemeral ports at benchmark volume.
+
+The `0.4.1` hotfix scopes write-timeout state to the request's assigned
+connection use instead. Successful buffered and streaming uploads return the
+connection to the normal keep-alive pool. Write timeout, cancellation, upload
+source failure, and incomplete request-body paths still abort or close the
+assigned connection before another request can reuse it. This is a
+resource-lifecycle correction with no public API or schema change.
+
+Local working-tree lifecycle verification rerun on `2026-08-27` produced the
+following evidence from an abi3 wheel built before the release-version bump.
+The results describe the prospective hotfix behavior, not the wheel's package
+version metadata:
+
+- Six sequential JSON POST requests used one connection in both sync and async
+  clients: `opened=1`, `reused=5`, `closed=0`, `open_failed=0`, `aborted=0`,
+  `idle=1`.
+- A bounded 20,000-request JSON POST stress completed without request errors,
+  connection-open failures, or aborts. Both sync and async reported `opened=1`,
+  `reused=19999`, `closed=0`, and `idle=1`.
+
+A targeted benchmark run on `2026-08-25` produced supporting evidence before
+the final cleanup follow-ups:
+- The targeted `requests` benchmark covered `post-json-echo`, `post-echo-64k`,
+  and `redirect-post-307` in sync and async modes, at concurrency `1` and `50`,
+  with 2,000 measured requests, 200 warmups, and three repeats. All 36 rows were
+  valid with no measured errors, warmup errors, aborted connections, or
+  connection-open failures.
+- The targeted `one-upstream` benchmark covered direct/default JSON and form
+  POST cases with the same modes, concurrency, volume, and repeats. All 48 rows
+  were valid with no measured errors, warmup errors, aborted connections, or
+  connection-open failures.
+- At concurrency `1`, every direct POST repeat opened one connection and reused
+  it for all remaining requests (`reused=2199`). All async two-hop `307`
+  repeats likewise opened one connection and reported `reused=4399`. Sync
+  repeats also completed without errors; observed reconnects were clean and
+  reuse remained above 99.8% of the 4,399 available reuse opportunities.
+
+The lifecycle rerun is a local observation of the current working-tree hotfix
+behavior, not reproducible release evidence. The earlier focused benchmark
+results remain supporting evidence only. The release smoke gate below still
+requires a report tied to the final committed candidate SHA; any code change
+after benchmark evidence requires a fresh candidate run.
 
 ## Release Smoke Gate
 
@@ -136,7 +189,7 @@ Primary benchmark data source for this page:
   [`861e7cddf9134003c7079cb521def6892235c8d2`](https://github.com/AmberFog/FogHttpBenchmark/tree/861e7cddf9134003c7079cb521def6892235c8d2).
 
 This `0.3.5` snapshot is the latest retained full baseline, not evidence for a
-`0.4.0` release candidate. A `0.4.0` candidate must still satisfy the release
+`0.4.1` release candidate. A `0.4.1` candidate must still satisfy the release
 smoke gate above at its own full commit SHA before publication.
 
 Historical comparison sources:

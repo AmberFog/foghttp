@@ -4,11 +4,12 @@ use super::registry::StreamRegistry;
 use crate::core::client::{ConnectionAbortReason, ConnectionUseGuard};
 use crate::core::metrics::{Metrics, ResponseBodyLifecycleOutcome};
 use crate::core::telemetry::TelemetryErrorType;
-use crate::errors::FogHttpError;
+use crate::errors::{FogHttpError, FogHttpWriteTimeoutError};
 use crate::py::client::acquire::AcquirePermit;
 use crate::py::client::async_requests::RequestCompletion;
 use crate::py::client::future::cancel_python_future;
 use crate::py::client::lifecycle::ResponseBodyLifecycle;
+use crate::py::client::timeout_diagnostics::response_body_transport_error;
 use bytes::Bytes;
 use hyper::body::Body;
 use hyper::body::Incoming;
@@ -132,6 +133,13 @@ impl StreamState {
         });
         parts.registry.insert(stream_id, &inner);
         Self { inner }
+    }
+
+    fn request_write_timeout(&self) -> Option<crate::core::client::RequestWriteTimeout> {
+        self.fields()
+            .connection_use
+            .as_ref()
+            .and_then(ConnectionUseGuard::request_write_timeout)
     }
 
     pub(super) fn start_read(
@@ -331,11 +339,11 @@ impl StreamStateFields {
 impl StreamReadGuard {
     pub(super) async fn read_next_chunk(mut self) -> PyResult<Option<Vec<u8>>> {
         if let Some(error) = self.deferred_body_error.take() {
+            let error = response_body_transport_error(self.state.request_write_timeout(), error);
+            let error_type = response_body_transport_error_type(&error);
             self.state
-                .abort_from_read(ConnectionAbortReason::Error(Some(
-                    TelemetryErrorType::RequestError,
-                )));
-            return Err(FogHttpError::new_err(error));
+                .abort_from_read(ConnectionAbortReason::Error(Some(error_type)));
+            return Err(error);
         }
 
         loop {
@@ -371,11 +379,14 @@ impl StreamReadGuard {
             let frame = match frame {
                 Ok(frame) => frame,
                 Err(error) => {
+                    let error = response_body_transport_error(
+                        self.state.request_write_timeout(),
+                        error.to_string(),
+                    );
+                    let error_type = response_body_transport_error_type(&error);
                     self.state
-                        .abort_from_read(ConnectionAbortReason::Error(Some(
-                            TelemetryErrorType::RequestError,
-                        )));
-                    return Err(FogHttpError::new_err(error.to_string()));
+                        .abort_from_read(ConnectionAbortReason::Error(Some(error_type)));
+                    return Err(error);
                 }
             };
             let Ok(data) = frame.into_data() else {
@@ -456,6 +467,16 @@ impl StreamReadGuard {
         self.state.finish_success_from_read();
         self.disarmed = true;
     }
+}
+
+fn response_body_transport_error_type(error: &PyErr) -> TelemetryErrorType {
+    Python::attach(|py| {
+        if error.is_instance_of::<FogHttpWriteTimeoutError>(py) {
+            TelemetryErrorType::WriteTimeout
+        } else {
+            TelemetryErrorType::RequestError
+        }
+    })
 }
 
 impl ReadyFrameCoalescing {

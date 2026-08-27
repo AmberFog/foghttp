@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, TypeAlias
 
 from ..types import (
@@ -17,6 +18,16 @@ SyncRequestContent: TypeAlias = bytes | str | BinaryFile | SyncByteStream | Sync
 AsyncRequestContent: TypeAlias = (
     bytes | str | BinaryFile | SyncByteStream | AsyncByteStream | SyncByteStreamFactory | AsyncByteStreamFactory
 )
+
+
+@dataclass(slots=True)
+class BufferedUploadBody:
+    buffered_body: bytes | None
+    raw_body: "_foghttp.RawUploadBody | None" = None
+
+    def close(self) -> None: ...
+
+    async def aclose(self) -> None: ...
 
 
 class SyncUploadBody(Protocol):

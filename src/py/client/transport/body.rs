@@ -1,9 +1,10 @@
 use super::context::RawResponseContext;
+use crate::core::client::RequestBodyCompletion;
 use crate::core::response::{BufferedBodyCollector, CollectedBody};
-use crate::errors::FogHttpError;
 use crate::messages::{REQUEST_TOTAL_TIMEOUT, RESPONSE_BODY_READ_TIMEOUT};
 use crate::py::client::timeout_diagnostics::{
-    read_timeout_error, remaining_duration, timeout_error, TimeoutContext, TimeoutPhase,
+    read_timeout_error, remaining_duration, response_body_transport_error, timeout_error,
+    TimeoutContext, TimeoutPhase,
 };
 use bytes::Bytes;
 use http_body_util::BodyExt;
@@ -25,6 +26,7 @@ pub(super) async fn collect_response_body(
     mut body: Incoming,
     context: &RawResponseContext<'_>,
     read_timeout: Duration,
+    request_body_completion: Option<RequestBodyCompletion>,
 ) -> PyResult<CollectedBody> {
     let mut collector = BufferedBodyCollector::new(
         &body,
@@ -33,7 +35,14 @@ pub(super) async fn collect_response_body(
     )?;
 
     while let Some(frame) = next_response_body_frame(&mut body, context, read_timeout).await? {
-        let frame = frame.map_err(|err| FogHttpError::new_err(err.to_string()))?;
+        let frame = frame.map_err(|error| {
+            response_body_transport_error(
+                request_body_completion
+                    .as_ref()
+                    .and_then(RequestBodyCompletion::write_timeout),
+                error.to_string(),
+            )
+        })?;
         let Ok(data) = frame.into_data() else {
             continue;
         };
@@ -48,9 +57,17 @@ pub(super) async fn drain_response_body(
     mut body: Incoming,
     context: &RawResponseContext<'_>,
     read_timeout: Duration,
+    request_body_completion: Option<RequestBodyCompletion>,
 ) -> PyResult<()> {
     while let Some(frame) = next_response_body_frame(&mut body, context, read_timeout).await? {
-        frame.map_err(|err| FogHttpError::new_err(err.to_string()))?;
+        frame.map_err(|error| {
+            response_body_transport_error(
+                request_body_completion
+                    .as_ref()
+                    .and_then(RequestBodyCompletion::write_timeout),
+                error.to_string(),
+            )
+        })?;
     }
     Ok(())
 }

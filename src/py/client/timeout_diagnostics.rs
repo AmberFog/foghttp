@@ -1,7 +1,8 @@
 use crate::core::client::RequestWriteTimeout;
 use crate::core::numeric;
 use crate::errors::{
-    FogHttpPoolTimeoutError, FogHttpReadTimeoutError, FogHttpTimeoutError, FogHttpWriteTimeoutError,
+    FogHttpError, FogHttpPoolTimeoutError, FogHttpReadTimeoutError, FogHttpTimeoutError,
+    FogHttpWriteTimeoutError,
 };
 use crate::messages::REQUEST_BODY_WRITE_TIMEOUT;
 use pyo3::exceptions::PyValueError;
@@ -106,6 +107,16 @@ pub fn write_timeout_error(timeout: &RequestWriteTimeout) -> PyErr {
         timeout.origin().to_owned(),
         timeout.redirect_hop(),
     ))
+}
+
+pub fn response_body_transport_error(
+    write_timeout: Option<RequestWriteTimeout>,
+    message: String,
+) -> PyErr {
+    match write_timeout {
+        Some(timeout) => write_timeout_error(&timeout),
+        None => FogHttpError::new_err(message),
+    }
 }
 
 pub fn remaining_duration(name: &str, context: &TimeoutContext<'_>) -> PyResult<Duration> {

@@ -12,13 +12,25 @@ from typing import Self, cast
 from urllib.parse import urlsplit
 
 from foghttp.status_codes.client_error import BAD_REQUEST, NOT_FOUND
+from foghttp.status_codes.redirect import PERMANENT_REDIRECT, TEMPORARY_REDIRECT
 from foghttp.status_codes.success import OK
 
-from .constants import CONNECTION_ID_KEY, KEEPALIVE_PATH, REQUEST_INDEX_KEY
+from .constants import (
+    CONNECTION_ID_KEY,
+    KEEPALIVE_PATH,
+    REDIRECT_PATH_PREFIX,
+    REQUEST_BODY_HEX_KEY,
+    REQUEST_INDEX_KEY,
+    REQUEST_METHOD_KEY,
+)
 from .models import KeepAliveSnapshot
 
 
 HTTP_HEAD_END = b"\r\n\r\n"
+HTTP_LINE_END = b"\r\n"
+INCOMPLETE_REQUEST_BODY = "request ended before expected body length"
+INCOMPLETE_REQUEST_LINE = "request ended before line delimiter"
+INVALID_CHUNK_DELIMITER = "invalid chunk delimiter"
 SERVER_HOST = "127.0.0.1"
 SERVER_JOIN_TIMEOUT = 1.0
 SOCKET_READ_SIZE = 4096
@@ -84,23 +96,37 @@ class KeepAliveHTTPHandler(BaseRequestHandler):
             if request is None:
                 connection.sendall(_raw_empty_response(BAD_REQUEST, "Bad Request", close=True))
                 return
-            pending = _discard_request_body(connection, pending, request.content_length)
-            if pending is None:
+            body_result = _read_request_body(connection, pending, request)
+            if body_result is None:
                 return
+            body, pending = body_result
 
             close_after_response = _request_closes_connection(request.headers)
             request_index = server.state.record_request(connection_id)
-            if urlsplit(request.target).path != KEEPALIVE_PATH:
+            request_path = urlsplit(request.target).path
+            redirect_status = _redirect_status(request_path)
+            if redirect_status is not None:
+                connection.sendall(
+                    _raw_redirect_response(
+                        status_code=redirect_status,
+                        close=close_after_response,
+                        method=request.method,
+                        body=body,
+                    ),
+                )
+            elif request_path != KEEPALIVE_PATH:
                 connection.sendall(_raw_empty_response(NOT_FOUND, "Not Found", close=True))
                 return
-
-            connection.sendall(
-                _raw_keepalive_response(
-                    connection_id=connection_id,
-                    request_index=request_index,
-                    close=close_after_response,
-                ),
-            )
+            else:
+                connection.sendall(
+                    _raw_keepalive_response(
+                        connection_id=connection_id,
+                        request_index=request_index,
+                        close=close_after_response,
+                        method=request.method,
+                        body=body,
+                    ),
+                )
             if close_after_response or server.disconnect_after_response:
                 return
 
@@ -136,9 +162,11 @@ class KeepAliveState:
 
 @dataclass(frozen=True, slots=True)
 class ParsedRequest:
+    method: str
     target: str
     headers: dict[str, str]
     content_length: int
+    chunked: bool
 
 
 def _read_request_head(connection: socket, pending: bytes) -> tuple[bytes | None, bytes]:
@@ -159,19 +187,22 @@ def _parse_request(request_head: bytes) -> ParsedRequest | None:
     lines = request_head.decode("iso-8859-1").split("\r\n")
     request_line = lines[0]
     try:
-        _method, target, _version = request_line.split(maxsplit=2)
+        method, target, _version = request_line.split(maxsplit=2)
     except ValueError:
         return None
 
     headers = _parse_headers(lines[1:])
-    content_length = _content_length(headers)
+    chunked = _request_is_chunked(headers)
+    content_length = 0 if chunked else _content_length(headers)
     if content_length is None:
         return None
 
     return ParsedRequest(
+        method=method,
         target=target,
         headers=headers,
         content_length=content_length,
+        chunked=chunked,
     )
 
 
@@ -193,12 +224,23 @@ def _content_length(headers: dict[str, str]) -> int | None:
     return None if value < 0 else value
 
 
-def _discard_request_body(
+def _request_is_chunked(headers: dict[str, str]) -> bool:
+    encodings = {token.strip().casefold() for token in headers.get("transfer-encoding", "").split(",") if token.strip()}
+    return "chunked" in encodings
+
+
+def _read_request_body(
     connection: socket,
     pending: bytes,
-    content_length: int,
-) -> bytes | None:
-    remaining = content_length - len(pending)
+    request: ParsedRequest,
+) -> tuple[bytes, bytes] | None:
+    if request.chunked:
+        try:
+            return _read_chunked_body(connection, pending)
+        except (OSError, TimeoutError, ValueError):
+            return None
+
+    remaining = request.content_length - len(pending)
     while remaining > 0:
         try:
             chunk = connection.recv(min(SOCKET_READ_SIZE, remaining))
@@ -208,7 +250,47 @@ def _discard_request_body(
             return None
         pending += chunk
         remaining -= len(chunk)
-    return pending[content_length:]
+    return pending[: request.content_length], pending[request.content_length :]
+
+
+def _read_chunked_body(connection: socket, pending: bytes) -> tuple[bytes, bytes]:
+    body = bytearray()
+    while True:
+        size_line, pending = _read_line(connection, pending)
+        size = int(size_line.split(b";", maxsplit=1)[0], 16)
+        if size == 0:
+            return bytes(body), _consume_trailers(connection, pending)
+        chunk, pending = _read_exact(connection, pending, size)
+        line_end, pending = _read_exact(connection, pending, len(HTTP_LINE_END))
+        if line_end != HTTP_LINE_END:
+            raise ValueError(INVALID_CHUNK_DELIMITER)
+        body.extend(chunk)
+
+
+def _consume_trailers(connection: socket, pending: bytes) -> bytes:
+    while True:
+        line, pending = _read_line(connection, pending)
+        if not line:
+            return pending
+
+
+def _read_line(connection: socket, pending: bytes) -> tuple[bytes, bytes]:
+    while HTTP_LINE_END not in pending:
+        chunk = connection.recv(SOCKET_READ_SIZE)
+        if not chunk:
+            raise ValueError(INCOMPLETE_REQUEST_LINE)
+        pending += chunk
+    line, _separator, pending = pending.partition(HTTP_LINE_END)
+    return line, pending
+
+
+def _read_exact(connection: socket, pending: bytes, size: int) -> tuple[bytes, bytes]:
+    while len(pending) < size:
+        chunk = connection.recv(min(SOCKET_READ_SIZE, size - len(pending)))
+        if not chunk:
+            raise ValueError(INCOMPLETE_REQUEST_BODY)
+        pending += chunk
+    return pending[:size], pending[size:]
 
 
 def _request_closes_connection(headers: dict[str, str]) -> bool:
@@ -216,11 +298,33 @@ def _request_closes_connection(headers: dict[str, str]) -> bool:
     return "close" in tokens
 
 
-def _raw_keepalive_response(*, connection_id: int, request_index: int, close: bool) -> bytes:
+def _redirect_status(path: str) -> int | None:
+    if not path.startswith(REDIRECT_PATH_PREFIX):
+        return None
+    raw_status = path.removeprefix(REDIRECT_PATH_PREFIX)
+    try:
+        status_code = int(raw_status)
+    except ValueError:
+        return None
+    if status_code in {TEMPORARY_REDIRECT, PERMANENT_REDIRECT}:
+        return status_code
+    return None
+
+
+def _raw_keepalive_response(
+    *,
+    connection_id: int,
+    request_index: int,
+    close: bool,
+    method: str,
+    body: bytes,
+) -> bytes:
     content = json.dumps(
         {
             CONNECTION_ID_KEY: connection_id,
+            REQUEST_BODY_HEX_KEY: body.hex(),
             REQUEST_INDEX_KEY: request_index,
+            REQUEST_METHOD_KEY: method,
         },
     ).encode()
     return _raw_response(
@@ -232,6 +336,20 @@ def _raw_keepalive_response(*, connection_id: int, request_index: int, close: bo
             ("connection", "close" if close else "keep-alive"),
         ],
         content,
+    )
+
+
+def _raw_redirect_response(*, status_code: int, close: bool, method: str, body: bytes) -> bytes:
+    return _raw_response(
+        status_code,
+        "Temporary Redirect" if status_code == TEMPORARY_REDIRECT else "Permanent Redirect",
+        [
+            ("content-length", "0"),
+            ("location", KEEPALIVE_PATH),
+            (REQUEST_BODY_HEX_KEY, body.hex()),
+            (REQUEST_METHOD_KEY, method),
+            ("connection", "close" if close else "keep-alive"),
+        ],
     )
 
 

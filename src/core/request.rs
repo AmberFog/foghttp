@@ -1,5 +1,6 @@
 use crate::core::client::{
-    buffered_request_body, streaming_request_body, RequestBody, UploadBodyReceiver,
+    buffered_request_body, streaming_request_body, RequestBody, RequestBodyCompletion,
+    RequestWriteTimeoutContext, UploadBodyReceiver,
 };
 use crate::core::headers::{request_headers, HeaderPairs};
 use crate::errors::FogHttpError;
@@ -24,16 +25,19 @@ pub enum RequestBodyParts {
     },
 }
 
-pub fn build_request(parts: RequestParts) -> PyResult<Request<RequestBody>> {
+pub fn build_request(
+    parts: RequestParts,
+    write_timeout: Option<RequestWriteTimeoutContext>,
+) -> PyResult<(Request<RequestBody>, RequestBodyCompletion)> {
     let method = Method::from_bytes(parts.method.as_bytes())
         .map_err(|err| FogHttpError::new_err(err.to_string()))?;
     let uri = Uri::from_str(&parts.url).map_err(|err| FogHttpError::new_err(err.to_string()))?;
-    let body = match parts.body {
+    let (body, body_completion) = match parts.body {
         RequestBodyParts::Buffered(content) => buffered_request_body(content),
         RequestBodyParts::Streaming {
             receiver,
             content_length,
-        } => streaming_request_body(receiver, content_length),
+        } => streaming_request_body(receiver, content_length, write_timeout),
     };
     let mut request = Request::builder()
         .method(method)
@@ -47,5 +51,5 @@ pub fn build_request(parts: RequestParts) -> PyResult<Request<RequestBody>> {
             .map_err(|err| FogHttpError::new_err(err.to_string()))?;
         request.headers_mut().insert(PROXY_AUTHORIZATION, value);
     }
-    Ok(request)
+    Ok((request, body_completion))
 }

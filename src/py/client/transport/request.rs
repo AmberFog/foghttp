@@ -2,8 +2,8 @@ use super::client::TransportClients;
 use super::context::RawResponseContext;
 use super::errors::{policy_error, transport_telemetry_error_type};
 use crate::core::client::{
-    with_connection_limit_timeout, with_request_write_timeout, ConnectionAbortReason,
-    ConnectionLimitContext, ConnectionTelemetry, ConnectionUseGuard, RequestWriteTimeoutContext,
+    with_connection_limit_timeout, ConnectionAbortReason, ConnectionLimitContext,
+    ConnectionTelemetry, ConnectionUseGuard, RequestBodyCompletion, RequestWriteTimeoutContext,
 };
 use crate::core::headers::HeaderPairs;
 use crate::core::numeric::duration_from_secs;
@@ -43,19 +43,30 @@ use std::time::{Duration, Instant, SystemTime};
 
 const COOKIE_HEADER_NAME: &str = "cookie";
 const COOKIE_HEADER_WIRE_NAME: &str = "Cookie";
+const MISSING_CONNECTION_USE: &str =
+    "instrumented transport did not expose the assigned connection lifecycle";
 
 struct CapturedConnectionUse {
     capture: CaptureConnection,
-    request_telemetry: RequestTelemetry,
+    request_telemetry: Option<RequestTelemetry>,
+    write_timeout: Option<RequestWriteTimeoutContext>,
+    request_body_completion: RequestBodyCompletion,
     connection: Option<ConnectionTelemetry>,
     guard: Option<ConnectionUseGuard>,
 }
 
 impl CapturedConnectionUse {
-    fn new(capture: CaptureConnection, request_telemetry: RequestTelemetry) -> Self {
+    fn new(
+        capture: CaptureConnection,
+        request_telemetry: Option<RequestTelemetry>,
+        write_timeout: Option<RequestWriteTimeoutContext>,
+        request_body_completion: RequestBodyCompletion,
+    ) -> Self {
         Self {
             capture,
             request_telemetry,
+            write_timeout,
+            request_body_completion,
             connection: None,
             guard: None,
         }
@@ -88,8 +99,11 @@ impl CapturedConnectionUse {
         if let Some(guard) = self.guard.take() {
             guard.superseded();
         }
-        self.guard =
-            Some(connection_telemetry.request_started(Some(self.request_telemetry.clone())));
+        self.guard = Some(connection_telemetry.request_started_with_body_completion(
+            self.request_telemetry.clone(),
+            self.write_timeout.clone(),
+            Some(self.request_body_completion.clone()),
+        ));
         self.connection = Some(connection_telemetry);
     }
 
@@ -110,6 +124,14 @@ impl Drop for CapturedConnectionUse {
     fn drop(&mut self) {
         self.observe();
     }
+}
+
+fn captured_connection_guard(
+    captured_connection: Option<CapturedConnectionUse>,
+) -> PyResult<ConnectionUseGuard> {
+    captured_connection
+        .and_then(CapturedConnectionUse::into_guard)
+        .ok_or_else(|| FogHttpError::new_err(MISSING_CONNECTION_USE))
 }
 
 pub struct TransportRequest {
@@ -688,16 +710,7 @@ pub(super) async fn send_current_hop(
     pool_timeout: f64,
     started: Instant,
     route: TransportRoute,
-) -> PyResult<
-    Result<
-        (
-            Response<Incoming>,
-            RawRequestInfo,
-            Option<ConnectionUseGuard>,
-        ),
-        HyperClientError,
-    >,
-> {
+) -> PyResult<Result<(Response<Incoming>, RawRequestInfo, ConnectionUseGuard), HyperClientError>> {
     let request_info = state.request_info();
     let response_headers_timeout_context = TimeoutContext::new(
         TimeoutPhase::ResponseHeaders,
@@ -709,19 +722,23 @@ pub(super) async fn send_current_hop(
     let write_timeout_context = state.write_timeout_context(origin, redirect_hop);
     let connection_limit_context =
         RequestState::connection_limit_context(origin, redirect_hop, pool_timeout)?;
-    let mut request = build_request(state.take_request_parts(route)?)?;
+    let (mut request, request_body_completion) = build_request(
+        state.take_request_parts(route)?,
+        write_timeout_context.clone(),
+    )?;
     let request_telemetry = current_request_telemetry();
-    let mut captured_connection = request_telemetry
-        .clone()
-        .map(|telemetry| CapturedConnectionUse::new(capture_connection(&mut request), telemetry));
-    let use_write_timeout_transport = write_timeout_context.is_some();
-    debug_assert_eq!(use_write_timeout_transport, state.has_request_body());
-    let client = clients.select(route, use_write_timeout_transport)?;
+    let mut captured_connection = Some(CapturedConnectionUse::new(
+        capture_connection(&mut request),
+        request_telemetry.clone(),
+        write_timeout_context,
+        request_body_completion,
+    ));
+    let client = clients.select(route)?;
     let timeout = remaining_duration("Timeouts.total", &response_headers_timeout_context)?;
     let timeout_deadline = tokio::time::Instant::now() + timeout;
     let mut response = Box::pin(with_connection_limit_timeout(
         Some(connection_limit_context),
-        with_request_write_timeout(write_timeout_context, client.request(request)),
+        client.request(request),
     ));
     let response = await_response_headers(
         response.as_mut(),
@@ -749,11 +766,10 @@ pub(super) async fn send_current_hop(
     };
 
     match response {
-        Ok(response) => Ok(Ok((
-            response,
-            request_info,
-            captured_connection.and_then(CapturedConnectionUse::into_guard),
-        ))),
+        Ok(response) => {
+            let connection_use = captured_connection_guard(captured_connection)?;
+            Ok(Ok((response, request_info, connection_use)))
+        }
         Err(error) => {
             if let Some(captured_connection) = captured_connection {
                 captured_connection.abort(ConnectionAbortReason::Error(Some(
@@ -781,7 +797,7 @@ where
             let response = response.as_mut().poll(context);
             // hyper-util publishes the assigned connection while polling this future.
             // Observe it before cancellation can claim the terminal request state.
-            if let Some(captured_connection) = captured_connection.as_mut() {
+            if let Some(captured_connection) = captured_connection {
                 captured_connection.observe();
             }
             response
@@ -981,10 +997,25 @@ impl RequestBodyState {
 
 #[cfg(test)]
 mod response_header_timeout_tests {
-    use super::await_response_headers;
+    use super::{await_response_headers, captured_connection_guard, CapturedConnectionUse};
+    use crate::core::client::buffered_request_body;
+    use hyper::Request;
+    use hyper_util::client::legacy::connect::capture_connection;
     use std::future::{poll_fn, Future};
     use std::task::Poll;
     use std::time::Duration;
+
+    #[test]
+    fn required_capture_without_connection_assignment_fails_closed() {
+        let mut request = Request::new(());
+        let (_body, completion) = buffered_request_body(Some(b"request body".to_vec()));
+        let captured_connection =
+            CapturedConnectionUse::new(capture_connection(&mut request), None, None, completion);
+
+        let result = captured_connection_guard(Some(captured_connection));
+
+        assert!(result.is_err());
+    }
     use tokio::runtime::Builder;
 
     #[test]
@@ -1006,7 +1037,14 @@ mod response_header_timeout_tests {
                     }
                 }
             }));
-            let mut captured_connection = None;
+            let mut capture_request = Request::new(());
+            let (_body, request_body_completion) = buffered_request_body(None);
+            let mut captured_connection = Some(CapturedConnectionUse::new(
+                capture_connection(&mut capture_request),
+                None,
+                None,
+                request_body_completion,
+            ));
             let expired_deadline = tokio::time::Instant::now()
                 .checked_sub(Duration::from_millis(1))
                 .expect("test deadline remains representable");

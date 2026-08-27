@@ -1,14 +1,18 @@
 __all__ = (
     "assert_distinct_connection_payloads",
     "assert_distinct_connection_snapshot",
+    "assert_redirect_preserved_request",
+    "assert_request_payloads",
     "assert_reused_connection_payloads",
     "assert_reused_connection_snapshot",
+    "assert_reused_connection_stats",
+    "assert_single_connection_snapshot",
     "has_idle_origin_detail",
     "is_early_remote_idle_close_observed",
     "is_idle_timeout_eviction_reported",
 )
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 
@@ -22,7 +26,9 @@ from .constants import (
     EXPECTED_REUSED_CONNECTIONS,
     EXPECTED_SECOND_REQUEST_INDEX,
     EXPECTED_SEQUENTIAL_REQUESTS,
+    REQUEST_BODY_HEX_KEY,
     REQUEST_INDEX_KEY,
+    REQUEST_METHOD_KEY,
 )
 from .models import KeepAliveSnapshot
 
@@ -56,13 +62,68 @@ def assert_distinct_connection_payloads(
 
 
 def assert_reused_connection_snapshot(snapshot: KeepAliveSnapshot) -> None:
+    assert_single_connection_snapshot(snapshot, EXPECTED_SEQUENTIAL_REQUESTS)
+
+
+def assert_single_connection_snapshot(
+    snapshot: KeepAliveSnapshot,
+    expected_request_count: int,
+) -> None:
     _assert_snapshot_counts(
         snapshot,
         expected_connection_count=EXPECTED_REUSED_CONNECTIONS,
-        expected_request_count=EXPECTED_SEQUENTIAL_REQUESTS,
+        expected_request_count=expected_request_count,
     )
-    if sorted(snapshot.requests_by_connection.values()) != [EXPECTED_SEQUENTIAL_REQUESTS]:
-        msg = f"expected one connection with two requests, got {snapshot.requests_by_connection}"
+    if sorted(snapshot.requests_by_connection.values()) != [expected_request_count]:
+        msg = f"expected one connection with {expected_request_count} requests, got {snapshot.requests_by_connection}"
+        raise AssertionError(msg)
+
+
+def assert_reused_connection_stats(
+    stats: "foghttp.TransportStats",
+    expected_request_count: int,
+) -> None:
+    expected_stats = {
+        "connections_opened": EXPECTED_REUSED_CONNECTIONS,
+        "connections_reused": expected_request_count - EXPECTED_REUSED_CONNECTIONS,
+        "connections_closed": 0,
+        "connections_open_failed": 0,
+        "connections_aborted": 0,
+        "active_connections": EXPECTED_REUSED_CONNECTIONS,
+        "idle_connections": EXPECTED_REUSED_CONNECTIONS,
+    }
+    for name, expected in expected_stats.items():
+        actual = getattr(stats, name)
+        if actual != expected:
+            msg = f"{name}: expected {expected}, got {actual}"
+            raise AssertionError(msg)
+
+
+def assert_request_payloads(
+    responses: Sequence["foghttp.Response"],
+    expected: Sequence[tuple[str, bytes]],
+) -> None:
+    payloads = (response.json() for response in responses)
+    observed = tuple((payload[REQUEST_METHOD_KEY], payload[REQUEST_BODY_HEX_KEY]) for payload in payloads)
+    expected_payloads = tuple((method, body.hex()) for method, body in expected)
+    if observed != expected_payloads:
+        msg = f"expected request payloads {expected_payloads}, got {observed}"
+        raise AssertionError(msg)
+
+
+def assert_redirect_preserved_request(response: "foghttp.Response", expected_body: bytes) -> None:
+    expected_body_hex = expected_body.hex()
+    redirect_response = response.history[0]
+    final_payload = response.json()
+    observed = (
+        redirect_response.headers[REQUEST_METHOD_KEY],
+        redirect_response.headers[REQUEST_BODY_HEX_KEY],
+        final_payload[REQUEST_METHOD_KEY],
+        final_payload[REQUEST_BODY_HEX_KEY],
+    )
+    expected = ("POST", expected_body_hex, "POST", expected_body_hex)
+    if observed != expected:
+        msg = f"expected POST body on both redirect hops, got {observed}"
         raise AssertionError(msg)
 
 

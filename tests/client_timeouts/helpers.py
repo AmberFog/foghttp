@@ -15,15 +15,23 @@ from tests.support.transport_stats import wait_for_async_transport_stats, wait_f
 from .constants import EXPECTED_FAILED_REQUESTS, EXPECTED_REQUESTS_AFTER_RECOVERY
 
 
-def assert_timeout_error_stats(stats: foghttp.TransportStats) -> None:
-    _assert_stat("total_requests", stats.total_requests, EXPECTED_FAILED_REQUESTS)
+def assert_timeout_error_stats(
+    stats: foghttp.TransportStats,
+    *,
+    expected_total_requests: int = EXPECTED_FAILED_REQUESTS,
+) -> None:
+    _assert_stat("total_requests", stats.total_requests, expected_total_requests)
     _assert_stat("failed_requests", stats.failed_requests, EXPECTED_FAILED_REQUESTS)
     _assert_stat("active_requests", stats.active_requests, 0)
     _assert_stat("pending_requests", stats.pending_requests, 0)
 
 
-def assert_timeout_recovery_stats(stats: foghttp.TransportStats) -> None:
-    _assert_stat("total_requests", stats.total_requests, EXPECTED_REQUESTS_AFTER_RECOVERY)
+def assert_timeout_recovery_stats(
+    stats: foghttp.TransportStats,
+    *,
+    expected_total_requests: int = EXPECTED_REQUESTS_AFTER_RECOVERY,
+) -> None:
+    _assert_stat("total_requests", stats.total_requests, expected_total_requests)
     _assert_stat("failed_requests", stats.failed_requests, EXPECTED_FAILED_REQUESTS)
     _assert_stat("active_requests", stats.active_requests, 0)
     _assert_stat("pending_requests", stats.pending_requests, 0)

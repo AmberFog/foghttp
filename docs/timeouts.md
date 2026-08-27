@@ -377,16 +377,19 @@ Like other FogHTTP timeout values, `write=0.0` is a zero-duration timeout, not a
 disabled setting; it can fail immediately when request body write progress is
 blocked.
 
-The timeout is scoped to transport writes for the current request hop. It does
-not replace `Timeouts.total`; the broader total deadline still covers acquire,
-redirect hops, response headers, and buffered response body collection.
+The timeout is scoped to request body progress for the current request hop:
+transport writes and, for streaming bodies, availability of the next provider
+chunk. It does not replace `Timeouts.total`; the broader total deadline still
+covers acquire, redirect hops, response headers, and buffered response body
+collection.
 
-To keep the per-request write deadline scoped to the request that owns the body,
-FogHTTP currently sends non-empty buffered and streaming request bodies through
-an isolated no-idle transport path. That avoids leaking one request's write
-deadline into a pooled connection reused by a later request. The observable
-tradeoff is that requests with non-empty bodies are not currently a
-connection-reuse optimization path.
+The write deadline is registered when the pool assigns a connection to the
+request and remains owned by that connection-use lifecycle until it either
+finishes cleanly or aborts. This keeps timeout state scoped to one request hop
+while allowing successful buffered and streaming uploads to return healthy
+HTTP/1.1 connections to the idle pool. A write timeout, cancellation, or
+body-provider failure aborts the assigned connection; FogHTTP never returns a
+connection with an incomplete request body to the pool.
 
 ## Buffered Body Limit
 

@@ -5,6 +5,7 @@ __all__ = (
     "CallableAsyncChunks",
     "CallableSyncChunks",
     "ClosingBytesFile",
+    "FailsWhenReadPastExactLengthFile",
     "NonRegularFilenoFile",
     "SyncChunks",
     "ThreadTrackingSyncChunks",
@@ -44,6 +45,35 @@ class ClosingBytesFile:
     def close(self) -> None:
         self.close_calls += 1
         self.closed = True
+        self._file.close()
+
+
+class FailsWhenReadPastExactLengthFile:
+    def __init__(self, content: bytes) -> None:
+        self._file = io.BytesIO(content)
+        self._read_calls = 0
+        self.read_past_declared_body = False
+        self.closed: bool = False
+        self.close_calls = 0
+
+    def read(self, size: int = -1, /) -> bytes:
+        self._read_calls += 1
+        if self._read_calls == 1:
+            return self._file.read(size)
+        self.read_past_declared_body = True
+        raise RuntimeError
+
+    def tell(self) -> int:
+        return self._file.tell()
+
+    def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
+        return self._file.seek(offset, whence)
+
+    def close(self) -> None:
+        if self.closed:
+            return
+        self.closed = True
+        self.close_calls += 1
         self._file.close()
 
 
