@@ -35,6 +35,9 @@ from tests.support.raw_responses import (
 )
 
 
+INCOMPLETE_CHUNKED_BODY = "chunked request body ended before the terminating chunk"
+
+
 class SyncHTTPHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -64,10 +67,14 @@ class SyncHTTPHandler(BaseHTTPRequestHandler):
 
     def _write_response(self) -> None:
         length = int(self.headers.get("content-length", "0"))
-        if self.headers.get("transfer-encoding", "").lower() == "chunked":
-            body = _read_chunked_body(self.rfile)
-        else:
-            body = self.rfile.read(length) if length else b""
+        try:
+            if self.headers.get("transfer-encoding", "").lower() == "chunked":
+                body = _read_chunked_body(self.rfile)
+            else:
+                body = self.rfile.read(length) if length else b""
+        except (EOFError, OSError, ValueError):
+            self.close_connection = True
+            return
         path = urlsplit(self.path).path
 
         handled = any(
@@ -281,6 +288,8 @@ def _read_chunked_body(reader: BinaryIO) -> bytes:
     body = bytearray()
     while True:
         size_line = reader.readline()
+        if not size_line:
+            raise EOFError(INCOMPLETE_CHUNKED_BODY)
         size = int(size_line.split(b";", maxsplit=1)[0].strip(), 16)
         if size == 0:
             _read_trailers(reader)

@@ -7,10 +7,6 @@ use std::future::Future;
 use std::io;
 use std::time::{Duration, Instant};
 
-tokio::task_local! {
-    static REQUEST_WRITE_TIMEOUT: RequestWriteTimeoutContext;
-}
-
 #[derive(Clone)]
 pub(crate) struct RequestWriteTimeoutContext {
     timeout: Duration,
@@ -19,7 +15,7 @@ pub(crate) struct RequestWriteTimeoutContext {
     redirect_hop: usize,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct RequestWriteTimeout {
     elapsed: f64,
     timeout: f64,
@@ -85,23 +81,6 @@ impl Display for RequestWriteTimeout {
 
 impl Error for RequestWriteTimeout {}
 
-pub(crate) async fn with_request_write_timeout<F>(
-    context: Option<RequestWriteTimeoutContext>,
-    future: F,
-) -> F::Output
-where
-    F: Future,
-{
-    match context {
-        Some(context) => REQUEST_WRITE_TIMEOUT.scope(context, future).await,
-        None => future.await,
-    }
-}
-
-pub(crate) fn current_request_write_timeout() -> Option<RequestWriteTimeoutContext> {
-    REQUEST_WRITE_TIMEOUT.try_with(Clone::clone).ok()
-}
-
 impl<Fut> hyper::rt::Executor<Fut> for RequestTaskContextExecutor
 where
     Fut: Future + Send + 'static,
@@ -109,14 +88,10 @@ where
 {
     fn execute(&self, future: Fut) {
         let connection_context = current_connection_limit_context();
-        let write_context = current_request_write_timeout();
         let telemetry = current_request_telemetry();
         tokio::spawn(async move {
             with_request_telemetry(telemetry, async {
-                with_connection_limit_timeout(connection_context, async {
-                    with_request_write_timeout(write_context, future).await
-                })
-                .await;
+                with_connection_limit_timeout(connection_context, future).await;
             })
             .await;
         });

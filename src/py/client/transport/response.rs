@@ -1,6 +1,6 @@
 use super::body::{collect_response_body, drain_response_body, response_body_can_be_decoded};
 use super::context::{RawResponseContext, RawStreamResponseContext};
-use crate::core::client::{ConnectionAbortReason, ConnectionTelemetry, ConnectionUseGuard};
+use crate::core::client::{ConnectionAbortReason, ConnectionUseGuard};
 use crate::core::headers::HeaderPairs;
 use crate::core::metrics::{Metrics, OriginMetrics, ResponseBodyLifecycleOutcome};
 use crate::core::numeric::duration_from_secs;
@@ -8,7 +8,7 @@ use crate::core::response::{decode_body, decoded_response_headers, response_body
 use crate::core::telemetry::TelemetryErrorType;
 use crate::errors::{
     FogHttpReadTimeoutError, FogHttpResponseBodyBudgetExceededError,
-    FogHttpResponseBodyTooLargeError, FogHttpTimeoutError,
+    FogHttpResponseBodyTooLargeError, FogHttpTimeoutError, FogHttpWriteTimeoutError,
 };
 use crate::py::client::lifecycle::{successful_response_body_outcome, ResponseBodyLifecycle};
 use crate::py::client::streams::{RawStreamResponse, RawStreamResponseParts};
@@ -27,19 +27,13 @@ pub(super) struct ResponseLifecycleGuards {
 impl ResponseLifecycleGuards {
     pub(super) fn new(
         response: &Response<Incoming>,
-        connection_use: Option<ConnectionUseGuard>,
+        connection_use: ConnectionUseGuard,
         metrics: &Arc<Metrics>,
         origin_metrics: &Arc<OriginMetrics>,
     ) -> Self {
-        let connection_use = connection_use.or_else(|| {
-            response
-                .extensions()
-                .get::<ConnectionTelemetry>()
-                .map(|telemetry| telemetry.request_started(None))
-        });
         Self {
             body: ResponseBodyLifecycle::new(Arc::clone(metrics), Arc::clone(origin_metrics)),
-            connection_use,
+            connection_use: Some(connection_use),
             successful_body_outcome: successful_response_body_outcome(
                 response.version(),
                 response.headers(),
@@ -51,6 +45,12 @@ impl ResponseLifecycleGuards {
         if let Some(connection_use) = self.connection_use.take() {
             connection_use.finish(self.successful_body_outcome);
         }
+    }
+
+    fn request_body_completion(&self) -> Option<crate::core::client::RequestBodyCompletion> {
+        self.connection_use
+            .as_ref()
+            .and_then(ConnectionUseGuard::request_body_completion)
     }
 
     fn finish_body(&mut self) {
@@ -73,7 +73,14 @@ pub(super) async fn drain_response(
 ) -> PyResult<()> {
     let read_timeout = duration_from_secs("Timeouts.read", context.read_timeout)
         .map_err(pyo3::exceptions::PyValueError::new_err)?;
-    if let Err(error) = drain_response_body(response.into_body(), &context, read_timeout).await {
+    if let Err(error) = drain_response_body(
+        response.into_body(),
+        &context,
+        read_timeout,
+        lifecycle.request_body_completion(),
+    )
+    .await
+    {
         lifecycle.abort_connection(&error);
         return Err(error);
     }
@@ -96,7 +103,13 @@ pub(super) async fn raw_response(
         .then(|| response_body_decoding_plan(response.headers()));
     let read_timeout = duration_from_secs("Timeouts.read", context.read_timeout)
         .map_err(pyo3::exceptions::PyValueError::new_err)?;
-    let collected = match collect_response_body(response.into_body(), &context, read_timeout).await
+    let collected = match collect_response_body(
+        response.into_body(),
+        &context,
+        read_timeout,
+        lifecycle.request_body_completion(),
+    )
+    .await
     {
         Ok(collected) => collected,
         Err(error) => {
@@ -136,6 +149,8 @@ fn response_body_error_type(error: &PyErr) -> TelemetryErrorType {
     Python::attach(|py| {
         if error.is_instance_of::<FogHttpReadTimeoutError>(py) {
             TelemetryErrorType::ReadTimeout
+        } else if error.is_instance_of::<FogHttpWriteTimeoutError>(py) {
+            TelemetryErrorType::WriteTimeout
         } else if error.is_instance_of::<FogHttpTimeoutError>(py) {
             TelemetryErrorType::TimeoutError
         } else if error.is_instance_of::<FogHttpResponseBodyTooLargeError>(py) {

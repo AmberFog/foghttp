@@ -8,11 +8,13 @@ __all__ = (
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+import sys
 
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
 from ..._request_body import RequestBody
 from ..._upload_body import prepare_async_upload_body, prepare_sync_upload_body
+from ..._upload_body.models import AsyncUploadBody, SyncUploadBody
 from ...request_extensions import RequestExtensions
 from ...timeouts import Timeouts
 from ..proxy import ProxyTransportPolicy
@@ -62,7 +64,7 @@ def send_raw_request(
     except _foghttp.FogHttpError as exc:
         raise_public_raw_error(exc)
     finally:
-        body.close()
+        _close_body(body)
 
 
 def send_raw_stream_request(
@@ -94,7 +96,7 @@ def send_raw_stream_request(
     except _foghttp.FogHttpError as exc:
         raise_public_raw_error(exc)
     finally:
-        body.close()
+        _close_body(body)
 
 
 async def send_raw_request_async(
@@ -126,7 +128,7 @@ async def send_raw_request_async(
     except _foghttp.FogHttpError as exc:
         raise_public_raw_error(exc)
     finally:
-        await body.aclose()
+        await _close_body_async(body)
 
 
 async def send_raw_stream_request_async(
@@ -158,4 +160,22 @@ async def send_raw_stream_request_async(
     except _foghttp.FogHttpError as exc:
         raise_public_raw_error(exc)
     finally:
+        await _close_body_async(body)
+
+
+def _close_body(body: SyncUploadBody) -> None:
+    active_error = sys.exception()
+    try:
+        body.close()
+    except BaseException:
+        if active_error is None:
+            raise
+
+
+async def _close_body_async(body: AsyncUploadBody) -> None:
+    active_error = sys.exception()
+    try:
         await body.aclose()
+    except BaseException:
+        if active_error is None:
+            raise

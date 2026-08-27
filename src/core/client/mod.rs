@@ -7,7 +7,7 @@ mod write_timeout;
 
 pub(crate) use body::{
     buffered_request_body, streaming_request_body, upload_body_channel, RequestBody,
-    UploadBodyReceiver, UploadBodySendError, UploadBodySender,
+    RequestBodyCompletion, UploadBodyReceiver, UploadBodySendError, UploadBodySender,
 };
 pub(crate) use connection_limit::{
     connection_acquire_timeout_from_error, with_connection_limit_timeout, ConnectionGate,
@@ -20,8 +20,8 @@ pub(crate) use telemetry::{
     ConnectionAbortReason, ConnectionTelemetry, ConnectionUseGuard, InstrumentedConnector,
 };
 pub(crate) use write_timeout::{
-    current_request_write_timeout, request_write_timeout_from_error, with_request_write_timeout,
-    RequestTaskContextExecutor, RequestWriteTimeout, RequestWriteTimeoutContext,
+    request_write_timeout_from_error, RequestTaskContextExecutor, RequestWriteTimeout,
+    RequestWriteTimeoutContext,
 };
 
 use crate::core::metrics::Metrics;
@@ -69,23 +69,6 @@ pub fn build_client_with_connection_gate(
         connection_gate,
         telemetry,
         RequestTaskContextExecutor,
-        true,
-    )
-}
-
-pub fn build_write_timeout_client_with_connection_gate(
-    options: &ClientOptions,
-    metrics: Arc<Metrics>,
-    connection_gate: ConnectionGate,
-    telemetry: Option<ClientTelemetry>,
-) -> Result<HyperClient, String> {
-    build_client_with_executor(
-        options,
-        metrics,
-        connection_gate,
-        telemetry,
-        RequestTaskContextExecutor,
-        false,
     )
 }
 
@@ -95,7 +78,6 @@ fn build_client_with_executor<E>(
     connection_gate: ConnectionGate,
     telemetry: Option<ClientTelemetry>,
     executor: E,
-    pool_idle_connections: bool,
 ) -> Result<HyperClient, String>
 where
     E: hyper::rt::Executor<BoxSendFuture> + Send + Sync + Clone + 'static,
@@ -141,7 +123,7 @@ where
     );
 
     let mut builder = Client::builder(executor);
-    builder.pool_max_idle_per_host(if pool_idle_connections && options.keepalive {
+    builder.pool_max_idle_per_host(if options.keepalive {
         options.max_idle_connections_per_host
     } else {
         0

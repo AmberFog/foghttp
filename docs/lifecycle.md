@@ -532,16 +532,18 @@ connection counters.
 - `active_connections` means tracked physical connector I/O handles that were
   successfully opened and have not yet been dropped
 - `idle_connections` means tracked connections that completed a reusable
-  response and have not yet been observed serving another response or closing
+  response and have not yet been assigned to another request or closed
 - `connections_opened` means successful connector handoffs to Hyper after TCP
   and, for HTTPS, TLS setup
 - `connections_open_failed` means connector failures before a usable transport
   was handed to Hyper
 - `connections_closed` means tracked transport I/O handles dropped by Hyper
-- `connections_reused` means a response was observed on a tracked connection
-  after that same connection had already served an earlier response
-- `connections_aborted` means a tracked connection saw wire response body
-  collection abort after response headers were received
+- `connections_reused` means Hyper assigned a tracked connection to a logical
+  request after that connection had already served an earlier request
+- `connections_aborted` means FogHTTP marked a tracked connection unsafe for
+  reuse during request or response handling, including cancellation, request
+  write timeout, incomplete upload, upload-source failure, or response body
+  abort
 - `idle_timeout_evictions` means a tracked idle connection was closed after
   reaching the configured `Limits.idle_timeout`
 - `buffered_response_bytes` means bytes currently reserved for in-flight
@@ -571,10 +573,11 @@ pool setting is larger than an explicit connection cap, the connection cap is
 still the hard upper bound on tracked physical connections.
 
 The response body lifecycle counters describe FogHTTP's Rust-side body
-contract for buffered and streamed response bodies. Socket lifecycle
-counters describe tracked connector I/O lifecycle:
-opened/closed are physical connector events, while reused/idle/aborted are
-derived from responses observed on those tracked connections.
+contract for buffered and streamed response bodies. Socket lifecycle counters
+describe tracked connector I/O lifecycle: opened/closed are physical connector
+events, reused is recorded when Hyper assigns an existing connection, idle is
+derived from a reusable response, and aborted is derived from a non-reusable
+request or response lifecycle outcome.
 `idle_timeout_evictions` is counted when a tracked idle connection closes after
 reaching `Limits.idle_timeout`. `idle_connections` is diagnostic state for the
 current HTTP/1 path, not a public promise about Hyper's private pool internals.

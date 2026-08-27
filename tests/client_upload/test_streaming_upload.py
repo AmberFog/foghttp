@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextvars import ContextVar
 import gc
 import io
 import os
@@ -31,6 +32,7 @@ STREAMING_TOTAL_TIMEOUT = 3.0
 SYNC_CLOSE_FAILURE = "close failed"
 ASYNC_CLOSE_FAILURE = "aclose failed"
 EXPECTED_REPLAY_FACTORY_CALLS = 2
+EXPECTED_CONNECTIONS_AFTER_FAILURE = 2
 UPLOAD_SOURCE_FAILURE = "upload source exploded"
 
 
@@ -198,6 +200,28 @@ def test_sync_streaming_upload_factory_replays_method_preserving_redirect(sync_h
     assert all(source.close_calls == 1 for source in content.sources)
 
 
+def test_sync_replay_factory_preserves_request_context(sync_http_server: str) -> None:
+    request_context: ContextVar[str] = ContextVar("sync_request_context")
+    request_context.set("request")
+    observations: list[tuple[str, str]] = []
+    content = _ContextSyncFactory(request_context, observations)
+
+    with foghttp.Client(follow_redirects=True) as client:
+        response = client.post(
+            f"{sync_http_server}/redirect/{TEMPORARY_REDIRECT}",
+            content=content,
+        )
+
+    assert response.status_code == OK
+    assert request_context.get() == "request"
+    assert observations == [
+        ("factory", "request"),
+        ("iterator", "factory"),
+        ("factory", "request"),
+        ("iterator", "factory"),
+    ]
+
+
 def test_sync_pre_transport_failure_keeps_content_provider_caller_owned(sync_http_server: str) -> None:
     content = _TrackedSyncStream((b"not-sent",))
 
@@ -255,11 +279,17 @@ def test_streaming_upload_rejects_non_bytes_chunks(sync_http_server: str) -> Non
 def test_sync_streaming_upload_reports_source_error(sync_http_server: str) -> None:
     content = _SyncExplodingStream((b"first",))
 
-    with (
-        foghttp.Client() as client,
-        pytest.raises(foghttp.RequestError, match=UPLOAD_SOURCE_FAILURE),
-    ):
-        client.post(sync_http_server, content=content)
+    with foghttp.Client() as client:
+        with pytest.raises(foghttp.RequestError, match=UPLOAD_SOURCE_FAILURE):
+            client.post(sync_http_server, content=content)
+        stats_after_error = client.stats()
+        recovery_response = client.get(sync_http_server)
+        final_stats = client.stats()
+
+    assert stats_after_error.connections_aborted == 1
+    assert recovery_response.status_code == OK
+    assert final_stats.connections_opened == EXPECTED_CONNECTIONS_AFTER_FAILURE
+    assert final_stats.connections_reused == 0
 
 
 def test_sync_streaming_upload_write_timeout_covers_stalled_provider(sync_http_server: str) -> None:
@@ -292,6 +322,25 @@ def test_sync_streaming_upload_ignores_source_close_error(sync_http_server: str)
         )
 
     assert response.json()["body"] == "close raises"
+
+
+def test_sync_cleanup_control_error_does_not_mask_transport_error(
+    sync_http_server: str,
+) -> None:
+    content = _SyncCleanupControlErrorFile(b"complete body")
+
+    with foghttp.Client() as client:
+        with pytest.raises(foghttp.RequestError):
+            client.post(sync_http_server, content=content)
+        stats_after_error = client.stats()
+        recovery_response = client.get(sync_http_server)
+        final_stats = client.stats()
+
+    assert content.close_calls == 1
+    assert stats_after_error.connections_aborted == 1
+    assert recovery_response.status_code == OK
+    assert final_stats.connections_opened == EXPECTED_CONNECTIONS_AFTER_FAILURE
+    assert final_stats.connections_reused == 0
 
 
 async def test_async_iterable_content_streams_chunked_body(http_server: str) -> None:
@@ -354,6 +403,28 @@ async def test_async_streaming_upload_factory_replays_method_preserving_redirect
     assert content.calls == EXPECTED_REPLAY_FACTORY_CALLS
     assert content.closed is False
     assert all(source.close_calls == 1 for source in content.sources)
+
+
+async def test_async_replay_factory_preserves_request_context(http_server: str) -> None:
+    request_context: ContextVar[str] = ContextVar("async_request_context")
+    request_context.set("request")
+    observations: list[tuple[str, str]] = []
+    content = _ContextAsyncFactory(request_context, observations)
+
+    async with foghttp.AsyncClient(follow_redirects=True) as client:
+        response = await client.post(
+            f"{http_server}/redirect/{TEMPORARY_REDIRECT}",
+            content=content,
+        )
+
+    assert response.status_code == OK
+    assert request_context.get() == "request"
+    assert observations == [
+        ("factory", "request"),
+        ("iterator", "factory"),
+        ("factory", "request"),
+        ("iterator", "factory"),
+    ]
 
 
 async def test_async_pre_transport_failure_keeps_content_provider_caller_owned(http_server: str) -> None:
@@ -443,6 +514,31 @@ async def test_async_streaming_upload_reports_source_error(http_server: str) -> 
     async with foghttp.AsyncClient() as client:
         with pytest.raises(foghttp.RequestError, match=UPLOAD_SOURCE_FAILURE):
             await client.post(http_server, content=content)
+        stats_after_error = client.stats()
+        recovery_response = await client.get(http_server)
+        final_stats = client.stats()
+
+    assert stats_after_error.connections_aborted == 1
+    assert recovery_response.status_code == OK
+    assert final_stats.connections_opened == EXPECTED_CONNECTIONS_AFTER_FAILURE
+    assert final_stats.connections_reused == 0
+
+
+async def test_async_streaming_upload_propagates_sync_source_control_error(http_server: str) -> None:
+    content = _SyncControlErrorStream((b"first",))
+
+    async with foghttp.AsyncClient() as client:
+        with pytest.raises(GeneratorExit, match=UPLOAD_SOURCE_FAILURE):
+            await client.post(http_server, content=content)
+        stats_after_error = client.stats()
+        recovery_response = await client.get(http_server)
+        final_stats = client.stats()
+
+    assert content.close_calls == 1
+    assert stats_after_error.connections_aborted == 1
+    assert recovery_response.status_code == OK
+    assert final_stats.connections_opened == EXPECTED_CONNECTIONS_AFTER_FAILURE
+    assert final_stats.connections_reused == 0
 
 
 async def test_async_streaming_upload_ignores_source_aclose_error(http_server: str) -> None:
@@ -455,6 +551,25 @@ async def test_async_streaming_upload_ignores_source_aclose_error(http_server: s
         )
 
     assert response.json()["body"] == "async close"
+
+
+async def test_async_cleanup_control_error_aborts_connection_before_recovery(
+    http_server: str,
+) -> None:
+    content = _AsyncCleanupControlErrorStream((b"complete body",))
+
+    async with foghttp.AsyncClient() as client:
+        with pytest.raises(GeneratorExit, match=UPLOAD_SOURCE_FAILURE):
+            await client.post(http_server, content=content)
+        stats_after_error = client.stats()
+        recovery_response = await client.get(http_server)
+        final_stats = client.stats()
+
+    assert content.close_calls == 1
+    assert stats_after_error.connections_aborted == 1
+    assert recovery_response.status_code == OK
+    assert final_stats.connections_opened == EXPECTED_CONNECTIONS_AFTER_FAILURE
+    assert final_stats.connections_reused == 0
 
 
 async def test_async_stream_response_accepts_streaming_upload(http_server: str) -> None:
@@ -497,8 +612,8 @@ async def test_async_streaming_upload_cancellation_releases_request_slot(http_se
         await content.started.wait()
         await wait_for_async_transport_stats(
             client,
-            lambda stats: stats.active_requests == 1,
-            message="streaming upload did not acquire a request slot",
+            lambda stats: stats.active_requests == 1 and stats.connections_opened == 1,
+            message="streaming upload did not acquire a connection",
         )
 
         task.cancel()
@@ -509,12 +624,64 @@ async def test_async_streaming_upload_cancellation_releases_request_slot(http_se
         await asyncio.wait_for(content.finished.wait(), timeout=2.0)
         await wait_for_async_transport_stats(
             client,
-            lambda stats: stats.active_requests == 0 and stats.pending_requests == 0,
-            message="streaming upload cancellation did not release request slot",
+            lambda stats: (
+                stats.active_requests == 0
+                and stats.pending_requests == 0
+                and stats.connections_aborted == 1
+                and stats.active_connections == 0
+                and stats.idle_connections == 0
+            ),
+            message="streaming upload cancellation did not finish transport cleanup",
         )
+        stats_after_cancellation = client.stats()
         response = await client.get(http_server)
+        final_stats = client.stats()
 
     assert response.status_code == OK
+    assert stats_after_cancellation.connections_opened == 1
+    assert stats_after_cancellation.connections_aborted == 1
+    assert stats_after_cancellation.connections_reused == 0
+    assert stats_after_cancellation.idle_connections == 0
+    assert final_stats.connections_opened == EXPECTED_CONNECTIONS_AFTER_FAILURE
+    assert final_stats.connections_reused == 0
+
+
+async def test_async_client_close_aborts_streaming_upload(http_server: str) -> None:
+    content = BlockingAsyncChunks((b"first", b"second"))
+    client = foghttp.AsyncClient()
+    task = asyncio.create_task(client.post(http_server, content=content))
+    try:
+        await content.started.wait()
+        await wait_for_async_transport_stats(
+            client,
+            lambda stats: stats.active_requests == 1 and stats.connections_opened == 1,
+            message="streaming upload did not acquire a connection",
+        )
+        raw_client = client._client  # noqa: SLF001 - public stats reject access after close.
+        assert raw_client is not None
+
+        await client.aclose()
+
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=2.0)
+        await asyncio.wait_for(content.finished.wait(), timeout=2.0)
+        await wait_for_async_transport_stats(
+            raw_client,
+            lambda stats: (
+                stats.connections_aborted == 1 and stats.active_connections == 0 and stats.idle_connections == 0
+            ),
+            message="client close did not finish streaming upload transport cleanup",
+        )
+        stats = raw_client.stats()
+        assert content.close_calls == 1
+        assert stats.connections_aborted == 1
+        assert stats.active_connections == 0
+        assert stats.idle_connections == 0
+    finally:
+        await client.aclose()
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 def _sync_chunks(chunks: tuple[object, ...]) -> Iterator[object]:
@@ -563,6 +730,17 @@ class _AsyncClosingBytesFile:
     async def aclose(self) -> None:
         self.close_calls += 1
         self._file.close()
+
+
+class _SyncCleanupControlErrorFile(_ClosingBytesFile):
+    def __init__(self, content: bytes) -> None:
+        super().__init__(content)
+        self.close_calls = 0
+
+    def close(self) -> None:
+        self.close_calls += 1
+        self._file.close()
+        raise GeneratorExit(UPLOAD_SOURCE_FAILURE)
 
 
 class _NonRegularFilenoFile:
@@ -616,6 +794,21 @@ class _AsyncCloseRaises:
         raise RuntimeError(ASYNC_CLOSE_FAILURE)
 
 
+class _AsyncCleanupControlErrorStream:
+    def __init__(self, chunks: tuple[bytes, ...]) -> None:
+        self._chunks = chunks
+        self.close_calls = 0
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        for chunk in self._chunks:
+            await asyncio.sleep(0)
+            yield chunk
+
+    async def aclose(self) -> None:
+        self.close_calls += 1
+        raise GeneratorExit(UPLOAD_SOURCE_FAILURE)
+
+
 class _TrackedSyncStream:
     def __init__(self, chunks: tuple[bytes, ...]) -> None:
         self._chunks = chunks
@@ -650,6 +843,26 @@ class _TrackedAsyncStream:
         self.closed = True
 
 
+class _ContextSyncStream:
+    def __init__(self, request_context: ContextVar[str], observations: list[tuple[str, str]]) -> None:
+        self._request_context = request_context
+        self._observations = observations
+
+    def __iter__(self) -> Iterator[bytes]:
+        self._observations.append(("iterator", self._request_context.get()))
+        yield b"context"
+
+
+class _ContextAsyncStream:
+    def __init__(self, request_context: ContextVar[str], observations: list[tuple[str, str]]) -> None:
+        self._request_context = request_context
+        self._observations = observations
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        self._observations.append(("iterator", self._request_context.get()))
+        yield b"context"
+
+
 class _SyncExplodingStream:
     def __init__(self, chunks: tuple[bytes, ...]) -> None:
         self._chunks = chunks
@@ -657,6 +870,19 @@ class _SyncExplodingStream:
     def __iter__(self) -> Iterator[bytes]:
         yield from self._chunks
         raise RuntimeError(UPLOAD_SOURCE_FAILURE)
+
+
+class _SyncControlErrorStream:
+    def __init__(self, chunks: tuple[bytes, ...]) -> None:
+        self._chunks = chunks
+        self.close_calls = 0
+
+    def __iter__(self) -> Iterator[bytes]:
+        yield from self._chunks
+        raise GeneratorExit(UPLOAD_SOURCE_FAILURE)
+
+    def close(self) -> None:
+        self.close_calls += 1
 
 
 class _AsyncExplodingStream:
@@ -687,6 +913,17 @@ class _SyncFactory:
         self.closed = True
 
 
+class _ContextSyncFactory:
+    def __init__(self, request_context: ContextVar[str], observations: list[tuple[str, str]]) -> None:
+        self._request_context = request_context
+        self._observations = observations
+
+    def __call__(self) -> _ContextSyncStream:
+        self._observations.append(("factory", self._request_context.get()))
+        self._request_context.set("factory")
+        return _ContextSyncStream(self._request_context, self._observations)
+
+
 class _AsyncFactory:
     def __init__(self, chunks: tuple[bytes, ...]) -> None:
         self._chunks = chunks
@@ -702,3 +939,14 @@ class _AsyncFactory:
 
     def close(self) -> None:
         self.closed = True
+
+
+class _ContextAsyncFactory:
+    def __init__(self, request_context: ContextVar[str], observations: list[tuple[str, str]]) -> None:
+        self._request_context = request_context
+        self._observations = observations
+
+    def __call__(self) -> _ContextAsyncStream:
+        self._observations.append(("factory", self._request_context.get()))
+        self._request_context.set("factory")
+        return _ContextAsyncStream(self._request_context, self._observations)

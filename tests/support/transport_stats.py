@@ -6,17 +6,31 @@ __all__ = (
 import asyncio
 from collections.abc import Callable
 import time
-
-import foghttp
+from typing import Protocol, TypeVar
 
 
 MAX_STATS_POLLS = 100
 STATS_POLL_INTERVAL = 0.01
 
 
+class _RequestStats(Protocol):
+    @property
+    def active_requests(self) -> int: ...
+
+    @property
+    def pending_requests(self) -> int: ...
+
+
+_StatsT_co = TypeVar("_StatsT_co", bound=_RequestStats, covariant=True)
+
+
+class _StatsSource(Protocol[_StatsT_co]):
+    def stats(self) -> _StatsT_co: ...
+
+
 def wait_for_sync_transport_stats(
-    client: foghttp.Client,
-    condition: Callable[[foghttp.TransportStats], bool],
+    client: _StatsSource[_StatsT_co],
+    condition: Callable[[_StatsT_co], bool],
     *,
     message: str,
 ) -> None:
@@ -33,8 +47,8 @@ def wait_for_sync_transport_stats(
 
 
 async def wait_for_async_transport_stats(
-    client: foghttp.AsyncClient,
-    condition: Callable[[foghttp.TransportStats], bool],
+    client: _StatsSource[_StatsT_co],
+    condition: Callable[[_StatsT_co], bool],
     *,
     message: str,
 ) -> None:
@@ -50,5 +64,5 @@ async def wait_for_async_transport_stats(
     raise AssertionError(_stats_message(message, stats))
 
 
-def _stats_message(message: str, stats: foghttp.TransportStats) -> str:
+def _stats_message(message: str, stats: _RequestStats) -> str:
     return f"{message}: active={stats.active_requests}, pending={stats.pending_requests}, stats={stats}"

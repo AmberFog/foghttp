@@ -25,28 +25,28 @@ struct RawUploadBodyState {
     sender: Option<UploadBodySender>,
     receiver: Option<UploadBodyReceiver>,
     content_length: Option<u64>,
-    start_callback: Py<PyAny>,
+    start_callback: Arc<Py<PyAny>>,
     replayable: bool,
-    ready_callback: Option<Py<PyAny>>,
+    ready_callback: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 #[pymethods]
 impl RawUploadBody {
     #[new]
     fn new(
-        py: Python<'_>,
         content_length: Option<u64>,
         start_callback: Py<PyAny>,
         replayable: bool,
         ready_callback: Option<Py<PyAny>>,
     ) -> Self {
-        let (sender, receiver) = new_upload_body_channel(py, ready_callback.as_ref());
+        let ready_callback = ready_callback.map(ready_callback_wrapper);
+        let (sender, receiver) = new_upload_body_channel(ready_callback.as_ref());
         Self {
             inner: RawUploadBodyInner::Owner(Arc::new(Mutex::new(RawUploadBodyState {
                 sender: Some(sender),
                 receiver: Some(receiver),
                 content_length,
-                start_callback,
+                start_callback: Arc::new(start_callback),
                 replayable,
                 ready_callback,
             }))),
@@ -55,7 +55,7 @@ impl RawUploadBody {
 
     fn send(&self, py: Python<'_>, chunk: &[u8]) -> bool {
         if chunk.is_empty() {
-            return true;
+            return self.sender().is_some_and(|sender| !sender.is_closed());
         }
         let Some(sender) = self.sender() else {
             return false;
@@ -64,15 +64,39 @@ impl RawUploadBody {
         py.detach(|| sender.send_blocking(item))
     }
 
+    fn send_final(&self, py: Python<'_>, chunk: &[u8]) -> bool {
+        if chunk.is_empty() {
+            return self.take_sender().is_some_and(|sender| sender.finish());
+        }
+        let Some(sender) = self.sender() else {
+            return false;
+        };
+        let item = Ok(Bytes::copy_from_slice(chunk));
+        py.detach(|| sender.send_final_blocking(item))
+    }
+
     fn send_nowait(&self, chunk: &[u8]) -> bool {
         if chunk.is_empty() {
-            return true;
+            return self.sender().is_some_and(|sender| !sender.is_closed());
         }
         let Some(sender) = self.sender() else {
             return false;
         };
         matches!(
             sender.send_nowait(Ok(Bytes::copy_from_slice(chunk))),
+            Ok(())
+        )
+    }
+
+    fn send_final_nowait(&self, chunk: &[u8]) -> bool {
+        if chunk.is_empty() {
+            return self.take_sender().is_some_and(|sender| sender.finish());
+        }
+        let Some(sender) = self.sender() else {
+            return false;
+        };
+        matches!(
+            sender.send_final_nowait(Ok(Bytes::copy_from_slice(chunk))),
             Ok(())
         )
     }
@@ -130,16 +154,18 @@ impl RawUploadBody {
                 STREAMING_BODY_CONSUMED,
             ));
         };
-        let (receiver, content_length, start_callback, attempt_sender) = {
+        let (receiver, content_length, start_callback, attempt_sender, previous_sender) = {
             let mut state = state.lock().expect("raw upload body lock poisoned");
-            if state.receiver.is_none() {
+            let previous_sender = if state.receiver.is_none() {
                 if !state.replayable {
                     return Err(pyo3::exceptions::PyRuntimeError::new_err(
                         STREAMING_BODY_CONSUMED,
                     ));
                 }
-                state.reset_channel(py);
-            }
+                state.reset_channel()
+            } else {
+                None
+            };
             let Some(receiver) = state.receiver.take() else {
                 return Err(pyo3::exceptions::PyRuntimeError::new_err(
                     STREAMING_BODY_CONSUMED,
@@ -153,10 +179,14 @@ impl RawUploadBody {
             (
                 receiver,
                 state.content_length,
-                state.start_callback.clone_ref(py),
+                Arc::clone(&state.start_callback),
                 attempt_sender,
+                previous_sender,
             )
         };
+        if let Some(sender) = previous_sender {
+            sender.close();
+        }
 
         let attempt_body = Py::new(
             py,
@@ -164,7 +194,7 @@ impl RawUploadBody {
                 inner: RawUploadBodyInner::Attempt(attempt_sender.clone()),
             },
         )?;
-        if let Err(error) = start_callback.call1(py, (attempt_body,)) {
+        if let Err(error) = start_callback.bind(py).call1((attempt_body,)) {
             attempt_sender.close();
             return Err(error);
         }
@@ -195,35 +225,128 @@ impl RawUploadBody {
 }
 
 impl RawUploadBodyState {
-    fn reset_channel(&mut self, py: Python<'_>) {
-        if let Some(sender) = self.sender.take() {
-            sender.close();
-        }
-        let (sender, receiver) = new_upload_body_channel(py, self.ready_callback.as_ref());
+    fn reset_channel(&mut self) -> Option<UploadBodySender> {
+        let previous_sender = self.sender.take();
+        let (sender, receiver) = new_upload_body_channel(self.ready_callback.as_ref());
         self.sender = Some(sender);
         self.receiver = Some(receiver);
+        previous_sender
     }
 }
 
 fn new_upload_body_channel(
-    py: Python<'_>,
-    ready_callback: Option<&Py<PyAny>>,
+    ready_callback: Option<&Arc<dyn Fn() + Send + Sync>>,
 ) -> (UploadBodySender, UploadBodyReceiver) {
     let (sender, receiver) = upload_body_channel(UPLOAD_BODY_CHANNEL_CAPACITY);
     if let Some(callback) = ready_callback {
-        sender.set_ready_callback(Some(ready_callback_wrapper(callback.clone_ref(py))));
+        sender.set_ready_callback(Some(Arc::clone(callback)));
     }
     (sender, receiver)
 }
 
 fn ready_callback_wrapper(callback: Py<PyAny>) -> Arc<dyn Fn() + Send + Sync> {
-    let callback = Arc::new(Mutex::new(callback));
     Arc::new(move || {
         Python::attach(|py| {
-            let callback = callback.lock().expect("upload body callback lock poisoned");
             if let Err(error) = callback.bind(py).call0() {
                 error.write_unraisable(py, Some(callback.bind(py)));
             }
         });
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RawUploadBody, RawUploadBodyInner};
+    use crate::core::client::streaming_request_body;
+    use http_body_util::BodyExt;
+    use pyo3::ffi::c_str;
+    use pyo3::{PyResult, Python};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Once};
+    use tokio::runtime::Builder;
+
+    fn initialize_python() {
+        static PYTHON: Once = Once::new();
+        PYTHON.call_once(Python::initialize);
+    }
+
+    #[test]
+    fn zero_length_upload_waits_for_explicit_producer_completion() {
+        initialize_python();
+        Python::attach(|py| -> PyResult<()> {
+            let callback = py.eval(c_str!("lambda body: None"), None, None)?.unbind();
+            let body = RawUploadBody::new(Some(0), callback, false, None);
+            let (receiver, content_length) = body.take_receiver(py)?;
+            let (mut request_body, completion) =
+                streaming_request_body(receiver, content_length, None);
+
+            assert!(!completion.is_complete());
+            body.finish();
+            assert!(!completion.is_complete());
+            let frame = Builder::new_current_thread()
+                .build()
+                .unwrap()
+                .block_on(request_body.frame());
+
+            assert!(frame.is_none());
+            assert!(!completion.is_complete());
+            completion.mark_transport_flushed();
+            assert!(completion.is_complete());
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn empty_final_chunk_reports_success_only_when_it_closes_the_channel() {
+        initialize_python();
+        Python::attach(|py| -> PyResult<()> {
+            let callback = py.eval(c_str!("lambda body: None"), None, None)?.unbind();
+            let blocking = RawUploadBody::new(None, callback.clone_ref(py), false, None);
+            let nonblocking = RawUploadBody::new(None, callback, false, None);
+
+            assert!(blocking.send_final(py, b""));
+            assert!(!blocking.send_final(py, b""));
+            assert!(nonblocking.send_final_nowait(b""));
+            assert!(!nonblocking.send_final_nowait(b""));
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn replay_reset_invokes_ready_callback_without_holding_owner_lock() {
+        initialize_python();
+        Python::attach(|py| -> PyResult<()> {
+            let start_callback = py.eval(c_str!("lambda body: None"), None, None)?.unbind();
+            let body = RawUploadBody::new(None, start_callback, true, None);
+            let RawUploadBodyInner::Owner(state) = &body.inner else {
+                unreachable!("new upload body owns its channel state");
+            };
+            let lock_was_available = Arc::new(AtomicBool::new(false));
+            let ready_callback: Arc<dyn Fn() + Send + Sync> = {
+                let state = Arc::clone(state);
+                let lock_was_available = Arc::clone(&lock_was_available);
+                Arc::new(move || {
+                    lock_was_available.store(state.try_lock().is_ok(), Ordering::Release);
+                })
+            };
+            {
+                let mut state = state.lock().expect("raw upload body lock poisoned");
+                state.ready_callback = Some(Arc::clone(&ready_callback));
+                state
+                    .sender
+                    .as_ref()
+                    .expect("new upload body owns its sender")
+                    .set_ready_callback(Some(ready_callback));
+            }
+
+            let (_first_receiver, _) = body.take_receiver(py)?;
+            let (_second_receiver, _) = body.take_receiver(py)?;
+
+            assert!(lock_was_available.load(Ordering::Acquire));
+            Ok(())
+        })
+        .unwrap();
+    }
 }

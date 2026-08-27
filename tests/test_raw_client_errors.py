@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 import copy
 import pickle
 
@@ -86,6 +87,7 @@ BYTEARRAY_REDIRECT_HOP_RAW_ARGS = (
     bytearray(b"not-an-int"),
 )
 RAW_CLIENT_SETUP_FAILURE = "runtime setup failed"
+CLEANUP_INTERRUPTED = "cleanup interrupted"
 
 
 def _default_client_config() -> ClientConfig:
@@ -126,6 +128,19 @@ def _raw_request(url: str) -> RawRequestOptions:
     )
 
 
+def _streaming_raw_request(url: str, source: object) -> RawRequestOptions:
+    request = _raw_request(url)
+    return RawRequestOptions(
+        method=request.method,
+        url=request.url,
+        headers=request.headers,
+        body=RequestBody.streaming_body(source),
+        use_proxy_transport=request.use_proxy_transport,
+        proxy_policy=request.proxy_policy,
+        timeouts=request.timeouts,
+    )
+
+
 class TimeoutRawClient:
     def request(self, **_kwargs: object) -> object:
         msg = "request timed out"
@@ -134,6 +149,18 @@ class TimeoutRawClient:
     async def request_async(self, **_kwargs: object) -> object:
         msg = "request timed out"
         raise _foghttp.FogHttpTimeoutError(msg)
+
+
+class CleanupControlErrorSource:
+    def __init__(self) -> None:
+        self.close_calls = 0
+
+    def __iter__(self) -> Iterator[bytes]:
+        return iter(())
+
+    def close(self) -> None:
+        self.close_calls += 1
+        raise GeneratorExit(CLEANUP_INTERRUPTED)
 
 
 class ReadTimeoutRawClient:
@@ -305,6 +332,30 @@ async def test_async_raw_write_timeout_maps_to_public_write_timeout(faker: Faker
         )
 
     assert exc_info.value.phase == "request_body"
+
+
+def test_sync_raw_write_timeout_is_not_masked_by_cleanup_error(faker: Faker) -> None:
+    source = CleanupControlErrorSource()
+
+    with pytest.raises(WriteTimeout, match="request body write timeout expired"):
+        send_raw_request(
+            raw_client=WriteTimeoutRawClient(),
+            request=_streaming_raw_request(faker.url(), source),
+        )
+
+    assert source.close_calls == 1
+
+
+async def test_async_raw_write_timeout_is_not_masked_by_cleanup_error(faker: Faker) -> None:
+    source = CleanupControlErrorSource()
+
+    with pytest.raises(WriteTimeout, match="request body write timeout expired"):
+        await send_raw_request_async(
+            raw_client=WriteTimeoutRawClient(),
+            request=_streaming_raw_request(faker.url(), source),
+        )
+
+    assert source.close_calls == 1
 
 
 @pytest.mark.parametrize(

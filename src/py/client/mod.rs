@@ -12,10 +12,7 @@ mod timeout_diagnostics;
 mod transport;
 mod upload_body;
 
-use crate::core::client::{
-    build_client_with_connection_gate, build_write_timeout_client_with_connection_gate,
-    ClientOptions, ConnectionGate,
-};
+use crate::core::client::{build_client_with_connection_gate, ClientOptions, ConnectionGate};
 use crate::core::headers::HeaderPairs;
 use crate::core::metrics::Metrics;
 use crate::core::policy::{CookieJar, RetryPolicy, SsrfPolicy};
@@ -224,13 +221,6 @@ impl RawClient {
             telemetry.clone(),
         )
         .map_err(FogHttpError::new_err)?;
-        let write_timeout_client = build_write_timeout_client_with_connection_gate(
-            &client_options,
-            Arc::clone(&metrics),
-            connection_gate.clone(),
-            telemetry.clone(),
-        )
-        .map_err(FogHttpError::new_err)?;
         let proxy_options = if http_proxy_url.is_some() || https_proxy_url.is_some() {
             Some(ClientOptions {
                 http_proxy_url,
@@ -253,18 +243,6 @@ impl RawClient {
             })
             .transpose()
             .map_err(FogHttpError::new_err)?;
-        let proxy_write_timeout_client = proxy_options
-            .as_ref()
-            .map(|options| {
-                build_write_timeout_client_with_connection_gate(
-                    options,
-                    Arc::clone(&metrics),
-                    connection_gate.clone(),
-                    telemetry.clone(),
-                )
-            })
-            .transpose()
-            .map_err(FogHttpError::new_err)?;
         let buffered_body_budget =
             BufferedBodyBudget::new(max_buffered_response_bytes, Arc::clone(&metrics));
         let acquire_gate = AcquireGate::new(
@@ -278,12 +256,7 @@ impl RawClient {
         let cookie_jar = cookies_enabled.then(CookieJar::new);
 
         Ok(Self {
-            clients: Some(TransportClients::new(
-                client,
-                write_timeout_client,
-                proxy_client,
-                proxy_write_timeout_client,
-            )),
+            clients: Some(TransportClients::new(client, proxy_client)),
             runtime: Some(runtime),
             acquire_gate,
             metrics,
