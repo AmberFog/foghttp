@@ -1,4 +1,7 @@
 use super::authorization::ProxyAuthorization;
+use crate::core::metrics::{
+    ProxyConnectionLease, ProxyEndpointMetrics, ProxyTunnelAttempt, ProxyTunnelFailureKind,
+};
 use crate::messages::{
     proxy_connect_rejected, PROXY_CONNECT_CLOSED, PROXY_CONNECT_INVALID_RESPONSE,
     PROXY_CONNECT_TIMEOUT,
@@ -8,9 +11,11 @@ use hyper::rt::{Read, ReadBufCursor, Write};
 use hyper::Uri;
 use hyper_util::client::legacy::connect::{Connected, Connection};
 use hyper_util::rt::TokioIo;
+use std::fmt::{Display, Formatter};
 use std::future::Future;
-use std::io::{Error, IoSlice};
+use std::io::{Error, ErrorKind, IoSlice};
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -25,6 +30,7 @@ pub(crate) struct ProxyTunnelTarget {
     uri: Uri,
     authorization: Option<ProxyAuthorization>,
     connect_timeout: Duration,
+    metrics: Arc<ProxyEndpointMetrics>,
 }
 
 impl ProxyTunnelTarget {
@@ -32,12 +38,14 @@ impl ProxyTunnelTarget {
         uri: Uri,
         authorization: Option<&str>,
         connect_timeout: Duration,
+        metrics: Arc<ProxyEndpointMetrics>,
     ) -> Result<Self, String> {
         let authorization = authorization.map(ProxyAuthorization::parse).transpose()?;
         Ok(Self {
             uri,
             authorization,
             connect_timeout,
+            metrics,
         })
     }
 }
@@ -51,6 +59,13 @@ pub(crate) struct HttpsTunnelConnector<C> {
 pub(crate) struct HttpsTunnelConnection<T> {
     inner: T,
     read_prefix: Option<Bytes>,
+    _proxy_lifecycle: Option<ProxyConnectionLease>,
+}
+
+#[derive(Debug)]
+pub(super) struct TunnelEstablishError {
+    error: BoxError,
+    kind: ProxyTunnelFailureKind,
 }
 
 impl<C> HttpsTunnelConnector<C> {
@@ -90,15 +105,45 @@ where
                 };
                 let proxy_authorization = proxy.authorization.clone();
                 let connect_timeout = proxy.connect_timeout;
+                let endpoint_metrics = Arc::clone(&proxy.metrics);
                 let connect = self.inner.call(proxy.uri.clone());
                 Box::pin(async move {
-                    let connect_phase = async move {
+                    let mut connection_attempt = Some(endpoint_metrics.connection_attempt());
+                    let mut tunnel_attempt: Option<ProxyTunnelAttempt> = None;
+                    let connect_phase = async {
                         let stream = connect.await.map_err(Into::into)?;
-                        establish_tunnel(stream, &authority, proxy_authorization.as_ref()).await
+                        let mut connection_lease = connection_attempt
+                            .take()
+                            .expect("proxy connection attempt must be available")
+                            .opened();
+                        tunnel_attempt = Some(endpoint_metrics.tunnel_attempt());
+                        match establish_tunnel(stream, &authority, proxy_authorization.as_ref())
+                            .await
+                        {
+                            Ok(connection) => {
+                                tunnel_attempt
+                                    .take()
+                                    .expect("proxy tunnel attempt must be available")
+                                    .established(&mut connection_lease);
+                                Ok(connection.with_proxy_lifecycle(connection_lease))
+                            }
+                            Err(error) => {
+                                tunnel_attempt
+                                    .take()
+                                    .expect("proxy tunnel attempt must be available")
+                                    .failed(error.kind());
+                                Err(error.into())
+                            }
+                        }
                     };
                     match tokio::time::timeout(connect_timeout, connect_phase).await {
                         Ok(result) => result,
-                        Err(_elapsed) => Err(PROXY_CONNECT_TIMEOUT.into()),
+                        Err(_elapsed) => {
+                            if let Some(attempt) = tunnel_attempt.take() {
+                                attempt.failed(ProxyTunnelFailureKind::Timeout);
+                            }
+                            Err(PROXY_CONNECT_TIMEOUT.into())
+                        }
                     }
                 })
             }
@@ -120,6 +165,7 @@ impl<T> HttpsTunnelConnection<T> {
         Self {
             inner,
             read_prefix: None,
+            _proxy_lifecycle: None,
         }
     }
 
@@ -127,6 +173,15 @@ impl<T> HttpsTunnelConnection<T> {
         Self {
             inner,
             read_prefix: Some(read_prefix),
+            _proxy_lifecycle: None,
+        }
+    }
+
+    fn with_proxy_lifecycle(self, lifecycle: ProxyConnectionLease) -> Self {
+        Self {
+            inner: self.inner,
+            read_prefix: self.read_prefix,
+            _proxy_lifecycle: Some(lifecycle),
         }
     }
 }
@@ -212,7 +267,7 @@ pub(super) async fn establish_tunnel<T>(
     stream: T,
     authority: &str,
     proxy_authorization: Option<&ProxyAuthorization>,
-) -> Result<HttpsTunnelConnection<T>, BoxError>
+) -> Result<HttpsTunnelConnection<T>, TunnelEstablishError>
 where
     T: Read + Write + Unpin,
 {
@@ -224,21 +279,38 @@ where
         request.push_str("\r\n");
     }
     request.push_str("\r\n");
-    io.write_all(request.as_bytes()).await?;
-    io.flush().await?;
+    io.write_all(request.as_bytes())
+        .await
+        .map_err(TunnelEstablishError::io)?;
+    io.flush().await.map_err(TunnelEstablishError::io)?;
 
     let mut response = Vec::with_capacity(256);
     let mut chunk = [0_u8; 256];
     loop {
-        let read = io.read(&mut chunk).await?;
+        let read = io
+            .read(&mut chunk)
+            .await
+            .map_err(TunnelEstablishError::io)?;
         if read == 0 {
-            return Err(PROXY_CONNECT_CLOSED.into());
+            return Err(TunnelEstablishError::new(
+                PROXY_CONNECT_CLOSED.into(),
+                ProxyTunnelFailureKind::EarlyClose,
+            ));
         }
         response.extend_from_slice(&chunk[..read]);
         if let Some(headers_end) = find_headers_end(&response) {
-            let status = parse_connect_status(&response[..headers_end])?;
+            let status = parse_connect_status(&response[..headers_end])
+                .map_err(TunnelEstablishError::other)?;
             if !(200..300).contains(&status) {
-                return Err(proxy_connect_rejected(status).into());
+                let kind = if status == 407 {
+                    ProxyTunnelFailureKind::Authentication
+                } else {
+                    ProxyTunnelFailureKind::Other
+                };
+                return Err(TunnelEstablishError::new(
+                    proxy_connect_rejected(status).into(),
+                    kind,
+                ));
             }
             if response.len() == headers_end {
                 return Ok(HttpsTunnelConnection::direct(io.into_inner()));
@@ -250,8 +322,49 @@ where
             ));
         }
         if response.len() > MAX_CONNECT_RESPONSE_BYTES {
-            return Err(PROXY_CONNECT_INVALID_RESPONSE.into());
+            return Err(TunnelEstablishError::new(
+                PROXY_CONNECT_INVALID_RESPONSE.into(),
+                ProxyTunnelFailureKind::Other,
+            ));
         }
+    }
+}
+
+impl TunnelEstablishError {
+    fn new(error: BoxError, kind: ProxyTunnelFailureKind) -> Self {
+        Self { error, kind }
+    }
+
+    fn other(error: impl Into<BoxError>) -> Self {
+        Self::new(error.into(), ProxyTunnelFailureKind::Other)
+    }
+
+    fn io(error: Error) -> Self {
+        let kind = match error.kind() {
+            ErrorKind::BrokenPipe
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::ConnectionReset
+            | ErrorKind::NotConnected
+            | ErrorKind::UnexpectedEof => ProxyTunnelFailureKind::EarlyClose,
+            _ => ProxyTunnelFailureKind::Other,
+        };
+        Self::new(error.into(), kind)
+    }
+
+    pub(super) fn kind(&self) -> ProxyTunnelFailureKind {
+        self.kind
+    }
+}
+
+impl Display for TunnelEstablishError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.error, formatter)
+    }
+}
+
+impl std::error::Error for TunnelEstablishError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.error.as_ref())
     }
 }
 

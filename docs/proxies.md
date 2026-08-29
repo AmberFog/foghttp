@@ -67,8 +67,9 @@ a poisoned connection to the pool. The tunnelled request itself is sent in
 origin-form, exactly like a direct HTTPS request.
 
 Connection limits, pool telemetry, and socket telemetry for HTTPS CONNECT are
-keyed by the target origin whose TLS session is tunnelled. FogHTTP does not yet
-expose separate proxy endpoint connection telemetry.
+keyed by the target origin whose TLS session is tunnelled. They do not change
+meaning when a proxy is configured. Use the separate proxy endpoint diagnostics
+described below when the question is about the proxy hop itself.
 
 `Timeouts.connect` bounds the whole connect phase, including the `CONNECT`
 handshake, so a proxy that accepts the socket but never answers `CONNECT` fails
@@ -76,6 +77,47 @@ with a connect timeout instead of hanging until the total deadline. This uses
 the client-level connector timeout; per-request `timeout.connect` does not
 reconfigure the connector yet. Request cancellation during tunnel setup aborts
 the attempt and releases the slot.
+
+## Proxy Endpoint Diagnostics
+
+`client.dump_proxy_diagnostics()` reports a Rust-owned diagnostic snapshot of
+physical proxy connections and HTTPS `CONNECT` tunnels, grouped by canonical
+proxy endpoint:
+
+```python
+diagnostics = client.dump_proxy_diagnostics()
+proxy = diagnostics["endpoints"].get("http://proxy.internal:8080")
+if proxy is not None:
+    print(proxy["active_connections"], proxy["active_tunnels"])
+```
+
+The endpoint key contains only `scheme://host:port`. It never contains proxy
+credentials, target path/query data, request or response headers, or body data.
+Explicit `proxy=` and `trust_env=True` use the same diagnostics path. A client
+with separate HTTP and HTTPS proxies has at most those two configured endpoint
+keys; when both schemes use one endpoint, their counters are combined.
+
+| field | meaning |
+| --- | --- |
+| `connection_attempts` | Physical connection attempts to the proxy endpoint, including failed or cancelled attempts. |
+| `connections_opened`, `connections_open_failed`, `connections_closed` | Successful opens, failed/cancelled opens, and tracked connection drops. |
+| `active_connections` | Currently tracked physical connections to the proxy. |
+| `tunnel_attempts`, `tunnels_established`, `tunnel_failures` | HTTPS `CONNECT` attempts and terminal outcomes after a physical proxy connection opens. |
+| `tunnel_auth_failures`, `tunnel_timeouts`, `tunnel_early_closes` | Subsets of tunnel failures for HTTP 407, timeout, and proxy close before a complete CONNECT response. |
+| `active_tunnels` | Established CONNECT tunnels whose physical proxy connection is still tracked. |
+| `last_activity_at_ns` | Monotonic time of the latest endpoint counter change, relative to the current Rust metrics lifetime. |
+
+`dump_proxy_diagnostics()` is intentionally separate from `TransportStats` and
+`dump_transport_state()["origins"]`: those APIs continue to describe logical
+target origins and target-keyed capacity. Proxy diagnostics are an on-demand,
+eventually coherent incident view, not an SLA-grade exporter source. Direct
+clients create no proxy endpoint metrics, and direct requests perform no proxy
+counter updates.
+
+FogHTTP creates the Rust transport lazily. Before the first transport request,
+the method returns a synthetic snapshot with `snapshot_sequence == 0` and an
+empty `endpoints` mapping. Once the configured proxy transport exists, endpoint
+entries may be present with zero counters until that route is used.
 
 ## Proxy Authentication
 

@@ -1,6 +1,6 @@
 use super::{
-    BufferedByteReservationError, Metrics, ResponseBodyLifecycleOutcome, TelemetrySnapshotMetadata,
-    TransportStateSnapshot, TELEMETRY_SNAPSHOT_SCHEMA_VERSION,
+    BufferedByteReservationError, Metrics, ProxyTunnelFailureKind, ResponseBodyLifecycleOutcome,
+    TelemetrySnapshotMetadata, TransportStateSnapshot, TELEMETRY_SNAPSHOT_SCHEMA_VERSION,
 };
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Barrier};
@@ -193,6 +193,73 @@ fn connection_lifecycle_metrics_track_current_and_historical_counts() {
     assert_eq!(snapshot.connections_reused, 1);
     assert_eq!(snapshot.connections_aborted, 1);
     assert_eq!(snapshot.idle_timeout_evictions, 1);
+}
+
+#[test]
+fn proxy_diagnostics_track_connection_and_tunnel_lifecycle() {
+    let metrics = Metrics::default();
+    let endpoint = metrics.proxy_endpoint_metrics("http://proxy.example:8080");
+
+    let mut connection = endpoint.connection_attempt().opened();
+    endpoint.tunnel_attempt().established(&mut connection);
+    let active = metrics.proxy_diagnostics_snapshot();
+
+    assert_eq!(
+        active.metadata.schema_version,
+        TELEMETRY_SNAPSHOT_SCHEMA_VERSION
+    );
+    assert_eq!(active.endpoints.len(), 1);
+    assert_eq!(active.endpoints[0].connection_attempts, 1);
+    assert_eq!(active.endpoints[0].connections_opened, 1);
+    assert_eq!(active.endpoints[0].active_connections, 1);
+    assert_eq!(active.endpoints[0].tunnel_attempts, 1);
+    assert_eq!(active.endpoints[0].tunnels_established, 1);
+    assert_eq!(active.endpoints[0].active_tunnels, 1);
+
+    drop(connection);
+    drop(endpoint.connection_attempt());
+    endpoint
+        .tunnel_attempt()
+        .failed(ProxyTunnelFailureKind::Authentication);
+    endpoint
+        .tunnel_attempt()
+        .failed(ProxyTunnelFailureKind::Timeout);
+    endpoint
+        .tunnel_attempt()
+        .failed(ProxyTunnelFailureKind::EarlyClose);
+    let finished = metrics.proxy_diagnostics_snapshot();
+
+    assert_eq!(finished.endpoints[0].connections_open_failed, 1);
+    assert_eq!(finished.endpoints[0].connections_closed, 1);
+    assert_eq!(finished.endpoints[0].active_connections, 0);
+    assert_eq!(finished.endpoints[0].tunnel_failures, 3);
+    assert_eq!(finished.endpoints[0].tunnel_auth_failures, 1);
+    assert_eq!(finished.endpoints[0].tunnel_timeouts, 1);
+    assert_eq!(finished.endpoints[0].tunnel_early_closes, 1);
+    assert_eq!(finished.endpoints[0].active_tunnels, 0);
+}
+
+#[test]
+fn proxy_diagnostics_deduplicate_and_sort_configured_endpoints() {
+    let metrics = Metrics::default();
+
+    metrics.proxy_endpoint_metrics("http://secondary.example:8080");
+    let first = metrics.proxy_endpoint_metrics("http://primary.example:8080");
+    let second = metrics.proxy_endpoint_metrics("http://primary.example:8080");
+    let snapshot = metrics.proxy_diagnostics_snapshot();
+
+    assert!(Arc::ptr_eq(&first, &second));
+    assert_eq!(
+        snapshot
+            .endpoints
+            .iter()
+            .map(|endpoint| endpoint.endpoint.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "http://primary.example:8080",
+            "http://secondary.example:8080",
+        ],
+    );
 }
 
 #[test]

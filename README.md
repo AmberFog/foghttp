@@ -151,7 +151,7 @@ async with foghttp.AsyncClient() as client:
 - opt-in Rust-owned SSRF destination policy with per-hop allowlists,
   post-resolution IP checks, and DNS rebinding mitigation
 - versioned telemetry snapshot metadata for `stats()`, `dump_transport_state()`,
-  and `dump_pool_diagnostics()`
+  `dump_pool_diagnostics()`, and separate proxy endpoint diagnostics
 - opt-in async lifecycle debug mode for active request snapshots, strict leak
   checks, and unclosed-client diagnostics
 - default per-response and aggregate buffered response body limits for memory

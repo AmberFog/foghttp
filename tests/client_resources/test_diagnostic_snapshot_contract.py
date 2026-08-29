@@ -14,7 +14,7 @@ CONCURRENT_SNAPSHOT_ROUNDS = 10
 SYNTHETIC_SNAPSHOT_SEQUENCE = 0
 TELEMETRY_SCHEMA_VERSION = TELEMETRY_SNAPSHOT_SCHEMA_VERSION
 
-Snapshot = foghttp.TransportStats | foghttp.TransportState | foghttp.PoolDiagnostics
+Snapshot = foghttp.TransportStats | foghttp.TransportState | foghttp.PoolDiagnostics | foghttp.ProxyDiagnostics
 
 
 def test_sync_diagnostic_snapshots_before_transport_are_synthetic() -> None:
@@ -22,6 +22,7 @@ def test_sync_diagnostic_snapshots_before_transport_are_synthetic() -> None:
         stats = client.stats()
         state = client.dump_transport_state()
         diagnostics = client.dump_pool_diagnostics()
+        proxy_diagnostics = client.dump_proxy_diagnostics()
 
     assert stats.schema_version == TELEMETRY_SCHEMA_VERSION
     assert stats.snapshot_sequence == SYNTHETIC_SNAPSHOT_SEQUENCE
@@ -29,6 +30,11 @@ def test_sync_diagnostic_snapshots_before_transport_are_synthetic() -> None:
     assert state["snapshot_sequence"] == SYNTHETIC_SNAPSHOT_SEQUENCE
     assert diagnostics["schema_version"] == TELEMETRY_SCHEMA_VERSION
     assert diagnostics["snapshot_sequence"] == SYNTHETIC_SNAPSHOT_SEQUENCE
+    assert proxy_diagnostics == {
+        "schema_version": TELEMETRY_SCHEMA_VERSION,
+        "snapshot_sequence": SYNTHETIC_SNAPSHOT_SEQUENCE,
+        "endpoints": {},
+    }
 
 
 def test_sync_synthetic_schema_version_matches_rust_schema_version(
@@ -38,16 +44,20 @@ def test_sync_synthetic_schema_version_matches_rust_schema_version(
         synthetic_stats = client.stats()
         synthetic_state = client.dump_transport_state()
         synthetic_diagnostics = client.dump_pool_diagnostics()
+        synthetic_proxy_diagnostics = client.dump_proxy_diagnostics()
 
         response = client.get(sync_resource_http_server)
         real_stats = client.stats()
         real_state = client.dump_transport_state()
         real_diagnostics = client.dump_pool_diagnostics()
+        real_proxy_diagnostics = client.dump_proxy_diagnostics()
 
     assert response.status_code == OK
     assert synthetic_stats.schema_version == real_stats.schema_version
     assert synthetic_state["schema_version"] == real_state["schema_version"]
     assert synthetic_diagnostics["schema_version"] == real_diagnostics["schema_version"]
+    assert synthetic_proxy_diagnostics["schema_version"] == real_proxy_diagnostics["schema_version"]
+    assert real_proxy_diagnostics["endpoints"] == {}
 
 
 def test_sync_transport_state_contract_covers_synthetic_real_and_origin_fields(
@@ -75,18 +85,21 @@ def test_sync_diagnostic_snapshot_sequence_is_monotonic(
         stats = client.stats()
         state = client.dump_transport_state()
         diagnostics = client.dump_pool_diagnostics()
+        proxy_diagnostics = client.dump_proxy_diagnostics()
         next_stats = client.stats()
 
     assert response.status_code == OK
     assert stats.schema_version == TELEMETRY_SCHEMA_VERSION
     assert state["schema_version"] == TELEMETRY_SCHEMA_VERSION
     assert diagnostics["schema_version"] == TELEMETRY_SCHEMA_VERSION
+    assert proxy_diagnostics["schema_version"] == TELEMETRY_SCHEMA_VERSION
     assert next_stats.schema_version == TELEMETRY_SCHEMA_VERSION
     assert (
         SYNTHETIC_SNAPSHOT_SEQUENCE
         < stats.snapshot_sequence
         < state["snapshot_sequence"]
         < diagnostics["snapshot_sequence"]
+        < proxy_diagnostics["snapshot_sequence"]
         < next_stats.snapshot_sequence
     )
 
@@ -100,6 +113,7 @@ def test_sync_telemetry_snapshot_sequence_is_unique_for_concurrent_observers(
             client.stats,
             client.dump_transport_state,
             client.dump_pool_diagnostics,
+            client.dump_proxy_diagnostics,
         )
         with ThreadPoolExecutor(
             max_workers=len(snapshot_readers) * CONCURRENT_SNAPSHOT_ROUNDS,
@@ -126,18 +140,21 @@ async def test_async_diagnostic_snapshot_sequence_is_monotonic(
         stats = client.stats()
         state = client.dump_transport_state()
         diagnostics = client.dump_pool_diagnostics()
+        proxy_diagnostics = client.dump_proxy_diagnostics()
         next_stats = client.stats()
 
     assert response.status_code == OK
     assert stats.schema_version == TELEMETRY_SCHEMA_VERSION
     assert state["schema_version"] == TELEMETRY_SCHEMA_VERSION
     assert diagnostics["schema_version"] == TELEMETRY_SCHEMA_VERSION
+    assert proxy_diagnostics["schema_version"] == TELEMETRY_SCHEMA_VERSION
     assert next_stats.schema_version == TELEMETRY_SCHEMA_VERSION
     assert (
         SYNTHETIC_SNAPSHOT_SEQUENCE
         < stats.snapshot_sequence
         < state["snapshot_sequence"]
         < diagnostics["snapshot_sequence"]
+        < proxy_diagnostics["snapshot_sequence"]
         < next_stats.snapshot_sequence
     )
 

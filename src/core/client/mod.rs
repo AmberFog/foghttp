@@ -13,7 +13,7 @@ pub(crate) use connection_limit::{
     connection_acquire_timeout_from_error, with_connection_limit_timeout, ConnectionGate,
     ConnectionLimitContext,
 };
-use proxy::parse_proxy_endpoint;
+use proxy::{parse_proxy_endpoint, proxy_endpoint_name};
 pub(crate) use proxy::{HttpProxyConnector, HttpsTunnelConnector, ProxyTunnelTarget};
 pub(crate) use ssrf::SsrfResolver;
 pub(crate) use telemetry::{
@@ -91,14 +91,20 @@ where
     http.set_connect_timeout(Some(connect_timeout));
 
     let tunnel_connector = match &options.https_proxy_url {
-        Some(proxy_url) => HttpsTunnelConnector::https_proxy(
-            http,
-            ProxyTunnelTarget::new(
-                parse_proxy_endpoint(proxy_url)?,
-                options.https_proxy_authorization.as_deref(),
-                connect_timeout,
-            )?,
-        ),
+        Some(configured_url) => {
+            let endpoint_uri = parse_proxy_endpoint(configured_url)?;
+            let endpoint_metrics =
+                metrics.proxy_endpoint_metrics(&proxy_endpoint_name(&endpoint_uri));
+            HttpsTunnelConnector::https_proxy(
+                http,
+                ProxyTunnelTarget::new(
+                    endpoint_uri,
+                    options.https_proxy_authorization.as_deref(),
+                    connect_timeout,
+                    endpoint_metrics,
+                )?,
+            )
+        }
         None => HttpsTunnelConnector::direct(http),
     };
 
@@ -109,8 +115,11 @@ where
         .enable_http1()
         .wrap_connector(tunnel_connector);
     let proxy_connector = match &options.http_proxy_url {
-        Some(proxy_url) => {
-            HttpProxyConnector::http_proxy(connector, parse_proxy_endpoint(proxy_url)?)
+        Some(configured_url) => {
+            let endpoint_uri = parse_proxy_endpoint(configured_url)?;
+            let endpoint_metrics =
+                metrics.proxy_endpoint_metrics(&proxy_endpoint_name(&endpoint_uri));
+            HttpProxyConnector::http_proxy(connector, endpoint_uri, endpoint_metrics)
         }
         None => HttpProxyConnector::direct(connector),
     };

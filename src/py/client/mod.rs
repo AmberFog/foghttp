@@ -41,7 +41,7 @@ use crate::py::client::transport::{
 use crate::py::response::RawResponse;
 use crate::py::stats::RawStats;
 use crate::py::telemetry::{raw_telemetry_batch, RawTelemetryEvent};
-use crate::py::{RawPoolDiagnostics, RawTransportState};
+use crate::py::{RawPoolDiagnostics, RawProxyDiagnostics, RawTransportState};
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 use std::sync::Arc;
@@ -715,6 +715,11 @@ impl RawClient {
     fn pool_diagnostics(&self) -> PyResult<RawPoolDiagnostics> {
         self.ensure_current_process()?;
         Ok(self.acquire_gate.diagnostics().into())
+    }
+
+    fn proxy_diagnostics(&self) -> PyResult<RawProxyDiagnostics> {
+        self.ensure_current_process()?;
+        Ok(self.metrics.proxy_diagnostics_snapshot().into())
     }
 
     #[pyo3(signature = (request_id=None))]

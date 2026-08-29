@@ -1,5 +1,6 @@
 mod client;
 mod pool_diagnostics;
+mod proxy_diagnostics;
 mod response;
 mod retry;
 mod stats;
@@ -11,6 +12,7 @@ use pyo3::prelude::*;
 
 pub use client::{RawClient, RawStreamResponse, RawUploadBody};
 pub use pool_diagnostics::{RawOriginPoolDiagnostics, RawPoolDiagnostics};
+pub use proxy_diagnostics::{RawProxyDiagnostics, RawProxyEndpointDiagnostics};
 pub use response::{RawRequestInfo, RawResponse};
 pub use retry::{RawRetryAttempt, RawRetryTrace};
 pub use stats::{RawOriginPressure, RawStats};
@@ -28,6 +30,8 @@ pub fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<RawRetryTrace>()?;
     module.add_class::<RawOriginPoolDiagnostics>()?;
     module.add_class::<RawPoolDiagnostics>()?;
+    module.add_class::<RawProxyEndpointDiagnostics>()?;
+    module.add_class::<RawProxyDiagnostics>()?;
     module.add_class::<RawOriginPressure>()?;
     module.add_class::<RawStats>()?;
     module.add_class::<RawTelemetryEvent>()?;

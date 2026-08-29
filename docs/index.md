@@ -172,7 +172,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 - opt-in SSRF destination policy that validates initial and redirected targets,
   then pins each connection attempt to its checked DNS result
 - versioned telemetry snapshot metadata for `stats()`, `dump_transport_state()`,
-  and `dump_pool_diagnostics()`
+  `dump_pool_diagnostics()`, and separate proxy endpoint diagnostics
 - opt-in async lifecycle debug mode for active request snapshots and strict
   leak checks
 - HTTP proxy routing and HTTPS `CONNECT` tunnelling through explicit `proxy=` or
