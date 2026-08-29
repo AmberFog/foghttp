@@ -1,21 +1,30 @@
+use crate::core::metrics::{ProxyConnectionAttempt, ProxyConnectionLease, ProxyEndpointMetrics};
 use hyper::rt::{Read, ReadBufCursor, Write};
 use hyper::Uri;
 use hyper_util::client::legacy::connect::{Connected, Connection};
 use std::future::Future;
 use std::io::{Error, IoSlice};
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 use tower_service::Service;
 
 #[derive(Clone)]
 pub(crate) struct HttpProxyConnector<C> {
     inner: C,
-    http_proxy: Option<Uri>,
+    http_proxy: Option<HttpProxyTarget>,
+}
+
+#[derive(Clone)]
+struct HttpProxyTarget {
+    uri: Uri,
+    metrics: Arc<ProxyEndpointMetrics>,
 }
 
 pub(crate) struct HttpProxyConnection<T> {
     inner: T,
     proxied: bool,
+    _proxy_lifecycle: Option<ProxyConnectionLease>,
 }
 
 impl<C> HttpProxyConnector<C> {
@@ -26,10 +35,13 @@ impl<C> HttpProxyConnector<C> {
         }
     }
 
-    pub(crate) fn http_proxy(inner: C, proxy_uri: Uri) -> Self {
+    pub(crate) fn http_proxy(inner: C, proxy_uri: Uri, metrics: Arc<ProxyEndpointMetrics>) -> Self {
         Self {
             inner,
-            http_proxy: Some(proxy_uri),
+            http_proxy: Some(HttpProxyTarget {
+                uri: proxy_uri,
+                metrics,
+            }),
         }
     }
 }
@@ -49,16 +61,22 @@ where
     }
 
     fn call(&mut self, uri: Uri) -> Self::Future {
-        let (connection_uri, proxied) = match &self.http_proxy {
-            Some(proxy_uri) if uri.scheme_str() == Some("http") => (proxy_uri.clone(), true),
-            _ => (uri, false),
+        let (connection_uri, proxied, endpoint_metrics) = match &self.http_proxy {
+            Some(proxy) if uri.scheme_str() == Some("http") => {
+                (proxy.uri.clone(), true, Some(Arc::clone(&proxy.metrics)))
+            }
+            _ => (uri, false, None),
         };
         let future = self.inner.call(connection_uri);
 
         Box::pin(async move {
-            future
-                .await
-                .map(|inner| HttpProxyConnection { inner, proxied })
+            let connection_attempt = endpoint_metrics.map(|metrics| metrics.connection_attempt());
+            let inner = future.await?;
+            Ok(HttpProxyConnection {
+                inner,
+                proxied,
+                _proxy_lifecycle: connection_attempt.map(ProxyConnectionAttempt::opened),
+            })
         })
     }
 }

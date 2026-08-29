@@ -3,6 +3,7 @@ mod buffered;
 mod counters;
 mod lifecycle;
 mod origin;
+mod proxy;
 mod snapshots;
 mod telemetry;
 
@@ -11,6 +12,10 @@ pub use lifecycle::ResponseBodyLifecycleOutcome;
 pub use origin::{
     OriginMetrics, OriginMetricsSnapshot, OriginPoolDiagnosticsSnapshot,
     PendingRequestBlockingReason,
+};
+pub use proxy::{
+    ProxyConnectionAttempt, ProxyConnectionLease, ProxyDiagnosticsSnapshot, ProxyEndpointMetrics,
+    ProxyEndpointMetricsSnapshot, ProxyTunnelAttempt, ProxyTunnelFailureKind,
 };
 pub use snapshots::{MetricsSnapshot, StatsSnapshot, TransportStateSnapshot};
 pub use telemetry::TelemetrySnapshotMetadata;
@@ -56,6 +61,7 @@ pub struct Metrics {
     buffered_response_budget_rejections: AtomicUsize,
     telemetry_snapshot_sequence: AtomicU64,
     origin_registry: OriginMetricsRegistry,
+    proxy_registry: proxy::ProxyEndpointMetricsRegistry,
 }
 
 #[cfg(test)]

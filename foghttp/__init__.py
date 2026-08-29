@@ -26,6 +26,8 @@ __all__ = (
     "PoolBlockingReason",
     "PoolDiagnostics",
     "PoolTimeout",
+    "ProxyDiagnostics",
+    "ProxyEndpointDiagnostics",
     "ReadTimeout",
     "Request",
     "RequestError",
@@ -117,6 +119,7 @@ from .policy import (
     TransportPolicyResponseHook,
 )
 from .pool_diagnostics import OriginPoolDiagnostics, PoolBlockingReason, PoolDiagnostics
+from .proxy_diagnostics import ProxyDiagnostics, ProxyEndpointDiagnostics
 from .request import Request
 from .request_extensions import RequestExtensions
 from .request_info import RequestInfo

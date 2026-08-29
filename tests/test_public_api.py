@@ -36,6 +36,8 @@ def test_top_level_exports() -> None:
     assert foghttp.TimeoutPhase is not None
     assert foghttp.TransportState is not None
     assert foghttp.OriginPressureState is not None
+    assert foghttp.ProxyDiagnostics is not None
+    assert foghttp.ProxyEndpointDiagnostics is not None
     assert foghttp.URL is not None
     assert issubclass(foghttp.ConfigurationError, foghttp.FogHTTPError)
     assert issubclass(foghttp.ConfigurationError, ValueError)

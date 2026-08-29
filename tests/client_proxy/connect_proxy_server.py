@@ -38,6 +38,7 @@ class _ProxyConfig:
     expected_authorization: str | None
     reject_status: int | None
     reject_body: bytes
+    close_before_response: bool
     early_close: bool
     http_redirect_location: str | None
     hang: bool
@@ -86,6 +87,7 @@ def start_connect_proxy(
     expected_authorization: str | None = None,
     reject_status: int | None = None,
     reject_body: bytes = b"",
+    close_before_response: bool = False,
     early_close: bool = False,
     http_redirect_location: str | None = None,
     hang: bool = False,
@@ -95,6 +97,7 @@ def start_connect_proxy(
         expected_authorization=expected_authorization,
         reject_status=reject_status,
         reject_body=reject_body,
+        close_before_response=close_before_response,
         early_close=early_close,
         http_redirect_location=http_redirect_location,
         hang=hang,
@@ -144,6 +147,8 @@ class _ConnectHandler(socketserver.BaseRequestHandler):
         authority: str,
         authorization: str | None,
     ) -> None:
+        if config.close_before_response:
+            return
         if config.require_auth and authorization != config.expected_authorization:
             _send_status(self.request, 407, "Proxy Authentication Required")
             return

@@ -1,7 +1,8 @@
 use super::{
     establish_tunnel, find_headers_end, parse_connect_status, parse_proxy_endpoint,
-    tunnel_authority, HttpProxyConnector, ProxyAuthorization,
+    proxy_endpoint_name, tunnel_authority, HttpProxyConnector, ProxyAuthorization,
 };
+use crate::core::metrics::{Metrics, ProxyTunnelFailureKind};
 use crate::messages::{
     PROXY_CONNECT_CLOSED, PROXY_ENDPOINT_PATH_OR_QUERY_UNSUPPORTED,
     PROXY_ENDPOINT_SCHEME_UNSUPPORTED, PROXY_ENDPOINT_USERINFO_UNSUPPORTED,
@@ -11,7 +12,7 @@ use hyper::Uri;
 use hyper_util::client::legacy::connect::{Connected, Connection};
 use hyper_util::rt::TokioIo;
 use std::future::{ready, Ready};
-use std::io::{Error, IoSlice};
+use std::io::{Error, ErrorKind, IoSlice};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
@@ -87,6 +88,7 @@ fn parse_proxy_endpoint_accepts_http_endpoint() {
 
     assert_eq!(uri.scheme_str(), Some("http"));
     assert_eq!(uri.authority().unwrap().as_str(), "proxy.example:8080");
+    assert_eq!(proxy_endpoint_name(&uri), "http://proxy.example:8080");
 }
 
 #[test]
@@ -223,6 +225,17 @@ fn establish_tunnel_errors_when_proxy_closes_before_response() {
 }
 
 #[test]
+fn establish_tunnel_classifies_connection_reset_as_early_close() {
+    runtime().block_on(async {
+        let Err(error) = establish_tunnel(ResettingStream, "api.example:443", None).await else {
+            panic!("reset tunnel must fail");
+        };
+
+        assert_eq!(error.kind(), ProxyTunnelFailureKind::EarlyClose);
+    });
+}
+
+#[test]
 fn direct_connector_uses_target_uri_without_proxy_flag() {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let target_uri = http_uri("http://api.example/items");
@@ -240,9 +253,11 @@ fn direct_connector_uses_target_uri_without_proxy_flag() {
 fn http_proxy_connector_uses_proxy_uri_and_proxy_flag_for_http_targets() {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let proxy_uri = http_uri("http://proxy.example:8080");
+    let metrics = Metrics::default();
     let mut connector = HttpProxyConnector::http_proxy(
         RecordingConnector::new(Arc::clone(&calls)),
         proxy_uri.clone(),
+        metrics.proxy_endpoint_metrics("http://proxy.example:8080"),
     );
 
     let connection = runtime()
@@ -251,6 +266,15 @@ fn http_proxy_connector_uses_proxy_uri_and_proxy_flag_for_http_targets() {
 
     assert!(connection.connected().is_proxied());
     assert_eq!(recorded_calls(&calls), vec![proxy_uri]);
+    let active = metrics.proxy_diagnostics_snapshot();
+    assert_eq!(active.endpoints[0].connection_attempts, 1);
+    assert_eq!(active.endpoints[0].connections_opened, 1);
+    assert_eq!(active.endpoints[0].active_connections, 1);
+
+    drop(connection);
+    let closed = metrics.proxy_diagnostics_snapshot();
+    assert_eq!(closed.endpoints[0].connections_closed, 1);
+    assert_eq!(closed.endpoints[0].active_connections, 0);
 }
 
 #[test]
@@ -258,8 +282,12 @@ fn http_proxy_connector_does_not_proxy_https_targets() {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let target_uri = http_uri("https://api.example/items");
     let proxy_uri = http_uri("http://proxy.example:8080");
-    let mut connector =
-        HttpProxyConnector::http_proxy(RecordingConnector::new(Arc::clone(&calls)), proxy_uri);
+    let metrics = Metrics::default();
+    let mut connector = HttpProxyConnector::http_proxy(
+        RecordingConnector::new(Arc::clone(&calls)),
+        proxy_uri,
+        metrics.proxy_endpoint_metrics("http://proxy.example:8080"),
+    );
 
     let connection = runtime()
         .block_on(connector.call(target_uri.clone()))
@@ -267,6 +295,10 @@ fn http_proxy_connector_does_not_proxy_https_targets() {
 
     assert!(!connection.connected().is_proxied());
     assert_eq!(recorded_calls(&calls), vec![target_uri]);
+    assert_eq!(
+        metrics.proxy_diagnostics_snapshot().endpoints[0].connection_attempts,
+        0,
+    );
 }
 
 #[derive(Clone)]
@@ -296,6 +328,8 @@ impl Service<Uri> for RecordingConnector {
 }
 
 struct FakeConnection;
+
+struct ResettingStream;
 
 impl Connection for FakeConnection {
     fn connected(&self) -> Connected {
@@ -340,6 +374,49 @@ impl Write for FakeConnection {
         _buffers: &[IoSlice<'_>],
     ) -> Poll<Result<usize, Error>> {
         Poll::Ready(Ok(0))
+    }
+}
+
+impl Read for ResettingStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        _context: &mut Context<'_>,
+        _buffer: ReadBufCursor<'_>,
+    ) -> Poll<Result<(), Error>> {
+        Poll::Ready(Err(Error::new(ErrorKind::ConnectionReset, "reset by peer")))
+    }
+}
+
+impl Write for ResettingStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        _context: &mut Context<'_>,
+        buffer: &[u8],
+    ) -> Poll<Result<usize, Error>> {
+        Poll::Ready(Ok(buffer.len()))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Result<(), Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        false
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+        buffers: &[IoSlice<'_>],
+    ) -> Poll<Result<usize, Error>> {
+        let Some(buffer) = buffers.first() else {
+            return Poll::Ready(Ok(0));
+        };
+        self.poll_write(context, buffer)
     }
 }
 

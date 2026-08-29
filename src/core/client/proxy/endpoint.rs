@@ -25,3 +25,11 @@ pub(crate) fn parse_proxy_endpoint(proxy_url: &str) -> Result<Uri, String> {
     }
     Ok(uri)
 }
+
+pub(crate) fn proxy_endpoint_name(uri: &Uri) -> String {
+    format!(
+        "{HTTP_PROXY_ENDPOINT_SCHEME}://{}",
+        uri.authority()
+            .expect("validated proxy endpoint must have an authority"),
+    )
+}

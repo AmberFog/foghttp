@@ -74,6 +74,11 @@ def test_inherited_sync_client_stats_after_fork_raises_lifecycle_error(
     [
         pytest.param("transport state", foghttp.Client.dump_transport_state, id="transport-state"),
         pytest.param("pool diagnostics", foghttp.Client.dump_pool_diagnostics, id="pool-diagnostics"),
+        pytest.param(
+            "proxy diagnostics",
+            foghttp.Client.dump_proxy_diagnostics,
+            id="proxy-diagnostics",
+        ),
     ],
 )
 def test_inherited_sync_client_diagnostics_after_fork_raise_lifecycle_error(

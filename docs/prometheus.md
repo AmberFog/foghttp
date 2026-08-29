@@ -3,7 +3,8 @@
 FogHTTP provides an optional adapter for the official Python Prometheus client.
 It maps typed `TelemetryEvent` values to labeled counters and histograms, and
 maps alert-oriented `TransportStats` values to scrape-time gauges and counters.
-It does not read `dump_transport_state()` or `dump_pool_diagnostics()`.
+It does not read `dump_transport_state()`, `dump_pool_diagnostics()`, or
+`dump_proxy_diagnostics()`.
 
 Install the optional dependency with FogHTTP:
 

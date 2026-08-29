@@ -730,6 +730,9 @@ capacity: it reports current active holders, pending waiters, the oldest pending
 wait age, whether another pending waiter can be admitted, and whether requests
 are waiting on the global active request limit, per-origin active request limit,
 or both.
+Use `client.dump_proxy_diagnostics()` to inspect physical proxy connection and
+HTTPS CONNECT outcomes by credential-free proxy endpoint. These values are
+separate from target-origin transport state; see [Proxy and trust_env](./proxies.md).
 `TransportStats` and the `dump_*` APIs include `schema_version` plus a
 monotonic `snapshot_sequence` within one Rust transport lifetime. Use
 `TransportStats` for dashboards and alert-oriented metrics; see

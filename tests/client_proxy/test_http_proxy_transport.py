@@ -34,6 +34,8 @@ def test_sync_client_routes_http_request_through_explicit_proxy(
 
     with foghttp.Client(proxy=sync_http_proxy.base_url) as client:
         response = client.post(target_url, content=content)
+        proxy_diagnostics = client.dump_proxy_diagnostics()
+        transport_state = client.dump_transport_state()
 
     payload = response.json()
     assert response.request.url == target_url
@@ -42,6 +44,9 @@ def test_sync_client_routes_http_request_through_explicit_proxy(
     assert payload["headers"].get("proxy-authorization") is None
     assert payload["body"] == content.decode()
     assert len(sync_http_proxy.requests) == 1
+    _assert_plain_http_proxy_diagnostics(proxy_diagnostics, sync_http_proxy.base_url)
+    assert _origin_from_url(target_url) in transport_state["origins"]
+    assert sync_http_proxy.base_url not in transport_state["origins"]
 
 
 def test_sync_stream_routes_http_request_through_explicit_proxy(
@@ -146,12 +151,14 @@ async def test_async_client_routes_http_request_through_explicit_proxy(
 
     async with foghttp.AsyncClient(proxy=async_http_proxy.base_url) as client:
         response = await client.get(target_url)
+        proxy_diagnostics = client.dump_proxy_diagnostics()
 
     payload = response.json()
     assert response.request.url == target_url
     assert payload["request_line"] == f"{GET} {target_url} HTTP/1.1"
     assert payload["headers"]["host"] == [urlsplit(target_url).netloc]
     assert len(async_http_proxy.requests) == 1
+    _assert_plain_http_proxy_diagnostics(proxy_diagnostics, async_http_proxy.base_url)
 
 
 async def test_async_client_routes_multipart_request_through_explicit_proxy(
@@ -255,12 +262,16 @@ def test_sync_client_sends_proxy_authorization_only_to_proxy(
 
     with foghttp.Client(proxy=proxy_url) as client:
         response = client.get(target_url)
+        proxy_diagnostics = client.dump_proxy_diagnostics()
 
     payload = response.json()
     assert payload["headers"]["proxy-authorization"] == [_basic_proxy_auth(username, password)]
     assert "proxy-authorization" not in response.request.headers
     assert username not in repr(response.request)
     assert password not in repr(response.request)
+    assert set(proxy_diagnostics["endpoints"]) == {sync_http_proxy.base_url}
+    assert username not in str(proxy_diagnostics)
+    assert password not in str(proxy_diagnostics)
 
 
 def test_trust_env_http_proxy_routes_http_request(
@@ -274,10 +285,12 @@ def test_trust_env_http_proxy_routes_http_request(
 
     with foghttp.Client(trust_env=True) as client:
         response = client.get(target_url)
+        proxy_diagnostics = client.dump_proxy_diagnostics()
 
     payload = response.json()
     assert payload["request_line"] == f"{GET} {target_url} HTTP/1.1"
     assert len(sync_http_proxy.requests) == 1
+    _assert_plain_http_proxy_diagnostics(proxy_diagnostics, sync_http_proxy.base_url)
 
 
 def test_trust_env_all_proxy_routes_http_request(
@@ -429,16 +442,78 @@ def test_proxy_connection_failure_maps_to_network_error_and_cleans_up_request_st
     unused_tcp_port: int,
 ) -> None:
     target_url = "http://example.test/proxy-connection-failure"
+    proxy_url = f"http://127.0.0.1:{unused_tcp_port}"
 
-    with foghttp.Client(proxy=f"http://127.0.0.1:{unused_tcp_port}") as client:
+    with foghttp.Client(proxy=proxy_url) as client:
         with pytest.raises(foghttp.NetworkError):
             client.get(target_url)
 
         stats = client.stats()
+        proxy_diagnostics = client.dump_proxy_diagnostics()
 
     assert stats.total_requests == 1
     assert stats.failed_requests == 1
     assert stats.active_requests == 0
+    endpoint = proxy_diagnostics["endpoints"][proxy_url]
+    assert endpoint["connection_attempts"] == 1
+    assert endpoint["connections_opened"] == 0
+    assert endpoint["connections_open_failed"] == 1
+    assert endpoint["active_connections"] == 0
+    assert endpoint["tunnel_attempts"] == 0
+
+
+def test_sync_proxy_backpressure_does_not_count_connection_attempt(
+    sync_http_proxy: SyncHTTPProxy,
+    unused_tcp_port: int,
+) -> None:
+    limits = foghttp.Limits(
+        max_active_requests=1,
+        max_connections=0,
+        max_pending_requests=0,
+        keepalive=False,
+    )
+    timeouts = foghttp.Timeouts(pool=0.01, total=1.0)
+
+    with foghttp.Client(
+        proxy=sync_http_proxy.base_url,
+        limits=limits,
+        timeouts=timeouts,
+    ) as client:
+        with pytest.raises(foghttp.PoolTimeout):
+            client.get(_target_url(unused_tcp_port, "/blocked-before-connect"))
+        proxy_diagnostics = client.dump_proxy_diagnostics()
+
+    endpoint = proxy_diagnostics["endpoints"][sync_http_proxy.base_url]
+    assert endpoint["connection_attempts"] == 0
+    assert endpoint["connections_open_failed"] == 0
+    assert sync_http_proxy.requests == []
+
+
+async def test_async_proxy_backpressure_does_not_count_connection_attempt(
+    async_http_proxy: AsyncHTTPProxy,
+    unused_tcp_port: int,
+) -> None:
+    limits = foghttp.Limits(
+        max_active_requests=1,
+        max_connections=0,
+        max_pending_requests=0,
+        keepalive=False,
+    )
+    timeouts = foghttp.Timeouts(pool=0.01, total=1.0)
+
+    async with foghttp.AsyncClient(
+        proxy=async_http_proxy.base_url,
+        limits=limits,
+        timeouts=timeouts,
+    ) as client:
+        with pytest.raises(foghttp.PoolTimeout):
+            await client.get(_target_url(unused_tcp_port, "/blocked-before-connect"))
+        proxy_diagnostics = client.dump_proxy_diagnostics()
+
+    endpoint = proxy_diagnostics["endpoints"][async_http_proxy.base_url]
+    assert endpoint["connection_attempts"] == 0
+    assert endpoint["connections_open_failed"] == 0
+    assert async_http_proxy.requests == []
 
 
 def test_proxy_protocol_failure_maps_to_network_error_and_cleans_up_request_stats(
@@ -483,3 +558,18 @@ def _request_lines(requests: list[ProxyRequest]) -> tuple[str, ...]:
 def _basic_proxy_auth(username: str, password: str) -> str:
     token = f"{username}:{password}".encode()
     return f"Basic {b64encode(token).decode('ascii')}"
+
+
+def _assert_plain_http_proxy_diagnostics(
+    diagnostics: foghttp.ProxyDiagnostics,
+    proxy_endpoint: str,
+) -> None:
+    assert set(diagnostics["endpoints"]) == {proxy_endpoint}
+    endpoint = diagnostics["endpoints"][proxy_endpoint]
+    assert set(endpoint) == set(foghttp.ProxyEndpointDiagnostics.__annotations__)
+    assert endpoint["connection_attempts"] == 1
+    assert endpoint["connections_opened"] == 1
+    assert endpoint["connections_open_failed"] == 0
+    assert endpoint["tunnel_attempts"] == 0
+    assert endpoint["tunnels_established"] == 0
+    assert endpoint["tunnel_failures"] == 0

@@ -3,15 +3,17 @@
 FogHTTP exposes two kinds of operational state today:
 
 - `client.stats()` returns low-cardinality transport counters and gauges.
-- `client.dump_transport_state()` and `client.dump_pool_diagnostics()` return
-  diagnostic snapshots for incident debugging.
+- `client.dump_transport_state()`, `client.dump_pool_diagnostics()`, and
+  `client.dump_proxy_diagnostics()` return diagnostic snapshots for incident
+  debugging.
 - `telemetry=TelemetryConfig(...)` enables opt-in typed event hooks around
   request and response lifecycle phases.
 
 These APIs are intentionally not the same contract. `TransportStats` is the
 current source for stable, low-cardinality operational counters. The `dump_*`
 APIs are richer debugging views and include per-origin labels, queue details,
-and pool pressure state that can change while requests are running.
+pool pressure, or separate proxy endpoint state that can change while requests
+are running. Target origins and proxy endpoints are distinct telemetry planes.
 
 ## Event Hooks
 
@@ -230,8 +232,8 @@ headers or request/response body are included. The final
 
 ## Snapshot Metadata
 
-`TransportStats`, `dump_transport_state()`, and `dump_pool_diagnostics()`
-include two contract fields:
+`TransportStats`, `dump_transport_state()`, `dump_pool_diagnostics()`, and
+`dump_proxy_diagnostics()` include two contract fields:
 
 | field | meaning |
 | --- | --- |
@@ -239,7 +241,7 @@ include two contract fields:
 | `snapshot_sequence` | Monotonic Rust-side sequence for telemetry snapshots within one transport lifetime. |
 
 The sequence starts at `1` after the Rust transport exists and increases across
-`stats()` plus both diagnostic snapshot APIs for that client. It is unique until
+`stats()` plus all diagnostic snapshot APIs for that client. It is unique until
 the theoretical `u64::MAX` boundary; after that it saturates at `u64::MAX`.
 Synthetic pre-transport values returned before the first request use
 `snapshot_sequence == 0`; they preserve lazy transport creation and are not
@@ -290,6 +292,13 @@ current pending waiters, oldest observed wait age, queue fullness, and blocking
 reason at the time of the call. Use it to understand a stuck workload, not as a
 strict SLA data source.
 
+`dump_proxy_diagnostics()` reports physical proxy connection and CONNECT tunnel
+lifecycle grouped by credential-free proxy endpoint. It does not add proxy keys
+or proxy failures to target-origin `TransportStats` or
+`dump_transport_state()["origins"]`. Endpoint snapshots are bounded by the
+client's configured HTTP and HTTPS proxy endpoints and remain diagnostic rather
+than exporter-grade transactional metrics.
+
 ## Exporter Rules
 
 The optional [Prometheus/OpenMetrics adapters](./prometheus.md) use only fields
@@ -301,8 +310,8 @@ with suitable guarantees:
 - redact or normalize labels before export
 - treat `snapshot_sequence == 0` as a synthetic pre-transport snapshot that
   may be skipped for Rust-side telemetry streams
-- avoid deriving alert-critical counters from `dump_transport_state()` retries
-  or `dump_pool_diagnostics()` waiter snapshots
+- avoid deriving alert-critical counters from `dump_transport_state()` retries,
+  `dump_pool_diagnostics()` waiter snapshots, or proxy endpoint diagnostics
 - keep exporter/versioning work outside the default request path
 
 When stricter SLA-grade telemetry is needed, FogHTTP should add an event-derived
@@ -311,9 +320,9 @@ debug-only `dump_*` APIs by accident.
 
 ## Practical Guidance
 
-Use `stats()` for dashboards and alerts. Use `dump_transport_state()` and
-`dump_pool_diagnostics()` for investigation, incident snapshots, and local
-debugging.
+Use `stats()` for dashboards and alerts. Use `dump_transport_state()`,
+`dump_pool_diagnostics()`, and `dump_proxy_diagnostics()` for investigation,
+incident snapshots, and local debugging.
 
 If an alert depends on exact transaction semantics across aggregate and
 per-origin state, the current diagnostic snapshots are not the right source.

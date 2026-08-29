@@ -63,6 +63,7 @@ def test_sync_closed_client_rejects_stats(
         pytest.param(foghttp.Client.stats, id="stats"),
         pytest.param(foghttp.Client.dump_transport_state, id="transport-state"),
         pytest.param(foghttp.Client.dump_pool_diagnostics, id="pool-diagnostics"),
+        pytest.param(foghttp.Client.dump_proxy_diagnostics, id="proxy-diagnostics"),
     ],
 )
 @pytest.mark.usefixtures("sync_noop_transport")

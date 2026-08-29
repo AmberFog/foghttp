@@ -14,6 +14,7 @@ from ..headers import HeaderSource
 from ..limits import Limits
 from ..messages import CLIENT_CLOSED, UNCLOSED_CLIENT
 from ..pool_diagnostics import OriginPoolDiagnostics, PoolBlockingReason, PoolDiagnostics
+from ..proxy_diagnostics import ProxyDiagnostics
 from ..request import Request
 from ..request_extensions import RequestExtensionsSource
 from ..timeouts import Timeouts
@@ -24,6 +25,7 @@ from ..url import URL
 from .config import ClientConfig
 from .lifecycle_debug import AsyncLifecycleDebugTracker
 from .process import current_process_id, forked_process_error
+from .proxy_diagnostics_mapping import empty_proxy_diagnostics, proxy_diagnostics_from_raw
 from .raw.errors import raise_public_raw_error
 from .raw.lifecycle import create_raw_client
 from .request_builder.builder import RequestBuilder
@@ -138,6 +140,20 @@ class ClientCore:
         if raw_diagnostics is None:
             return _empty_pool_diagnostics(self._config.limits)
         return _pool_diagnostics_state(raw_diagnostics)
+
+    def dump_proxy_diagnostics(self) -> ProxyDiagnostics:
+        self._ensure_open()
+        with self._client_lock:
+            self._ensure_open()
+            raw_client = self._client
+            try:
+                raw_diagnostics = None if raw_client is None else raw_client.proxy_diagnostics()
+            except _foghttp.FogHttpError as exc:
+                raise_public_raw_error(exc)
+
+        if raw_diagnostics is None:
+            return empty_proxy_diagnostics()
+        return proxy_diagnostics_from_raw(raw_diagnostics)
 
     def _ensure_open(self) -> None:
         self._ensure_not_closed()

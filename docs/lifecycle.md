@@ -133,11 +133,13 @@ These operations do not create the Rust transport:
 - calling `stats()` before the first request
 - calling `dump_transport_state()` before the first request
 - calling `dump_pool_diagnostics()` before the first request
+- calling `dump_proxy_diagnostics()` before the first request
 - closing a never-used client
 
 Before the first request, `stats()` returns an empty `TransportStats` value and
 `dump_transport_state()` and `dump_pool_diagnostics()` return zero resource and
-acquire-pressure counters.
+acquire-pressure counters, while `dump_proxy_diagnostics()` returns an empty
+`endpoints` mapping.
 
 ```python
 import foghttp
@@ -182,6 +184,7 @@ assert client.dump_transport_state() == {
     "origins": {},
 }
 assert client.dump_pool_diagnostics()["origins"] == {}
+assert client.dump_proxy_diagnostics()["endpoints"] == {}
 
 client.close()
 ```
@@ -280,8 +283,9 @@ as lifecycle management.
 ## Closed Client Behavior
 
 After `close()` or `aclose()` starts, the client rejects new transport work.
-Shortcut requests, `send()`, `stats()`, `dump_transport_state()`, and
-`dump_pool_diagnostics()` raise `ClientClosedError`.
+Shortcut requests, `send()`, `stats()`, `dump_transport_state()`,
+`dump_pool_diagnostics()`, and `dump_proxy_diagnostics()` raise
+`ClientClosedError`.
 
 ```python
 import foghttp
@@ -626,6 +630,11 @@ diagnostics = client.dump_pool_diagnostics()
 if diagnostics["pending_requests"]:
     print(diagnostics["blocked_by"], diagnostics["oldest_pending_request_wait_ns"])
 ```
+
+Use `dump_proxy_diagnostics()` for proxy-hop connection and CONNECT tunnel
+lifecycle. Its keys are canonical proxy endpoints, not target origins, and the
+snapshot never includes credentials, request targets, headers, or body data.
+See [Proxy and trust_env](./proxies.md) for field semantics.
 
 ## Current Boundaries
 

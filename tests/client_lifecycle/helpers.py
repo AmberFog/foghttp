@@ -51,6 +51,9 @@ class LifecycleErrorRawClient(CloseTrackingRawClient):
     def pool_diagnostics(self) -> object:
         raise _foghttp.FogHttpLifecycleError(RAW_LIFECYCLE_ERROR)
 
+    def proxy_diagnostics(self) -> object:
+        raise _foghttp.FogHttpLifecycleError(RAW_LIFECYCLE_ERROR)
+
 
 class RawClientFactory:
     def __init__(self, raw_client: object) -> None:
