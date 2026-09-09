@@ -62,6 +62,24 @@ def test_sync_stream_empty_body_reaches_clean_eof(
         assert stats.response_body_aborted == 0
 
 
+def test_sync_stream_chunks_survive_further_reads_and_client_close(
+    sync_streaming_server: SyncStreamingServer,
+) -> None:
+    with (
+        foghttp.Client() as client,
+        client.stream(GET, f"{sync_streaming_server.base_url}{GATED_STREAM_PATH}") as response,
+    ):
+        byte_stream = response.iter_bytes()
+        first = next_sync_stream_chunk(byte_stream)
+        sync_streaming_server.release_tail.set()
+        remaining = collect_sync_stream_chunks(byte_stream)
+
+    assert isinstance(first, bytes)
+    assert all(isinstance(chunk, bytes) for chunk in remaining)
+    assert first == FIRST_CHUNK
+    assert b"".join(remaining) == SECOND_CHUNK
+
+
 def test_sync_stream_context_is_single_use(sync_http_server: str) -> None:
     with foghttp.Client() as client:
         context = client.stream(GET, f"{sync_http_server}/status/{OK}")

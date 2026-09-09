@@ -10,7 +10,7 @@ use crate::py::client::async_requests::RequestCompletion;
 use crate::py::client::future::cancel_python_future;
 use crate::py::client::lifecycle::ResponseBodyLifecycle;
 use crate::py::client::timeout_diagnostics::response_body_transport_error;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use hyper::body::Body;
 use hyper::body::Incoming;
 use pyo3::prelude::*;
@@ -337,7 +337,7 @@ impl StreamStateFields {
 }
 
 impl StreamReadGuard {
-    pub(super) async fn read_next_chunk(mut self) -> PyResult<Option<Vec<u8>>> {
+    pub(super) async fn read_next_chunk(mut self) -> PyResult<Option<Bytes>> {
         if let Some(error) = self.deferred_body_error.take() {
             let error = response_body_transport_error(self.state.request_write_timeout(), error);
             let error_type = response_body_transport_error_type(&error);
@@ -393,7 +393,7 @@ impl StreamReadGuard {
                 continue;
             };
 
-            let mut chunk = data.to_vec();
+            let mut chunk = data;
             if self.ready_frame_coalescing.is_enabled() {
                 match self.drain_ready_data_frames(&mut chunk) {
                     ReadyFrameDrain::Eof => {
@@ -412,7 +412,7 @@ impl StreamReadGuard {
         }
     }
 
-    fn drain_ready_data_frames(&mut self, chunk: &mut Vec<u8>) -> ReadyFrameDrain {
+    fn drain_ready_data_frames(&mut self, chunk: &mut Bytes) -> ReadyFrameDrain {
         drain_ready_data_frames_with(chunk, || self.poll_ready_body_frame())
     }
 
@@ -495,24 +495,37 @@ impl Drop for StreamReadGuard {
 }
 
 fn drain_ready_data_frames_with(
-    chunk: &mut Vec<u8>,
+    chunk: &mut Bytes,
     mut poll_ready_body_frame: impl FnMut() -> ReadyBodyFrame,
 ) -> ReadyFrameDrain {
     let mut coalesced_frames = 1;
-    while chunk.len() < READY_FRAME_COALESCE_TARGET_BYTES
-        && coalesced_frames < MAX_READY_FRAME_COALESCE_COUNT
-    {
+    let mut merged: Option<BytesMut> = None;
+    let outcome = loop {
+        let chunk_len = merged.as_ref().map_or(chunk.len(), BytesMut::len);
+        if chunk_len >= READY_FRAME_COALESCE_TARGET_BYTES
+            || coalesced_frames >= MAX_READY_FRAME_COALESCE_COUNT
+        {
+            break ReadyFrameDrain::Stopped;
+        }
         match poll_ready_body_frame() {
             ReadyBodyFrame::Data(data) => {
-                chunk.extend_from_slice(&data);
+                let buffer = merged.get_or_insert_with(|| {
+                    let mut buffer = BytesMut::with_capacity(chunk.len() + data.len());
+                    buffer.extend_from_slice(chunk);
+                    buffer
+                });
+                buffer.extend_from_slice(&data);
                 coalesced_frames += 1;
             }
-            ReadyBodyFrame::Eof => return ReadyFrameDrain::Eof,
-            ReadyBodyFrame::Error(error) => return ReadyFrameDrain::Error(error),
-            ReadyBodyFrame::Pending => return ReadyFrameDrain::Stopped,
+            ReadyBodyFrame::Eof => break ReadyFrameDrain::Eof,
+            ReadyBodyFrame::Error(error) => break ReadyFrameDrain::Error(error),
+            ReadyBodyFrame::Pending => break ReadyFrameDrain::Stopped,
         }
+    };
+    if let Some(merged) = merged {
+        *chunk = merged.freeze();
     }
-    ReadyFrameDrain::Stopped
+    outcome
 }
 
 #[derive(Clone, Copy)]

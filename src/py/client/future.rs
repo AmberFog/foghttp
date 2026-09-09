@@ -1,5 +1,6 @@
 use crate::py::client::streams::RawStreamResponse;
 use crate::py::response::RawResponse;
+use bytes::Bytes;
 use pyo3::exceptions::PyBaseException;
 use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBytes};
@@ -92,7 +93,7 @@ pub fn complete_python_bytes_future(
     loop_: &Py<PyAny>,
     future: &Py<PyAny>,
     setters: &PythonFutureSetters,
-    result: PyResult<Option<Vec<u8>>>,
+    result: PyResult<Option<Bytes>>,
 ) {
     Python::attach(|py| {
         let call_result: PyResult<()> = match result {
