@@ -75,6 +75,24 @@ async def test_stream_empty_body_reaches_clean_eof(
         assert stats.response_body_aborted == 0
 
 
+async def test_stream_chunks_survive_further_reads_and_client_close(
+    streaming_server: AsyncStreamingServer,
+) -> None:
+    async with (
+        foghttp.AsyncClient() as client,
+        client.stream(GET, f"{streaming_server.base_url}{GATED_STREAM_PATH}") as response,
+    ):
+        byte_stream = response.aiter_bytes()
+        first = await next_stream_chunk(byte_stream)
+        streaming_server.release_tail.set()
+        remaining = await collect_stream_chunks(byte_stream)
+
+    assert isinstance(first, bytes)
+    assert all(isinstance(chunk, bytes) for chunk in remaining)
+    assert first == FIRST_CHUNK
+    assert b"".join(remaining) == SECOND_CHUNK
+
+
 async def test_stream_context_is_single_use(http_server: str) -> None:
     async with foghttp.AsyncClient() as client:
         context = client.stream(GET, f"{http_server}/status/{OK}")

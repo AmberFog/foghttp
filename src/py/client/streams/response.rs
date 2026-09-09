@@ -9,7 +9,7 @@ use crate::py::client::process::{current_process_id, stream_response_used_after_
 use crate::py::response::{RawRequestInfo, RawResponse};
 use crate::py::retry::RawRetryTrace;
 use pyo3::prelude::*;
-use pyo3::types::PyAny;
+use pyo3::types::{PyAny, PyBytes};
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 
@@ -165,7 +165,7 @@ impl RawStreamResponse {
         }
     }
 
-    fn next_chunk(&self, py: Python<'_>) -> PyResult<Option<Vec<u8>>> {
+    fn next_chunk(&self, py: Python<'_>) -> PyResult<Option<Py<PyBytes>>> {
         self.ensure_current_process()?;
         let Some(state) = self.state.clone() else {
             return Ok(None);
@@ -197,7 +197,7 @@ impl RawStreamResponse {
         let result = py.detach(|| runtime_handle.block_on(result_receiver));
         state.finish_read_delivery();
         if let Ok(result) = result {
-            result
+            result.map(|chunk| chunk.map(|chunk| PyBytes::new(py, &chunk).unbind()))
         } else {
             state.fail(None);
             Err(FogHttpError::new_err(STREAM_RESPONSE_READ_ABORTED))
