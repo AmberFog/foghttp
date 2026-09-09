@@ -2,7 +2,7 @@ mod constants;
 mod origin;
 mod scheme;
 
-use url::Url;
+use url::{Position, Url};
 
 #[derive(Clone, Debug)]
 pub struct HttpUrl {
@@ -68,7 +68,11 @@ impl HttpUrl {
     }
 
     pub fn origin(&self) -> String {
-        origin::format_origin(self.scheme(), &self.host(), self.port())
+        format!(
+            "{}://{}",
+            self.scheme(),
+            &self.inner[Position::BeforeHost..Position::AfterPort],
+        )
     }
 
     pub fn join(&self, location: &str) -> Result<Self, String> {
