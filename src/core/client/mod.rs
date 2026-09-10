@@ -33,6 +33,7 @@ use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
 use hyper_util::client::legacy::connect::dns::GaiResolver;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
+use hyper_util::rt::TokioTimer;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -132,11 +133,12 @@ where
     );
 
     let mut builder = Client::builder(executor);
-    builder.pool_max_idle_per_host(if options.keepalive {
+    builder.pool_max_idle_per_host(if options.keepalive && !idle_timeout.is_zero() {
         options.max_idle_connections_per_host
     } else {
         0
     });
     builder.pool_idle_timeout(idle_timeout);
+    builder.pool_timer(TokioTimer::new());
     Ok(builder.build(connector))
 }

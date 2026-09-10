@@ -1,9 +1,11 @@
 from functools import partial
 from io import BytesIO
+from typing import Literal
 
 import pytest
 
 import foghttp
+from foghttp.methods import GET
 from foghttp.status_codes.redirect import PERMANENT_REDIRECT, TEMPORARY_REDIRECT
 from foghttp.status_codes.success import OK
 from tests.client_multipart.sources import (
@@ -12,6 +14,8 @@ from tests.client_multipart.sources import (
     SyncChunks,
     TrackedFactory,
 )
+from tests.client_streaming.constants import FIRST_CHUNK, GATED_STREAM_PATH, SECOND_CHUNK
+from tests.client_streaming.server import start_sync_streaming_server
 from tests.client_upload.helpers import DelayedCloseEmptyFile, MisreportedLengthFile
 from tests.support.transport_state import wait_for_sync_transport_state
 from tests.support.transport_stats import wait_for_sync_transport_stats
@@ -310,7 +314,7 @@ def test_sync_transport_state_reports_idle_connection_detail(
 
 
 def test_sync_idle_timeout_eviction_is_reported(
-    keepalive_http_server: KeepAliveServer,
+    idle_timeout_http_server: KeepAliveServer,
 ) -> None:
     limits = foghttp.Limits(
         keepalive=True,
@@ -319,12 +323,7 @@ def test_sync_idle_timeout_eviction_is_reported(
     )
 
     with foghttp.Client(limits=limits) as client:
-        response = client.get(keepalive_http_server.url + KEEPALIVE_PATH)
-        wait_for_sync_transport_stats(
-            client,
-            lambda stats: stats.idle_connections == 1,
-            message="expected reusable connection to enter the idle pool",
-        )
+        response = client.get(idle_timeout_http_server.url + KEEPALIVE_PATH)
         wait_for_sync_transport_stats(
             client,
             is_idle_timeout_eviction_reported,
@@ -333,13 +332,64 @@ def test_sync_idle_timeout_eviction_is_reported(
         stats = client.stats()
         state = client.dump_transport_state()
 
-    origin_state = state["origins"][keepalive_http_server.url]
+    origin_state = state["origins"][idle_timeout_http_server.url]
 
     assert response.status_code == OK
     assert stats.connections_closed == 1
     assert stats.idle_timeout_evictions == 1
     assert origin_state["connections_closed"] == 1
     assert origin_state["idle_timeout_evictions"] == 1
+
+
+@pytest.mark.parametrize("idle_timeout", [0.0, IDLE_TIMEOUT_SECONDS])
+@pytest.mark.parametrize("runtime", ["shared", "dedicated"])
+def test_sync_idle_timeout_releases_connection_cap_for_another_origin(
+    idle_timeout_http_server: KeepAliveServer,
+    keepalive_http_server: KeepAliveServer,
+    idle_timeout: float,
+    runtime: Literal["shared", "dedicated"],
+) -> None:
+    limits = foghttp.Limits(
+        max_connections=1,
+        max_connections_per_host=1,
+        max_idle_connections_per_host=1,
+        idle_timeout=idle_timeout,
+    )
+    timeouts = foghttp.Timeouts(pool=2.0, total=3.0)
+
+    with foghttp.Client(limits=limits, timeouts=timeouts, runtime=runtime, trust_env=False) as client:
+        first = client.get(idle_timeout_http_server.url + KEEPALIVE_PATH)
+        second = client.get(keepalive_http_server.url + KEEPALIVE_PATH)
+        stats = client.stats()
+        origin = client.dump_transport_state()["origins"][idle_timeout_http_server.url]
+
+    assert first.status_code == OK
+    assert second.status_code == OK
+    assert stats.connections_opened == EXPECTED_DISTINCT_CONNECTIONS
+    assert stats.connection_acquire_timeouts == 0
+    assert origin["connections_closed"] == 1
+    assert idle_timeout_http_server.snapshot().request_count == 1
+
+
+def test_sync_idle_cleanup_preserves_active_stream(
+    idle_timeout_http_server: KeepAliveServer,
+) -> None:
+    limits = foghttp.Limits(idle_timeout=IDLE_TIMEOUT_SECONDS)
+
+    with start_sync_streaming_server() as server, foghttp.Client(limits=limits, trust_env=False) as client:
+        with client.stream(GET, server.base_url + GATED_STREAM_PATH) as stream:
+            assert client.get(idle_timeout_http_server.url + KEEPALIVE_PATH).status_code == OK
+            wait_for_sync_transport_stats(
+                client,
+                lambda stats: stats.idle_timeout_evictions == 1,
+                message="expected idle cleanup while the stream is active",
+            )
+            assert client.stats().active_requests == 1
+            assert client.stats().active_connections == 1
+            server.release_tail.set()
+            assert b"".join(stream.iter_bytes()) == FIRST_CHUNK + SECOND_CHUNK
+
+        assert client.stats().failed_requests == 0
 
 
 def test_sync_early_remote_idle_close_is_not_idle_timeout_eviction(
