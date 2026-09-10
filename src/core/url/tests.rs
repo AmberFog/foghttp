@@ -14,6 +14,39 @@ fn parses_and_normalizes_http_url() {
 }
 
 #[test]
+fn origin_preserves_normalization_without_url_secrets() {
+    let cases = [
+        (
+            "HTTPS://Example.COM:443/path?q=1#part",
+            "https://example.com",
+        ),
+        (
+            "http://user:p%40ss@Example.COM:80/private?token=value#part", // pragma: allowlist secret
+            "http://example.com",
+        ),
+        (
+            "https://user:pass@Example.COM:8443/private", // pragma: allowlist secret
+            "https://example.com:8443",
+        ),
+        ("http://127.0.0.1:8080/path", "http://127.0.0.1:8080"),
+        ("http://[::1]:80/path", "http://[::1]"),
+        (
+            "https://user:pass@[2001:0DB8::1]:8443/private?token=value", // pragma: allowlist secret
+            "https://[2001:db8::1]:8443",
+        ),
+        (
+            "https://b\u{00fc}cher.example/path",
+            "https://xn--bcher-kva.example",
+        ),
+        ("http://example.com:0/path", "http://example.com:0"),
+    ];
+
+    for (input, expected) in cases {
+        assert_eq!(HttpUrl::parse(input).unwrap().origin(), expected);
+    }
+}
+
+#[test]
 fn joins_relative_locations() {
     let url = HttpUrl::parse("https://example.com/users/current/profile").unwrap();
 
