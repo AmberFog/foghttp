@@ -570,11 +570,17 @@ but its pressure is reported through `connection_acquire_*` rather than
 handle and is released when Hyper drops that physical connection. Idle
 keep-alive connections therefore count against explicit connection caps until
 they are reused, closed, or removed by transport pool cleanup.
-`Limits.idle_timeout` configures idle pool expiry, but it should not be treated
-as a precise cross-origin release timer. Idle keep-alive capacity remains
-controlled separately by `Limits.max_idle_connections_per_host`; if the idle
-pool setting is larger than an explicit connection cap, the connection cap is
+For a positive finite `Limits.idle_timeout`, Hyper periodically removes expired
+idle connections even when no further request targets their origin. This also
+releases their physical connection permits for requests to other origins.
+Cleanup is periodic, not a precise cross-origin release timer; a shorter
+`Timeouts.pool` can still expire before capacity is released. Connection-cap
+pressure does not evict idle connections before their timeout. Idle keep-alive
+capacity remains controlled separately by `Limits.max_idle_connections_per_host`;
+if the idle pool setting is larger than an explicit connection cap, the connection cap is
 still the hard upper bound on tracked physical connections.
+With `Limits.idle_timeout=0`, completed connections are not retained in the idle
+pool, so releasing their permits does not require a later request or cleanup tick.
 
 The response body lifecycle counters describe FogHTTP's Rust-side body
 contract for buffered and streamed response bodies. Socket lifecycle counters
