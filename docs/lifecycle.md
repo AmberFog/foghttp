@@ -543,7 +543,8 @@ connection counters.
   was handed to Hyper
 - `connections_closed` means tracked transport I/O handles dropped by Hyper
 - `connections_reused` means Hyper assigned a tracked connection to a logical
-  request after that connection had already served an earlier request
+  request after that connection had already served an earlier request; it does
+  not mean that the new request completed successfully
 - `connections_aborted` means FogHTTP marked a tracked connection unsafe for
   reuse during request or response handling, including cancellation, request
   write timeout, incomplete upload, upload-source failure, or response body
@@ -589,13 +590,23 @@ events, reused is recorded when Hyper assigns an existing connection, idle is
 derived from a reusable response, and aborted is derived from a non-reusable
 request or response lifecycle outcome.
 `idle_timeout_evictions` is counted when a tracked idle connection closes after
-reaching `Limits.idle_timeout`. `idle_connections` is diagnostic state for the
-current HTTP/1 path, not a public promise about Hyper's private pool internals.
-If a server closes an idle keep-alive connection before the client-side idle
-timeout, FogHTTP currently exposes the observable lifecycle as a closed
-connection followed by a new opened connection when the next request proceeds;
-it does not expose a separate failed-reuse counter until close reasons can be
-distinguished without guessing.
+reaching `Limits.idle_timeout`; idle age alone does not identify the cause of
+closure. `idle_connections` is diagnostic state for the current HTTP/1 path,
+not a public promise about Hyper's private pool internals.
+
+A remote idle close detected before assignment can result in a closed
+connection and a replacement connection without incrementing `connections_reused`.
+If the close races with assignment or sending, that sequence is not guaranteed.
+Hyper can internally recover an unstarted request assigned to an unusable reused
+connection. This recovery is separate from FogHTTP's opt-in `RetryPolicy` and
+does not by itself constitute a FogHTTP retry attempt.
+
+The current integration exposes connection metadata and final transport results,
+not a complete history of internal checkout and send outcomes. Connection
+lifecycle counters and events therefore do not form an exhaustive attempt log.
+FogHTTP does not expose a dedicated failed-reuse counter: neither a socket close,
+a final request error, nor subtraction of opened/closed/reused counters proves
+how many reuse attempts failed or were recovered internally.
 
 Use `dump_transport_state()` for a small debug snapshot when active, idle,
 pending, acquire pressure, per-origin connection lifecycle, and buffered
