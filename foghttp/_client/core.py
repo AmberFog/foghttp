@@ -23,7 +23,6 @@ from ..transport_stats import TransportStats
 from ..types import AsyncMultipartFiles, QueryParams, RequestData, SyncMultipartFiles
 from ..url import URL
 from .config import ClientConfig
-from .lifecycle_debug import AsyncLifecycleDebugTracker
 from .process import current_process_id, forked_process_error
 from .proxy_diagnostics_mapping import empty_proxy_diagnostics, proxy_diagnostics_from_raw
 from .raw.errors import raise_public_raw_error
@@ -56,7 +55,6 @@ class ClientCore:
         self._client_lock = threading.Lock()
         self._client: _foghttp.RawClient | None = None
         self._telemetry = TelemetryDispatcher(config.telemetry)
-        self._lifecycle_debug = AsyncLifecycleDebugTracker(config.lifecycle_debug)
         self._request_builder = (
             _DEFAULT_REQUEST_BUILDER
             if config.request_defaults is DEFAULT_REQUEST_BUILD_DEFAULTS and config.auth is None

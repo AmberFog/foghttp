@@ -10,6 +10,7 @@ from ._client.config import ClientConfig
 from ._client.constants import DEFAULT_MAX_REDIRECTS
 from ._client.core import ClientCore
 from ._client.lifecycle_debug import (
+    AsyncLifecycleDebugTracker,
     LifecycleDebugRequestToken,
     async_lifecycle_debug_leak_message,
 )
@@ -81,32 +82,32 @@ class AsyncClient(ClientCore):
         telemetry: TelemetryConfig | None = None,
         lifecycle_debug: AsyncLifecycleDebugConfig | None = None,
     ) -> None:
-        super().__init__(
-            config=ClientConfig.from_options(
-                ClientOptions(
-                    base_url=base_url,
-                    headers=headers,
-                    auth=auth,
-                    params=params,
-                    limits=limits,
-                    timeouts=timeouts,
-                    http_versions=http_versions,
-                    follow_redirects=follow_redirects,
-                    max_redirects=max_redirects,
-                    cookies=cookies,
-                    trust_env=trust_env,
-                    proxy=proxy,
-                    tls=tls,
-                    runtime=runtime,
-                    runtime_workers=runtime_workers,
-                    policy_hooks=policy_hooks,
-                    retry=retry,
-                    ssrf=ssrf,
-                    telemetry=telemetry,
-                    lifecycle_debug=lifecycle_debug,
-                ),
+        config = ClientConfig.from_options(
+            ClientOptions(
+                base_url=base_url,
+                headers=headers,
+                auth=auth,
+                params=params,
+                limits=limits,
+                timeouts=timeouts,
+                http_versions=http_versions,
+                follow_redirects=follow_redirects,
+                max_redirects=max_redirects,
+                cookies=cookies,
+                trust_env=trust_env,
+                proxy=proxy,
+                tls=tls,
+                runtime=runtime,
+                runtime_workers=runtime_workers,
+                policy_hooks=policy_hooks,
+                retry=retry,
+                ssrf=ssrf,
+                telemetry=telemetry,
+                lifecycle_debug=lifecycle_debug,
             ),
         )
+        self._lifecycle_debug = AsyncLifecycleDebugTracker(config.lifecycle_debug)
+        super().__init__(config=config)
         self._transport = self._create_transport()
 
     async def __aenter__(self) -> "AsyncClient":
