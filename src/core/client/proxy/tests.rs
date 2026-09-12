@@ -1,7 +1,6 @@
-use super::{
-    establish_tunnel, find_headers_end, parse_connect_status, parse_proxy_endpoint,
-    proxy_endpoint_name, tunnel_authority, HttpProxyConnector, ProxyAuthorization,
-};
+use super::authorization::ProxyAuthorization;
+use super::tunnel::{establish_tunnel, find_headers_end, parse_connect_status, tunnel_authority};
+use super::{parse_proxy_endpoint, proxy_endpoint_name, HttpProxyConnector};
 use crate::core::metrics::{Metrics, ProxyTunnelFailureKind};
 use crate::messages::{
     PROXY_CONNECT_CLOSED, PROXY_ENDPOINT_PATH_OR_QUERY_UNSUPPORTED,

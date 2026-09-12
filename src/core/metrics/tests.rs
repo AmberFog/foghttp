@@ -53,6 +53,62 @@ fn acquire_wait_metrics_track_duration_without_underflowing_pending() {
 }
 
 #[test]
+fn pool_acquire_wait_totals_saturate_while_max_and_last_remain_distinct() {
+    let metrics = Metrics::default();
+    let origin = metrics.origin_metrics("https://api.example.com");
+
+    for elapsed in [Duration::from_nanos(u64::MAX - 5), Duration::from_nanos(10)] {
+        metrics.pool_acquire_wait_finished(elapsed);
+        origin.pool_acquire_wait_finished(elapsed);
+    }
+
+    let snapshot = metrics.snapshot();
+    let origin_snapshot = metrics.origin_snapshots().pop().expect("registered origin");
+    for actual in [
+        (
+            snapshot.pool_acquire_wait_time_total_ns,
+            snapshot.pool_acquire_wait_time_max_ns,
+            snapshot.pool_acquire_wait_time_last_ns,
+        ),
+        (
+            origin_snapshot.pool_acquire_wait_time_total_ns,
+            origin_snapshot.pool_acquire_wait_time_max_ns,
+            origin_snapshot.pool_acquire_wait_time_last_ns,
+        ),
+    ] {
+        assert_eq!(actual, (u64::MAX, u64::MAX - 5, 10));
+    }
+}
+
+#[test]
+fn connection_acquire_wait_metrics_clamp_duration_and_keep_the_last_wait() {
+    let metrics = Metrics::default();
+    let origin = metrics.origin_metrics("https://api.example.com");
+
+    for elapsed in [Duration::from_secs(u64::MAX), Duration::from_nanos(7)] {
+        metrics.connection_acquire_wait_finished(elapsed);
+        origin.connection_acquire_wait_finished(elapsed);
+    }
+
+    let snapshot = metrics.snapshot();
+    let origin_snapshot = metrics.origin_snapshots().pop().expect("registered origin");
+    for actual in [
+        (
+            snapshot.connection_acquire_wait_time_total_ns,
+            snapshot.connection_acquire_wait_time_max_ns,
+            snapshot.connection_acquire_wait_time_last_ns,
+        ),
+        (
+            origin_snapshot.connection_acquire_wait_time_total_ns,
+            origin_snapshot.connection_acquire_wait_time_max_ns,
+            origin_snapshot.connection_acquire_wait_time_last_ns,
+        ),
+    ] {
+        assert_eq!(actual, (u64::MAX, u64::MAX, 7));
+    }
+}
+
+#[test]
 fn transport_state_snapshot_includes_aggregate_metrics_and_origins() {
     let metrics = Metrics::default();
 

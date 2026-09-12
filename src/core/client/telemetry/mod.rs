@@ -189,15 +189,6 @@ where
 }
 
 impl ConnectionTelemetry {
-    #[cfg(test)]
-    fn new(
-        metrics: Arc<Metrics>,
-        origin_metrics: Option<Arc<OriginMetrics>>,
-        idle_timeout: Duration,
-    ) -> Self {
-        Self::new_with_native_telemetry(metrics, origin_metrics, idle_timeout, None, None)
-    }
-
     fn new_with_native_telemetry(
         metrics: Arc<Metrics>,
         origin_metrics: Option<Arc<OriginMetrics>>,
@@ -225,15 +216,6 @@ impl ConnectionTelemetry {
                 origin,
             }),
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn request_started(
-        &self,
-        request_telemetry: Option<RequestTelemetry>,
-        write_timeout: Option<RequestWriteTimeoutContext>,
-    ) -> ConnectionUseGuard {
-        self.request_started_with_body_completion(request_telemetry, write_timeout, None)
     }
 
     pub(crate) fn request_started_with_body_completion(

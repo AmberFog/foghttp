@@ -9,8 +9,3 @@ mod tunnel;
 pub(crate) use endpoint::{parse_proxy_endpoint, proxy_endpoint_name};
 pub(crate) use http::HttpProxyConnector;
 pub(crate) use tunnel::{HttpsTunnelConnector, ProxyTunnelTarget};
-
-#[cfg(test)]
-use authorization::ProxyAuthorization;
-#[cfg(test)]
-use tunnel::{establish_tunnel, find_headers_end, parse_connect_status, tunnel_authority};

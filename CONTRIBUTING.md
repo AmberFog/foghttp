@@ -216,6 +216,12 @@ Tests should prove observable behavior. For lifecycle, cancellation, metrics,
 redirects, TLS, and resource-limit changes, assert on public state, errors, or
 diagnostics where possible.
 
+Keep Rust unit tests and their test-only helpers in separate files under the
+module they exercise. Use `foo.rs` with `foo/tests.rs`, or `foo/mod.rs` with
+`foo/tests.rs`, connected by `#[cfg(test)] mod tests;`. Keep existing focused
+test modules and names when extracting inline tests. Test modules can access
+their parent's private items; do not widen production visibility just for tests.
+
 Any future convenience helper must satisfy the normative
 [explicit client ownership contract](docs/lifecycle.md#explicit-client-ownership).
 Treat its lifecycle and test matrix as required review gates, including sync
