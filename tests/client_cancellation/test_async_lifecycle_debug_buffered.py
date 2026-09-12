@@ -58,6 +58,44 @@ async def test_async_lifecycle_debug_tracks_active_buffered_request(
         client.assert_no_lifecycle_leaks()
 
 
+@pytest.mark.parametrize(
+    "debug_config",
+    [
+        pytest.param(None, id="disabled"),
+        pytest.param(foghttp.AsyncLifecycleDebugConfig(), id="enabled"),
+        pytest.param(foghttp.AsyncLifecycleDebugConfig(strict=True), id="strict"),
+    ],
+)
+async def test_async_lifecycle_debug_is_isolated_between_clients(
+    cancellation_server: str,
+    debug_config: foghttp.AsyncLifecycleDebugConfig | None,
+) -> None:
+    async with (
+        foghttp.AsyncClient(lifecycle_debug=debug_config) as active_client,
+        foghttp.AsyncClient(lifecycle_debug=debug_config) as idle_client,
+    ):
+        idle_before = idle_client.dump_lifecycle_debug()
+        task = asyncio.create_task(active_client.get(cancellation_server + SLOW_HEADERS_PATH))
+        try:
+            predicate = has_disabled_transport_pressure if debug_config is None else has_one_buffered_request
+            await wait_for_lifecycle_debug(
+                active_client,
+                predicate,
+                message="request was not active before checking client isolation",
+            )
+
+            assert idle_client.dump_lifecycle_debug() == idle_before
+            idle_client.assert_no_lifecycle_leaks()
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        await wait_for_no_active_requests(active_client)
+        active_client.assert_no_lifecycle_leaks()
+        assert idle_client.dump_lifecycle_debug() == idle_before
+
+
 async def test_async_lifecycle_debug_reports_pending_acquire_after_cancellation(
     cancellation_server: str,
 ) -> None:

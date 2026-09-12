@@ -1,8 +1,10 @@
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+import gc
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib
+import sys
 import threading
-from typing import Any
+from typing import Any, Never
 from urllib.parse import urlsplit
 
 import pytest
@@ -20,6 +22,27 @@ from .helpers import (
     LifecycleErrorRawClient,
     RawClientFactory,
 )
+
+
+@pytest.fixture
+def construction_failure() -> Callable[..., Never]:
+    def fail(*_args: object, **_kwargs: object) -> Never:
+        message = "client construction failed"
+        raise RuntimeError(message)
+
+    return fail
+
+
+@pytest.fixture
+def unraisable_errors(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    gc.collect()
+    errors: list[str] = []
+
+    def capture(error: Any) -> None:
+        errors.append(str(error.exc_value))
+
+    monkeypatch.setattr(sys, "unraisablehook", capture)
+    return errors
 
 
 @pytest.fixture
