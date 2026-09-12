@@ -42,6 +42,7 @@ prometheus = [
 ]
 dev = [
     "coverage[toml]>=7,<8",
+    "cryptography>=50.0.0",
     "faker>=33",
     "hypothesis>=6,<7",
     "mypy>=2.1,<3",
