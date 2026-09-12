@@ -1,12 +1,17 @@
-use super::{ConnectionAbortReason, ConnectionTelemetry, InstrumentedConnection};
+use super::{
+    ConnectionAbortReason, ConnectionTelemetry, ConnectionUseGuard, InstrumentedConnection,
+};
 use crate::core::client::{
     buffered_request_body, request_write_timeout_from_error, streaming_request_body,
     upload_body_channel, ConnectionGate, InstrumentedConnector, RequestTaskContextExecutor,
     RequestWriteTimeoutContext,
 };
-use crate::core::metrics::{Metrics, OriginMetricsSnapshot, ResponseBodyLifecycleOutcome};
+use crate::core::metrics::{
+    Metrics, OriginMetrics, OriginMetricsSnapshot, ResponseBodyLifecycleOutcome,
+};
 use crate::core::telemetry::{
-    ClientTelemetry, TelemetryErrorType, TelemetryEventType, TelemetryOutcome, TelemetryRequestMode,
+    ClientTelemetry, RequestTelemetry, TelemetryErrorType, TelemetryEventType, TelemetryOutcome,
+    TelemetryRequestMode,
 };
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
@@ -30,6 +35,24 @@ const SECOND_ORIGIN: &str = "https://uploads.example.com";
 const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const WRITE_TIMEOUT: Duration = Duration::from_millis(10);
 const SECOND_WRITE_TIMEOUT: Duration = Duration::from_millis(50);
+
+impl ConnectionTelemetry {
+    fn new(
+        metrics: Arc<Metrics>,
+        origin_metrics: Option<Arc<OriginMetrics>>,
+        idle_timeout: Duration,
+    ) -> Self {
+        Self::new_with_native_telemetry(metrics, origin_metrics, idle_timeout, None, None)
+    }
+
+    pub(crate) fn request_started(
+        &self,
+        request_telemetry: Option<RequestTelemetry>,
+        write_timeout: Option<RequestWriteTimeoutContext>,
+    ) -> ConnectionUseGuard {
+        self.request_started_with_body_completion(request_telemetry, write_timeout, None)
+    }
+}
 
 #[test]
 fn telemetry_tracks_reuse_idle_abort_and_close_once() {
