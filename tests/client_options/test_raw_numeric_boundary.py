@@ -1,3 +1,4 @@
+from contextlib import closing
 import math
 from types import SimpleNamespace
 
@@ -7,6 +8,7 @@ import pytest
 from foghttp import _foghttp
 from foghttp._client.proxy import ProxyTransportPolicy
 from foghttp.methods import GET
+from foghttp.status_codes.success import OK
 
 from .raw_options import raw_client_options
 
@@ -16,6 +18,11 @@ REQUEST_BODY_REPLAYABLE = True
 BODY_STREAM = None
 USE_PROXY_TRANSPORT = False
 PROXY_TRANSPORT_POLICY = ProxyTransportPolicy.DIRECT.value
+INVALID_REQUEST_CASES = (
+    pytest.param({"method": "NOT A METHOD"}, "invalid HTTP method", id="method"),
+    pytest.param({"headers": [("bad name", "value")]}, "invalid HTTP header name", id="header-name"),
+    pytest.param({"headers": [("x-test", "bad\r\nvalue")]}, "failed to parse header value", id="header-value"),
+)
 
 
 def test_raw_client_rejects_positional_constructor_arguments() -> None:
@@ -225,6 +232,46 @@ async def test_raw_client_async_request_rejects_invalid_timeout_without_panic(
             raw_client.request_async(**_raw_request_options(url=faker.url(), total_timeout=math.inf))
     finally:
         raw_client.close()
+
+
+@pytest.mark.parametrize(("overrides", "message"), INVALID_REQUEST_CASES)
+@pytest.mark.parametrize("request_method", ["request", "request_stream"])
+def test_raw_sync_request_errors_preserve_type_and_release_slot(
+    sync_http_server: str,
+    request_method: str,
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    with closing(_raw_client()) as raw_client:
+        options = _raw_request_options(url=sync_http_server)
+        options.update(overrides)
+        with pytest.raises(_foghttp.FogHttpError, match=message) as exc_info:
+            getattr(raw_client, request_method)(**options)
+        assert type(exc_info.value) is _foghttp.FogHttpError
+        assert exc_info.value.args == (message,)
+        assert raw_client.stats().active_requests == 0
+        response = raw_client.request(**_raw_request_options(url=sync_http_server))
+        assert response.status_code == OK
+
+
+@pytest.mark.parametrize(("overrides", "message"), INVALID_REQUEST_CASES)
+@pytest.mark.parametrize("request_method", ["request_async", "request_stream_async"])
+async def test_raw_async_request_errors_preserve_type_and_release_slot(
+    sync_http_server: str,
+    request_method: str,
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    with closing(_raw_client()) as raw_client:
+        options = _raw_request_options(url=sync_http_server)
+        options.update(overrides)
+        with pytest.raises(_foghttp.FogHttpError, match=message) as exc_info:
+            await getattr(raw_client, request_method)(**options)
+        assert type(exc_info.value) is _foghttp.FogHttpError
+        assert exc_info.value.args == (message,)
+        assert raw_client.stats().active_requests == 0
+        response = await raw_client.request_async(**_raw_request_options(url=sync_http_server))
+        assert response.status_code == OK
 
 
 def _raw_client() -> _foghttp.RawClient:

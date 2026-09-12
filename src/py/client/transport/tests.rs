@@ -1,14 +1,18 @@
+use super::errors::response_body_error;
 use super::request::{PendingResponsePolicyAction, RequestState, TransportRequest};
 use crate::core::headers::HeaderPairs;
 use crate::core::method::{GET, POST};
 use crate::core::metrics::Metrics;
 use crate::core::policy::TransportRoute;
-use crate::core::response::BufferedBodyBudget;
+use crate::core::response::{BufferedBodyBudget, ResponseBodyError};
+use crate::errors::{
+    FogHttpError, FogHttpResponseBodyBudgetExceededError, FogHttpResponseBodyTooLargeError,
+};
 use crate::messages::{
     NON_REPLAYABLE_REQUEST_BODY_REDIRECT, PROXY_REDIRECT_POLICY_RECOMPUTE_UNSUPPORTED,
 };
 use hyper::StatusCode;
-use pyo3::Python;
+use pyo3::prelude::*;
 use std::sync::{Arc, Once};
 use tokio::runtime::Builder;
 
@@ -20,6 +24,60 @@ const WRITE_TIMEOUT: f64 = 2.0;
 fn initialize_python() {
     static PYTHON: Once = Once::new();
     PYTHON.call_once(Python::initialize);
+}
+
+#[test]
+fn response_body_errors_keep_native_exception_types_and_arguments() {
+    initialize_python();
+    Python::attach(|py| {
+        let cases = [
+            (
+                ResponseBodyError::TooLarge { limit: 8 },
+                py.get_type::<FogHttpResponseBodyTooLargeError>(),
+                "response body exceeded max_response_body_size of 8 bytes",
+            ),
+            (
+                ResponseBodyError::BudgetExceeded { limit: 9 },
+                py.get_type::<FogHttpResponseBodyBudgetExceededError>(),
+                "buffered response bodies exceeded max_buffered_response_bytes of 9 bytes",
+            ),
+            (
+                ResponseBodyError::CounterOverflow,
+                py.get_type::<FogHttpError>(),
+                "buffered response byte counter overflow",
+            ),
+            (
+                ResponseBodyError::ReservationOverflow,
+                py.get_type::<FogHttpError>(),
+                "buffered response byte reservation overflow",
+            ),
+            (
+                ResponseBodyError::ReservationUnderflow,
+                py.get_type::<FogHttpError>(),
+                "buffered response byte reservation underflow",
+            ),
+            (
+                ResponseBodyError::DecodeReservationOverflow,
+                py.get_type::<FogHttpError>(),
+                "decoded response byte reservation overflow",
+            ),
+            (
+                ResponseBodyError::Decode {
+                    coding: "gzip",
+                    source: std::io::Error::new(std::io::ErrorKind::InvalidData, "broken payload"),
+                },
+                py.get_type::<FogHttpError>(),
+                "failed to decode gzip response body: broken payload",
+            ),
+        ];
+        for (error, expected_type, message) in cases {
+            let mapped = response_body_error(&error);
+            assert!(mapped.get_type(py).is(&expected_type));
+            assert!(mapped.is_instance_of::<FogHttpError>(py));
+            let args: (String,) = mapped.value(py).getattr("args").unwrap().extract().unwrap();
+            assert_eq!(args, (message.to_owned(),));
+        }
+    });
 }
 
 #[test]

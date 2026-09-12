@@ -27,6 +27,24 @@ runtime shutdown, close/aclose, or asyncio future integration.
 - If raw close ever becomes blocking, `AsyncClient.aclose()` needs an
   async-safe shutdown path instead of doing blocking teardown on the event loop.
 
+## Core Error Boundary
+
+`src/core` does not construct or carry Python exceptions. Request/header
+validation returns the existing `hyper::http::Error`, retaining its concrete
+parser error through `get_ref()`. Buffered collection, memory reservations and
+decompression return `ResponseBodyError`; decoding errors retain their I/O
+source and resource errors retain their category and configured limit.
+
+The transport binding maps these errors to the existing native exceptions.
+Do not use a generic I/O-to-Python conversion: decoding failures are request
+errors, not retryable network errors. Size and aggregate-budget failures keep
+their distinct exception classes. This conversion does not change reservation
+rollback, connection completion, or the read-error-only raw-deflate fallback.
+
+Core error-path tests must not initialize or attach to Python. Binding tests
+verify the native and public exception mapping separately. This separation
+does not make the extension crate's build/link toolchain Python-independent.
+
 ## Streaming Rules
 
 Streaming adds repeated Python/Rust handoff, so it needs stricter review than

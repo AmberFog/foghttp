@@ -1,4 +1,5 @@
 use super::context::RawResponseContext;
+use super::errors::response_body_error;
 use crate::core::client::RequestBodyCompletion;
 use crate::core::response::{BufferedBodyCollector, CollectedBody};
 use crate::messages::{REQUEST_TOTAL_TIMEOUT, RESPONSE_BODY_READ_TIMEOUT};
@@ -32,7 +33,8 @@ pub(super) async fn collect_response_body(
         &body,
         context.max_response_body_size,
         &context.buffered_body_budget,
-    )?;
+    )
+    .map_err(|error| response_body_error(&error))?;
 
     while let Some(frame) = next_response_body_frame(&mut body, context, read_timeout).await? {
         let frame = frame.map_err(|error| {
@@ -47,7 +49,9 @@ pub(super) async fn collect_response_body(
             continue;
         };
 
-        collector.push_data(&data)?;
+        collector
+            .push_data(&data)
+            .map_err(|error| response_body_error(&error))?;
     }
 
     Ok(collector.finish())

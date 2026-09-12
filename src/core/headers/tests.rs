@@ -2,6 +2,19 @@ use super::{request_headers, response_headers};
 use hyper::header::{HeaderMap, HeaderName, HeaderValue};
 
 #[test]
+fn request_headers_retain_invalid_name_and_value_errors() {
+    let name_error = request_headers(vec![("bad name".to_owned(), "value".to_owned())])
+        .expect_err("invalid header name");
+    assert!(name_error.is::<hyper::header::InvalidHeaderName>());
+    assert_eq!(name_error.to_string(), name_error.get_ref().to_string());
+
+    let value_error = request_headers(vec![("x-test".to_owned(), "bad\r\nvalue".to_owned())])
+        .expect_err("invalid header value");
+    assert!(value_error.is::<hyper::header::InvalidHeaderValue>());
+    assert_eq!(value_error.to_string(), value_error.get_ref().to_string());
+}
+
+#[test]
 fn request_headers_preserve_repeated_values() {
     let headers = request_headers(vec![
         ("x-repeat".to_owned(), "first".to_owned()),

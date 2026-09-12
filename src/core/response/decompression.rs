@@ -1,11 +1,10 @@
 use super::body::{enforce_response_body_limit, CollectedBody};
+use super::ResponseBodyError;
 use crate::core::headers::HeaderPairs;
-use crate::errors::FogHttpError;
 use brotli::Decompressor;
 use flate2::read::{DeflateDecoder, MultiGzDecoder, ZlibDecoder};
 use hyper::header::CONTENT_ENCODING;
 use hyper::HeaderMap;
-use pyo3::prelude::*;
 use std::io::{Cursor, Read};
 
 const DECODE_BUFFER_SIZE: usize = 8192;
@@ -45,7 +44,7 @@ pub fn decode_body(
     collected: CollectedBody,
     decoding_plan: ResponseBodyDecodingPlan,
     max_response_body_size: Option<usize>,
-) -> PyResult<ResponseBody> {
+) -> Result<ResponseBody, ResponseBodyError> {
     match decoding_plan.plan {
         ContentCodingPlan::Decode(codings) => {
             decode_supported_body(collected, codings.as_slice(), max_response_body_size)
@@ -107,7 +106,7 @@ fn decode_supported_body(
     mut body: CollectedBody,
     codings: &[ContentCoding],
     max_response_body_size: Option<usize>,
-) -> PyResult<ResponseBody> {
+) -> Result<ResponseBody, ResponseBodyError> {
     let mut content = std::mem::take(&mut body.content);
     for coding in codings.iter().rev().copied() {
         let encoded_size = content.len();
@@ -132,7 +131,7 @@ fn decode_content_coding(
     content: &[u8],
     max_response_body_size: Option<usize>,
     reservation: &mut super::BufferedBodyReservation,
-) -> PyResult<Vec<u8>> {
+) -> Result<Vec<u8>, ResponseBodyError> {
     match coding {
         ContentCoding::Gzip => decode_reader(
             coding,
@@ -154,7 +153,7 @@ fn decode_deflate(
     content: &[u8],
     max_response_body_size: Option<usize>,
     reservation: &mut super::BufferedBodyReservation,
-) -> PyResult<Vec<u8>> {
+) -> Result<Vec<u8>, ResponseBodyError> {
     match decode_reader_result(
         ZlibDecoder::new(Cursor::new(content)),
         max_response_body_size,
@@ -176,14 +175,14 @@ fn decode_reader<R: Read>(
     reader: R,
     max_response_body_size: Option<usize>,
     reservation: &mut super::BufferedBodyReservation,
-) -> PyResult<Vec<u8>> {
+) -> Result<Vec<u8>, ResponseBodyError> {
     decode_reader_result(reader, max_response_body_size, reservation)
         .map_err(|err| decode_attempt_error(coding, err))
 }
 
 enum DecodeAttemptError {
     Read(std::io::Error),
-    Runtime(PyErr),
+    Runtime(ResponseBodyError),
 }
 
 fn decode_reader_result<R: Read>(
@@ -225,21 +224,21 @@ fn decode_reader_result<R: Read>(
             if let Err(release_error) = reservation.release_chunk(attempt_reserved) {
                 return Err(DecodeAttemptError::Runtime(release_error));
             }
-            return Err(DecodeAttemptError::Runtime(FogHttpError::new_err(
-                "decoded response byte reservation overflow",
-            )));
+            return Err(DecodeAttemptError::Runtime(
+                ResponseBodyError::DecodeReservationOverflow,
+            ));
         };
         attempt_reserved = next_attempt_reserved;
         decoded.extend_from_slice(&buffer[..read]);
     }
 }
 
-fn decode_attempt_error(coding: ContentCoding, err: DecodeAttemptError) -> PyErr {
+fn decode_attempt_error(coding: ContentCoding, err: DecodeAttemptError) -> ResponseBodyError {
     match err {
-        DecodeAttemptError::Read(err) => FogHttpError::new_err(format!(
-            "failed to decode {} response body: {err}",
-            content_coding_name(coding),
-        )),
+        DecodeAttemptError::Read(source) => ResponseBodyError::Decode {
+            coding: content_coding_name(coding),
+            source,
+        },
         DecodeAttemptError::Runtime(err) => err,
     }
 }
@@ -260,8 +259,19 @@ fn decoded_body_header(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{content_coding_plan, decoded_response_headers, ContentCoding, ContentCodingPlan};
+    use super::{
+        decode_body, decode_content_coding, decode_deflate, decode_reader,
+        response_body_decoding_plan, CollectedBody,
+    };
+    use crate::core::metrics::Metrics;
+    use crate::core::response::{BufferedBodyBudget, ResponseBodyError};
+    use flate2::write::{DeflateEncoder, ZlibEncoder};
+    use flate2::Compression;
     use hyper::header::{HeaderValue, CONTENT_ENCODING};
     use hyper::HeaderMap;
+    use std::error::Error;
+    use std::io::{self, Cursor, Read, Write};
+    use std::sync::Arc;
 
     fn content_encoding_headers(values: &[&'static str]) -> HeaderMap {
         let mut headers = HeaderMap::new();
@@ -320,5 +330,124 @@ mod tests {
                 ("x-trace".to_owned(), "abc".to_owned()),
             ],
         );
+    }
+
+    #[test]
+    fn invalid_codings_retain_io_source_and_release_reserved_bytes() {
+        for coding in [
+            ContentCoding::Gzip,
+            ContentCoding::Deflate,
+            ContentCoding::Brotli,
+        ] {
+            let metrics = Arc::new(Metrics::default());
+            let budget = BufferedBodyBudget::new(None, Arc::clone(&metrics));
+            let mut reservation = budget.start_response();
+            reservation.reserve_chunk(16).unwrap();
+            let error = decode_content_coding(coding, &[0xff; 16], None, &mut reservation)
+                .expect_err("invalid compressed body");
+            assert!(
+                matches!(&error, ResponseBodyError::Decode { coding: name, .. } if *name == super::content_coding_name(coding))
+            );
+            assert!(error.source().unwrap().is::<io::Error>());
+            assert_eq!(metrics.snapshot().buffered_response_bytes, 16);
+            drop(reservation);
+            assert_eq!(metrics.snapshot().buffered_response_bytes, 0);
+        }
+    }
+
+    #[test]
+    fn raw_deflate_fallback_keeps_only_decoded_reservation() {
+        let content = b"raw deflate response";
+        let mut compressor = DeflateEncoder::new(Vec::new(), Compression::default());
+        compressor.write_all(content).unwrap();
+        let encoded = compressor.finish().unwrap();
+        let metrics = Arc::new(Metrics::default());
+        let budget = BufferedBodyBudget::new(None, Arc::clone(&metrics));
+        let mut reservation = budget.start_response();
+        reservation.reserve_chunk(encoded.len()).unwrap();
+        let response = decode_body(
+            CollectedBody {
+                content: encoded,
+                reservation,
+            },
+            response_body_decoding_plan(&content_encoding_headers(&["deflate"])),
+            None,
+        )
+        .expect("raw deflate fallback");
+        assert_eq!(response.content, content);
+        assert!(response.decoded);
+        assert_eq!(metrics.snapshot().buffered_response_bytes, content.len());
+        drop(response);
+        assert_eq!(metrics.snapshot().buffered_response_bytes, 0);
+    }
+
+    #[test]
+    fn deflate_limits_do_not_fall_back_or_leak_attempt_bytes() {
+        let content = vec![b'x'; super::DECODE_BUFFER_SIZE + 1];
+        let mut compressor = ZlibEncoder::new(Vec::new(), Compression::default());
+        compressor.write_all(&content).unwrap();
+        let encoded = compressor.finish().unwrap();
+        for size_limited in [true, false] {
+            let metrics = Arc::new(Metrics::default());
+            let budget_limit = encoded.len() + super::DECODE_BUFFER_SIZE;
+            let budget = BufferedBodyBudget::new(
+                (!size_limited).then_some(budget_limit),
+                Arc::clone(&metrics),
+            );
+            let mut reservation = budget.start_response();
+            reservation.reserve_chunk(encoded.len()).unwrap();
+            let error = decode_deflate(
+                &encoded,
+                size_limited.then_some(super::DECODE_BUFFER_SIZE),
+                &mut reservation,
+            )
+            .expect_err("decoded limit");
+            if size_limited {
+                assert!(
+                    matches!(error, ResponseBodyError::TooLarge { limit } if limit == super::DECODE_BUFFER_SIZE)
+                );
+                assert_eq!(metrics.snapshot().buffered_response_budget_rejections, 0);
+            } else {
+                assert!(
+                    matches!(error, ResponseBodyError::BudgetExceeded { limit } if limit == budget_limit)
+                );
+                assert_eq!(metrics.snapshot().buffered_response_budget_rejections, 1);
+            }
+            assert_eq!(metrics.snapshot().buffered_response_bytes, encoded.len());
+            drop(reservation);
+            assert_eq!(metrics.snapshot().buffered_response_bytes, 0);
+        }
+    }
+
+    struct FailedRead;
+
+    impl Read for FailedRead {
+        fn read(&mut self, _buffer: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::new(io::ErrorKind::InvalidData, "broken payload"))
+        }
+    }
+
+    #[test]
+    fn decode_read_error_rolls_back_partial_output_and_preserves_source() {
+        let metrics = Arc::new(Metrics::default());
+        let budget = BufferedBodyBudget::new(None, Arc::clone(&metrics));
+        let mut reservation = budget.start_response();
+        reservation.reserve_chunk(7).unwrap();
+        let error = decode_reader(
+            ContentCoding::Gzip,
+            Cursor::new(b"partial").chain(FailedRead),
+            None,
+            &mut reservation,
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "failed to decode gzip response body: broken payload"
+        );
+        let source = error.source().unwrap().downcast_ref::<io::Error>().unwrap();
+        assert_eq!(source.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(metrics.snapshot().buffered_response_bytes, 7);
+        drop(reservation);
+        assert_eq!(metrics.snapshot().buffered_response_bytes, 0);
     }
 }
