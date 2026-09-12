@@ -1,4 +1,5 @@
 mod callback;
+mod coalescing;
 mod constants;
 mod parts;
 mod read;

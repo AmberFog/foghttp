@@ -1,4 +1,4 @@
-use super::constants::{MAX_READY_FRAME_COALESCE_COUNT, READY_FRAME_COALESCE_TARGET_BYTES};
+use super::coalescing::{drain_ready_data_frames, ReadyFrameDrain};
 use super::read::next_stream_body_frame;
 use super::registry::StreamRegistry;
 use crate::core::client::{ConnectionAbortReason, ConnectionUseGuard};
@@ -10,14 +10,11 @@ use crate::py::client::async_requests::RequestCompletion;
 use crate::py::client::future::cancel_python_future;
 use crate::py::client::lifecycle::ResponseBodyLifecycle;
 use crate::py::client::timeout_diagnostics::response_body_transport_error;
-use bytes::{Bytes, BytesMut};
-use hyper::body::Body;
+use bytes::Bytes;
 use hyper::body::Incoming;
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
-use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 use tokio::task::AbortHandle;
 
@@ -80,19 +77,6 @@ pub(super) struct StreamReadGuard {
 pub(super) struct ActiveStreamRead {
     abort_handle: AbortHandle,
     notification: StreamReadNotification,
-}
-
-enum ReadyBodyFrame {
-    Data(Bytes),
-    Eof,
-    Pending,
-    Error(String),
-}
-
-enum ReadyFrameDrain {
-    Eof,
-    Error(String),
-    Stopped,
 }
 
 #[derive(Clone, Copy)]
@@ -395,7 +379,7 @@ impl StreamReadGuard {
 
             let mut chunk = data;
             if self.ready_frame_coalescing.is_enabled() {
-                match self.drain_ready_data_frames(&mut chunk) {
+                match drain_ready_data_frames(&mut chunk, self.body_mut()) {
                     ReadyFrameDrain::Eof => {
                         self.finish_success_from_read();
                         return Ok(Some(chunk));
@@ -409,32 +393,6 @@ impl StreamReadGuard {
             }
             self.finish_chunk();
             return Ok(Some(chunk));
-        }
-    }
-
-    fn drain_ready_data_frames(&mut self, chunk: &mut Bytes) -> ReadyFrameDrain {
-        drain_ready_data_frames_with(chunk, || self.poll_ready_body_frame())
-    }
-
-    fn poll_ready_body_frame(&mut self) -> ReadyBodyFrame {
-        let waker = Waker::noop();
-        let mut context = Context::from_waker(waker);
-        loop {
-            let frame = match Pin::new(self.body_mut()).poll_frame(&mut context) {
-                Poll::Ready(frame) => frame,
-                Poll::Pending => return ReadyBodyFrame::Pending,
-            };
-            let Some(frame) = frame else {
-                return ReadyBodyFrame::Eof;
-            };
-            let frame = match frame {
-                Ok(frame) => frame,
-                Err(err) => return ReadyBodyFrame::Error(err.to_string()),
-            };
-            let Ok(data) = frame.into_data() else {
-                continue;
-            };
-            return ReadyBodyFrame::Data(data);
         }
     }
 
@@ -492,40 +450,6 @@ impl Drop for StreamReadGuard {
             self.state.abort_from_read(ConnectionAbortReason::Cancelled);
         }
     }
-}
-
-fn drain_ready_data_frames_with(
-    chunk: &mut Bytes,
-    mut poll_ready_body_frame: impl FnMut() -> ReadyBodyFrame,
-) -> ReadyFrameDrain {
-    let mut coalesced_frames = 1;
-    let mut merged: Option<BytesMut> = None;
-    let outcome = loop {
-        let chunk_len = merged.as_ref().map_or(chunk.len(), BytesMut::len);
-        if chunk_len >= READY_FRAME_COALESCE_TARGET_BYTES
-            || coalesced_frames >= MAX_READY_FRAME_COALESCE_COUNT
-        {
-            break ReadyFrameDrain::Stopped;
-        }
-        match poll_ready_body_frame() {
-            ReadyBodyFrame::Data(data) => {
-                let buffer = merged.get_or_insert_with(|| {
-                    let mut buffer = BytesMut::with_capacity(chunk.len() + data.len());
-                    buffer.extend_from_slice(chunk);
-                    buffer
-                });
-                buffer.extend_from_slice(&data);
-                coalesced_frames += 1;
-            }
-            ReadyBodyFrame::Eof => break ReadyFrameDrain::Eof,
-            ReadyBodyFrame::Error(error) => break ReadyFrameDrain::Error(error),
-            ReadyBodyFrame::Pending => break ReadyFrameDrain::Stopped,
-        }
-    };
-    if let Some(merged) = merged {
-        *chunk = merged.freeze();
-    }
-    outcome
 }
 
 #[derive(Clone, Copy)]
