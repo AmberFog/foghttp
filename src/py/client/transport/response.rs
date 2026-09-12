@@ -1,5 +1,6 @@
 use super::body::{collect_response_body, drain_response_body, response_body_can_be_decoded};
 use super::context::{RawResponseContext, RawStreamResponseContext};
+use super::errors::response_body_error;
 use crate::core::client::{ConnectionAbortReason, ConnectionUseGuard};
 use crate::core::headers::HeaderPairs;
 use crate::core::metrics::{Metrics, OriginMetrics, ResponseBodyLifecycleOutcome};
@@ -119,7 +120,8 @@ pub(super) async fn raw_response(
     };
     lifecycle.finish_connection();
     let (headers, response_content, body_reservation) = if let Some(decoding_plan) = decoding_plan {
-        let body = decode_body(collected, decoding_plan, context.max_response_body_size)?;
+        let body = decode_body(collected, decoding_plan, context.max_response_body_size)
+            .map_err(|error| response_body_error(&error))?;
         (
             decoded_response_headers(headers, body.decoded),
             body.content,

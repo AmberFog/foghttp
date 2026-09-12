@@ -1,6 +1,13 @@
 import pytest
 
-import foghttp
+from foghttp import (
+    AsyncClient,
+    Limits,
+    RequestError,
+    ResponseBodyBudgetExceededError,
+    ResponseBodyTooLargeError,
+    _foghttp,
+)
 from foghttp.status_codes.success import OK, RESET_CONTENT
 
 from .constants import (
@@ -31,7 +38,7 @@ async def test_async_buffered_response_decodes_supported_content_encoding(
     response_decompression_server: ResponseDecompressionServer,
     path: str,
 ) -> None:
-    async with foghttp.AsyncClient() as client:
+    async with AsyncClient() as client:
         response = await client.get(f"{response_decompression_server.url}{path}")
         stats = client.stats()
 
@@ -48,7 +55,7 @@ async def test_async_buffered_response_decodes_supported_content_encoding(
 async def test_async_buffered_response_leaves_unsupported_content_encoding_encoded(
     response_decompression_server: ResponseDecompressionServer,
 ) -> None:
-    async with foghttp.AsyncClient() as client:
+    async with AsyncClient() as client:
         response = await client.get(
             f"{response_decompression_server.url}{UNSUPPORTED_ENCODING_PATH}",
         )
@@ -62,7 +69,7 @@ async def test_async_buffered_response_leaves_unsupported_content_encoding_encod
 async def test_async_buffered_response_decodes_multiple_content_encoding_fields(
     response_decompression_server: ResponseDecompressionServer,
 ) -> None:
-    async with foghttp.AsyncClient() as client:
+    async with AsyncClient() as client:
         response = await client.get(
             f"{response_decompression_server.url}{MULTIPLE_ENCODING_FIELDS_PATH}",
         )
@@ -81,7 +88,7 @@ async def test_async_head_response_preserves_encoded_body_metadata(
 ) -> None:
     encoded_body = compressed_body(GZIP_ENCODING_PATH)
 
-    async with foghttp.AsyncClient() as client:
+    async with AsyncClient() as client:
         response = await client.head(f"{response_decompression_server.url}{GZIP_ENCODING_PATH}")
         stats = client.stats()
 
@@ -96,7 +103,7 @@ async def test_async_head_response_preserves_encoded_body_metadata(
 async def test_async_reset_content_response_preserves_encoded_body_metadata(
     response_decompression_server: ResponseDecompressionServer,
 ) -> None:
-    async with foghttp.AsyncClient() as client:
+    async with AsyncClient() as client:
         response = await client.get(f"{response_decompression_server.url}{RESET_CONTENT_PATH}")
         stats = client.stats()
 
@@ -111,14 +118,20 @@ async def test_async_reset_content_response_preserves_encoded_body_metadata(
 async def test_async_buffered_response_rejects_invalid_encoded_body(
     response_decompression_server: ResponseDecompressionServer,
 ) -> None:
-    async with foghttp.AsyncClient() as client:
-        with pytest.raises(foghttp.RequestError, match="failed to decode gzip response body"):
+    async with AsyncClient() as client:
+        with pytest.raises(RequestError, match="failed to decode gzip response body") as exc_info:
             await client.get(f"{response_decompression_server.url}{INVALID_GZIP_PATH}")
 
         stats = client.stats()
+        response = await client.get(f"{response_decompression_server.url}{UNSUPPORTED_ENCODING_PATH}")
+        assert response.content == UNSUPPORTED_ENCODED_BODY
+        assert client.stats().buffered_response_bytes == 0
+        assert client.stats().active_requests == 0
 
     assert stats.total_requests == 1
     assert stats.failed_requests == 1
+    assert type(exc_info.value.__cause__) is _foghttp.FogHttpError
+    assert exc_info.value.__cause__.args == (str(exc_info.value),)
     assert stats.response_body_aborted == 1
     assert stats.active_connections == 0
     assert stats.idle_connections == 0
@@ -131,16 +144,23 @@ async def test_async_buffered_response_rejects_invalid_encoded_body(
 async def test_async_buffered_response_limit_applies_to_decoded_body(
     response_decompression_server: ResponseDecompressionServer,
 ) -> None:
-    limits = foghttp.Limits(max_response_body_size=DECODED_BODY_LIMIT)
+    limits = Limits(max_response_body_size=DECODED_BODY_LIMIT)
 
-    async with foghttp.AsyncClient(limits=limits) as client:
+    async with AsyncClient(limits=limits) as client:
         with pytest.raises(
-            foghttp.ResponseBodyTooLargeError,
+            ResponseBodyTooLargeError,
             match="response body exceeded max_response_body_size",
-        ):
+        ) as exc_info:
             await client.get(f"{response_decompression_server.url}{DECODED_TOO_LARGE_PATH}")
 
+        assert type(exc_info.value.__cause__) is _foghttp.FogHttpResponseBodyTooLargeError
+        assert exc_info.value.__cause__.args == (str(exc_info.value),)
+
         stats = client.stats()
+        response = await client.get(f"{response_decompression_server.url}{UNSUPPORTED_ENCODING_PATH}")
+        assert response.content == UNSUPPORTED_ENCODED_BODY
+        assert client.stats().buffered_response_bytes == 0
+        assert client.stats().active_requests == 0
 
     assert stats.total_requests == 1
     assert stats.failed_requests == 1
@@ -150,19 +170,26 @@ async def test_async_buffered_response_limit_applies_to_decoded_body(
 async def test_async_buffered_response_budget_applies_while_decoding(
     response_decompression_server: ResponseDecompressionServer,
 ) -> None:
-    limits = foghttp.Limits(
+    limits = Limits(
         max_response_body_size=len(DECODED_TOO_LARGE_BODY),
         max_buffered_response_bytes=budget_below_decoding_transient_size(),
     )
 
-    async with foghttp.AsyncClient(limits=limits) as client:
+    async with AsyncClient(limits=limits) as client:
         with pytest.raises(
-            foghttp.ResponseBodyBudgetExceededError,
+            ResponseBodyBudgetExceededError,
             match="buffered response bodies exceeded max_buffered_response_bytes",
-        ):
+        ) as exc_info:
             await client.get(f"{response_decompression_server.url}{DECODED_TOO_LARGE_PATH}")
 
+        assert type(exc_info.value.__cause__) is _foghttp.FogHttpResponseBodyBudgetExceededError
+        assert exc_info.value.__cause__.args == (str(exc_info.value),)
+
         stats = client.stats()
+        response = await client.get(f"{response_decompression_server.url}{UNSUPPORTED_ENCODING_PATH}")
+        assert response.content == UNSUPPORTED_ENCODED_BODY
+        assert client.stats().buffered_response_bytes == 0
+        assert client.stats().active_requests == 0
 
     assert stats.total_requests == 1
     assert stats.failed_requests == 1

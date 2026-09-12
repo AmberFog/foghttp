@@ -2,8 +2,12 @@ use crate::core::client::{
     connection_acquire_timeout_from_error, request_write_timeout_from_error,
 };
 use crate::core::policy::{PolicyError, SsrfViolation};
+use crate::core::response::ResponseBodyError;
 use crate::core::telemetry::TelemetryErrorType;
-use crate::errors::{transport_error_message, FogHttpError, FogHttpNetworkError, FogHttpSsrfError};
+use crate::errors::{
+    transport_error_message, FogHttpError, FogHttpNetworkError,
+    FogHttpResponseBodyBudgetExceededError, FogHttpResponseBodyTooLargeError, FogHttpSsrfError,
+};
 use crate::messages::CONNECTION_ACQUIRE_TIMEOUT;
 use crate::py::client::timeout_diagnostics::{
     connection_acquire_timeout_error, write_timeout_error,
@@ -17,6 +21,22 @@ pub(super) fn policy_error(error: &PolicyError) -> PyErr {
         return ssrf_error(violation);
     }
     FogHttpError::new_err(error.to_string())
+}
+
+pub(super) fn response_body_error(error: &ResponseBodyError) -> PyErr {
+    match error {
+        ResponseBodyError::TooLarge { .. } => {
+            FogHttpResponseBodyTooLargeError::new_err(error.to_string())
+        }
+        ResponseBodyError::BudgetExceeded { .. } => {
+            FogHttpResponseBodyBudgetExceededError::new_err(error.to_string())
+        }
+        ResponseBodyError::CounterOverflow
+        | ResponseBodyError::ReservationOverflow
+        | ResponseBodyError::ReservationUnderflow
+        | ResponseBodyError::DecodeReservationOverflow
+        | ResponseBodyError::Decode { .. } => FogHttpError::new_err(error.to_string()),
+    }
 }
 
 pub(super) fn transport_error(error: &(dyn Error + 'static)) -> PyErr {

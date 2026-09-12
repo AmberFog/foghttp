@@ -725,7 +725,8 @@ pub(super) async fn send_current_hop(
     let (mut request, request_body_completion) = build_request(
         state.take_request_parts(route)?,
         write_timeout_context.clone(),
-    )?;
+    )
+    .map_err(|error| FogHttpError::new_err(error.to_string()))?;
     let request_telemetry = current_request_telemetry();
     let mut captured_connection = Some(CapturedConnectionUse::new(
         capture_connection(&mut request),
