@@ -147,9 +147,10 @@ fn rejects_every_truncated_fixture_offset() {
 #[test]
 fn empty_encoded_streams_and_gzip_members() {
     for coding in ["gzip", "deflate", "br"] {
-        assert!(decode(coding, &encode(coding, b""), 1, Some(0))
-            .unwrap()
-            .is_empty());
+        assert_eq!(
+            decode(coding, &encode(coding, b""), 1, Some(0)).unwrap(),
+            b"".as_slice()
+        );
     }
     let encoded = [
         encode("gzip", b""),

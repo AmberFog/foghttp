@@ -4,6 +4,7 @@ use super::{
 };
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::channel;
+use std::sync::{Arc, Barrier};
 use std::thread;
 
 const ORIGIN: &str = "https://example.com";
@@ -20,6 +21,40 @@ fn journal_is_bounded_and_reports_drops_once() {
     assert_eq!(first.events.len(), 1);
     assert_eq!(first.dropped_events, 1);
     assert_eq!(telemetry.drain(None).dropped_events, 0);
+}
+
+#[test]
+fn concurrent_producers_respect_journal_capacity_and_can_refill_after_drain() {
+    const PRODUCERS: usize = 32;
+    for capacity in [0, 1, 8] {
+        let telemetry = ClientTelemetry::with_capacity(capacity);
+        for _ in 0..2 {
+            let barrier = Arc::new(Barrier::new(PRODUCERS));
+            let handles = (0..PRODUCERS)
+                .map(|request_id| {
+                    let telemetry = telemetry.clone();
+                    let barrier = Arc::clone(&barrier);
+                    thread::spawn(move || {
+                        let request = telemetry.request(
+                            request_id as u64,
+                            TelemetryRequestMode::Buffered,
+                            "GET".to_owned(),
+                        );
+                        barrier.wait();
+                        request.begin_pool_acquire(ORIGIN, 0);
+                    })
+                })
+                .collect::<Vec<_>>();
+            for handle in handles {
+                handle.join().expect("telemetry producer thread panicked");
+            }
+
+            let batch = telemetry.drain(None);
+            assert_eq!(batch.events.len(), capacity);
+            assert_eq!(batch.dropped_events, (PRODUCERS - capacity) as u64);
+            assert_eq!(telemetry.drain(None).dropped_events, 0);
+        }
+    }
 }
 
 #[test]
@@ -60,7 +95,7 @@ fn cancellation_prevents_a_late_phase_from_starting() {
     request.finish_pool_acquire_success();
 
     let batch = telemetry.drain(Some(7));
-    assert!(batch.events.is_empty());
+    assert_eq!(batch.events, []);
     assert_eq!(batch.dropped_events, 0);
 }
 
@@ -99,7 +134,7 @@ fn connection_use_started_after_cancellation_cannot_emit_reuse_or_abort() {
     request.cancel();
     assert!(request.begin_connection_use(ORIGIN, true).is_none());
 
-    assert!(telemetry.drain(Some(7)).events.is_empty());
+    assert_eq!(telemetry.drain(Some(7)).events, []);
 }
 
 #[test]
@@ -147,7 +182,7 @@ fn completed_connection_use_is_not_reclassified_by_late_cancellation() {
     assert!(connection_use.finish());
     request.cancel();
 
-    assert!(telemetry.drain(Some(7)).events.is_empty());
+    assert_eq!(telemetry.drain(Some(7)).events, []);
 }
 
 #[test]
@@ -281,7 +316,7 @@ fn request_drain_claims_client_scoped_records_and_retains_foreign_requests() {
     assert_eq!(second_batch.dropped_events, 0);
 
     let client_batch = telemetry.drain(None);
-    assert!(client_batch.events.is_empty());
+    assert_eq!(client_batch.events, []);
 }
 
 #[test]
@@ -309,7 +344,7 @@ fn claimed_client_records_cannot_starve_later_request_events() {
 
     assert_eq!(telemetry.drain(Some(2)).events.len(), 2);
     let final_batch = telemetry.drain(None);
-    assert!(final_batch.events.is_empty());
+    assert_eq!(final_batch.events, []);
     assert_eq!(final_batch.dropped_events, 0);
 }
 
@@ -343,5 +378,5 @@ fn shutdown_waits_for_in_flight_producers_and_rejects_late_records() {
     telemetry
         .request(2, TelemetryRequestMode::Buffered, "GET".to_owned())
         .begin_pool_acquire(ORIGIN, 0);
-    assert!(telemetry.drain(None).events.is_empty());
+    assert_eq!(telemetry.drain(None).events, []);
 }

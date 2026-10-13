@@ -628,15 +628,22 @@ impl UploadBodyProducerCompletion {
     }
 
     fn data_frame_consumed(&self) {
-        let decremented = self.inner.outstanding_data_frames.fetch_update(
-            Ordering::AcqRel,
-            Ordering::Acquire,
-            |outstanding| outstanding.checked_sub(1),
-        );
-        debug_assert!(
-            decremented.is_ok(),
-            "upload body data frame count underflow"
-        );
+        let mut outstanding = self.inner.outstanding_data_frames.load(Ordering::Acquire);
+        loop {
+            debug_assert!(outstanding > 0, "upload body data frame count underflow");
+            let Some(next) = outstanding.checked_sub(1) else {
+                return;
+            };
+            match self.inner.outstanding_data_frames.compare_exchange_weak(
+                outstanding,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return,
+                Err(actual) => outstanding = actual,
+            }
+        }
     }
 
     fn finish(&self) {

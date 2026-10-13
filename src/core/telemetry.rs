@@ -382,12 +382,19 @@ impl ClientTelemetry {
     }
 
     fn reserve_event_slot(&self) -> bool {
-        self.inner
-            .queued_events
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |queued| {
-                (queued < self.inner.capacity).then_some(queued + 1)
-            })
-            .is_ok()
+        let mut queued = self.inner.queued_events.load(Ordering::Relaxed);
+        while queued < self.inner.capacity {
+            match self.inner.queued_events.compare_exchange_weak(
+                queued,
+                queued + 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return true,
+                Err(actual) => queued = actual,
+            }
+        }
+        false
     }
 
     fn release_event_slot(&self) {
