@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import Mock, patch
 
 from faker import Faker
 import pytest
@@ -132,6 +133,37 @@ async def test_async_closed_client_rejects_stats(
         client.stats()
 
 
+@pytest.mark.parametrize(
+    "decode_content",
+    [
+        pytest.param(Mock(spec=bool), id="bool-spec"),
+        pytest.param(Mock(__class__=bool), id="spoofed-class"),
+    ],
+)
+async def test_async_stream_rejects_bool_impostors_before_building_request(decode_content: object) -> None:
+    async with foghttp.AsyncClient() as client:
+        with patch.object(client, "build_request", autospec=True) as build_request:
+            with pytest.raises(TypeError, match="decode_content must be a bool"):
+                client.stream(GET, "https://example.invalid", decode_content=decode_content)  # type: ignore[arg-type]
+            build_request.assert_not_called()
+            assert client.stats().total_requests == 0
+
+
+@pytest.mark.parametrize(
+    "decode_content",
+    [
+        pytest.param(Mock(spec=bool), id="bool-spec"),
+        pytest.param(Mock(__class__=bool), id="spoofed-class"),
+    ],
+)
+async def test_async_closed_client_precedes_stream_decode_content_validation(decode_content: object) -> None:
+    client = foghttp.AsyncClient()
+    await client.aclose()
+
+    with pytest.raises(foghttp.ClientClosedError, match="FogHTTP client is closed"):
+        client.stream(GET, "https://example.invalid", decode_content=decode_content)  # type: ignore[arg-type]
+
+
 async def test_async_dump_transport_state_before_first_request_do_not_create_raw_client(
     async_client_factory: type[foghttp.AsyncClient],
     raw_client_factory: RawClientFactory,
@@ -146,6 +178,7 @@ async def test_async_dump_transport_state_before_first_request_do_not_create_raw
         "active_requests": 0,
         "buffered_response_bytes": 0,
         "buffered_response_budget_rejections": 0,
+        "stream_decoder_reserved_bytes": 0,
         "connection_acquire_attempts": 0,
         "connection_acquire_immediate": 0,
         "connection_acquire_timeouts": 0,

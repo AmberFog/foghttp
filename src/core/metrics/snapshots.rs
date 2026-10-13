@@ -37,6 +37,7 @@ pub struct MetricsSnapshot {
     pub idle_timeout_evictions: usize,
     pub buffered_response_bytes: usize,
     pub buffered_response_budget_rejections: usize,
+    pub stream_decoder_reserved_bytes: usize,
 }
 
 pub struct StatsSnapshot {

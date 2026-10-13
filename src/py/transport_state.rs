@@ -71,6 +71,8 @@ pub struct RawTransportState {
     buffered_response_budget_rejections: usize,
     #[pyo3(get)]
     origins: Vec<RawOriginPressure>,
+    #[pyo3(get)]
+    stream_decoder_reserved_bytes: usize,
 }
 
 impl From<TransportStateSnapshot> for RawTransportState {
@@ -111,6 +113,7 @@ impl From<TransportStateSnapshot> for RawTransportState {
             buffered_response_bytes: metrics.buffered_response_bytes,
             buffered_response_budget_rejections: metrics.buffered_response_budget_rejections,
             origins: snapshot.origins.into_iter().map(Into::into).collect(),
+            stream_decoder_reserved_bytes: metrics.stream_decoder_reserved_bytes,
         }
     }
 }

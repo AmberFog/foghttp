@@ -47,6 +47,7 @@ impl RawStreamResponse {
             history,
             retry_trace,
             body,
+            decoded,
             permit,
             lifecycle,
             connection_use,
@@ -72,6 +73,7 @@ impl RawStreamResponse {
             retry_trace,
             state: Some(StreamState::new(StreamStateParts {
                 body,
+                decoded,
                 permit,
                 lifecycle,
                 connection_use,
@@ -147,22 +149,22 @@ impl RawStreamResponse {
         self.retry_trace.clone()
     }
 
-    fn close(&self) {
+    fn close(&self) -> Option<&'static str> {
         if self.process_id != current_process_id() {
-            return;
+            return None;
         }
-        if let Some(state) = &self.state {
-            state.close();
-        }
+        let state = self.state.as_ref()?;
+        state.close();
+        state.terminal_error_type()
     }
 
-    fn cancel(&self) {
+    fn cancel(&self) -> Option<&'static str> {
         if self.process_id != current_process_id() {
-            return;
+            return None;
         }
-        if let Some(state) = &self.state {
-            state.cancel();
-        }
+        let state = self.state.as_ref()?;
+        state.cancel();
+        state.terminal_error_type()
     }
 
     fn next_chunk(&self, py: Python<'_>) -> PyResult<Option<Py<PyBytes>>> {

@@ -29,12 +29,14 @@ use crate::py::client::async_requests::{
 use crate::py::client::auth::PythonAuth;
 use crate::py::client::future::PythonFutureSetters;
 use crate::py::client::options::{
-    validate_numeric_client_options, validate_request_timeouts, NumericClientOptions,
+    extract_stream_decode_content, extract_stream_decoded_byte_limit,
+    extract_stream_decoder_memory_limit, validate_numeric_client_options,
+    validate_request_timeouts, NumericClientOptions,
 };
 use crate::py::client::policy_hooks::PythonPolicyHooks;
 use crate::py::client::process::{client_used_after_fork, current_process_id, ProcessId};
 use crate::py::client::runtime::{parse_runtime_mode, ClientRuntime};
-use crate::py::client::streams::StreamRegistry;
+use crate::py::client::streams::{StreamDecodeOptions, StreamRegistry};
 use crate::py::client::transport::{
     send_request, send_stream_request, TransportClients, TransportRequest,
 };
@@ -43,7 +45,7 @@ use crate::py::stats::RawStats;
 use crate::py::telemetry::{raw_telemetry_batch, RawTelemetryEvent};
 use crate::py::{RawPoolDiagnostics, RawProxyDiagnostics, RawTransportState};
 use pyo3::prelude::*;
-use pyo3::types::PyAny;
+use pyo3::types::{PyAny, PyBool};
 use std::sync::Arc;
 
 pub use streams::RawStreamResponse;
@@ -60,6 +62,8 @@ pub struct RawClient {
     future_setters: PythonFutureSetters,
     max_response_body_size: Option<usize>,
     buffered_body_budget: BufferedBodyBudget,
+    max_stream_decoded_bytes: Option<usize>,
+    max_stream_decoder_memory_bytes: usize,
     follow_redirects: bool,
     max_redirects: usize,
     cookie_jar: Option<CookieJar>,
@@ -111,7 +115,9 @@ impl RawClient {
         ssrf_allowed_schemes,
         ssrf_allowed_origins,
         ssrf_allowed_domains,
-        telemetry_enabled
+        telemetry_enabled,
+        max_stream_decoded_bytes=None,
+        max_stream_decoder_memory_bytes=134_217_728
     ))]
     #[allow(
         clippy::fn_params_excessive_bools,
@@ -157,6 +163,11 @@ impl RawClient {
         ssrf_allowed_origins: Vec<String>,
         ssrf_allowed_domains: Vec<String>,
         telemetry_enabled: bool,
+        #[pyo3(from_py_with = extract_stream_decoded_byte_limit)] max_stream_decoded_bytes: Option<
+            usize,
+        >,
+        #[pyo3(from_py_with = extract_stream_decoder_memory_limit)]
+        max_stream_decoder_memory_bytes: usize,
     ) -> PyResult<Self> {
         validate_numeric_client_options(NumericClientOptions {
             max_active_requests,
@@ -265,6 +276,8 @@ impl RawClient {
             future_setters,
             max_response_body_size,
             buffered_body_budget,
+            max_stream_decoded_bytes,
+            max_stream_decoder_memory_bytes,
             follow_redirects,
             max_redirects,
             cookie_jar,
@@ -504,8 +517,12 @@ impl RawClient {
         read_timeout,
         write_timeout,
         total_timeout,
-        telemetry_request_id=None
+        telemetry_request_id=None,
+        decode_content=Python::attach(|py| PyBool::new(py, false).to_owned().into_any().unbind())
     ))]
+    #[pyo3(
+        text_signature = "($self, *, method, url, headers, auth_override_headers, auth_removed_headers, extensions=None, body, body_stream, body_replayable, use_proxy_transport, proxy_policy, pool_timeout, read_timeout, write_timeout, total_timeout, telemetry_request_id=None, decode_content=False)"
+    )]
     #[allow(clippy::too_many_arguments)]
     fn request_stream(
         &self,
@@ -526,6 +543,7 @@ impl RawClient {
         write_timeout: f64,
         total_timeout: f64,
         telemetry_request_id: Option<u64>,
+        decode_content: Py<PyAny>,
     ) -> PyResult<RawStreamResponse> {
         self.ensure_current_process()?;
         validate_request_timeouts(pool_timeout, read_timeout, write_timeout, total_timeout)?;
@@ -535,6 +553,11 @@ impl RawClient {
         let acquire_gate = self.acquire_gate.clone();
         let metrics = Arc::clone(&self.metrics);
         let active_streams = self.active_streams.clone();
+        let decode_options = StreamDecodeOptions {
+            decode_content: extract_stream_decode_content(&decode_content.into_bound(py))?,
+            max_decoded_bytes: self.max_stream_decoded_bytes,
+            max_memory_bytes: self.max_stream_decoder_memory_bytes,
+        };
         let runtime_handle = runtime.handle().clone();
         let max_response_body_size = self.max_response_body_size;
         let buffered_body_budget = self.buffered_body_budget.clone();
@@ -591,6 +614,7 @@ impl RawClient {
                         extensions,
                     },
                     request_completion,
+                    decode_options,
                 )
                 .await
             }))
@@ -619,8 +643,12 @@ impl RawClient {
         read_timeout,
         write_timeout,
         total_timeout,
-        telemetry_request_id=None
+        telemetry_request_id=None,
+        decode_content=Python::attach(|py| PyBool::new(py, false).to_owned().into_any().unbind())
     ))]
+    #[pyo3(
+        text_signature = "($self, *, method, url, headers, auth_override_headers, auth_removed_headers, extensions=None, body, body_stream, body_replayable, use_proxy_transport, proxy_policy, pool_timeout, read_timeout, write_timeout, total_timeout, telemetry_request_id=None, decode_content=False)"
+    )]
     #[allow(clippy::too_many_arguments)]
     fn request_stream_async(
         &self,
@@ -641,12 +669,18 @@ impl RawClient {
         write_timeout: f64,
         total_timeout: f64,
         telemetry_request_id: Option<u64>,
+        decode_content: Py<PyAny>,
     ) -> PyResult<Py<PyAny>> {
         self.ensure_current_process()?;
         validate_request_timeouts(pool_timeout, read_timeout, write_timeout, total_timeout)?;
 
         let clients = self.clients_unchecked()?.clone();
         let runtime = self.runtime_unchecked()?;
+        let decode_options = StreamDecodeOptions {
+            decode_content: extract_stream_decode_content(&decode_content.into_bound(py))?,
+            max_decoded_bytes: self.max_stream_decoded_bytes,
+            max_memory_bytes: self.max_stream_decoder_memory_bytes,
+        };
         let max_response_body_size = self.max_response_body_size;
         let buffered_body_budget = self.buffered_body_budget.clone();
         let follow_redirects = self.follow_redirects;
@@ -669,6 +703,7 @@ impl RawClient {
                 clients,
                 metrics: Arc::clone(&self.metrics),
                 active_streams: self.active_streams.clone(),
+                decode_options,
                 pool_timeout,
                 telemetry,
                 future_setters: self.future_setters.clone_ref(py),

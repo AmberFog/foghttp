@@ -140,6 +140,8 @@ pub struct RawStats {
     buffered_response_bytes: usize,
     #[pyo3(get)]
     buffered_response_budget_rejections: usize,
+    #[pyo3(get)]
+    stream_decoder_reserved_bytes: usize,
 }
 
 impl From<StatsSnapshot> for RawStats {
@@ -181,6 +183,7 @@ impl From<StatsSnapshot> for RawStats {
             idle_timeout_evictions: metrics.idle_timeout_evictions,
             buffered_response_bytes: metrics.buffered_response_bytes,
             buffered_response_budget_rejections: metrics.buffered_response_budget_rejections,
+            stream_decoder_reserved_bytes: metrics.stream_decoder_reserved_bytes,
         }
     }
 }

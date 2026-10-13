@@ -18,8 +18,12 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 use tokio::task::AbortHandle;
 
+mod decoded;
+pub(crate) use decoded::{stream_decode_error, DecodedStream};
+
 pub(super) struct StreamStateParts {
     pub(super) body: Incoming,
+    pub(super) decoded: Option<DecodedStream>,
     pub(super) permit: AcquirePermit,
     pub(super) lifecycle: ResponseBodyLifecycle,
     pub(super) connection_use: Option<ConnectionUseGuard>,
@@ -46,12 +50,14 @@ pub(super) struct StreamStateInner {
 
 struct StreamStateFields {
     body: Option<Incoming>,
+    decoded: Option<DecodedStream>,
+    decoded_mode: bool,
     permit: Option<AcquirePermit>,
     lifecycle: Option<ResponseBodyLifecycle>,
     connection_use: Option<ConnectionUseGuard>,
     read_task: Option<ActiveStreamRead>,
     read_in_progress: bool,
-    finished: bool,
+    terminal: Option<StreamFinish>,
     successful_body_outcome: ResponseBodyLifecycleOutcome,
     metrics: Arc<Metrics>,
     completion: RequestCompletion,
@@ -65,6 +71,7 @@ struct StreamStateFields {
 pub(super) struct StreamReadGuard {
     state: StreamState,
     body: Option<Incoming>,
+    decoded: Option<DecodedStream>,
     read_timeout: Duration,
     read_timeout_secs: f64,
     origin: String,
@@ -99,12 +106,14 @@ impl StreamState {
             registry,
             fields: Mutex::new(StreamStateFields {
                 body: Some(parts.body),
+                decoded_mode: parts.decoded.is_some(),
+                decoded: parts.decoded,
                 permit: Some(parts.permit),
                 lifecycle: Some(parts.lifecycle),
                 connection_use: parts.connection_use,
                 read_task: None,
                 read_in_progress: false,
-                finished: false,
+                terminal: None,
                 successful_body_outcome: parts.successful_body_outcome,
                 metrics: parts.metrics,
                 completion: parts.completion,
@@ -131,7 +140,12 @@ impl StreamState {
         ready_frame_coalescing: ReadyFrameCoalescing,
     ) -> PyResult<Option<StreamReadGuard>> {
         let mut fields = self.fields();
-        if fields.finished {
+        if let Some(terminal) = fields.terminal {
+            if fields.decoded_mode && matches!(terminal, StreamFinish::Abort(_)) {
+                return Err(crate::errors::FogHttpLifecycleError::new_err(
+                    crate::messages::STREAM_RESPONSE_READ_ABORTED,
+                ));
+            }
             return Ok(None);
         }
         if fields.read_in_progress {
@@ -144,6 +158,7 @@ impl StreamState {
             return Ok(Some(StreamReadGuard {
                 state: self.clone(),
                 body: None,
+                decoded: None,
                 read_timeout: fields.read_timeout,
                 read_timeout_secs: fields.read_timeout_secs,
                 origin: fields.origin.clone(),
@@ -154,14 +169,16 @@ impl StreamState {
             }));
         }
 
-        let Some(body) = fields.body.take() else {
+        let body = fields.body.take();
+        if body.is_none() && fields.decoded.is_none() {
             return Ok(None);
-        };
+        }
         fields.read_in_progress = true;
 
         Ok(Some(StreamReadGuard {
             state: self.clone(),
-            body: Some(body),
+            body,
+            decoded: fields.decoded.take(),
             read_timeout: fields.read_timeout,
             read_timeout_secs: fields.read_timeout_secs,
             origin: fields.origin.clone(),
@@ -174,7 +191,7 @@ impl StreamState {
 
     pub(super) fn register_read_task(&self, read_task: ActiveStreamRead) -> bool {
         let mut fields = self.fields();
-        if fields.finished || !fields.read_in_progress {
+        if fields.terminal.is_some() || !fields.read_in_progress {
             drop(fields);
             read_task.abort_and_notify();
             return false;
@@ -184,7 +201,22 @@ impl StreamState {
     }
 
     pub(super) fn is_finished(&self) -> bool {
-        self.fields().finished
+        self.fields().terminal.is_some()
+    }
+
+    pub(super) fn terminal_error_type(&self) -> Option<&'static str> {
+        let fields = self.fields();
+        if !fields.decoded_mode {
+            return None;
+        }
+        match fields.terminal {
+            Some(StreamFinish::Abort(ConnectionAbortReason::Error(error_type))) => Some(
+                error_type
+                    .unwrap_or(TelemetryErrorType::RequestError)
+                    .as_str(),
+            ),
+            _ => None,
+        }
     }
 
     pub(super) fn close(&self) {
@@ -204,7 +236,7 @@ impl StreamState {
 
     pub(super) fn finish_read_delivery(&self) {
         let mut fields = self.fields();
-        if fields.finished {
+        if fields.terminal.is_some() {
             return;
         }
         fields.read_task = None;
@@ -213,7 +245,7 @@ impl StreamState {
 
     fn complete_read(&self, body: Incoming, deferred_body_error: Option<String>) {
         let mut fields = self.fields();
-        if fields.finished {
+        if fields.terminal.is_some() {
             return;
         }
         fields.body = Some(body);
@@ -224,17 +256,24 @@ impl StreamState {
         self.finish(StreamFinish::Success, false);
     }
 
+    fn finish_transport_from_read(&self) {
+        let mut fields = self.fields();
+        if fields.terminal.is_none() {
+            fields.finish_successful_body();
+        }
+    }
+
     fn abort_from_read(&self, reason: ConnectionAbortReason) {
         self.finish(StreamFinish::Abort(reason), false);
     }
 
-    fn finish(&self, finish: StreamFinish, abort_read_task: bool) {
-        let (finished_request, metrics, read_task_to_cancel) = {
+    fn finish(&self, finish: StreamFinish, abort_read_task: bool) -> bool {
+        let (finished_request, metrics, read_task_to_cancel, decoded) = {
             let mut fields = self.fields();
-            if fields.finished {
-                return;
+            if fields.terminal.is_some() {
+                return false;
             }
-            fields.finished = true;
+            fields.terminal = Some(finish);
             self.inner.registry.remove(self.inner.stream_id);
             let read_task_to_cancel = if abort_read_task {
                 fields.read_task.take()
@@ -243,6 +282,7 @@ impl StreamState {
                 None
             };
             fields.body.take();
+            let decoded = fields.decoded.take();
             match finish {
                 StreamFinish::Success => fields.finish_successful_body(),
                 StreamFinish::Abort(reason) => fields.finish_aborted_body(reason),
@@ -250,8 +290,10 @@ impl StreamState {
             fields.permit.take();
             let metrics = Arc::clone(&fields.metrics);
             let finished_request = fields.completion.finish();
-            (finished_request, metrics, read_task_to_cancel)
+            (finished_request, metrics, read_task_to_cancel, decoded)
         };
+
+        drop(decoded);
 
         if let Some(read_task) = read_task_to_cancel {
             read_task.abort_and_notify();
@@ -261,6 +303,7 @@ impl StreamState {
             let failed = matches!(finish, StreamFinish::Abort(_));
             metrics.request_finished(failed);
         }
+        true
     }
 
     fn fields(&self) -> MutexGuard<'_, StreamStateFields> {
@@ -322,6 +365,9 @@ impl StreamStateFields {
 
 impl StreamReadGuard {
     pub(super) async fn read_next_chunk(mut self) -> PyResult<Option<Bytes>> {
+        if self.decoded.is_some() {
+            return self.read_decoded_chunk().await;
+        }
         if let Some(error) = self.deferred_body_error.take() {
             let error = response_body_transport_error(self.state.request_write_timeout(), error);
             let error_type = response_body_transport_error_type(&error);

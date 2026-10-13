@@ -63,6 +63,8 @@ def create_raw_client(
             ssrf_allowed_origins=ssrf_options.origins,
             ssrf_allowed_domains=ssrf_options.domains,
             telemetry_enabled=config.telemetry is not None and config.telemetry.enabled,
+            max_stream_decoded_bytes=limits.max_stream_decoded_bytes,
+            max_stream_decoder_memory_bytes=limits.max_stream_decoder_memory_bytes,
         )
     except _RAW_CLIENT_SETUP_ERRORS as exc:
         raise ConfigurationError(str(exc)) from exc

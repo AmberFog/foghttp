@@ -71,3 +71,4 @@ class TransportState(TypedDict):
     buffered_response_bytes: int
     buffered_response_budget_rejections: int
     origins: dict[str, OriginPressureState]
+    stream_decoder_reserved_bytes: int

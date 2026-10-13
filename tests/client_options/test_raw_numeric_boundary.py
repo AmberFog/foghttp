@@ -134,6 +134,45 @@ def test_raw_client_accepts_unbounded_connection_limit_without_panic() -> None:
     raw_client.close()
 
 
+@pytest.mark.parametrize("field_name", ["max_stream_decoded_bytes", "max_stream_decoder_memory_bytes"])
+@pytest.mark.parametrize("value", [-1, 2**31, 1.5, True, False, "128"])
+def test_raw_client_rejects_invalid_stream_limits(field_name: str, value: object) -> None:
+    with pytest.raises(ValueError, match=rf"Limits\.{field_name} must be an integer between 0 and"):
+        _foghttp.RawClient(**raw_client_options(**{field_name: value}))
+
+
+def test_raw_client_rejects_unbounded_stream_decoder_memory() -> None:
+    with pytest.raises(ValueError, match=r"Limits\.max_stream_decoder_memory_bytes must be an integer"):
+        _foghttp.RawClient(**raw_client_options(max_stream_decoder_memory_bytes=None))
+
+
+@pytest.mark.parametrize("decoded_limit", [None, 0, 2**31 - 1])
+@pytest.mark.parametrize("memory_limit", [0, 2**31 - 1])
+def test_raw_client_accepts_stream_limit_boundaries(decoded_limit: int | None, memory_limit: int) -> None:
+    with closing(
+        _foghttp.RawClient(
+            **raw_client_options(
+                max_stream_decoded_bytes=decoded_limit,
+                max_stream_decoder_memory_bytes=memory_limit,
+            ),
+        ),
+    ) as raw_client:
+        assert raw_client.stats().stream_decoder_reserved_bytes == 0
+
+
+@pytest.mark.parametrize("request_method", ["request_stream", "request_stream_async"])
+@pytest.mark.parametrize("value", [None, 0, 1, "true", b"false", [], object()])
+def test_raw_stream_rejects_non_bool_decode_content_before_dispatch(request_method: str, value: object) -> None:
+    with closing(_raw_client()) as raw_client:
+        with pytest.raises(TypeError):
+            getattr(raw_client, request_method)(
+                **_raw_request_options(url="https://example.invalid"),
+                decode_content=value,
+            )
+        assert raw_client.stats().total_requests == 0
+        assert raw_client.stats().stream_decoder_reserved_bytes == 0
+
+
 def test_raw_client_rejects_non_callable_policy_hook_without_panic() -> None:
     policy_hooks = SimpleNamespace(
         before_send=object(),

@@ -10,6 +10,96 @@ use std::time::Duration;
 const CONCURRENT_SNAPSHOT_COUNT: usize = 32;
 
 #[test]
+fn stream_decoder_budget_reserves_up_to_limit_without_changing_buffered_accounting() {
+    let metrics = Metrics::default();
+    assert_eq!(metrics.reserve_buffered_response_bytes(5, Some(5)), Ok(()));
+    assert!(metrics.try_reserve_stream_decoder_bytes(0, 0));
+    assert!(!metrics.try_reserve_stream_decoder_bytes(1, 0));
+    assert!(metrics.try_reserve_stream_decoder_bytes(3, 8));
+    assert!(metrics.try_reserve_stream_decoder_bytes(5, 8));
+    assert!(!metrics.try_reserve_stream_decoder_bytes(1, 8));
+
+    let snapshot = metrics.stats_snapshot().metrics;
+    assert_eq!(snapshot.stream_decoder_reserved_bytes, 8);
+    assert_eq!(snapshot.buffered_response_bytes, 5);
+    assert_eq!(snapshot.buffered_response_budget_rejections, 0);
+    assert_eq!(snapshot.failed_requests, 0);
+
+    metrics.release_stream_decoder_bytes(3);
+    assert_eq!(metrics.snapshot().stream_decoder_reserved_bytes, 5);
+    metrics.release_stream_decoder_bytes(5);
+    assert_eq!(metrics.snapshot().stream_decoder_reserved_bytes, 0);
+    assert_eq!(metrics.snapshot().buffered_response_bytes, 5);
+}
+
+#[test]
+fn stream_decoder_budget_rejects_counter_overflow_without_mutation() {
+    let metrics = Metrics::default();
+    assert!(metrics.try_reserve_stream_decoder_bytes(usize::MAX, usize::MAX));
+    assert!(!metrics.try_reserve_stream_decoder_bytes(1, usize::MAX));
+    assert_eq!(metrics.snapshot().stream_decoder_reserved_bytes, usize::MAX);
+    metrics.release_stream_decoder_bytes(usize::MAX);
+    assert_eq!(metrics.snapshot().stream_decoder_reserved_bytes, 0);
+}
+
+#[test]
+fn stream_decoder_release_does_not_underflow_or_release_other_reservations() {
+    let metrics = Metrics::default();
+    metrics.release_stream_decoder_bytes(1);
+    assert_eq!(metrics.snapshot().stream_decoder_reserved_bytes, 0);
+    assert!(metrics.try_reserve_stream_decoder_bytes(8, 8));
+    metrics.release_stream_decoder_bytes(9);
+    assert_eq!(metrics.snapshot().stream_decoder_reserved_bytes, 8);
+}
+
+#[test]
+fn stream_decoder_gauge_is_not_part_of_origin_pressure_coherence() {
+    let metrics = Metrics::default();
+    assert!(metrics.try_reserve_stream_decoder_bytes(64, 64));
+    let snapshot = metrics.transport_state_snapshot();
+    assert!(snapshot.has_coherent_pressure());
+    assert!(snapshot.origins.is_empty());
+    assert_eq!(snapshot.metrics.stream_decoder_reserved_bytes, 64);
+}
+
+#[test]
+fn stream_decoder_budget_is_atomic_under_competing_reservations() {
+    const CONTENDERS: usize = 32;
+    const BYTES: usize = 128 * 1024;
+    const LIMIT: usize = 8 * BYTES;
+    let metrics = Arc::new(Metrics::default());
+    let barrier = Arc::new(Barrier::new(CONTENDERS + 1));
+    let handles = (0..CONTENDERS)
+        .map(|_| {
+            let metrics = Arc::clone(&metrics);
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                let reserved = metrics.try_reserve_stream_decoder_bytes(BYTES, LIMIT);
+                barrier.wait();
+                barrier.wait();
+                if reserved {
+                    metrics.release_stream_decoder_bytes(BYTES);
+                }
+                reserved
+            })
+        })
+        .collect::<Vec<_>>();
+    barrier.wait();
+    barrier.wait();
+    let reserved_bytes = metrics.snapshot().stream_decoder_reserved_bytes;
+    barrier.wait();
+    let admitted = handles
+        .into_iter()
+        .map(|handle| usize::from(handle.join().expect("reservation thread panicked")))
+        .sum::<usize>();
+    assert_eq!(admitted, 8);
+    assert_eq!(reserved_bytes, LIMIT);
+    assert_eq!(metrics.snapshot().stream_decoder_reserved_bytes, 0);
+    assert_eq!(metrics.snapshot().buffered_response_budget_rejections, 0);
+}
+
+#[test]
 fn buffered_response_reservation_rejects_without_changing_reserved_bytes() {
     let metrics = Metrics::default();
 

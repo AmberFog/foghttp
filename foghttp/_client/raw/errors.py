@@ -5,7 +5,12 @@ from typing import NoReturn
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
 from ...errors import FogHTTPError, LifecycleError, NetworkError, RequestError
-from ...errors.response import ResponseBodyBudgetExceededError, ResponseBodyTooLargeError, ResponseError
+from ...errors.response import (
+    ResponseBodyBudgetExceededError,
+    ResponseBodyTooLargeError,
+    ResponseDecodingError,
+    ResponseError,
+)
 from ...errors.timeout import PoolTimeout, ReadTimeout, TimeoutError, WriteTimeout
 from ..retry import bind_retry_trace
 from ..retry_trace_mapping import raw_retry_trace_on_error
@@ -16,6 +21,7 @@ from .timeout_errors import timeout_error_from_raw
 _RESPONSE_ERROR_TYPES = (
     (_foghttp.FogHttpResponseBodyTooLargeError, ResponseBodyTooLargeError),
     (_foghttp.FogHttpResponseBodyBudgetExceededError, ResponseBodyBudgetExceededError),
+    (_foghttp.FogHttpResponseDecodingError, ResponseDecodingError),
 )
 _TIMEOUT_ERROR_TYPES = (
     (_foghttp.FogHttpPoolTimeoutError, PoolTimeout),

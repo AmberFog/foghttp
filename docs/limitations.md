@@ -82,7 +82,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 |---|---|
 | CPython wheel ABI | Published wheels use `cp311-abi3`; the release pipeline validates the same native wheel on GIL-enabled CPython 3.11 through 3.14 for each natively runnable OS/architecture target |
 | Free-threaded CPython | Not supported by the current `abi3` wheels; PyO3's separate `abi3t` stable ABI starts at Python 3.15 and requires its own adoption and validation decision |
-| Streaming response decompression | Not available; buffered responses support transparent decoding |
+| Streaming response decompression | Opt-in `decode_content=True` supports strict gzip, zlib-wrapped deflate and standard-window Brotli, with at most four coding layers; raw bytes remain the default. Compressed 206 responses are rejected. |
 | Multipart uploads | Available through `files=` for bytes-like parts, binary file-like objects, direct byte streams, and byte-stream factories |
 | `files=` | Available; can be combined with mapping or repeated-pair `data=` form fields, but not with raw `data=`, `content=`, or `json=` |
 | Multipart header values | Field names, filenames, and part content types are currently limited to printable ASCII; non-ASCII filenames need a later compatibility design |
@@ -134,7 +134,7 @@ Use FogHTTP today when:
 
 Wait before using FogHTTP when:
 
-- you need transparent streaming decompression
+- you need automatic content-decoded streaming without opting in per stream
 - you need SOCKS, PAC, WPAD, or platform proxy discovery
 - you require proxy routing and application-layer SSRF protection on the same
   client; enforce destination policy at the proxy or network egress boundary
@@ -167,3 +167,9 @@ headers before the stream is returned. An enabled SSRF policy raises
 sent. Dedicated connect timeout exception mapping is reserved for later timeout
 work. See
 [Timeout model](./timeouts.md) for the current behavior.
+
+Opt-in streaming content errors raise `ResponseDecodingError`, a
+`ResponseError` subtype. Decoded-byte and decoder-memory limits raise
+`ResponseBodyTooLargeError` and `ResponseBodyBudgetExceededError`, respectively.
+These failures are not retried. See [Response streaming](./streaming.md) for
+strict format and partial-delivery semantics; buffered error mapping is unchanged.

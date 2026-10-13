@@ -427,6 +427,35 @@ The aggregate budget tracks in-flight buffered response bodies while Rust is
 collecting them. Once a `Response` is returned, its Python `bytes` lifetime is
 controlled by application code.
 
+## Streaming Decoder Limits
+
+These independent limits apply only to body-bearing streams opened with
+`decode_content=True`, including identity-only responses:
+
+- `max_stream_decoded_bytes=None` disables the cumulative output cap by default.
+  A configured cap applies separately to every decoding layer, including final
+  or identity output. Exceeding it raises `ResponseBodyTooLargeError` before
+  forwarding over-limit bytes. Zero permits only empty output.
+- `max_stream_decoder_memory_bytes=128 * 1024 * 1024` bounds aggregate decoder
+  reservations across one client's streams. Admission is atomic and does not
+  wait; insufficient capacity raises `ResponseBodyBudgetExceededError` before
+  creating the decoder. Zero rejects body-bearing decoded streams.
+
+Explicit limits accept integers from zero through `2**31 - 1`, excluding
+booleans. Only the cumulative byte cap accepts `None`.
+
+Reservations use 1 MiB per gzip/deflate layer, 32 MiB per Brotli layer, plus
+`(layers + 2) * 64 KiB` for bounded buffers. Identity reserves 128 KiB. Four
+Brotli layers exceed the default budget. This is conservative admission
+accounting, not measured RSS or eager allocation. It excludes existing transport,
+TLS/socket buffers, shared codec dictionaries and caller-retained Python objects.
+It adds neither an encoded-byte cap nor an expansion-ratio limit.
+
+`TransportStats.stream_decoder_reserved_bytes` stays live through pending decoded
+output after HTTP EOF and returns to baseline on terminal cleanup. Raw streams
+and no-body responses reserve nothing. Buffered response limits and their
+accounting are unchanged. See [Response streaming](./streaming.md).
+
 ## Practical Defaults
 
 For service-to-service JSON APIs, start with:

@@ -7,7 +7,7 @@ use crate::errors::FogHttpError;
 use crate::messages::STREAM_REQUEST_TASK_START_FAILED;
 use crate::py::client::acquire::AcquireGate;
 use crate::py::client::future::{complete_python_stream_future, PythonFutureSetters};
-use crate::py::client::streams::StreamRegistry;
+use crate::py::client::streams::{StreamDecodeOptions, StreamRegistry};
 use crate::py::client::transport::{send_stream_request, TransportClients, TransportRequest};
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
@@ -20,6 +20,7 @@ pub struct AsyncStreamRequestSpawn {
     pub clients: TransportClients,
     pub metrics: Arc<Metrics>,
     pub active_streams: StreamRegistry,
+    pub decode_options: StreamDecodeOptions,
     pub pool_timeout: f64,
     pub telemetry: Option<RequestTelemetry>,
     pub future_setters: PythonFutureSetters,
@@ -37,6 +38,7 @@ pub fn spawn_async_stream_request(
         clients,
         metrics,
         active_streams,
+        decode_options,
         pool_timeout,
         telemetry,
         future_setters,
@@ -77,6 +79,7 @@ pub fn spawn_async_stream_request(
                 future_setters,
                 request,
                 task_completion.clone(),
+                decode_options,
             ),
         )
         .await;

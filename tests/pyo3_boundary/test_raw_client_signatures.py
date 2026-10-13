@@ -39,6 +39,8 @@ RAW_CLIENT_KEYWORD_ONLY_PARAMETERS = (
     "ssrf_allowed_origins",
     "ssrf_allowed_domains",
     "telemetry_enabled",
+    "max_stream_decoded_bytes",
+    "max_stream_decoder_memory_bytes",
 )
 
 RAW_REQUEST_KEYWORD_ONLY_PARAMETERS = (
@@ -66,25 +68,29 @@ def test_raw_client_init_signature_is_kw_only() -> None:
 
     assert _parameter_names(signature) == RAW_CLIENT_KEYWORD_ONLY_PARAMETERS
     assert all(parameter.kind is inspect.Parameter.KEYWORD_ONLY for parameter in signature.parameters.values())
+    assert signature.parameters["max_stream_decoded_bytes"].default is None
+    assert signature.parameters["max_stream_decoder_memory_bytes"].default == 128 * 1024 * 1024
 
 
 def test_raw_request_signatures_are_kw_only() -> None:
     methods = (
-        _foghttp.RawClient.request,
-        _foghttp.RawClient.request_async,
-        _foghttp.RawClient.request_stream,
-        _foghttp.RawClient.request_stream_async,
+        (_foghttp.RawClient.request, ()),
+        (_foghttp.RawClient.request_async, ()),
+        (_foghttp.RawClient.request_stream, ("decode_content",)),
+        (_foghttp.RawClient.request_stream_async, ("decode_content",)),
     )
 
-    for method in methods:
+    for method, stream_parameters in methods:
         signature = inspect.signature(method)
         parameters = tuple(signature.parameters.values())
 
         assert parameters[0].name == "self"
         assert parameters[0].kind is inspect.Parameter.POSITIONAL_ONLY
-        assert _parameter_names(signature)[1:] == RAW_REQUEST_KEYWORD_ONLY_PARAMETERS
+        assert _parameter_names(signature)[1:] == (*RAW_REQUEST_KEYWORD_ONLY_PARAMETERS, *stream_parameters)
         assert all(parameter.kind is inspect.Parameter.KEYWORD_ONLY for parameter in parameters[1:])
         assert signature.parameters["extensions"].default is None
+        for name in stream_parameters:
+            assert signature.parameters[name].default is False
 
 
 def _parameter_names(signature: inspect.Signature) -> tuple[str, ...]:

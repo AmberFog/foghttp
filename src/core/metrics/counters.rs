@@ -201,6 +201,9 @@ impl Metrics {
             buffered_response_budget_rejections: self
                 .buffered_response_budget_rejections
                 .load(Ordering::Relaxed),
+            stream_decoder_reserved_bytes: self
+                .stream_decoder_reserved_bytes
+                .load(Ordering::Acquire),
         }
     }
 }

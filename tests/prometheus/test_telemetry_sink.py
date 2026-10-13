@@ -183,7 +183,11 @@ def test_terminal_request_maps_stable_labels_and_duration() -> None:
     )
 
 
-def test_configuration_error_keeps_stable_failure_label() -> None:
+@pytest.mark.parametrize(
+    "error_type",
+    [foghttp.ConfigurationError, foghttp.ResponseDecodingError],
+)
+def test_public_error_keeps_stable_failure_label(error_type: type[foghttp.FogHTTPError]) -> None:
     registry = CollectorRegistry()
     sink = PrometheusTelemetrySink(registry=registry)
 
@@ -191,7 +195,7 @@ def test_configuration_error_keeps_stable_failure_label() -> None:
         _request_event(
             status_code=None,
             outcome=foghttp.TelemetryRequestOutcome.ERROR,
-            error_type=foghttp.ConfigurationError.__name__,
+            error_type=error_type.__name__,
         ),
     )
 
@@ -203,7 +207,7 @@ def test_configuration_error_keeps_stable_failure_label() -> None:
                 "method": "GET",
                 "origin": "all",
                 "status_class": "none",
-                "error_class": "ConfigurationError",
+                "error_class": error_type.__name__,
             },
         )
         == 1

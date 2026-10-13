@@ -142,7 +142,7 @@ fn request_info_excludes_transport_proxy_authorization() {
     parts.use_proxy_transport = true;
     let mut state = RequestState::try_from(parts).expect("valid request state");
 
-    assert!(state.request_info().headers.is_empty());
+    assert_eq!(state.request_info().headers, []);
     assert_eq!(
         state
             .take_request_parts(TransportRoute::Proxy)

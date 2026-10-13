@@ -5,6 +5,7 @@ mod lifecycle;
 mod origin;
 mod proxy;
 mod snapshots;
+mod streaming;
 mod telemetry;
 
 pub use buffered::BufferedByteReservationError;
@@ -59,6 +60,7 @@ pub struct Metrics {
     idle_timeout_evictions: AtomicUsize,
     buffered_response_bytes: AtomicUsize,
     buffered_response_budget_rejections: AtomicUsize,
+    stream_decoder_reserved_bytes: AtomicUsize,
     telemetry_snapshot_sequence: AtomicU64,
     origin_registry: OriginMetricsRegistry,
     proxy_registry: proxy::ProxyEndpointMetricsRegistry,

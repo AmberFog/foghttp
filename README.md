@@ -193,14 +193,15 @@ async with foghttp.AsyncClient() as client:
 
 FogHTTP is currently focused on controlled HTTP workloads. Buffered responses
 are the broadest supported response path; sync and async response streaming are
-available as bytes/text/line context-managed APIs. Streaming `content=` uploads
+available as bytes/text/line context-managed APIs, with opt-in gzip, deflate and
+Brotli decoding through `decode_content=True`. Streaming `content=` uploads
 and multipart `files=` uploads are available with explicit replayability and
 cleanup rules. HTTP proxy routing and HTTPS proxy `CONNECT` tunnelling are
 available through `proxy=` and `trust_env=True` when the proxy endpoint itself
 uses `http://`. Proxy-routed requests fail closed when `SSRFPolicy` is enabled
 because the client cannot prove which target address a remote proxy resolves.
 Provider-specific OAuth flows, HTTP/2, automatic `Accept-Encoding` negotiation,
-streaming decompression, and per-request connect timeout
+and per-request connect timeout
 reconfiguration are planned for later versions. Physical connection caps
 currently apply to the HTTP/1.1 connector path; HTTP/2 will require separate
 stream-level limits.

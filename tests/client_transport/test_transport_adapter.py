@@ -1,4 +1,5 @@
 from typing import NoReturn
+from unittest.mock import patch
 
 from faker import Faker
 import pytest
@@ -11,6 +12,7 @@ from foghttp._request_body import request_body
 from foghttp.methods import GET, POST
 from foghttp.request import Request
 from foghttp.timeouts import Timeouts
+from tests.client_telemetry.models import RecordingTelemetrySink
 from tests.request_factories import non_replayable_request
 
 from .models import (
@@ -268,6 +270,105 @@ async def test_raw_async_transport_sends_prepared_request_through_raw_client(
 def _fail_create_raw_client(**_kwargs: object) -> NoReturn:
     msg = "raw client should not be created when a test transport is installed"
     raise AssertionError(msg)
+
+
+@pytest.mark.parametrize("options", [{}, {"decode_content": False}, {"decode_content": True}])
+@pytest.mark.parametrize("telemetry_enabled", [False, True])
+def test_sync_stream_forwards_mode_and_preserves_decoding_error(
+    monkeypatch: pytest.MonkeyPatch,
+    options: dict[str, bool],
+    *,
+    telemetry_enabled: bool,
+) -> None:
+    monkeypatch.setattr("foghttp._client.core.create_raw_client", _fail_create_raw_client)
+    error = foghttp.ResponseDecodingError("unsupported content coding")
+    transport = SyncFailingTransport(error=error)
+    sink = RecordingTelemetrySink()
+    telemetry = foghttp.TelemetryConfig(sink=sink) if telemetry_enabled else None
+    timeouts = Timeouts(read=2.0)
+
+    with SyncTransportClient(transport, timeouts=timeouts, telemetry=telemetry) as client:
+        context = client.stream(GET, "https://example.invalid", **options)
+        assert transport.calls == []
+        with pytest.raises(foghttp.ResponseDecodingError) as exc_info, context:
+            pytest.fail("a failed stream must not be exposed")
+
+    assert exc_info.value is error
+    assert len(transport.calls) == 1
+    assert transport.calls[0].decode_content is options.get("decode_content", False)
+    assert transport.calls[0].timeouts == timeouts
+    assert "accept-encoding" not in transport.calls[0].request.headers
+
+
+@pytest.mark.parametrize("options", [{}, {"decode_content": False}, {"decode_content": True}])
+@pytest.mark.parametrize("telemetry_enabled", [False, True])
+async def test_async_stream_forwards_mode_and_preserves_decoding_error(
+    monkeypatch: pytest.MonkeyPatch,
+    options: dict[str, bool],
+    *,
+    telemetry_enabled: bool,
+) -> None:
+    monkeypatch.setattr("foghttp._client.core.create_raw_client", _fail_create_raw_client)
+    error = foghttp.ResponseDecodingError("unsupported content coding")
+    transport = AsyncFailingTransport(error=error)
+    sink = RecordingTelemetrySink()
+    telemetry = foghttp.TelemetryConfig(sink=sink) if telemetry_enabled else None
+    timeouts = Timeouts(read=2.0)
+
+    async with AsyncTransportClient(transport, timeouts=timeouts, telemetry=telemetry) as client:
+        context = client.stream(GET, "https://example.invalid", **options)
+        assert transport.calls == []
+        with pytest.raises(foghttp.ResponseDecodingError) as exc_info:
+            async with context:
+                pytest.fail("a failed stream must not be exposed")
+
+    assert exc_info.value is error
+    assert len(transport.calls) == 1
+    assert transport.calls[0].decode_content is options.get("decode_content", False)
+    assert transport.calls[0].timeouts == timeouts
+    assert "accept-encoding" not in transport.calls[0].request.headers
+
+
+@pytest.mark.parametrize("options", [{}, {"decode_content": False}, {"decode_content": True}])
+def test_raw_sync_transport_forwards_stream_mode(options: dict[str, bool]) -> None:
+    raw_client = object()
+    request = Request(GET, "https://example.invalid")
+    timeouts = Timeouts(read=2.0)
+    error = foghttp.ResponseDecodingError("unsupported content coding")
+    transport = RawSyncTransport(lambda: raw_client, proxy_resolver=ProxyResolver.disabled())
+
+    with (
+        patch("foghttp._client.raw.requests.send_raw_stream_request", autospec=True, side_effect=error) as send,
+        pytest.raises(foghttp.ResponseDecodingError) as exc_info,
+    ):
+        transport.stream(request, timeouts=timeouts, **options)
+
+    assert exc_info.value is error
+    send.assert_called_once()
+    assert send.call_args.kwargs["decode_content"] is options.get("decode_content", False)
+    assert send.call_args.kwargs["raw_client"] is raw_client
+    assert send.call_args.kwargs["request"].timeouts == timeouts
+
+
+@pytest.mark.parametrize("options", [{}, {"decode_content": False}, {"decode_content": True}])
+async def test_raw_async_transport_forwards_stream_mode(options: dict[str, bool]) -> None:
+    raw_client = object()
+    request = Request(GET, "https://example.invalid")
+    timeouts = Timeouts(read=2.0)
+    error = foghttp.ResponseDecodingError("unsupported content coding")
+    transport = RawAsyncTransport(lambda: raw_client, proxy_resolver=ProxyResolver.disabled())
+
+    with (
+        patch("foghttp._client.raw.requests.send_raw_stream_request_async", autospec=True, side_effect=error) as send,
+        pytest.raises(foghttp.ResponseDecodingError) as exc_info,
+    ):
+        await transport.stream(request, timeouts=timeouts, **options)
+
+    assert exc_info.value is error
+    send.assert_awaited_once()
+    assert send.call_args.kwargs["decode_content"] is options.get("decode_content", False)
+    assert send.call_args.kwargs["raw_client"] is raw_client
+    assert send.call_args.kwargs["request"].timeouts == timeouts
 
 
 def _write_timeout(*, timeout: float | None) -> foghttp.WriteTimeout:

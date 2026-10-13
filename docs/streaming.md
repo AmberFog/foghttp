@@ -98,10 +98,10 @@ with client.stream(GET, url) as response:
         process_text(text)
 ```
 
-Text and line iterators decode the streamed bytes as delivered after HTTP
-transfer framing. They do not transparently decompress `gzip`, `deflate`, or
-`br` response bodies yet. Use buffered responses for transparent decompression,
-or request an uncompressed response when streaming text or lines.
+By default, all iterators consume content-encoded bytes after HTTP transfer
+framing. Pass `decode_content=True` to `stream()` to incrementally decompress
+`gzip`, `deflate`, or `br` before byte, text, or line iteration. The flag must be
+an actual `bool`; invalid values fail before constructing the request body.
 
 Line streaming strips line endings and handles `LF`, `CRLF`, empty lines, and a
 final line without a trailing newline. Because a line iterator must buffer text
@@ -116,7 +116,7 @@ async with client.stream(GET, url) as response:
         process_line(line)
 ```
 
-Clean EOF marks the response body as completed. Leaving the context before EOF,
+Clean content EOF marks the response body as completed. Leaving the context before EOF,
 cancelling a body read, a body transport error, or a response-body read timeout
 aborts the streamed body and releases the active request slot.
 
@@ -137,7 +137,51 @@ async with foghttp.AsyncClient(follow_redirects=True) as client:
 ```
 
 Redirect response bodies are buffered so history remains inspectable. The final
-response body is streamed.
+response body is streamed. `decode_content` applies only to that final response;
+redirect and retry intermediates retain their existing buffered handling.
+
+## Content Decoding
+
+```python
+with client.stream(GET, url, decode_content=True) as response:
+    for line in response.iter_lines():
+        process_line(line)
+```
+
+The async API accepts the same keyword. This does not inject `Accept-Encoding`:
+set that request header explicitly when negotiating compression. Buffered
+responses keep their existing automatic decoding behavior.
+
+- `gzip` (including `x-gzip`) validates every concatenated member and its
+  checksum/length. Trailing junk or padding is rejected.
+- `deflate` requires a zlib wrapper. Raw DEFLATE, preset dictionaries,
+  concatenated streams, and trailing bytes are rejected.
+- `br` accepts standard Brotli windows only, with no concatenated streams,
+  trailing bytes, or external dictionaries. Brotli has no general integrity
+  checksum; a modification that remains a valid bitstream is not detectable.
+- At most four non-identity coding layers are accepted, in reverse header
+  order. Coding tokens are case-insensitive; empty list elements and `identity`
+  do not add a layer.
+
+Malformed/unknown coding, too many layers, or a compressed `206` response raises
+`ResponseDecodingError` on context entry, before exposing a response. HEAD and
+no-body statuses bypass decoding and keep their headers. Identity-only bodies
+also retain headers but still use decoded-mode limits. Actual decompression
+removes `Content-Encoding` and `Content-Length`; no replacement length or
+separate raw-header view is fabricated.
+
+Corrupt or truncated content raises `ResponseDecodingError` during iteration.
+Zero encoded bytes with a body-bearing compressed response are truncation, not
+an empty decoded body. Earlier delivered bytes cannot be revoked: exhaust the
+iterator to establish success. This API does not provide authenticated delivery.
+
+Decoder memory is bounded independently of total output. See
+[streaming limits](./timeouts.md#streaming-decoder-limits). Output is delivered
+with backpressure, without buffering the whole response. Connection reuse follows
+clean HTTP EOF, while the request slot, decoder reservation and client ownership
+remain live until decoded content finishes or is closed. A late decoding failure
+can therefore coexist with a reuse-eligible transport, without closing a socket
+that another request has already borrowed.
 
 ## Timeouts
 
@@ -146,7 +190,8 @@ For streaming responses:
 - `pool` controls waiting for an active request slot.
 - `total` covers acquire, redirect hops, and response headers before the
   streamed response is returned.
-- `read` controls progress while waiting for the next streamed body chunk.
+- `read` controls waiting for the next transport body frame, not decoder CPU
+  work or time spent consuming already-buffered output.
 - `write` applies to buffered request body writes and streaming upload chunk
   progress before the streamed response is returned.
 
@@ -154,7 +199,9 @@ For streaming responses:
 and exposes `diagnostic.phase == "response_body"`.
 
 For async callers, use `asyncio.timeout()` when application code needs a
-wall-clock limit for the whole streaming consumption phase.
+wall-clock limit for the whole streaming consumption phase. Decoding yields
+cooperatively between bounded codec calls; an individual synchronous codec call
+is not preemptible. This is not a hard CPU latency guarantee.
 
 ```python
 try:
@@ -171,10 +218,10 @@ except TimeoutError:
 The current streaming API is intentionally narrow:
 
 - bytes, text, and line iteration only
-- no streaming response decompression yet
+- content decoding is opt-in; raw bytes remain the default
 - request body streaming is available through `content=` and documented in
   [Request builder compatibility](./request-builder.md)
 
 Buffered responses still support transparent `gzip`, `deflate`, and `br`
-decoding. Streaming responses expose response body bytes after HTTP transfer
-framing, without content-encoding decompression.
+decoding. Streams neither switch representation midway nor offer replay or a
+second raw/decoded body owner.

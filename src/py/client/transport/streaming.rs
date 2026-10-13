@@ -9,7 +9,7 @@ use crate::core::metrics::Metrics;
 use crate::py::client::acquire::AcquireGate;
 use crate::py::client::async_requests::RequestCompletion;
 use crate::py::client::future::PythonFutureSetters;
-use crate::py::client::streams::{RawStreamResponse, StreamRegistry};
+use crate::py::client::streams::{RawStreamResponse, StreamDecodeOptions, StreamRegistry};
 use crate::py::retry::{attach_retry_trace, RetryAttemptCompletion, RetryTraceOutcome};
 use pyo3::prelude::*;
 use std::sync::Arc;
@@ -27,6 +27,7 @@ pub async fn send_stream_request(
     future_setters: PythonFutureSetters,
     parts: TransportRequest,
     completion: RequestCompletion,
+    decode_options: StreamDecodeOptions,
 ) -> PyResult<RawStreamResponse> {
     let started = Instant::now();
     let mut state = RequestState::try_from(parts)?;
@@ -43,6 +44,7 @@ pub async fn send_stream_request(
         &mut state,
         &mut history,
         completion,
+        decode_options,
     )
     .await;
     let trace = match result.as_ref() {
@@ -85,6 +87,7 @@ async fn send_stream_request_attempts(
     state: &mut RequestState,
     history: &mut Vec<crate::py::response::RawResponse>,
     completion: RequestCompletion,
+    decode_options: StreamDecodeOptions,
 ) -> PyResult<RawStreamResponse> {
     loop {
         state.begin_transport_hop();
@@ -179,6 +182,7 @@ async fn send_stream_request_attempts(
                     future_setters,
                     redirect_hop,
                     history: std::mem::take(history),
+                    decode_options,
                 },
             );
         };

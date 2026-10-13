@@ -1,8 +1,40 @@
 use crate::core::numeric::{
-    duration_from_secs, validate_optional_usize_option, validate_usize_option,
+    duration_from_secs, validate_optional_usize_option, validate_usize_option, MAX_NUMERIC_OPTION,
 };
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::{PyBool, PyInt};
+
+pub fn extract_stream_decode_content(value: &Bound<'_, PyAny>) -> PyResult<bool> {
+    value
+        .cast::<PyBool>()
+        .map(PyBoolMethods::is_true)
+        .map_err(|_| PyTypeError::new_err("decode_content must be a bool"))
+}
+
+pub fn extract_stream_decoded_byte_limit(value: &Bound<'_, PyAny>) -> PyResult<Option<usize>> {
+    if value.is_none() {
+        return Ok(None);
+    }
+    extract_byte_limit("Limits.max_stream_decoded_bytes", value).map(Some)
+}
+
+pub fn extract_stream_decoder_memory_limit(value: &Bound<'_, PyAny>) -> PyResult<usize> {
+    extract_byte_limit("Limits.max_stream_decoder_memory_bytes", value)
+}
+
+fn extract_byte_limit(name: &str, value: &Bound<'_, PyAny>) -> PyResult<usize> {
+    let invalid = || {
+        PyValueError::new_err(format!(
+            "{name} must be an integer between 0 and {MAX_NUMERIC_OPTION}"
+        ))
+    };
+    if value.is_instance_of::<PyBool>() || !value.is_instance_of::<PyInt>() {
+        return Err(invalid());
+    }
+    let value = value.extract::<usize>().map_err(|_| invalid())?;
+    validate_usize_option(name, value).map_err(PyValueError::new_err)
+}
 
 #[derive(Clone, Copy)]
 pub struct NumericClientOptions {
@@ -71,3 +103,6 @@ pub fn validate_request_timeouts(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

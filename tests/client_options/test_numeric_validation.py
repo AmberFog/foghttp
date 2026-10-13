@@ -18,6 +18,8 @@ INTEGER_LIMIT_FIELDS = (
     "max_response_body_size",
     "max_buffered_response_bytes",
     "max_idle_connections_per_host",
+    "max_stream_decoded_bytes",
+    "max_stream_decoder_memory_bytes",
 )
 
 
@@ -93,6 +95,8 @@ def test_limits_accept_zero_for_explicit_backpressure_edges() -> None:
         max_buffered_response_bytes=0,
         max_idle_connections_per_host=0,
         idle_timeout=0,
+        max_stream_decoded_bytes=0,
+        max_stream_decoder_memory_bytes=0,
     )
 
     assert limits.max_active_requests == 0
@@ -104,6 +108,8 @@ def test_limits_accept_zero_for_explicit_backpressure_edges() -> None:
     assert limits.max_buffered_response_bytes == 0
     assert limits.max_idle_connections_per_host == 0
     assert limits.idle_timeout == 0.0
+    assert limits.max_stream_decoded_bytes == 0
+    assert limits.max_stream_decoder_memory_bytes == 0
 
 
 def test_optional_limit_fields_accept_none() -> None:
@@ -113,6 +119,7 @@ def test_optional_limit_fields_accept_none() -> None:
         max_connections_per_host=None,
         max_response_body_size=None,
         max_buffered_response_bytes=None,
+        max_stream_decoded_bytes=None,
     )
 
     assert limits.max_active_requests_per_origin is None
@@ -120,3 +127,44 @@ def test_optional_limit_fields_accept_none() -> None:
     assert limits.max_connections_per_host is None
     assert limits.max_response_body_size is None
     assert limits.max_buffered_response_bytes is None
+    assert limits.max_stream_decoded_bytes is None
+
+
+@pytest.mark.parametrize("value", [None, False, "128"])
+def test_stream_decoder_memory_limit_rejects_non_integer_values(value: object) -> None:
+    with pytest.raises(ValueError, match=r"Limits\.max_stream_decoder_memory_bytes must be an integer"):
+        foghttp.Limits(max_stream_decoder_memory_bytes=value)
+
+
+@pytest.mark.parametrize("value", [False, "128"])
+def test_stream_decoded_limit_rejects_non_integer_values(value: object) -> None:
+    with pytest.raises(ValueError, match=r"Limits\.max_stream_decoded_bytes must be an integer"):
+        foghttp.Limits(max_stream_decoded_bytes=value)
+
+
+def test_stream_limits_accept_maximum_numeric_option() -> None:
+    maximum = MAX_INVALID_NUMERIC_OPTION - 1
+    limits = foghttp.Limits(max_stream_decoded_bytes=maximum, max_stream_decoder_memory_bytes=maximum)
+
+    assert limits.max_stream_decoded_bytes == maximum
+    assert limits.max_stream_decoder_memory_bytes == maximum
+
+
+def test_limits_preserve_existing_positional_arguments() -> None:
+    keepalive = False
+    limits = foghttp.Limits(11, 12, 13, 14, 15, 16, 17, 18, 19.0, keepalive)
+
+    assert limits == foghttp.Limits(
+        max_active_requests=11,
+        max_active_requests_per_origin=12,
+        max_connections=13,
+        max_connections_per_host=14,
+        max_pending_requests=15,
+        max_response_body_size=16,
+        max_buffered_response_bytes=17,
+        max_idle_connections_per_host=18,
+        idle_timeout=19.0,
+        keepalive=False,
+        max_stream_decoded_bytes=None,
+        max_stream_decoder_memory_bytes=128 * 1024 * 1024,
+    )

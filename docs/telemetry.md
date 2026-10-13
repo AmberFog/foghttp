@@ -60,7 +60,7 @@ Current event fields include:
 | `status_code`, `elapsed_ns`, `redirect_hop` | Response/redirect context when applicable. `elapsed_ns` keeps its existing header- or native-phase-oriented meaning and is always `None` on stream completion events. |
 | `body_elapsed_ns` | Monotonic stream-body duration on `response_body_finished`; `None` on every other event and for buffered requests. |
 | `request_elapsed_ns` | Monotonic logical stream-request duration on `request_finished`; `None` on every other event and for buffered requests. |
-| `response_body_bytes` | Final-response bytes read into FogHTTP's public body-consumption pipeline. Buffered responses report decoded `response.content` bytes; streams report bytes read from the native stream before any buffering by text/line iterators. It is set on body/request completion events when a buffered `Response` exists or a stream is terminalized. Failures before a buffered `Response` is constructed, including buffered-body read failures, use `None`. |
+| `response_body_bytes` | Final-response bytes read into FogHTTP's public body-consumption pipeline. Buffered responses report decoded `response.content` bytes; streams report bytes returned by native reads before text/line buffering: content-encoded by default, decoded with `decode_content=True`. Scratch output and bytes discarded before delivery are not counted. It is set on body/request completion events when a buffered `Response` exists or a stream is terminalized. Failures before a buffered `Response` is constructed, including buffered-body read failures, use `None`. |
 | `retry_attempts` | Additional retry attempts that actually began after the initial attempt. It is set on `request_finished` when a completed `RetryTrace` is available. External cancellation may leave it `None`; a retry selected but not started during backoff is never counted. |
 | `timeout_phase` | Typed `TimeoutDiagnostic.phase` on terminal timeout events when diagnostics are available; otherwise `None`. |
 | `retry_attempt`, `retry_decision`, `retry_reason`, `retry_backoff_ns` | Structured opt-in retry decision context. Attempt numbering starts at `1`; backoff is a duration in nanoseconds. |
@@ -271,6 +271,7 @@ for low-cardinality operational monitoring when the field type is appropriate:
 | `connections_opened`, `connections_open_failed`, `connections_closed`, `connections_reused`, `connections_aborted`, `idle_timeout_evictions` | cumulative counters | Suitable for connection lifecycle rates. |
 | `active_requests`, `pending_requests`, `active_connections`, `idle_connections`, `buffered_response_bytes` | current gauges | Suitable for capacity and saturation alerts. |
 | `peak_pending_requests`, `buffered_response_budget_rejections` | peak gauge, cumulative counter | Useful for pressure and memory-budget alerting. |
+| `stream_decoder_reserved_bytes` | current client-wide gauge | Conservative decoder admission reservations, including retained output after HTTP EOF; not RSS or a per-origin sum. The existing exporter metric set is unchanged. |
 
 `dump_transport_state()` adds per-origin copies of many of those values, plus
 `last_used_at_ns`, `idle_age_ns`, and legacy `last_activity_at_ns`.

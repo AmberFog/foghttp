@@ -129,5 +129,6 @@ class TelemetryRequestContext:
             redacted_url=None if response is None else response.redacted_url,
             outcome=completion.outcome,
             error=completion.error,
+            error_type=completion.error_type,
             suppress_hook_errors=completion.suppress_hook_errors,
         )

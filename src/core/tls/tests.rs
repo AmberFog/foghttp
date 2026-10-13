@@ -4,7 +4,7 @@ use super::{build_tls_config, webpki_root_store};
 fn webpki_root_store_is_not_empty() {
     let roots = webpki_root_store();
 
-    assert!(!roots.roots.is_empty());
+    assert_ne!(roots.roots, []);
 }
 
 #[test]

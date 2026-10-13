@@ -63,6 +63,8 @@ RAW_CLIENT_INIT_ARGUMENTS = (
     "ssrf_allowed_origins",
     "ssrf_allowed_domains",
     "telemetry_enabled",
+    "max_stream_decoded_bytes",
+    "max_stream_decoder_memory_bytes",
 )
 
 RAW_REQUEST_ARGUMENTS = (
@@ -165,6 +167,8 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
         max_idle_connections_per_host=7,
         idle_timeout=5.5,
         keepalive=False,
+        max_stream_decoded_bytes=37,
+        max_stream_decoder_memory_bytes=41,
     )
     timeouts = Timeouts(connect=2.5)
     follow_redirects = True
@@ -220,6 +224,8 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
         "ssrf_allowed_origins": [],
         "ssrf_allowed_domains": [],
         "telemetry_enabled": False,
+        "max_stream_decoded_bytes": limits.max_stream_decoded_bytes,
+        "max_stream_decoder_memory_bytes": limits.max_stream_decoder_memory_bytes,
     }
 
 
@@ -422,7 +428,8 @@ async def test_send_raw_request_async_passes_request_timeouts_without_connect_ti
     )
 
 
-def test_send_raw_stream_request_passes_named_request_options(faker: Faker) -> None:
+@pytest.mark.parametrize("options", [{}, {"decode_content": False}, {"decode_content": True}])
+def test_send_raw_stream_request_passes_named_request_options(faker: Faker, options: dict[str, bool]) -> None:
     captured_options: dict[str, object] = {}
     raw_response = object()
 
@@ -437,18 +444,21 @@ def test_send_raw_stream_request_passes_named_request_options(faker: Faker) -> N
     response = send_raw_stream_request(
         raw_client=RawClientProbe(),
         request=_raw_request(url=url, timeouts=timeouts),
+        **options,
     )
 
     assert response is raw_response
-    assert captured_options == _expected_raw_request_options(
-        url=url,
-        body=None,
-        body_replayable=True,
-        timeouts=timeouts,
-    )
+    assert captured_options == {
+        **_expected_raw_request_options(url=url, body=None, body_replayable=True, timeouts=timeouts),
+        "decode_content": options.get("decode_content", False),
+    }
 
 
-async def test_send_raw_stream_request_async_passes_named_request_options(faker: Faker) -> None:
+@pytest.mark.parametrize("options", [{}, {"decode_content": False}, {"decode_content": True}])
+async def test_send_raw_stream_request_async_passes_named_request_options(
+    faker: Faker,
+    options: dict[str, bool],
+) -> None:
     captured_options: dict[str, object] = {}
     raw_response = object()
 
@@ -463,15 +473,14 @@ async def test_send_raw_stream_request_async_passes_named_request_options(faker:
     response = await send_raw_stream_request_async(
         raw_client=RawClientProbe(),
         request=_raw_request(url=url, timeouts=timeouts),
+        **options,
     )
 
     assert response is raw_response
-    assert captured_options == _expected_raw_request_options(
-        url=url,
-        body=None,
-        body_replayable=True,
-        timeouts=timeouts,
-    )
+    assert captured_options == {
+        **_expected_raw_request_options(url=url, body=None, body_replayable=True, timeouts=timeouts),
+        "decode_content": options.get("decode_content", False),
+    }
 
 
 def _basic_proxy_auth(username: str, password: str) -> str:

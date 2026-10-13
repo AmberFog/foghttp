@@ -1,8 +1,12 @@
-use super::{buffered_request_body, streaming_request_body, upload_body_channel};
+use super::{
+    buffered_request_body, streaming_request_body, upload_body_channel,
+    UploadBodyProducerCompletion,
+};
 use bytes::Bytes;
 use http_body_util::BodyExt;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Barrier};
+use std::thread;
 use tokio::runtime::Builder;
 
 #[test]
@@ -142,6 +146,34 @@ fn known_length_stream_rejects_finished_producer_with_queued_data() {
     completion.mark_transport_flushed();
 
     assert!(!completion.is_complete());
+}
+
+#[test]
+fn producer_completion_waits_for_all_concurrently_consumed_frames() {
+    const CONSUMERS: usize = 32;
+    let completion = UploadBodyProducerCompletion::new();
+    for _ in 0..=CONSUMERS {
+        completion.record_data_frame();
+    }
+    completion.finish();
+    let barrier = Arc::new(Barrier::new(CONSUMERS));
+    let handles = (0..CONSUMERS)
+        .map(|_| {
+            let completion = completion.clone();
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                completion.data_frame_consumed();
+            })
+        })
+        .collect::<Vec<_>>();
+    for handle in handles {
+        handle.join().expect("frame consumer thread panicked");
+    }
+
+    assert!(!completion.is_finished_and_drained());
+    completion.data_frame_consumed();
+    assert!(completion.is_finished_and_drained());
 }
 
 #[test]

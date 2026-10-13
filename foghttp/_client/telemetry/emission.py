@@ -66,6 +66,7 @@ class TelemetryCompletion:
     request_elapsed_ns: int | None = None
     response_body_bytes: int | None = None
     retry_attempts: int | None = None
+    error_type: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

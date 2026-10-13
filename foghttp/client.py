@@ -4,6 +4,7 @@ import threading
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Literal
 
+from ._client import stream_context
 from ._client.config import ClientConfig
 from ._client.constants import DEFAULT_MAX_REDIRECTS
 from ._client.core import ClientCore
@@ -11,7 +12,6 @@ from ._client.options import ClientOptions
 from ._client.raw.lifecycle import close_raw_client
 from ._client.request_builder.header_policy import validate_safe_request_headers
 from ._client.retry import bind_error_retry_trace
-from ._client.stream_context import StreamContext
 from ._client.telemetry import (
     TelemetryRequestContext,
     emit_buffered_response_telemetry,
@@ -188,8 +188,10 @@ class Client(ClientCore):
         files: SyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
-    ) -> StreamContext:
+        decode_content: bool = False,
+    ) -> stream_context.StreamContext:
         self._ensure_open()
+        stream_context.validate_decode_content(decode_content)
         request = self.build_request(
             method,
             url,
@@ -201,7 +203,9 @@ class Client(ClientCore):
             files=files,
             json=json,
         )
-        return StreamContext(lambda: self._send_stream(request, timeout=timeout))
+        return stream_context.StreamContext(
+            lambda: self._send_stream(request, timeout=timeout, decode_content=decode_content),
+        )
 
     def get(
         self,
@@ -404,7 +408,13 @@ class Client(ClientCore):
                 suppress_hook_errors=suppress_hook_errors,
             )
 
-    def _send_stream(self, request: Request, *, timeout: Timeouts | None = None) -> StreamResponse:
+    def _send_stream(
+        self,
+        request: Request,
+        *,
+        timeout: Timeouts | None = None,
+        decode_content: bool = False,
+    ) -> StreamResponse:
         self._ensure_open()
         sync_send_token = object()
         telemetry_context = self._telemetry.request_context(request, mode=TelemetryRequestMode.STREAM)
@@ -417,6 +427,7 @@ class Client(ClientCore):
                 request,
                 timeout=timeout,
                 telemetry_context=telemetry_context,
+                decode_content=decode_content,
             )
         except BaseException as error:
             self._emit_stream_request_error_telemetry(
@@ -454,12 +465,13 @@ class Client(ClientCore):
         *,
         timeout: Timeouts | None,
         telemetry_context: TelemetryRequestContext | None,
+        decode_content: bool = False,
     ) -> StreamResponse:
         request_timeouts = self._request_timeouts(timeout)
         if telemetry_context is None:
-            return self._transport.stream(request, timeouts=request_timeouts)
+            return self._transport.stream(request, timeouts=request_timeouts, decode_content=decode_content)
         with native_request_id_scope(telemetry_context.data.request_id):
-            return self._transport.stream(request, timeouts=request_timeouts)
+            return self._transport.stream(request, timeouts=request_timeouts, decode_content=decode_content)
 
     def _begin_sync_send(self, token: object) -> None:
         with self._lifecycle_condition:

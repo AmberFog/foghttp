@@ -51,6 +51,7 @@ _ORIGIN_PRESSURE_FIELDS = (
 _TRANSPORT_STATE_FIELDS = (
     *_TRANSPORT_PRESSURE_FIELDS,
     *_TRANSPORT_BUFFER_FIELDS,
+    "stream_decoder_reserved_bytes",
 )
 
 

@@ -29,12 +29,14 @@ fn finished_read_state() -> StreamState {
             registry: StreamRegistry::default(),
             fields: Mutex::new(StreamStateFields {
                 body: None,
+                decoded: None,
+                decoded_mode: false,
                 permit: None,
                 lifecycle: None,
                 connection_use: None,
                 read_task: None,
                 read_in_progress: true,
-                finished: true,
+                terminal: Some(super::StreamFinish::Success),
                 successful_body_outcome: ResponseBodyLifecycleOutcome::Closed,
                 metrics: Arc::new(Metrics::default()),
                 completion: RequestCompletion::default(),
@@ -48,7 +50,7 @@ fn finished_read_state() -> StreamState {
     }
 }
 
-fn active_lifecycle_state() -> (StreamState, Arc<Metrics>, RequestCompletion) {
+pub(super) fn active_lifecycle_state() -> (StreamState, Arc<Metrics>, RequestCompletion) {
     let metrics = Arc::new(Metrics::default());
     let completion = RequestCompletion::default();
     let registry = StreamRegistry::default();
@@ -57,6 +59,8 @@ fn active_lifecycle_state() -> (StreamState, Arc<Metrics>, RequestCompletion) {
         registry: registry.clone(),
         fields: Mutex::new(StreamStateFields {
             body: None,
+            decoded: None,
+            decoded_mode: false,
             permit: None,
             lifecycle: Some(ResponseBodyLifecycle::new(
                 Arc::clone(&metrics),
@@ -65,7 +69,7 @@ fn active_lifecycle_state() -> (StreamState, Arc<Metrics>, RequestCompletion) {
             connection_use: None,
             read_task: None,
             read_in_progress: false,
-            finished: false,
+            terminal: None,
             successful_body_outcome: ResponseBodyLifecycleOutcome::Closed,
             metrics: Arc::clone(&metrics),
             completion: completion.clone(),
@@ -159,4 +163,38 @@ fn cancel_after_success_does_not_reclassify_stream() {
     assert_eq!(snapshot.failed_requests, 0);
     assert_eq!(snapshot.response_body_aborted, 0);
     assert_eq!(snapshot.response_body_closed, 1);
+}
+
+#[test]
+fn transport_eof_does_not_finish_content_or_hide_it_from_client_close() {
+    let (state, metrics, completion) = active_lifecycle_state();
+    state.finish_transport_from_read();
+    state.finish_transport_from_read();
+
+    assert!(!state.is_finished());
+    assert_eq!(metrics.snapshot().response_body_closed, 1);
+    assert_eq!(metrics.snapshot().failed_requests, 0);
+    state.inner.registry.abort_all();
+
+    assert!(state.is_finished());
+    assert!(!completion.finish());
+    let snapshot = metrics.snapshot();
+    assert_eq!(snapshot.failed_requests, 1);
+    assert_eq!(snapshot.response_body_closed, 1);
+    assert_eq!(snapshot.response_body_aborted, 0);
+}
+
+#[test]
+fn content_error_after_transport_eof_preserves_clean_body_outcome() {
+    let (state, metrics, completion) = active_lifecycle_state();
+    state.finish_transport_from_read();
+    state.fail(None);
+    state.close();
+
+    assert!(state.is_finished());
+    assert!(!completion.finish());
+    let snapshot = metrics.snapshot();
+    assert_eq!(snapshot.failed_requests, 1);
+    assert_eq!(snapshot.response_body_closed, 1);
+    assert_eq!(snapshot.response_body_aborted, 0);
 }

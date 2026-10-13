@@ -44,4 +44,5 @@ def stats_from_raw(
         idle_timeout_evictions=raw.idle_timeout_evictions,
         buffered_response_bytes=raw.buffered_response_bytes,
         buffered_response_budget_rejections=raw.buffered_response_budget_rejections,
+        stream_decoder_reserved_bytes=raw.stream_decoder_reserved_bytes,
     )
