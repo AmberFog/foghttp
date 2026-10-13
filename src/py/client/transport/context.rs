@@ -3,7 +3,7 @@ use crate::core::response::BufferedBodyBudget;
 use crate::py::client::acquire::AcquirePermit;
 use crate::py::client::async_requests::RequestCompletion;
 use crate::py::client::future::PythonFutureSetters;
-use crate::py::client::streams::StreamRegistry;
+use crate::py::client::streams::{StreamDecodeOptions, StreamRegistry};
 use crate::py::response::RawResponse;
 use std::sync::Arc;
 use std::time::Instant;
@@ -31,4 +31,5 @@ pub(super) struct RawStreamResponseContext {
     pub(super) future_setters: PythonFutureSetters,
     pub(super) redirect_hop: usize,
     pub(super) history: Vec<RawResponse>,
+    pub(super) decode_options: StreamDecodeOptions,
 }

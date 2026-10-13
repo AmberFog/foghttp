@@ -540,7 +540,8 @@ with foghttp.Client() as client:
 `AsyncClient.stream()` is also an async context manager and exposes
 `aiter_bytes()`, `aiter_text()`, and `aiter_lines()`. HTTPX `iter_bytes()`
 and `aiter_bytes()` decode supported content encodings; FogHTTP byte, text,
-and line iterators do not. FogHTTP `iter_bytes()` / `aiter_bytes()` are
+and line iterators do so only with `stream(..., decode_content=True)`.
+Default FogHTTP `iter_bytes()` / `aiter_bytes()` are
 therefore closest to HTTPX `iter_raw()` / `aiter_raw()`: they expose bytes
 after HTTP transfer framing but before content-encoding decompression.
 
@@ -556,9 +557,12 @@ body consumption. Measure wall-clock time around the whole stream context when
 end-to-end download latency is required.
 
 FogHTTP has no top-level `stream()`, separately named raw iterator,
-`read()` / `aread()`, or download progress property. Request
-`Accept-Encoding: identity`, decompress in an application pipeline, or use the
-buffered API for transparent `gzip`, `deflate`, and `br` decoding. Use a
+`read()` / `aread()`, or download progress property. Opt in with
+`decode_content=True` for bounded incremental gzip, zlib-wrapped deflate and
+standard-window Brotli decoding. This does not add `Accept-Encoding`; negotiation
+remains explicit. Compressed 206 responses and unsupported coding plans fail
+with `ResponseDecodingError`. Streaming decoder limits are separate from buffered
+limits, and previously yielded bytes cannot be revoked on a late error. Use a
 normal buffered request when the whole response must be loaded, and count
 yielded bytes in application code for progress. See
 [Response streaming](./streaming.md).
@@ -641,7 +645,7 @@ mechanically. See [Timeout model](./timeouts.md).
 | SOCKS, proxy mounts, per-route proxy policy, TLS-to-proxy | Not provided | Use separate clients or network-layer routing; keep HTTPX for dynamic routing. |
 | Custom transports, `MockTransport`, WSGI/ASGI in-process transports | Not public extension points | Test against a local loopback server or keep HTTPX for in-process transport tests. |
 | `verify=False`, arbitrary `SSLContext`, client certificates | Not provided | Use `TLSConfig` with explicit CA files; keep HTTPX when mTLS or another TLS mode is required. |
-| Content-decoded response-byte streaming | Not provided | Request an uncompressed stream, decompress FogHTTP's encoded bytes in application code, use buffered decoding, or keep HTTPX. |
+| Content-decoded response-byte streaming | Opt-in | Pass `decode_content=True` to `stream()`; choose streaming decoder limits and set `Accept-Encoding` explicitly when needed. |
 | HTTPX event-hook API | Not a drop-in contract | Use FogHTTP telemetry for observation, policy hooks for admission/response-head policy, auth hooks for credentials, or an application wrapper. |
 
 FogHTTP also has no automatic `Accept-Encoding` negotiation, operating-system

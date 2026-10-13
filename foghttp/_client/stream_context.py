@@ -1,4 +1,4 @@
-__all__ = ("AsyncStreamContext", "StreamContext")
+__all__ = ("AsyncStreamContext", "StreamContext", "validate_decode_content")
 
 from collections.abc import Awaitable, Callable
 from types import TracebackType
@@ -6,6 +6,12 @@ from types import TracebackType
 from ..errors import LifecycleError
 from ..messages import STREAM_CONTEXT_REENTERED
 from ..stream_response import AsyncStreamResponse, StreamResponse
+
+
+def validate_decode_content(decode_content: object) -> None:
+    if decode_content is not True and decode_content is not False:
+        msg = "decode_content must be a bool"
+        raise TypeError(msg)
 
 
 class StreamContext:

@@ -1,3 +1,4 @@
+from unittest.mock import patch
 from urllib.parse import urlencode
 
 from faker import Faker
@@ -140,6 +141,23 @@ def test_closed_client_rejects_requests(sync_http_server: str) -> None:
         client.get(sync_http_server)
 
 
+@pytest.mark.parametrize("decode_content", [None, 0, 1, "true", b"false", [], object()])
+def test_stream_rejects_non_bool_decode_content_before_building_request(decode_content: object) -> None:
+    with foghttp.Client() as client, patch.object(client, "build_request", autospec=True) as build_request:
+        with pytest.raises(TypeError, match="decode_content must be a bool"):
+            client.stream(POST, "https://example.invalid", content=iter([b"body"]), decode_content=decode_content)
+        build_request.assert_not_called()
+        assert client.stats().total_requests == 0
+
+
+def test_closed_client_precedes_stream_decode_content_validation() -> None:
+    client = foghttp.Client()
+    client.close()
+
+    with pytest.raises(foghttp.ClientClosedError):
+        client.stream(GET, "https://example.invalid", decode_content=1)
+
+
 def test_close_is_idempotent() -> None:
     client = foghttp.Client()
 
@@ -199,6 +217,7 @@ def test_dump_transport_state(sync_http_server: str) -> None:
         "response_body_reuse_eligible",
         "schema_version",
         "snapshot_sequence",
+        "stream_decoder_reserved_bytes",
         "origins",
     }
     assert state["pending_requests"] == 0

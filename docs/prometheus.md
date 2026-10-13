@@ -173,8 +173,8 @@ series.
 `foghttp_response_body_bytes_total` is an API-boundary count, not a wire-byte
 counter. Buffered responses contribute the decoded `response.content` length.
 Streaming responses contribute bytes read into `iter_bytes()`, `iter_text()`,
-or `iter_lines()`; streaming content-encoding decompression is not currently
-available, and a text/line iterator may still buffer part of a chunk after the
+or `iter_lines()`: encoded by default, decoded with `decode_content=True`.
+A text/line iterator may still buffer part of a chunk after the
 native stream has been read. Use transport-level instrumentation when encoded
 wire volume is the required quantity.
 

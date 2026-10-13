@@ -33,6 +33,7 @@ class SyncTransport(typing.Protocol):
         request: Request,
         *,
         timeouts: Timeouts,
+        decode_content: bool = False,
     ) -> stream_response_models.StreamResponse: ...
 
 
@@ -43,6 +44,7 @@ class AsyncTransport(typing.Protocol):
         request: Request,
         *,
         timeouts: Timeouts,
+        decode_content: bool = False,
     ) -> stream_response_models.AsyncStreamResponse: ...
 
 
@@ -66,6 +68,7 @@ class RawSyncTransport:
         request: Request,
         *,
         timeouts: Timeouts,
+        decode_content: bool = False,
     ) -> stream_response_models.StreamResponse:
         started = time.perf_counter()
         raw_request = raw_request_options(request, timeouts, self._proxy_resolver)
@@ -73,6 +76,7 @@ class RawSyncTransport:
             raw_client=self._raw_client_provider(),
             request=raw_request,
             telemetry_request_id=current_native_request_id(),
+            decode_content=decode_content,
         )
         return stream_response_from_raw(raw=raw, started=started, extensions=request.extensions)
 
@@ -97,6 +101,7 @@ class RawAsyncTransport:
         request: Request,
         *,
         timeouts: Timeouts,
+        decode_content: bool = False,
     ) -> stream_response_models.AsyncStreamResponse:
         started = time.perf_counter()
         raw_request = raw_request_options(request, timeouts, self._proxy_resolver)
@@ -104,5 +109,6 @@ class RawAsyncTransport:
             raw_client=self._raw_client_provider(),
             request=raw_request,
             telemetry_request_id=current_native_request_id(),
+            decode_content=decode_content,
         )
         return async_stream_response_from_raw(raw=raw, started=started, extensions=request.extensions)

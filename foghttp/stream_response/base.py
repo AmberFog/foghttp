@@ -101,13 +101,14 @@ class StreamResponseBase(
             self._native_telemetry_finish = None
             return
         self._closed = True
-        if outcome is TelemetryRequestOutcome.CANCELLED:
-            self._raw.cancel()
-        else:
-            self._raw.close()
+        native_error_type = self._raw.cancel() if outcome is TelemetryRequestOutcome.CANCELLED else self._raw.close()
+        if native_error_type is not None:
+            outcome = TelemetryRequestOutcome.ERROR
+            suppress_telemetry_errors = True
         self._finish_observability(
             outcome=outcome,
             error=error,
+            error_type=native_error_type,
             suppress_hook_errors=suppress_telemetry_errors,
         )
 

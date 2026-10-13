@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator, Iterator
 from typing import assert_type
 
 import foghttp
+from foghttp._client.stream_context import AsyncStreamContext, StreamContext
 from foghttp.types import (
     AsyncStreamResponseProtocol,
     BufferedResponseProtocol,
@@ -25,6 +26,18 @@ def async_stream_contract(response: foghttp.AsyncStreamResponse) -> AsyncStreamR
     stream: AsyncStreamResponseProtocol = response
     assert_type(stream.aiter_bytes(), AsyncIterator[bytes])
     return stream
+
+
+def decoded_stream_contract(client: foghttp.Client, async_client: foghttp.AsyncClient) -> None:
+    assert_type(client.stream("GET", "https://example.invalid", decode_content=True), StreamContext)
+    assert_type(async_client.stream("GET", "https://example.invalid", decode_content=True), AsyncStreamContext)
+    limits = foghttp.Limits(max_stream_decoded_bytes=None, max_stream_decoder_memory_bytes=0)
+    assert_type(limits.max_stream_decoded_bytes, int | None)
+    assert_type(limits.max_stream_decoder_memory_bytes, int)
+    assert_type(client.stats().stream_decoder_reserved_bytes, int)
+    assert_type(client.dump_transport_state()["stream_decoder_reserved_bytes"], int)
+    error: foghttp.ResponseError = foghttp.ResponseDecodingError("invalid content coding")
+    assert_type(error, foghttp.ResponseError)
 
 
 def test_prepared_and_completed_requests_share_public_metadata_contract() -> None:

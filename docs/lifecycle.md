@@ -555,11 +555,22 @@ connection counters.
   buffered response bodies before they are returned to Python
 - `buffered_response_budget_rejections` means requests rejected by
   `Limits.max_buffered_response_bytes`
+- `stream_decoder_reserved_bytes` means conservative client-wide reservations
+  for opt-in streaming decoders, not RSS or a per-origin total
 
 For buffered responses, the active request slot is released after the body has
 been collected or aborted. For streamed responses, the active request slot is
 held until the streamed body reaches EOF, the stream context is closed, the body
 read is cancelled or aborted, or the client is closed.
+
+With `decode_content=True`, clean HTTP EOF can release a reusable connection
+before the codec has finished. The stream remains registered with the client
+and retains its request slot and decoder reservation until content finalization
+and delivery finish, or cleanup terminates it. A decoding error after HTTP EOF
+increments the logical failed-request counter but does not undo the clean
+transport outcome or abort a socket already assigned to another request.
+Errors before HTTP EOF still abort the unread transport. Client close also
+cleans up decoders that retain output after HTTP EOF.
 
 `Limits.max_connections` defaults to `None`; set it only when the client needs
 an explicit global cap on tracked physical connections. `Limits.max_connections_per_host`

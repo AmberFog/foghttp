@@ -36,6 +36,7 @@ __all__ = (
     "Response",
     "ResponseBodyBudgetExceededError",
     "ResponseBodyTooLargeError",
+    "ResponseDecodingError",
     "ResponseError",
     "RetryAttempt",
     "RetryConditions",
@@ -92,6 +93,7 @@ from .errors.response import (
     HTTPStatusError,
     ResponseBodyBudgetExceededError,
     ResponseBodyTooLargeError,
+    ResponseDecodingError,
     ResponseError,
 )
 from .errors.ssrf import SSRFError, SSRFViolationReason

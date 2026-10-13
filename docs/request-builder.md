@@ -356,7 +356,8 @@ Current intentional gaps:
 
 - no provider-specific OAuth helper
 - no asynchronous auth callable
-- no streaming decompression helpers yet
+- no automatic `Accept-Encoding` negotiation; streaming content decoding is
+  explicitly selected with `decode_content=True`
 - no disabling TLS verification
 
 For these gaps, keep logic outside FogHTTP for now or wait for the planned

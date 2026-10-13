@@ -5,16 +5,21 @@ use crate::core::client::{ConnectionAbortReason, ConnectionUseGuard};
 use crate::core::headers::HeaderPairs;
 use crate::core::metrics::{Metrics, OriginMetrics, ResponseBodyLifecycleOutcome};
 use crate::core::numeric::duration_from_secs;
-use crate::core::response::{decode_body, decoded_response_headers, response_body_decoding_plan};
+use crate::core::response::{
+    decode_body, decoded_response_headers, response_body_decoding_plan, StreamingDecodePlan,
+};
 use crate::core::telemetry::TelemetryErrorType;
 use crate::errors::{
     FogHttpReadTimeoutError, FogHttpResponseBodyBudgetExceededError,
-    FogHttpResponseBodyTooLargeError, FogHttpTimeoutError, FogHttpWriteTimeoutError,
+    FogHttpResponseBodyTooLargeError, FogHttpResponseDecodingError, FogHttpTimeoutError,
+    FogHttpWriteTimeoutError,
 };
 use crate::py::client::lifecycle::{successful_response_body_outcome, ResponseBodyLifecycle};
-use crate::py::client::streams::{RawStreamResponse, RawStreamResponseParts};
+use crate::py::client::streams::{
+    stream_decode_error, DecodedStream, RawStreamResponse, RawStreamResponseParts,
+};
 use crate::py::response::{RawRequestInfo, RawResponse, RawResponseParts};
-use hyper::body::Incoming;
+use hyper::body::{Body, Incoming};
 use hyper::Response;
 use pyo3::prelude::*;
 use std::sync::Arc;
@@ -159,6 +164,8 @@ fn response_body_error_type(error: &PyErr) -> TelemetryErrorType {
             TelemetryErrorType::ResponseBodyTooLargeError
         } else if error.is_instance_of::<FogHttpResponseBodyBudgetExceededError>(py) {
             TelemetryErrorType::ResponseBodyBudgetExceededError
+        } else if error.is_instance_of::<FogHttpResponseDecodingError>(py) {
+            TelemetryErrorType::ResponseDecodingError
         } else {
             TelemetryErrorType::RequestError
         }
@@ -169,11 +176,47 @@ pub(super) fn raw_stream_response(
     response: Response<Incoming>,
     request: RawRequestInfo,
     headers: HeaderPairs,
-    lifecycle: ResponseLifecycleGuards,
+    mut lifecycle: ResponseLifecycleGuards,
     context: RawStreamResponseContext,
 ) -> PyResult<RawStreamResponse> {
     let status_code = response.status().as_u16();
     let http_version = format!("{:?}", response.version());
+    let decoded = if context.decode_options.decode_content
+        && response_body_can_be_decoded(&request.method, response.status())
+    {
+        let prepared = (|| {
+            let plan = StreamingDecodePlan::from_headers(response.headers())
+                .map_err(|error| stream_decode_error(&error))?;
+            if plan.is_encoded() && response.status() == hyper::StatusCode::PARTIAL_CONTENT {
+                return Err(FogHttpResponseDecodingError::new_err(
+                    "content decoding is not supported for compressed 206 responses",
+                ));
+            }
+            let encoded = plan.is_encoded();
+            let decoded =
+                DecodedStream::new(plan, context.decode_options, Arc::clone(&context.metrics))?;
+            Ok((encoded, decoded))
+        })();
+        match prepared {
+            Ok(decoded) => Some(decoded),
+            Err(error) => {
+                if response.body().is_end_stream() {
+                    lifecycle.finish_connection();
+                    lifecycle.finish_body();
+                } else {
+                    lifecycle.abort_connection(&error);
+                }
+                return Err(error);
+            }
+        }
+    } else {
+        None
+    };
+    let headers = decoded_response_headers(
+        headers,
+        decoded.as_ref().is_some_and(|(encoded, _)| *encoded),
+    );
+    let decoded = decoded.map(|(_, decoded)| decoded);
     let ResponseLifecycleGuards {
         body: lifecycle,
         connection_use,
@@ -193,6 +236,7 @@ pub(super) fn raw_stream_response(
         history: context.history,
         retry_trace: None,
         body: response.into_body(),
+        decoded,
         permit: context.permit,
         lifecycle,
         connection_use,

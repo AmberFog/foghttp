@@ -28,6 +28,7 @@ class StreamResponseTelemetryMixin:
         *,
         outcome: TelemetryRequestOutcome,
         error: BaseException | None = None,
+        error_type: str | None = None,
         suppress_hook_errors: bool,
     ) -> None:
         if self._telemetry_context is None:
@@ -38,6 +39,7 @@ class StreamResponseTelemetryMixin:
         self._finish_telemetry(
             outcome=outcome,
             error=error,
+            error_type=error_type,
             suppress_hook_errors=suppress_hook_errors,
             completed_at_ns=completed_at_ns,
         )
@@ -47,6 +49,7 @@ class StreamResponseTelemetryMixin:
         *,
         outcome: TelemetryRequestOutcome,
         error: BaseException | None = None,
+        error_type: str | None = None,
         suppress_hook_errors: bool = False,
         completed_at_ns: int,
     ) -> None:
@@ -70,6 +73,7 @@ class StreamResponseTelemetryMixin:
             response=self._telemetry_completion_metadata(),
             outcome=outcome,
             error=error,
+            error_type=error_type,
             suppress_hook_errors=suppress_hook_errors or native_error is not None,
             body_elapsed_ns=completed_at_ns - body_started_at_ns,
             request_elapsed_ns=completed_at_ns - self._telemetry_context.started_at_ns,

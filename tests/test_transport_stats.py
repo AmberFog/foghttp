@@ -41,6 +41,7 @@ RAW_STATS_VALUES = MappingProxyType(
         "buffered_response_budget_rejections": 32,
         "schema_version": 33,
         "snapshot_sequence": 34,
+        "stream_decoder_reserved_bytes": 35,
     },
 )
 
@@ -70,3 +71,14 @@ def test_transport_stats_equality_includes_snapshot_metadata() -> None:
     assert first != second
     assert first != different_schema
     assert first != different_metrics
+
+
+def test_transport_stats_preserve_existing_positional_arguments() -> None:
+    previous_values = {
+        name: value for name, value in RAW_STATS_VALUES.items() if name != "stream_decoder_reserved_bytes"
+    }
+
+    stats = foghttp.TransportStats(*previous_values.values())
+
+    assert stats == foghttp.TransportStats(**previous_values)
+    assert stats.stream_decoder_reserved_bytes == 0

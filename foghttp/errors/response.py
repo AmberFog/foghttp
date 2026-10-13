@@ -2,6 +2,7 @@ __all__ = (
     "HTTPStatusError",
     "ResponseBodyBudgetExceededError",
     "ResponseBodyTooLargeError",
+    "ResponseDecodingError",
     "ResponseError",
 )
 
@@ -19,11 +20,15 @@ class ResponseError(FogHTTPError):
 
 
 class ResponseBodyTooLargeError(ResponseError):
-    """Raised when a buffered response body exceeds the configured limit."""
+    """Raised when a buffered body or decoded streaming layer exceeds its byte limit."""
 
 
 class ResponseBodyBudgetExceededError(ResponseError):
-    """Raised when concurrent buffered responses exceed the aggregate budget."""
+    """Raised when buffered responses or stream decoders exceed their aggregate budget."""
+
+
+class ResponseDecodingError(ResponseError):
+    """Raised when opt-in streaming content decoding fails."""
 
 
 class HTTPStatusError(ResponseError):

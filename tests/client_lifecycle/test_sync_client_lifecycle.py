@@ -3,6 +3,7 @@ from concurrent.futures import (
     ThreadPoolExecutor,
 )
 import threading
+from unittest.mock import Mock, patch
 import warnings
 
 from faker import Faker
@@ -55,6 +56,36 @@ def test_sync_closed_client_rejects_stats(
 
     with pytest.raises(foghttp.ClientClosedError, match="FogHTTP client is closed"):
         client.stats()
+
+
+@pytest.mark.parametrize(
+    "decode_content",
+    [
+        pytest.param(Mock(spec=bool), id="bool-spec"),
+        pytest.param(Mock(__class__=bool), id="spoofed-class"),
+    ],
+)
+def test_sync_stream_rejects_bool_impostors_before_building_request(decode_content: object) -> None:
+    with foghttp.Client() as client, patch.object(client, "build_request", autospec=True) as build_request:
+        with pytest.raises(TypeError, match="decode_content must be a bool"):
+            client.stream(GET, "https://example.invalid", decode_content=decode_content)  # type: ignore[arg-type]
+        build_request.assert_not_called()
+        assert client.stats().total_requests == 0
+
+
+@pytest.mark.parametrize(
+    "decode_content",
+    [
+        pytest.param(Mock(spec=bool), id="bool-spec"),
+        pytest.param(Mock(__class__=bool), id="spoofed-class"),
+    ],
+)
+def test_sync_closed_client_precedes_stream_decode_content_validation(decode_content: object) -> None:
+    client = foghttp.Client()
+    client.close()
+
+    with pytest.raises(foghttp.ClientClosedError, match="FogHTTP client is closed"):
+        client.stream(GET, "https://example.invalid", decode_content=decode_content)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
@@ -154,6 +185,7 @@ def test_sync_dump_transport_state_before_first_request_do_not_create_raw_client
         "active_requests": 0,
         "buffered_response_bytes": 0,
         "buffered_response_budget_rejections": 0,
+        "stream_decoder_reserved_bytes": 0,
         "connection_acquire_attempts": 0,
         "connection_acquire_immediate": 0,
         "connection_acquire_timeouts": 0,

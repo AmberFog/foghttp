@@ -44,3 +44,4 @@ class TransportStats:
     buffered_response_budget_rejections: int = 0
     schema_version: int = TELEMETRY_SNAPSHOT_SCHEMA_VERSION
     snapshot_sequence: int = SYNTHETIC_TELEMETRY_SNAPSHOT_SEQUENCE
+    stream_decoder_reserved_bytes: int = 0

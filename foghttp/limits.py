@@ -1,6 +1,7 @@
 __all__ = (
     "DEFAULT_MAX_BUFFERED_RESPONSE_BYTES",
     "DEFAULT_MAX_RESPONSE_BODY_SIZE",
+    "DEFAULT_MAX_STREAM_DECODER_MEMORY_BYTES",
     "Limits",
 )
 
@@ -15,6 +16,7 @@ from ._validation.numeric import (
 
 DEFAULT_MAX_RESPONSE_BODY_SIZE = 10 * 1024 * 1024
 DEFAULT_MAX_BUFFERED_RESPONSE_BYTES = 100 * 1024 * 1024
+DEFAULT_MAX_STREAM_DECODER_MEMORY_BYTES = 134_217_728
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +31,8 @@ class Limits:
     max_idle_connections_per_host: int = 20
     idle_timeout: float = 30.0
     keepalive: bool = True
+    max_stream_decoded_bytes: int | None = None
+    max_stream_decoder_memory_bytes: int = DEFAULT_MAX_STREAM_DECODER_MEMORY_BYTES
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -65,22 +69,12 @@ class Limits:
             "max_pending_requests",
             validate_non_negative_int("Limits.max_pending_requests", self.max_pending_requests),
         )
-        object.__setattr__(
-            self,
-            "max_response_body_size",
-            validate_optional_non_negative_int(
-                "Limits.max_response_body_size",
-                self.max_response_body_size,
-            ),
-        )
-        object.__setattr__(
-            self,
-            "max_buffered_response_bytes",
-            validate_optional_non_negative_int(
-                "Limits.max_buffered_response_bytes",
-                self.max_buffered_response_bytes,
-            ),
-        )
+        for name, limit in (
+            ("max_response_body_size", self.max_response_body_size),
+            ("max_buffered_response_bytes", self.max_buffered_response_bytes),
+            ("max_stream_decoded_bytes", self.max_stream_decoded_bytes),
+        ):
+            object.__setattr__(self, name, validate_optional_non_negative_int(f"Limits.{name}", limit))
         object.__setattr__(
             self,
             "max_idle_connections_per_host",
@@ -93,4 +87,9 @@ class Limits:
             self,
             "idle_timeout",
             validate_non_negative_seconds("Limits.idle_timeout", self.idle_timeout),
+        )
+        object.__setattr__(
+            self,
+            "max_stream_decoder_memory_bytes",
+            validate_non_negative_int("Limits.max_stream_decoder_memory_bytes", self.max_stream_decoder_memory_bytes),
         )

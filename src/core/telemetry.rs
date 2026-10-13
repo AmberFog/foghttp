@@ -47,6 +47,7 @@ pub(crate) enum TelemetryErrorType {
     ReadTimeout,
     ResponseBodyBudgetExceededError,
     ResponseBodyTooLargeError,
+    ResponseDecodingError,
     WriteTimeout,
     CancelledError,
 }
@@ -903,6 +904,7 @@ impl TelemetryErrorType {
             Self::ReadTimeout => "ReadTimeout",
             Self::ResponseBodyBudgetExceededError => "ResponseBodyBudgetExceededError",
             Self::ResponseBodyTooLargeError => "ResponseBodyTooLargeError",
+            Self::ResponseDecodingError => "ResponseDecodingError",
             Self::WriteTimeout => "WriteTimeout",
             Self::CancelledError => "CancelledError",
         }

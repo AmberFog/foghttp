@@ -22,6 +22,7 @@ pub(crate) struct RawStreamResponseParts {
     pub(crate) history: Vec<RawResponse>,
     pub(crate) retry_trace: Option<RawRetryTrace>,
     pub(crate) body: Incoming,
+    pub(crate) decoded: Option<super::state::DecodedStream>,
     pub(crate) permit: AcquirePermit,
     pub(crate) lifecycle: ResponseBodyLifecycle,
     pub(crate) connection_use: Option<ConnectionUseGuard>,

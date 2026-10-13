@@ -36,6 +36,7 @@ _STABLE_ERROR_CLASSES = frozenset(
         "RequestError",
         "ResponseBodyBudgetExceededError",
         "ResponseBodyTooLargeError",
+        "ResponseDecodingError",
         "ResponseError",
         "SSRFError",
         "TelemetryHookError",

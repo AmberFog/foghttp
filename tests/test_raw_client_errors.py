@@ -10,7 +10,7 @@ from foghttp._client.config import ClientConfig
 from foghttp._client.constants import DEFAULT_MAX_REDIRECTS
 from foghttp._client.options import ClientOptions
 from foghttp._client.proxy import ProxyTransportPolicy
-from foghttp._client.raw.errors import public_raw_error
+from foghttp._client.raw.errors import public_raw_error, raise_public_raw_error
 from foghttp._client.raw.lifecycle import create_raw_client
 from foghttp._client.raw.requests import RawRequestOptions, send_raw_request, send_raw_request_async
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
@@ -21,6 +21,7 @@ from foghttp.errors import (
     ReadTimeout,
     ResponseBodyBudgetExceededError,
     ResponseBodyTooLargeError,
+    ResponseDecodingError,
     SSRFError,
     SSRFViolationReason,
     TimeoutError,
@@ -88,6 +89,24 @@ BYTEARRAY_REDIRECT_HOP_RAW_ARGS = (
 )
 RAW_CLIENT_SETUP_FAILURE = "runtime setup failed"
 CLEANUP_INTERRUPTED = "cleanup interrupted"
+
+
+def test_response_decoding_error_preserves_type_message_and_cause() -> None:
+    raw_error = _foghttp.FogHttpResponseDecodingError("gzip stream is truncated")
+
+    with pytest.raises(ResponseDecodingError, match="gzip stream is truncated") as exc_info:
+        raise_public_raw_error(raw_error)
+
+    assert type(exc_info.value) is foghttp.ResponseDecodingError
+    assert isinstance(exc_info.value, foghttp.ResponseError)
+    assert not isinstance(exc_info.value, foghttp.RequestError)
+    assert exc_info.value.__cause__ is raw_error
+
+
+def test_untyped_buffered_decoding_error_remains_request_error() -> None:
+    error = public_raw_error(_foghttp.FogHttpError("gzip stream is truncated"))
+
+    assert type(error) is foghttp.RequestError
 
 
 def _default_client_config() -> ClientConfig:

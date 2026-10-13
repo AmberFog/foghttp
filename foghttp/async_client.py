@@ -20,7 +20,7 @@ from ._client.raw.lifecycle import close_raw_client
 from ._client.request_builder.header_policy import validate_safe_request_headers
 from ._client.retry import bind_error_retry_trace
 from ._client.stats import stats_from_raw
-from ._client.stream_context import AsyncStreamContext
+from ._client.stream_context import AsyncStreamContext, validate_decode_content
 from ._client.telemetry import (
     TelemetryRequestContext,
     emit_buffered_response_telemetry,
@@ -206,8 +206,10 @@ class AsyncClient(ClientCore):
         files: AsyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
+        decode_content: bool = False,
     ) -> AsyncStreamContext:
         self._ensure_open()
+        validate_decode_content(decode_content)
         request = self.build_request(
             method,
             url,
@@ -219,7 +221,7 @@ class AsyncClient(ClientCore):
             files=files,
             json=json,
         )
-        return AsyncStreamContext(lambda: self._send_stream(request, timeout=timeout))
+        return AsyncStreamContext(lambda: self._send_stream(request, timeout=timeout, decode_content=decode_content))
 
     async def get(
         self,
@@ -435,6 +437,7 @@ class AsyncClient(ClientCore):
         request: Request,
         *,
         timeout: Timeouts | None = None,
+        decode_content: bool = False,
     ) -> AsyncStreamResponse:
         self._ensure_open()
         telemetry_context = self._telemetry.request_context(request, mode=TelemetryRequestMode.STREAM)
@@ -449,6 +452,7 @@ class AsyncClient(ClientCore):
                 request,
                 timeout=timeout,
                 telemetry_context=telemetry_context,
+                decode_content=decode_content,
             )
         except BaseException as error:
             self._emit_stream_request_error_telemetry(
@@ -494,12 +498,13 @@ class AsyncClient(ClientCore):
         *,
         timeout: Timeouts | None,
         telemetry_context: TelemetryRequestContext | None,
+        decode_content: bool = False,
     ) -> AsyncStreamResponse:
         request_timeouts = self._request_timeouts(timeout)
         if telemetry_context is None:
-            return await self._transport.stream(request, timeouts=request_timeouts)
+            return await self._transport.stream(request, timeouts=request_timeouts, decode_content=decode_content)
         with native_request_id_scope(telemetry_context.data.request_id):
-            return await self._transport.stream(request, timeouts=request_timeouts)
+            return await self._transport.stream(request, timeouts=request_timeouts, decode_content=decode_content)
 
     def _strict_lifecycle_debug_snapshot_locked(self) -> AsyncLifecycleDebugSnapshot | None:
         if not self._lifecycle_debug.strict:

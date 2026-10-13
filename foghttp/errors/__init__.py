@@ -13,6 +13,7 @@ __all__ = (
     "RequestError",
     "ResponseBodyBudgetExceededError",
     "ResponseBodyTooLargeError",
+    "ResponseDecodingError",
     "ResponseError",
     "SSRFError",
     "SSRFViolationReason",
@@ -28,6 +29,7 @@ from .response import (
     HTTPStatusError,
     ResponseBodyBudgetExceededError,
     ResponseBodyTooLargeError,
+    ResponseDecodingError,
     ResponseError,
 )
 from .ssrf import SSRFError, SSRFViolationReason

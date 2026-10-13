@@ -27,6 +27,7 @@ _HTTP_1_1 = "HTTP/1.1"
 class TransportCall:
     request: Request
     timeouts: Timeouts
+    decode_content: bool | None = None
 
 
 @dataclass(slots=True)
@@ -46,6 +47,10 @@ class SyncFailingTransport:
 
     def send(self, request: Request, *, timeouts: Timeouts) -> Response:
         self.calls.append(TransportCall(request=request, timeouts=timeouts))
+        raise self.error
+
+    def stream(self, request: Request, *, timeouts: Timeouts, decode_content: bool = False) -> foghttp.StreamResponse:
+        self.calls.append(TransportCall(request=request, timeouts=timeouts, decode_content=decode_content))
         raise self.error
 
 
@@ -68,24 +73,46 @@ class AsyncFailingTransport:
         self.calls.append(TransportCall(request=request, timeouts=timeouts))
         raise self.error
 
+    async def stream(
+        self,
+        request: Request,
+        *,
+        timeouts: Timeouts,
+        decode_content: bool = False,
+    ) -> foghttp.AsyncStreamResponse:
+        self.calls.append(TransportCall(request=request, timeouts=timeouts, decode_content=decode_content))
+        raise self.error
+
 
 SyncTestTransport = SyncRecordingTransport | SyncFailingTransport
 AsyncTestTransport = AsyncRecordingTransport | AsyncFailingTransport
 
 
 class SyncTransportClient(foghttp.Client):
-    def __init__(self, transport: SyncTestTransport, *, timeouts: Timeouts) -> None:
+    def __init__(
+        self,
+        transport: SyncTestTransport,
+        *,
+        timeouts: Timeouts,
+        telemetry: foghttp.TelemetryConfig | None = None,
+    ) -> None:
         self._test_transport = transport
-        super().__init__(timeouts=timeouts)
+        super().__init__(timeouts=timeouts, telemetry=telemetry)
 
     def _create_transport(self) -> SyncTestTransport:
         return self._test_transport
 
 
 class AsyncTransportClient(foghttp.AsyncClient):
-    def __init__(self, transport: AsyncTestTransport, *, timeouts: Timeouts) -> None:
+    def __init__(
+        self,
+        transport: AsyncTestTransport,
+        *,
+        timeouts: Timeouts,
+        telemetry: foghttp.TelemetryConfig | None = None,
+    ) -> None:
         self._test_transport = transport
-        super().__init__(timeouts=timeouts)
+        super().__init__(timeouts=timeouts, telemetry=telemetry)
 
     def _create_transport(self) -> AsyncTestTransport:
         return self._test_transport
