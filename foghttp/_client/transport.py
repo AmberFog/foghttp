@@ -27,24 +27,38 @@ RawClientProvider = typing.Callable[[], "_foghttp.RawClient"]
 
 
 class SyncTransport(typing.Protocol):
-    def send(self, request: Request, *, timeouts: Timeouts) -> Response: ...
+    def send(
+        self,
+        request: Request,
+        *,
+        timeouts: Timeouts,
+        auto_accept_encoding: bool = False,
+    ) -> Response: ...
     def stream(
         self,
         request: Request,
         *,
         timeouts: Timeouts,
         decode_content: bool = False,
+        auto_accept_encoding: bool = False,
     ) -> stream_response_models.StreamResponse: ...
 
 
 class AsyncTransport(typing.Protocol):
-    async def send(self, request: Request, *, timeouts: Timeouts) -> Response: ...
+    async def send(
+        self,
+        request: Request,
+        *,
+        timeouts: Timeouts,
+        auto_accept_encoding: bool = False,
+    ) -> Response: ...
     async def stream(
         self,
         request: Request,
         *,
         timeouts: Timeouts,
         decode_content: bool = False,
+        auto_accept_encoding: bool = False,
     ) -> stream_response_models.AsyncStreamResponse: ...
 
 
@@ -53,9 +67,20 @@ class RawSyncTransport:
         self._raw_client_provider = raw_client_provider
         self._proxy_resolver = proxy_resolver
 
-    def send(self, request: Request, *, timeouts: Timeouts) -> Response:
+    def send(
+        self,
+        request: Request,
+        *,
+        timeouts: Timeouts,
+        auto_accept_encoding: bool = False,
+    ) -> Response:
         started = time.perf_counter()
-        raw_request = raw_request_options(request, timeouts, self._proxy_resolver)
+        raw_request = raw_request_options(
+            request,
+            timeouts,
+            self._proxy_resolver,
+            auto_accept_encoding=auto_accept_encoding,
+        )
         raw = raw_requests.send_raw_request(
             raw_client=self._raw_client_provider(),
             request=raw_request,
@@ -69,9 +94,15 @@ class RawSyncTransport:
         *,
         timeouts: Timeouts,
         decode_content: bool = False,
+        auto_accept_encoding: bool = False,
     ) -> stream_response_models.StreamResponse:
         started = time.perf_counter()
-        raw_request = raw_request_options(request, timeouts, self._proxy_resolver)
+        raw_request = raw_request_options(
+            request,
+            timeouts,
+            self._proxy_resolver,
+            auto_accept_encoding=auto_accept_encoding and decode_content,
+        )
         raw = raw_requests.send_raw_stream_request(
             raw_client=self._raw_client_provider(),
             request=raw_request,
@@ -86,9 +117,20 @@ class RawAsyncTransport:
         self._raw_client_provider = raw_client_provider
         self._proxy_resolver = proxy_resolver
 
-    async def send(self, request: Request, *, timeouts: Timeouts) -> Response:
+    async def send(
+        self,
+        request: Request,
+        *,
+        timeouts: Timeouts,
+        auto_accept_encoding: bool = False,
+    ) -> Response:
         started = time.perf_counter()
-        raw_request = raw_request_options(request, timeouts, self._proxy_resolver)
+        raw_request = raw_request_options(
+            request,
+            timeouts,
+            self._proxy_resolver,
+            auto_accept_encoding=auto_accept_encoding,
+        )
         raw = await raw_requests.send_raw_request_async(
             raw_client=self._raw_client_provider(),
             request=raw_request,
@@ -102,9 +144,15 @@ class RawAsyncTransport:
         *,
         timeouts: Timeouts,
         decode_content: bool = False,
+        auto_accept_encoding: bool = False,
     ) -> stream_response_models.AsyncStreamResponse:
         started = time.perf_counter()
-        raw_request = raw_request_options(request, timeouts, self._proxy_resolver)
+        raw_request = raw_request_options(
+            request,
+            timeouts,
+            self._proxy_resolver,
+            auto_accept_encoding=auto_accept_encoding and decode_content,
+        )
         raw = await raw_requests.send_raw_stream_request_async(
             raw_client=self._raw_client_provider(),
             request=raw_request,

@@ -28,6 +28,7 @@ class TransportCall:
     request: Request
     timeouts: Timeouts
     decode_content: bool | None = None
+    auto_accept_encoding: bool = False
 
 
 @dataclass(slots=True)
@@ -35,8 +36,14 @@ class SyncRecordingTransport:
     response: Response
     calls: list[TransportCall] = field(default_factory=list)
 
-    def send(self, request: Request, *, timeouts: Timeouts) -> Response:
-        self.calls.append(TransportCall(request=request, timeouts=timeouts))
+    def send(
+        self,
+        request: Request,
+        *,
+        timeouts: Timeouts,
+        auto_accept_encoding: bool = False,
+    ) -> Response:
+        self.calls.append(TransportCall(request=request, timeouts=timeouts, auto_accept_encoding=auto_accept_encoding))
         return self.response
 
 
@@ -45,12 +52,32 @@ class SyncFailingTransport:
     error: BaseException
     calls: list[TransportCall] = field(default_factory=list)
 
-    def send(self, request: Request, *, timeouts: Timeouts) -> Response:
-        self.calls.append(TransportCall(request=request, timeouts=timeouts))
+    def send(
+        self,
+        request: Request,
+        *,
+        timeouts: Timeouts,
+        auto_accept_encoding: bool = False,
+    ) -> Response:
+        self.calls.append(TransportCall(request=request, timeouts=timeouts, auto_accept_encoding=auto_accept_encoding))
         raise self.error
 
-    def stream(self, request: Request, *, timeouts: Timeouts, decode_content: bool = False) -> foghttp.StreamResponse:
-        self.calls.append(TransportCall(request=request, timeouts=timeouts, decode_content=decode_content))
+    def stream(
+        self,
+        request: Request,
+        *,
+        timeouts: Timeouts,
+        decode_content: bool = False,
+        auto_accept_encoding: bool = False,
+    ) -> foghttp.StreamResponse:
+        self.calls.append(
+            TransportCall(
+                request=request,
+                timeouts=timeouts,
+                decode_content=decode_content,
+                auto_accept_encoding=auto_accept_encoding,
+            ),
+        )
         raise self.error
 
 
@@ -59,8 +86,14 @@ class AsyncRecordingTransport:
     response: Response
     calls: list[TransportCall] = field(default_factory=list)
 
-    async def send(self, request: Request, *, timeouts: Timeouts) -> Response:
-        self.calls.append(TransportCall(request=request, timeouts=timeouts))
+    async def send(
+        self,
+        request: Request,
+        *,
+        timeouts: Timeouts,
+        auto_accept_encoding: bool = False,
+    ) -> Response:
+        self.calls.append(TransportCall(request=request, timeouts=timeouts, auto_accept_encoding=auto_accept_encoding))
         return self.response
 
 
@@ -69,8 +102,14 @@ class AsyncFailingTransport:
     error: BaseException
     calls: list[TransportCall] = field(default_factory=list)
 
-    async def send(self, request: Request, *, timeouts: Timeouts) -> Response:
-        self.calls.append(TransportCall(request=request, timeouts=timeouts))
+    async def send(
+        self,
+        request: Request,
+        *,
+        timeouts: Timeouts,
+        auto_accept_encoding: bool = False,
+    ) -> Response:
+        self.calls.append(TransportCall(request=request, timeouts=timeouts, auto_accept_encoding=auto_accept_encoding))
         raise self.error
 
     async def stream(
@@ -79,8 +118,16 @@ class AsyncFailingTransport:
         *,
         timeouts: Timeouts,
         decode_content: bool = False,
+        auto_accept_encoding: bool = False,
     ) -> foghttp.AsyncStreamResponse:
-        self.calls.append(TransportCall(request=request, timeouts=timeouts, decode_content=decode_content))
+        self.calls.append(
+            TransportCall(
+                request=request,
+                timeouts=timeouts,
+                decode_content=decode_content,
+                auto_accept_encoding=auto_accept_encoding,
+            ),
+        )
         raise self.error
 
 

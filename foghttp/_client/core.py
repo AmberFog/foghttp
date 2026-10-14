@@ -9,6 +9,7 @@ import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
 from .._telemetry import SYNTHETIC_TELEMETRY_SNAPSHOT_SEQUENCE, TELEMETRY_SNAPSHOT_SCHEMA_VERSION
 from .._upload_body import AsyncRequestContent, SyncRequestContent
+from .._validation.boolean import validate_bool
 from ..errors import ClientClosedError, UnclosedClientError
 from ..headers import HeaderSource
 from ..limits import Limits
@@ -83,7 +84,10 @@ class ClientCore:
         files: SyncMultipartFiles | AsyncMultipartFiles | None = None,
         json: Any = None,
         extensions: RequestExtensionsSource = None,
+        auto_accept_encoding: bool | None = None,
     ) -> Request:
+        if auto_accept_encoding is not None:
+            validate_bool(auto_accept_encoding, name="auto_accept_encoding")
         return self._request_builder.build(
             RequestBuildOptions(
                 method=method,
@@ -95,6 +99,9 @@ class ClientCore:
                 files=files,
                 json=json,
                 extensions=extensions,
+                auto_accept_encoding=(
+                    self._config.auto_accept_encoding if auto_accept_encoding is None else auto_accept_encoding
+                ),
             ),
         )
 
@@ -195,6 +202,14 @@ class ClientCore:
 
     def _request_timeouts(self, timeout: Timeouts | None) -> Timeouts:
         return timeout or self._config.timeouts
+
+    def _request_auto_accept_encoding(self, request: Request, *, override: bool | None = None) -> bool:
+        if override is not None:
+            validate_bool(override, name="auto_accept_encoding")
+            return override
+        if request.auto_accept_encoding is not None:
+            return request.auto_accept_encoding
+        return self._config.auto_accept_encoding
 
     def _emit_native_telemetry(
         self,

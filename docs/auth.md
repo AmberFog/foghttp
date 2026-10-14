@@ -76,6 +76,13 @@ Header precedence is:
 2. auth-managed headers;
 3. per-request headers and body-generated semantic headers.
 
+Opt-in `auto_accept_encoding` supplies a lower-priority default before auth
+runs. The hook sees that header before signing and may replace it. Existing
+explicit Accept-Encoding fields and recorded removals prevent auto insertion.
+On retries the normal auth baseline/refresh rules apply. If auth manages this
+header, cross-origin redirects strip its name along with other auth-managed
+headers; negotiation does not reinsert it after stripping.
+
 An explicit per-request header therefore wins over a header with the same name
 returned by auth. FogHTTP also preserves a header added, changed, or deleted on
 a prepared `Request` after `build_request()`; auth does not overwrite that

@@ -21,3 +21,4 @@ class RequestBuildOptions:
     files: SyncMultipartFiles | AsyncMultipartFiles | None = None
     json: Any = None
     extensions: RequestExtensionsSource = None
+    auto_accept_encoding: bool = False

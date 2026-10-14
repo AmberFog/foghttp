@@ -2,7 +2,8 @@ __all__ = ("ClientOptions", "validate_client_options")
 
 from dataclasses import dataclass, field
 
-from .. import telemetry, timeouts
+from .. import policy, telemetry, timeouts
+from .._validation.boolean import validate_bool
 from ..auth import Auth
 from ..headers import HeaderSource
 from ..lifecycle_debug import AsyncLifecycleDebugConfig
@@ -11,7 +12,6 @@ from ..messages import (
     HTTP_VERSION_UNSUPPORTED,
     MAX_REDIRECTS_INVALID,
 )
-from ..policy import RetryPolicy, SSRFPolicy, TransportPolicyHooks
 from ..tls import TLSConfig
 from ..types import HttpVersions, QueryParams
 from ..url import URL
@@ -34,15 +34,17 @@ class ClientOptions:
     tls: TLSConfig | None
     runtime: str | None
     runtime_workers: int | None
-    policy_hooks: TransportPolicyHooks | None
-    retry: RetryPolicy | None
-    ssrf: SSRFPolicy | None
+    policy_hooks: policy.TransportPolicyHooks | None
+    retry: policy.RetryPolicy | None
+    ssrf: policy.SSRFPolicy | None
     telemetry: telemetry.TelemetryConfig | None
     lifecycle_debug: AsyncLifecycleDebugConfig | None
     auth: Auth = field(default=None, repr=False)
+    auto_accept_encoding: bool = False
 
 
 def validate_client_options(options: ClientOptions) -> None:
+    validate_bool(options.auto_accept_encoding, name="auto_accept_encoding")
     if options.max_redirects < 0:
         raise ValueError(MAX_REDIRECTS_INVALID)
     validate_runtime_options(

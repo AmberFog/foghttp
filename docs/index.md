@@ -180,11 +180,13 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
   endpoint uses `http://`, with target-host TLS validation for tunnelled HTTPS
 - default per-response and aggregate buffered response body limits
 - grouped HTTP status constants and reusable HTTP method constants
+- opt-in Accept-Encoding negotiation for buffered and explicitly decoded streams
 
 ## Not Yet
 
-FogHTTP does not yet implement HTTP/2, automatic `Accept-Encoding` negotiation,
-streaming decompression, or provider-specific authentication flows.
+FogHTTP does not yet implement HTTP/2 or provider-specific authentication flows.
+Streaming decompression and automatic Accept-Encoding negotiation are separate
+opt-in controls; see [request settings](./request-builder.md#accept-encoding-negotiation).
 `trust_env` supports HTTP proxy routing, HTTPS
 `CONNECT` tunnelling through `http://` proxy endpoints, and `SSL_CERT_FILE`.
 Disabling TLS verification is intentionally not supported. See

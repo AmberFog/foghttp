@@ -64,6 +64,7 @@ class AsyncClient(ClientCore):
         base_url: str | URL | None = None,
         headers: HeaderSource = None,
         auth: Auth = None,
+        auto_accept_encoding: bool = False,
         params: QueryParams = None,
         limits: Limits | None = None,
         timeouts: Timeouts | None = None,
@@ -87,6 +88,7 @@ class AsyncClient(ClientCore):
                 base_url=base_url,
                 headers=headers,
                 auth=auth,
+                auto_accept_encoding=auto_accept_encoding,
                 params=params,
                 limits=limits,
                 timeouts=timeouts,
@@ -148,6 +150,7 @@ class AsyncClient(ClientCore):
         files: AsyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
+        auto_accept_encoding: bool | None = None,
     ) -> Response:
         self._ensure_open()
         request = self.build_request(
@@ -160,11 +163,19 @@ class AsyncClient(ClientCore):
             data=data,
             files=files,
             json=json,
+            auto_accept_encoding=auto_accept_encoding,
         )
         return await self.send(request, timeout=timeout)
 
-    async def send(self, request: Request, *, timeout: Timeouts | None = None) -> Response:
+    async def send(
+        self,
+        request: Request,
+        *,
+        timeout: Timeouts | None = None,
+        auto_accept_encoding: bool | None = None,
+    ) -> Response:
         self._ensure_open()
+        negotiation = self._request_auto_accept_encoding(request, override=auto_accept_encoding)
         telemetry_context = self._telemetry.request_context(request, mode=TelemetryRequestMode.BUFFERED)
         telemetry_started = False
         lifecycle_debug_token: LifecycleDebugRequestToken = None
@@ -176,6 +187,7 @@ class AsyncClient(ClientCore):
                 request,
                 timeout=timeout,
                 telemetry_context=telemetry_context,
+                auto_accept_encoding=negotiation,
             )
         except BaseException as error:
             bind_error_retry_trace(error)
@@ -207,6 +219,7 @@ class AsyncClient(ClientCore):
         json: Any = None,
         timeout: Timeouts | None = None,
         decode_content: bool = False,
+        auto_accept_encoding: bool | None = None,
     ) -> AsyncStreamContext:
         self._ensure_open()
         validate_decode_content(decode_content)
@@ -220,6 +233,7 @@ class AsyncClient(ClientCore):
             data=data,
             files=files,
             json=json,
+            auto_accept_encoding=auto_accept_encoding,
         )
         return AsyncStreamContext(lambda: self._send_stream(request, timeout=timeout, decode_content=decode_content))
 
@@ -231,6 +245,7 @@ class AsyncClient(ClientCore):
         params: QueryParams = None,
         extensions: RequestExtensionsSource = None,
         timeout: Timeouts | None = None,
+        auto_accept_encoding: bool | None = None,
     ) -> Response:
         return await self.request(
             GET,
@@ -239,6 +254,7 @@ class AsyncClient(ClientCore):
             params=params,
             extensions=extensions,
             timeout=timeout,
+            auto_accept_encoding=auto_accept_encoding,
         )
 
     async def head(
@@ -249,6 +265,7 @@ class AsyncClient(ClientCore):
         params: QueryParams = None,
         extensions: RequestExtensionsSource = None,
         timeout: Timeouts | None = None,
+        auto_accept_encoding: bool | None = None,
     ) -> Response:
         return await self.request(
             HEAD,
@@ -257,6 +274,7 @@ class AsyncClient(ClientCore):
             params=params,
             extensions=extensions,
             timeout=timeout,
+            auto_accept_encoding=auto_accept_encoding,
         )
 
     async def post(
@@ -271,6 +289,7 @@ class AsyncClient(ClientCore):
         files: AsyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
+        auto_accept_encoding: bool | None = None,
     ) -> Response:
         return await self.request(
             POST,
@@ -283,6 +302,7 @@ class AsyncClient(ClientCore):
             files=files,
             json=json,
             timeout=timeout,
+            auto_accept_encoding=auto_accept_encoding,
         )
 
     async def query(
@@ -297,6 +317,7 @@ class AsyncClient(ClientCore):
         files: AsyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
+        auto_accept_encoding: bool | None = None,
     ) -> Response:
         return await self.request(
             QUERY,
@@ -309,6 +330,7 @@ class AsyncClient(ClientCore):
             files=files,
             json=json,
             timeout=timeout,
+            auto_accept_encoding=auto_accept_encoding,
         )
 
     async def put(
@@ -323,6 +345,7 @@ class AsyncClient(ClientCore):
         files: AsyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
+        auto_accept_encoding: bool | None = None,
     ) -> Response:
         return await self.request(
             PUT,
@@ -335,6 +358,7 @@ class AsyncClient(ClientCore):
             files=files,
             json=json,
             timeout=timeout,
+            auto_accept_encoding=auto_accept_encoding,
         )
 
     async def patch(
@@ -349,6 +373,7 @@ class AsyncClient(ClientCore):
         files: AsyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
+        auto_accept_encoding: bool | None = None,
     ) -> Response:
         return await self.request(
             PATCH,
@@ -361,6 +386,7 @@ class AsyncClient(ClientCore):
             files=files,
             json=json,
             timeout=timeout,
+            auto_accept_encoding=auto_accept_encoding,
         )
 
     async def delete(
@@ -375,6 +401,7 @@ class AsyncClient(ClientCore):
         files: AsyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
+        auto_accept_encoding: bool | None = None,
     ) -> Response:
         return await self.request(
             DELETE,
@@ -387,6 +414,7 @@ class AsyncClient(ClientCore):
             files=files,
             json=json,
             timeout=timeout,
+            auto_accept_encoding=auto_accept_encoding,
         )
 
     def _create_transport(self) -> transport.AsyncTransport:
@@ -485,12 +513,21 @@ class AsyncClient(ClientCore):
         *,
         timeout: Timeouts | None,
         telemetry_context: TelemetryRequestContext | None,
+        auto_accept_encoding: bool,
     ) -> Response:
         request_timeouts = self._request_timeouts(timeout)
         if telemetry_context is None:
-            return await self._transport.send(request, timeouts=request_timeouts)
+            return await self._transport.send(
+                request,
+                timeouts=request_timeouts,
+                auto_accept_encoding=auto_accept_encoding,
+            )
         with native_request_id_scope(telemetry_context.data.request_id):
-            return await self._transport.send(request, timeouts=request_timeouts)
+            return await self._transport.send(
+                request,
+                timeouts=request_timeouts,
+                auto_accept_encoding=auto_accept_encoding,
+            )
 
     async def _transport_stream(
         self,
@@ -501,10 +538,21 @@ class AsyncClient(ClientCore):
         decode_content: bool = False,
     ) -> AsyncStreamResponse:
         request_timeouts = self._request_timeouts(timeout)
+        negotiation = self._request_auto_accept_encoding(request)
         if telemetry_context is None:
-            return await self._transport.stream(request, timeouts=request_timeouts, decode_content=decode_content)
+            return await self._transport.stream(
+                request,
+                timeouts=request_timeouts,
+                decode_content=decode_content,
+                auto_accept_encoding=negotiation,
+            )
         with native_request_id_scope(telemetry_context.data.request_id):
-            return await self._transport.stream(request, timeouts=request_timeouts, decode_content=decode_content)
+            return await self._transport.stream(
+                request,
+                timeouts=request_timeouts,
+                decode_content=decode_content,
+                auto_accept_encoding=negotiation,
+            )
 
     def _strict_lifecycle_debug_snapshot_locked(self) -> AsyncLifecycleDebugSnapshot | None:
         if not self._lifecycle_debug.strict:

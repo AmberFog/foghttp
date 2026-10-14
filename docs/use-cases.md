@@ -150,7 +150,8 @@ with foghttp.Client() as client:
             process_event(line)
 ```
 
-Streaming decompression is planned separately.
+For compressed streams, explicitly enable `decode_content=True`; add
+`auto_accept_encoding=True` to negotiate supported codecs automatically.
 
 ### Redirect-Aware APIs
 
@@ -296,7 +297,7 @@ except foghttp.HTTPStatusError as exc:
 | Need | Status |
 |---|---|
 | Streaming text/line helpers | Available for sync and async response streams |
-| Streaming decompression | Not implemented; buffered responses support transparent decoding |
+| Streaming decompression | Opt-in with `decode_content=True`; raw bytes remain the default |
 | Streaming uploads | Available through `content=`; streaming bodies are non-replayable for method-preserving redirects |
 | Multipart files | Available through `files=` |
 | Cookies/session jar | Available as an opt-in, memory-only client policy through `cookies=True` |
@@ -304,7 +305,7 @@ except foghttp.HTTPStatusError as exc:
 | HTTP/2 | Not implemented |
 | Browser-grade cookies and provider-specific OAuth integration | Cookie domain/path/expiry sessions are available; public-suffix, SameSite/third-party browser policy and provider OAuth flows are not built in |
 | Unbounded buffered large downloads | `max_response_body_size` defaults to 10 MiB and `max_buffered_response_bytes` defaults to 100 MiB for buffered fail-fast protection; use `stream()` for incremental byte downloads |
-| Automatic compression negotiation | Not implemented; pass `Accept-Encoding` manually when you want compressed buffered responses |
+| Automatic compression negotiation | Opt-in with `auto_accept_encoding=True` for buffered and explicitly decoded streaming responses; explicit headers override the generated default |
 
 FogHTTP is best today in controlled environments where request bodies are small
 and response bodies either fit in memory or can be consumed through
