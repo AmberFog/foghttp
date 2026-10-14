@@ -80,7 +80,8 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 
 | Feature | Current behavior |
 |---|---|
-| CPython wheel ABI | Published wheels use `cp311-abi3`; the release pipeline validates the same native wheel on GIL-enabled CPython 3.11 through 3.14 for each natively runnable OS/architecture target |
+| CPython wheel ABI | Wheels use `cp311-abi3`; this branch requires the same native wheel to pass on GIL-enabled CPython 3.11 through 3.15 for each natively runnable target. Python 3.15 coverage is unreleased; published 0.4.1 was validated through 3.14. Linux aarch64 remains cross-build/ABI-audit only. |
+| Linux binary dependencies | Python 3.11-3.14 retain glibc >=2.17. Python 3.15 requires glibc >=2.39 because of orjson's wheels; FogHTTP's own manylinux2014 artifact is unchanged. See [packaging](./packaging.md#linux-dependency-floors). |
 | Free-threaded CPython | Not supported by the current `abi3` wheels; PyO3's separate `abi3t` stable ABI starts at Python 3.15 and requires its own adoption and validation decision |
 | Streaming response decompression | Opt-in `decode_content=True` supports strict gzip, zlib-wrapped deflate and standard-window Brotli, with at most four coding layers; raw bytes remain the default. Compressed 206 responses are rejected. |
 | Multipart uploads | Available through `files=` for bytes-like parts, binary file-like objects, direct byte streams, and byte-stream factories |

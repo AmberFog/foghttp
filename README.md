@@ -64,12 +64,16 @@ pip install "foghttp[prometheus]"
 Runtime requirements:
 
 - Python `>=3.11`
-- `orjson>=3.11,<4`
+- `orjson>=3.11,<4` on Python 3.11-3.14; `orjson>=3.13,<4` on Python 3.15+
+- Linux binary dependencies: glibc `>=2.17` on Python 3.11-3.14,
+  glibc `>=2.39` on Python 3.15
 
 Published CPython wheels use the stable `cp311-abi3` ABI: each supported
-OS/architecture pair has one wheel for the currently validated GIL-enabled
-CPython 3.11 through 3.14 range. Newer Python versions are not part of the
-compatibility claim until they pass the same release checks. See [Packaging and Python compatibility](https://github.com/AmberFog/foghttp/blob/main/docs/packaging.md)
+OS/architecture pair has one wheel. This branch's required validation matrix
+covers GIL-enabled CPython 3.11 through 3.15. The Python 3.15 extension is
+unreleased; published 0.4.1 was validated through 3.14. Newer Python versions
+are not part of the compatibility claim until they pass the same release checks.
+See [Packaging and Python compatibility](https://github.com/AmberFog/foghttp/blob/main/docs/packaging.md)
 for the complete wheel matrix and validation policy.
 
 ## Quick Start
