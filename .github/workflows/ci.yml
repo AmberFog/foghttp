@@ -127,7 +127,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -150,10 +150,13 @@ jobs:
     name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+      UV_PYTHON_DOWNLOADS: never
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -176,16 +179,32 @@ jobs:
           cache-dependency-glob: uv.lock
 
       - name: Build extension in place
-        run: uv run --extra dev --with "maturin>=1.7,<2" maturin develop --locked --skip-install
+        run: uv run --locked --extra dev --with "maturin>=1.7,<2" maturin develop --locked --skip-install
+
+      - name: Verify test interpreter
+        env:
+          EXPECTED_PYTHON: ${{ matrix.python-version }}
+        run: |
+          uv run --locked --extra dev python - <<'PY'
+          import os
+          import sys
+          import sysconfig
+
+          print(sys.version, sys.executable)
+          assert f"{sys.version_info.major}.{sys.version_info.minor}" == os.environ["EXPECTED_PYTHON"]
+          assert sys.version_info.releaselevel == "final"
+          assert sys.implementation.name == "cpython"
+          assert not sysconfig.get_config_var("Py_GIL_DISABLED")
+          PY
 
       - name: Run tests
         if: matrix.python-version != '3.14'
-        run: uv run --extra dev pytest -vv
+        run: uv run --locked --extra dev pytest -vv
 
       - name: Run tests with coverage
         if: matrix.python-version == '3.14'
-        run: uv run --extra dev coverage run -m pytest -vv
+        run: uv run --locked --extra dev coverage run -m pytest -vv
 
       - name: Report coverage
         if: matrix.python-version == '3.14'
-        run: uv run --extra dev coverage report -m
+        run: uv run --locked --extra dev coverage report -m

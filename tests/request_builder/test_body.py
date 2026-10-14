@@ -1,8 +1,9 @@
+from datetime import UTC, datetime
 import io
 from typing import Any
+from uuid import UUID
 
 from faker import Faker
-import orjson
 import pytest
 
 import foghttp
@@ -11,21 +12,22 @@ from foghttp.messages import BODY_CONTENT_UNSUPPORTED, BODY_DATA_UNSUPPORTED, BO
 from foghttp.methods import POST
 from foghttp.types import RequestData
 from tests.client_multipart.sources import AsyncChunks, ClosingBytesFile, SyncChunks, TrackedFactory
+from tests.request_builder.models import JsonPayload
 
 
 def test_json_body_adds_content_type_when_missing(faker: Faker) -> None:
-    payload = {"name": faker.name()}
+    payload = {"name": "Ada"}
 
     with foghttp.Client() as client:
         request = client.build_request(POST, faker.url(), json=payload)
 
-    assert request.content == orjson.dumps(payload)
+    assert request.content == b'{"name":"Ada"}'
     assert request.headers["content-type"] == "application/json"
 
 
 def test_json_body_preserves_explicit_content_type(faker: Faker) -> None:
     content_type = "application/vnd.foghttp+json"
-    payload = {"name": faker.name()}
+    payload = {"name": "Ada"}
 
     with foghttp.Client() as client:
         request = client.build_request(
@@ -35,8 +37,53 @@ def test_json_body_preserves_explicit_content_type(faker: Faker) -> None:
             json=payload,
         )
 
-    assert request.content == orjson.dumps(payload)
+    assert request.content == b'{"name":"Ada"}'
     assert request.headers["content-type"] == content_type
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_body"),
+    [
+        pytest.param("\u00e9 \u20ac \U0001f680", b'"\xc3\xa9 \xe2\x82\xac \xf0\x9f\x9a\x80"', id="unicode"),
+        pytest.param('"\\\b\f\n\r\t\x00', b'"\\"\\\\\\b\\f\\n\\r\\t\\u0000"', id="escapes"),
+        pytest.param(
+            {"items": [None, True, False, {}, []], "pair": (1, 2)},
+            b'{"items":[null,true,false,{},[]],"pair":[1,2]}',
+            id="containers",
+        ),
+        pytest.param(
+            [-7, 1.25, 1e-7, 9007199254740993, 18446744073709551615],
+            b"[-7,1.25,1e-7,9007199254740993,18446744073709551615]",
+            id="numbers",
+        ),
+        pytest.param([float("nan"), float("inf"), -float("inf")], b"[null,null,null]", id="non-finite"),
+        pytest.param(
+            JsonPayload(
+                datetime(2026, 1, 2, 3, 4, 5, 123456, tzinfo=UTC),
+                UUID("12345678-1234-5678-1234-567812345678"),
+            ),
+            b'{"created_at":"2026-01-02T03:04:05.123456+00:00","identifier":"12345678-1234-5678-1234-567812345678"}',
+            id="dataclass-datetime-uuid",
+        ),
+    ],
+)
+async def test_json_body_preserves_wire_format(payload: Any, expected_body: bytes, faker: Faker) -> None:
+    with foghttp.Client() as client:
+        request = client.build_request(POST, faker.url(), json=payload)
+    async with foghttp.AsyncClient() as async_client:
+        async_request = async_client.build_request(POST, faker.url(), json=payload)
+
+    assert request.content == expected_body
+    assert async_request.content == expected_body
+
+
+@pytest.mark.parametrize("payload", [object(), b"bytes", {1: "value"}, 2**64, "\ud800"])
+async def test_json_body_rejects_invalid_values_with_type_error(payload: Any, faker: Faker) -> None:
+    with foghttp.Client() as client, pytest.raises(TypeError):
+        client.build_request(POST, faker.url(), json=payload)
+    async with foghttp.AsyncClient() as async_client:
+        with pytest.raises(TypeError):
+            async_client.build_request(POST, faker.url(), json=payload)
 
 
 @pytest.mark.parametrize(

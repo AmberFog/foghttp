@@ -42,6 +42,7 @@ def main() -> int:
                 "install",
                 "--isolated",
                 "--disable-pip-version-check",
+                "--only-binary=:all:",
                 "--target",
                 str(target_dir),
                 str(wheel_path),
