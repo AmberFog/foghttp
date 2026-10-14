@@ -3,6 +3,7 @@ name: Release
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,7 +16,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check tag, Python version, and Cargo version
+      - name: Check package versions and release tag
         shell: python
         run: |
           import os
@@ -23,11 +24,6 @@ jobs:
           import tomllib
           from pathlib import Path
 
-          ref = os.environ["GITHUB_REF"]
-          if not ref.startswith("refs/tags/v"):
-              raise SystemExit(f"release workflow must run from a v* tag, got {ref!r}")
-
-          tag_version = ref.removeprefix("refs/tags/v")
           pyproject_version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
           cargo_toml = Path("Cargo.toml").read_text()
           cargo_version = re.search(r'^version\s*=\s*"([^"]+)"', cargo_toml, re.MULTILINE)
@@ -36,10 +32,15 @@ jobs:
               raise SystemExit("Cargo.toml package version was not found")
 
           versions = {
-              "tag": tag_version,
               "pyproject.toml": pyproject_version,
               "Cargo.toml": cargo_version.group(1),
           }
+          if os.environ["GITHUB_EVENT_NAME"] == "release":
+              ref = os.environ["GITHUB_REF"]
+              if not ref.startswith("refs/tags/v"):
+                  raise SystemExit(f"release workflow must run from a v* tag, got {ref!r}")
+              versions["tag"] = ref.removeprefix("refs/tags/v")
+
           if len(set(versions.values())) != 1:
               raise SystemExit(f"release versions do not match: {versions}")
 
@@ -287,6 +288,7 @@ jobs:
 
   publish:
     name: Publish to PyPI
+    if: github.event_name == 'release' && github.event.action == 'published'
     runs-on: ubuntu-latest
     needs:
       - audit-wheels

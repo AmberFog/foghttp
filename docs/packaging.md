@@ -74,6 +74,28 @@ Before publishing, the release-readiness record also captures the installed-
 wheel example smoke runs and the bounded benchmark smoke evidence defined in
 [benchmarks.md](./benchmarks.md).
 
+### Non-Publishing Native Verification
+
+The `Release` workflow also accepts a manual `workflow_dispatch` run. It
+builds the same five wheels and source distribution, audits every wheel and
+runs the full native install-smoke matrix above. Manual runs validate matching
+Python/Cargo package versions without requiring a release tag. The `publish`
+job runs only for a published GitHub Release event; a manual run cannot publish
+to PyPI, including when it selects a tag.
+
+Once this workflow configuration is on the default branch, an authorized
+maintainer can select a branch through Actions > Release > Run workflow, or:
+
+```shell
+gh workflow run release.yml --ref <branch>
+```
+
+Record the run URL and source commit, artifact identities, ABI audit and each
+platform/Python smoke result. A successful build or intentionally skipped
+`publish` job is not evidence that smoke jobs passed. Linux aarch64 remains
+cross-build/audit-only. This verification does not create a release or replace
+the full-suite CI and release-readiness checks.
+
 Python versions newer than the 3.11-3.15 validation matrix may be ABI
 compatible, but they are not part of the release compatibility claim until
 they enter the CI matrix.
