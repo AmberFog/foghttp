@@ -40,6 +40,7 @@ normative lifecycle contract.
 | `headers` | Supported | Accepts mappings, pairs, and `foghttp.Headers`. Lookups are case-insensitive and repeated values are preserved. |
 | `extensions` | Supported | Immutable request-scoped metadata for policy and application coordination. It is never serialized into the HTTP message. |
 | client default `headers` | Supported | Passed as `Client(headers=...)` or `AsyncClient(headers=...)`. Per-request headers override defaults case-insensitively. |
+| `auto_accept_encoding` | Opt-in | Client default is False. Request/build/send overrides accept bool or None; applies to buffered responses and explicitly decoded streams only. |
 | `json` | Supported | Encoded with `orjson`. Adds `content-type: application/json` unless explicitly set. |
 | `content` | Supported | Accepts buffered `bytes` or `str`, binary file-like objects, sync bytes-like iterables, zero-arg byte-stream factories, and async bytes-like iterables/factories on `AsyncClient`. Strings are encoded as UTF-8. No semantic content type is added. |
 | `data` | Supported | Mappings and repeated pairs are encoded as `application/x-www-form-urlencoded`. Raw `bytes` or `str` are sent as buffered body content without adding a semantic content type. |
@@ -52,7 +53,7 @@ normative lifecycle contract.
 | prepared request | Supported | Use `build_request()` and `send()`. Building a request does not create transport state. |
 
 `get()` and `head()` are bodyless convenience helpers: they expose `headers`,
-`params`, and `timeout`, but not `json=`, `data=`, `content=`, or `files=`.
+`params`, `extensions`, `timeout`, and `auto_accept_encoding`, but not `json=`, `data=`, `content=`, or `files=`.
 If application code intentionally needs an unusual GET or HEAD request body,
 use the explicit `request("GET", ..., content=...)` or
 `request("HEAD", ..., content=...)` form.
@@ -111,6 +112,57 @@ headers then override both layers case-insensitively. A later mutation of a
 prepared request is also request-owned and remains authoritative. Repeated
 headers from defaults are preserved when neither later layer overrides that
 header name.
+
+## Accept-Encoding Negotiation
+
+`Client(auto_accept_encoding=True)` and `AsyncClient(auto_accept_encoding=True)`
+opt in to a default `Accept-Encoding: gzip, deflate, br` header for buffered
+requests and streams explicitly using `decode_content=True`. The default is
+False. Raw streams never receive an automatically generated header, even when
+the client setting is True. Negotiation never changes the decoding mode.
+
+`request()`, every method shortcut, `stream()` and `build_request()` accept
+`auto_accept_encoding: bool | None = None`: None inherits the constructing
+client. `build_request()` stores the resolved bool, including False, but does
+not insert a header. In contrast, a directly constructed
+`Request(..., auto_accept_encoding=None)` defers to the sending client.
+
+`send()` accepts the same optional override. Its priority is:
+
+1. explicit bool passed to `send()`;
+2. the stored `Request.auto_accept_encoding` setting;
+3. the sending client's default.
+
+```python
+with foghttp.Client(auto_accept_encoding=True) as client:
+    prepared = client.build_request("GET", "https://api.example.com/data")
+    response = client.send(prepared)
+    response_without_advertisement = client.send(prepared, auto_accept_encoding=False)
+```
+
+The generated header belongs only to that send; neither the original Request
+headers nor its read-only setting is mutated. `response.request.headers` and
+redirect history report effective sent headers. Existing upload replayability
+rules still apply. A request built by another client keeps its stored setting,
+unless overridden explicitly at send time; client headers are not remerged.
+
+Explicit headers win over automatic insertion, case-insensitively, including
+empty values, repeated fields and `q=0`. The flag False only disables insertion;
+it does not remove explicit/client/auth headers or disable buffered decoding.
+Existing auth precedence still applies: request headers override auth, and auth
+overrides client defaults. Auth sees the generated default before signing and
+may replace it. Redirect security stripping is never undone by negotiation.
+Existing recorded header removals are respected; an absent field on a direct
+Request is not a deletion instruction. Use False to disable insertion, or send
+an explicit empty header to request no content coding. Under
+[RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#section-12.5.3), an absent
+Accept-Encoding field does not require an identity response.
+
+Values must be actual bools (or None where inheritance is allowed); integers
+and strings raise TypeError before upload preparation or network activity.
+Range requests are not rewritten: decoded compressed 206 responses remain
+unsupported. Request `Accept-Encoding: identity` explicitly or use raw streaming;
+a server can still return an unsupported response. See [Streaming](./streaming.md).
 
 ## Request Extensions
 
@@ -356,8 +408,6 @@ Current intentional gaps:
 
 - no provider-specific OAuth helper
 - no asynchronous auth callable
-- no automatic `Accept-Encoding` negotiation; streaming content decoding is
-  explicitly selected with `decode_content=True`
 - no disabling TLS verification
 
 For these gaps, keep logic outside FogHTTP for now or wait for the planned

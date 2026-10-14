@@ -461,13 +461,16 @@ body, not the decoded buffered body.
 import foghttp
 
 
-with foghttp.Client(headers={"accept-encoding": "gzip, deflate, br"}) as client:
+with foghttp.Client(auto_accept_encoding=True) as client:
     response = client.get("https://api.example.com/data")
     print(response.content)
 ```
 
-FogHTTP does not add `Accept-Encoding` automatically yet. Send that header when
-you want to negotiate compressed responses. Unsupported content encodings are
+Automatic negotiation is disabled by default. Enable `auto_accept_encoding=True`
+or supply an explicit header, which wins over the generated default. Per-call
+overrides and prepared requests follow the
+[negotiation precedence](./request-builder.md#accept-encoding-negotiation).
+Unsupported content encodings on buffered responses are
 left untouched. Invalid compressed bodies raise `RequestError`. Responses that
 must not carry a body, such as `HEAD`, `204 No Content`, `205 Reset Content`,
 and `304 Not Modified`, are not decoded and keep their original body metadata

@@ -54,6 +54,7 @@ class Client(ClientCore):
         base_url: str | URL | None = None,
         headers: HeaderSource = None,
         auth: Auth = None,
+        auto_accept_encoding: bool = False,
         params: QueryParams = None,
         limits: Limits | None = None,
         timeouts: Timeouts | None = None,
@@ -77,6 +78,7 @@ class Client(ClientCore):
                     base_url=base_url,
                     headers=headers,
                     auth=auth,
+                    auto_accept_encoding=auto_accept_encoding,
                     params=params,
                     limits=limits,
                     timeouts=timeouts,
@@ -130,6 +132,7 @@ class Client(ClientCore):
         files: SyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
+        auto_accept_encoding: bool | None = None,
     ) -> Response:
         self._ensure_open()
         request = self.build_request(
@@ -142,11 +145,19 @@ class Client(ClientCore):
             data=data,
             files=files,
             json=json,
+            auto_accept_encoding=auto_accept_encoding,
         )
         return self.send(request, timeout=timeout)
 
-    def send(self, request: Request, *, timeout: Timeouts | None = None) -> Response:
+    def send(
+        self,
+        request: Request,
+        *,
+        timeout: Timeouts | None = None,
+        auto_accept_encoding: bool | None = None,
+    ) -> Response:
         self._ensure_open()
+        negotiation = self._request_auto_accept_encoding(request, override=auto_accept_encoding)
         sync_send_token = object()
         telemetry_context = self._telemetry.request_context(request, mode=TelemetryRequestMode.BUFFERED)
         telemetry_started = False
@@ -158,6 +169,7 @@ class Client(ClientCore):
                 request,
                 timeout=timeout,
                 telemetry_context=telemetry_context,
+                auto_accept_encoding=negotiation,
             )
         except BaseException as error:
             bind_error_retry_trace(error)
@@ -189,6 +201,7 @@ class Client(ClientCore):
         json: Any = None,
         timeout: Timeouts | None = None,
         decode_content: bool = False,
+        auto_accept_encoding: bool | None = None,
     ) -> stream_context.StreamContext:
         self._ensure_open()
         stream_context.validate_decode_content(decode_content)
@@ -202,6 +215,7 @@ class Client(ClientCore):
             data=data,
             files=files,
             json=json,
+            auto_accept_encoding=auto_accept_encoding,
         )
         return stream_context.StreamContext(
             lambda: self._send_stream(request, timeout=timeout, decode_content=decode_content),
@@ -215,6 +229,7 @@ class Client(ClientCore):
         params: QueryParams = None,
         extensions: RequestExtensionsSource = None,
         timeout: Timeouts | None = None,
+        auto_accept_encoding: bool | None = None,
     ) -> Response:
         return self.request(
             GET,
@@ -223,6 +238,7 @@ class Client(ClientCore):
             params=params,
             extensions=extensions,
             timeout=timeout,
+            auto_accept_encoding=auto_accept_encoding,
         )
 
     def head(
@@ -233,6 +249,7 @@ class Client(ClientCore):
         params: QueryParams = None,
         extensions: RequestExtensionsSource = None,
         timeout: Timeouts | None = None,
+        auto_accept_encoding: bool | None = None,
     ) -> Response:
         return self.request(
             HEAD,
@@ -241,6 +258,7 @@ class Client(ClientCore):
             params=params,
             extensions=extensions,
             timeout=timeout,
+            auto_accept_encoding=auto_accept_encoding,
         )
 
     def post(
@@ -255,6 +273,7 @@ class Client(ClientCore):
         files: SyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
+        auto_accept_encoding: bool | None = None,
     ) -> Response:
         return self.request(
             POST,
@@ -267,6 +286,7 @@ class Client(ClientCore):
             files=files,
             json=json,
             timeout=timeout,
+            auto_accept_encoding=auto_accept_encoding,
         )
 
     def query(
@@ -281,6 +301,7 @@ class Client(ClientCore):
         files: SyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
+        auto_accept_encoding: bool | None = None,
     ) -> Response:
         return self.request(
             QUERY,
@@ -293,6 +314,7 @@ class Client(ClientCore):
             files=files,
             json=json,
             timeout=timeout,
+            auto_accept_encoding=auto_accept_encoding,
         )
 
     def put(
@@ -307,6 +329,7 @@ class Client(ClientCore):
         files: SyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
+        auto_accept_encoding: bool | None = None,
     ) -> Response:
         return self.request(
             PUT,
@@ -319,6 +342,7 @@ class Client(ClientCore):
             files=files,
             json=json,
             timeout=timeout,
+            auto_accept_encoding=auto_accept_encoding,
         )
 
     def patch(
@@ -333,6 +357,7 @@ class Client(ClientCore):
         files: SyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
+        auto_accept_encoding: bool | None = None,
     ) -> Response:
         return self.request(
             PATCH,
@@ -345,6 +370,7 @@ class Client(ClientCore):
             files=files,
             json=json,
             timeout=timeout,
+            auto_accept_encoding=auto_accept_encoding,
         )
 
     def delete(
@@ -359,6 +385,7 @@ class Client(ClientCore):
         files: SyncMultipartFiles | None = None,
         json: Any = None,
         timeout: Timeouts | None = None,
+        auto_accept_encoding: bool | None = None,
     ) -> Response:
         return self.request(
             DELETE,
@@ -371,6 +398,7 @@ class Client(ClientCore):
             files=files,
             json=json,
             timeout=timeout,
+            auto_accept_encoding=auto_accept_encoding,
         )
 
     def _close(self, *, suppress_hook_errors: bool) -> None:
@@ -452,12 +480,21 @@ class Client(ClientCore):
         *,
         timeout: Timeouts | None,
         telemetry_context: TelemetryRequestContext | None,
+        auto_accept_encoding: bool,
     ) -> Response:
         request_timeouts = self._request_timeouts(timeout)
         if telemetry_context is None:
-            return self._transport.send(request, timeouts=request_timeouts)
+            return self._transport.send(
+                request,
+                timeouts=request_timeouts,
+                auto_accept_encoding=auto_accept_encoding,
+            )
         with native_request_id_scope(telemetry_context.data.request_id):
-            return self._transport.send(request, timeouts=request_timeouts)
+            return self._transport.send(
+                request,
+                timeouts=request_timeouts,
+                auto_accept_encoding=auto_accept_encoding,
+            )
 
     def _transport_stream(
         self,
@@ -468,10 +505,21 @@ class Client(ClientCore):
         decode_content: bool = False,
     ) -> StreamResponse:
         request_timeouts = self._request_timeouts(timeout)
+        negotiation = self._request_auto_accept_encoding(request)
         if telemetry_context is None:
-            return self._transport.stream(request, timeouts=request_timeouts, decode_content=decode_content)
+            return self._transport.stream(
+                request,
+                timeouts=request_timeouts,
+                decode_content=decode_content,
+                auto_accept_encoding=negotiation,
+            )
         with native_request_id_scope(telemetry_context.data.request_id):
-            return self._transport.stream(request, timeouts=request_timeouts, decode_content=decode_content)
+            return self._transport.stream(
+                request,
+                timeouts=request_timeouts,
+                decode_content=decode_content,
+                auto_accept_encoding=negotiation,
+            )
 
     def _begin_sync_send(self, token: object) -> None:
         with self._lifecycle_condition:

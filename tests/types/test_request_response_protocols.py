@@ -40,6 +40,19 @@ def decoded_stream_contract(client: foghttp.Client, async_client: foghttp.AsyncC
     assert_type(error, foghttp.ResponseError)
 
 
+async def negotiation_contract(client: foghttp.Client, async_client: foghttp.AsyncClient) -> None:
+    request = foghttp.Request("GET", "https://example.invalid", auto_accept_encoding=True)
+    assert_type(request.auto_accept_encoding, bool | None)
+    assert_type(client.build_request("GET", request.url, auto_accept_encoding=None), foghttp.Request)
+    assert_type(client.send(request, auto_accept_encoding=False), foghttp.Response)
+    assert_type(await async_client.send(request, auto_accept_encoding=False), foghttp.Response)
+    assert_type(client.stream("GET", request.url, auto_accept_encoding=True, decode_content=True), StreamContext)
+    assert_type(
+        async_client.stream("GET", request.url, auto_accept_encoding=True, decode_content=True),
+        AsyncStreamContext,
+    )
+
+
 def test_prepared_and_completed_requests_share_public_metadata_contract() -> None:
     prepared = foghttp.Request(
         "GET",

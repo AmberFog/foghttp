@@ -148,8 +148,12 @@ with client.stream(GET, url, decode_content=True) as response:
         process_line(line)
 ```
 
-The async API accepts the same keyword. This does not inject `Accept-Encoding`:
-set that request header explicitly when negotiating compression. Buffered
+The async API accepts the same keyword. Decoding alone does not inject
+`Accept-Encoding`. Set `auto_accept_encoding=True` on the client or stream call
+to advertise `gzip, deflate, br`, or supply the header explicitly. Raw streams
+never get an automatic advertisement; explicit headers are preserved in either
+mode. The negotiation flag never enables decoding. See the
+[setting precedence](./request-builder.md#accept-encoding-negotiation). Buffered
 responses keep their existing automatic decoding behavior.
 
 - `gzip` (including `x-gzip`) validates every concatenated member and its

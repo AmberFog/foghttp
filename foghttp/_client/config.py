@@ -46,6 +46,7 @@ class ClientConfig:
     lifecycle_debug: AsyncLifecycleDebugConfig | None
     request_defaults: RequestBuildDefaults
     auth: AuthConfig | None = field(default=None, repr=False)
+    auto_accept_encoding: bool = False
 
     @classmethod
     def from_options(
@@ -84,6 +85,7 @@ class ClientConfig:
             telemetry=options.telemetry,
             lifecycle_debug=options.lifecycle_debug,
             auth=normalize_auth(options.auth),
+            auto_accept_encoding=options.auto_accept_encoding,
             request_defaults=(
                 DEFAULT_REQUEST_BUILD_DEFAULTS
                 if options.base_url is None and options.headers is None and options.params is None

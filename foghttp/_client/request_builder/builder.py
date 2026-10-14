@@ -36,6 +36,7 @@ class RequestBuilder:
             request_url,
             headers=request_headers,
             extensions=options.extensions,
+            auto_accept_encoding=options.auto_accept_encoding,
         )
         body_checkpoint = (
             request.headers._mutation_checkpoint()  # noqa: SLF001

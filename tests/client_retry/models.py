@@ -10,6 +10,7 @@ class RetryRequest:
     body: bytes
     connection_id: int
     authorization: str | None = field(default=None, repr=False)
+    accept_encoding: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

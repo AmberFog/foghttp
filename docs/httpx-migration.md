@@ -270,7 +270,7 @@ mechanically.
 | Timeouts | Five-second network-inactivity default | Explicit connect, pool, read, write, and total budgets |
 | Protocols | HTTP/1.1, with optional HTTP/2 | HTTP/1.1 only |
 | Other automatic request headers | Adds `Accept`, `Connection`, and `User-Agent` | Set required `Accept` and `User-Agent` values explicitly; leave `Connection` to the transport |
-| Compression request header | Adds automatic `Accept-Encoding` negotiation | Does not add `Accept-Encoding`; buffered decoding works when the header is sent explicitly |
+| Compression request header | Adds automatic `Accept-Encoding` negotiation | Opt in with `auto_accept_encoding=True`; default is no automatic header. Explicit headers are preserved. Raw streams never get automatic negotiation. |
 | Cookies | Client jar can be initialized with cookie values | Disabled by default; `cookies=True` enables a server-populated client jar |
 | Buffered response size | No equivalent FogHTTP safety defaults | 10 MiB per response and 100 MiB aggregate by default |
 | Limits | Connection-pool limits | Separate active-request, pending-request, connection, idle, and buffered-body limits |
@@ -559,8 +559,9 @@ end-to-end download latency is required.
 FogHTTP has no top-level `stream()`, separately named raw iterator,
 `read()` / `aread()`, or download progress property. Opt in with
 `decode_content=True` for bounded incremental gzip, zlib-wrapped deflate and
-standard-window Brotli decoding. This does not add `Accept-Encoding`; negotiation
-remains explicit. Compressed 206 responses and unsupported coding plans fail
+standard-window Brotli decoding. Separately select `auto_accept_encoding=True`
+or set an explicit Accept-Encoding header to negotiate compression. Compressed
+206 responses and unsupported coding plans fail
 with `ResponseDecodingError`. Streaming decoder limits are separate from buffered
 limits, and previously yielded bytes cannot be revoked on a late error. Use a
 normal buffered request when the whole response must be loaded, and count
@@ -645,11 +646,11 @@ mechanically. See [Timeout model](./timeouts.md).
 | SOCKS, proxy mounts, per-route proxy policy, TLS-to-proxy | Not provided | Use separate clients or network-layer routing; keep HTTPX for dynamic routing. |
 | Custom transports, `MockTransport`, WSGI/ASGI in-process transports | Not public extension points | Test against a local loopback server or keep HTTPX for in-process transport tests. |
 | `verify=False`, arbitrary `SSLContext`, client certificates | Not provided | Use `TLSConfig` with explicit CA files; keep HTTPX when mTLS or another TLS mode is required. |
-| Content-decoded response-byte streaming | Opt-in | Pass `decode_content=True` to `stream()`; choose streaming decoder limits and set `Accept-Encoding` explicitly when needed. |
+| Content-decoded response-byte streaming | Opt-in | Pass `decode_content=True` to `stream()`; choose streaming decoder limits and opt in to `auto_accept_encoding=True` or set Accept-Encoding explicitly. |
 | HTTPX event-hook API | Not a drop-in contract | Use FogHTTP telemetry for observation, policy hooks for admission/response-head policy, auth hooks for credentials, or an application wrapper. |
 
-FogHTTP also has no automatic `Accept-Encoding` negotiation, operating-system
-trust-store loading, browser-grade cookie policy, or per-request connector
+FogHTTP also has no operating-system trust-store loading, browser-grade cookie
+policy, or per-request connector
 reconfiguration. Review the current [Limitations](./limitations.md) before
 removing HTTPX from a service dependency set.
 

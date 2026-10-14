@@ -98,7 +98,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 | Disabling TLS verification | Not available by design; use `TLSConfig` with explicit CA certificates |
 | OS trust store integration | Not available; FogHTTP uses bundled WebPKI roots unless `trust_webpki_roots=False` is set |
 | HTTP version selection | HTTP/1.1 is the only supported version. Omit `http_versions` or pass `http_versions=["HTTP/1.1"]`; any other non-empty selection raises `NotImplementedError`. HTTP/2 is not available. |
-| automatic `Accept-Encoding` negotiation | Not implemented; send `Accept-Encoding` manually when you want compressed responses |
+| automatic `Accept-Encoding` negotiation | Opt-in `auto_accept_encoding=True` advertises gzip/deflate/br for buffered and explicitly decoded streaming responses. Raw streaming never gets an automatic header. Explicit headers and existing auth/redirect rules remain authoritative. |
 | transport-managed request headers | Safe API rejects manual `Host`, `Content-Length`, `Transfer-Encoding`, `TE`, `Trailer`, `Connection`, `Upgrade`, `Keep-Alive`, `Proxy-Connection`, and `Proxy-Authorization` |
 | request body source conflicts | Use one body source among `json=`, `data=`, `content=`, and `files=`; `files=` can include form fields from mapping or repeated-pair `data=` |
 | HTTP/2 stream-level connection limits | Physical connection caps apply to the current HTTP/1 connector path; HTTP/2 multiplexed stream limits are planned separately with HTTP/2 support |
@@ -141,8 +141,6 @@ Wait before using FogHTTP when:
   client; enforce destination policy at the proxy or network egress boundary
 - you require browser-grade public-suffix, SameSite, partitioned, or third-party cookie policy
 - you need per-request connect timeout reconfiguration
-- you need automatic compression negotiation instead of manual
-  `Accept-Encoding`
 - you need HTTP/2 multiplexed stream limits
 - you need to share one async client across multiple event loops
 

@@ -117,6 +117,7 @@ class RetryHTTPHandler(BaseRequestHandler):
                     body=b"",
                     connection_id=connection_id,
                     authorization=request_head.headers.get("authorization"),
+                    accept_encoding=request_head.headers.get("accept-encoding"),
                 ),
             ):
                 response = _raw_response(
@@ -145,6 +146,7 @@ class RetryHTTPHandler(BaseRequestHandler):
                     body=parsed.body,
                     connection_id=connection_id,
                     authorization=parsed.headers.get("authorization"),
+                    accept_encoding=parsed.headers.get("accept-encoding"),
                 ),
             )
             if path == INCOMPLETE_RETRYABLE_RESPONSE_PATH:
