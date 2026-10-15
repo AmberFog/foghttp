@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
-from ._client import transport
+from ._client import tracing, transport
 from ._client.config import ClientConfig
 from ._client.constants import DEFAULT_MAX_REDIRECTS
 from ._client.core import ClientCore
@@ -40,6 +40,7 @@ from .lifecycle_debug import (
 )
 from .limits import Limits
 from .methods import DELETE, GET, HEAD, PATCH, POST, PUT, QUERY
+from .opentelemetry import OpenTelemetryTracing
 from .policy import TransportPolicyHooks
 from .request import Request
 from .request_extensions import RequestExtensionsSource
@@ -81,6 +82,7 @@ class AsyncClient(ClientCore):
         retry: RetryPolicy | None = None,
         ssrf: SSRFPolicy | None = None,
         telemetry: TelemetryConfig | None = None,
+        tracing: OpenTelemetryTracing | None = None,
         lifecycle_debug: AsyncLifecycleDebugConfig | None = None,
     ) -> None:
         config = ClientConfig.from_options(
@@ -105,6 +107,7 @@ class AsyncClient(ClientCore):
                 retry=retry,
                 ssrf=ssrf,
                 telemetry=telemetry,
+                tracing=tracing,
                 lifecycle_debug=lifecycle_debug,
             ),
         )
@@ -167,7 +170,7 @@ class AsyncClient(ClientCore):
         )
         return await self.send(request, timeout=timeout)
 
-    async def send(
+    async def send(  # noqa: WPS210, WPS213 - separate lexical owners for debug, telemetry and tracing
         self,
         request: Request,
         *,
@@ -178,9 +181,11 @@ class AsyncClient(ClientCore):
         negotiation = self._request_auto_accept_encoding(request, override=auto_accept_encoding)
         telemetry_context = self._telemetry.request_context(request, mode=TelemetryRequestMode.BUFFERED)
         telemetry_started = False
+        request_span = None
         lifecycle_debug_token: LifecycleDebugRequestToken = None
-        try:
+        try:  # noqa: WPS229 - keep admission/start/validation/transport within one cleanup boundary
             lifecycle_debug_token = self._begin_async_request_lifecycle_debug(request, mode="buffered")
+            request_span = tracing.start_request_tracing(self._config.tracing, request, mode="buffered")
             telemetry_started = start_request_telemetry(telemetry_context)
             validate_safe_request_headers(request.headers)
             response = await self._transport_send(
@@ -190,6 +195,7 @@ class AsyncClient(ClientCore):
                 auto_accept_encoding=negotiation,
             )
         except BaseException as error:
+            tracing.finish_request_tracing(request_span, error=error)
             bind_error_retry_trace(error)
             self._emit_native_telemetry(telemetry_context, suppress_hook_errors=True)
             emit_request_error_telemetry(
@@ -199,6 +205,7 @@ class AsyncClient(ClientCore):
             )
             raise
         else:
+            tracing.finish_request_tracing(request_span, response=response)
             self._emit_native_telemetry(telemetry_context, suppress_hook_errors=False)
             emit_buffered_response_telemetry(telemetry_context, response)
             return response
@@ -460,7 +467,7 @@ class AsyncClient(ClientCore):
     ) -> LifecycleDebugRequestToken:
         return self._lifecycle_debug.start_request(request, mode=mode)
 
-    async def _send_stream(
+    async def _send_stream(  # noqa: WPS210, WPS231 - debug ownership transfers to body; tracing ends here
         self,
         request: Request,
         *,
@@ -471,9 +478,11 @@ class AsyncClient(ClientCore):
         telemetry_context = self._telemetry.request_context(request, mode=TelemetryRequestMode.STREAM)
         telemetry_started = False
         lifecycle_debug_bound = False
+        request_span = None
         lifecycle_debug_token: LifecycleDebugRequestToken = None
-        try:
+        try:  # noqa: WPS229 - keep admission/start/validation/transport within one cleanup boundary
             lifecycle_debug_token = self._begin_async_request_lifecycle_debug(request, mode="stream")
+            request_span = tracing.start_request_tracing(self._config.tracing, request, mode="stream")
             telemetry_started = start_request_telemetry(telemetry_context)
             validate_safe_request_headers(request.headers)
             response = await self._transport_stream(
@@ -483,6 +492,7 @@ class AsyncClient(ClientCore):
                 decode_content=decode_content,
             )
         except BaseException as error:
+            tracing.finish_request_tracing(request_span, error=error)
             self._emit_stream_request_error_telemetry(
                 telemetry_context,
                 telemetry_started=telemetry_started,
@@ -490,6 +500,7 @@ class AsyncClient(ClientCore):
             )
             raise
         else:
+            tracing.finish_stream_tracing(request_span, response)
             if lifecycle_debug_token is not None:
                 bind_stream_lifecycle_debug(
                     response,

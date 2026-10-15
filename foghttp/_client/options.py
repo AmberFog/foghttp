@@ -2,7 +2,7 @@ __all__ = ("ClientOptions", "validate_client_options")
 
 from dataclasses import dataclass, field
 
-from .. import policy, telemetry, timeouts
+from .. import opentelemetry, policy, telemetry, timeouts
 from .._validation.boolean import validate_bool
 from ..auth import Auth
 from ..headers import HeaderSource
@@ -41,9 +41,14 @@ class ClientOptions:
     lifecycle_debug: AsyncLifecycleDebugConfig | None
     auth: Auth = field(default=None, repr=False)
     auto_accept_encoding: bool = False
+    tracing: opentelemetry.OpenTelemetryTracing | None = None
 
 
 def validate_client_options(options: ClientOptions) -> None:
+    tracing: object = options.tracing
+    if tracing is not None and not isinstance(tracing, opentelemetry.OpenTelemetryTracing):
+        msg = "tracing must be an OpenTelemetryTracing instance or None"
+        raise TypeError(msg)
     validate_bool(options.auto_accept_encoding, name="auto_accept_encoding")
     if options.max_redirects < 0:
         raise ValueError(MAX_REDIRECTS_INVALID)
