@@ -1,6 +1,6 @@
 # Telemetry Contract
 
-FogHTTP exposes two kinds of operational state today:
+FogHTTP exposes several distinct observability surfaces:
 
 - `client.stats()` returns low-cardinality transport counters and gauges.
 - `client.dump_transport_state()`, `client.dump_pool_diagnostics()`, and
@@ -8,12 +8,225 @@ FogHTTP exposes two kinds of operational state today:
   debugging.
 - `telemetry=TelemetryConfig(...)` enables opt-in typed event hooks around
   request and response lifecycle phases.
+- `tracing=OpenTelemetryTracing(...)` enables optional OpenTelemetry logical
+  request spans, independently of event hooks.
 
 These APIs are intentionally not the same contract. `TransportStats` is the
 current source for stable, low-cardinality operational counters. The `dump_*`
 APIs are richer debugging views and include per-origin labels, queue details,
 pool pressure, or separate proxy endpoint state that can change while requests
 are running. Target origins and proxy endpoints are distinct telemetry planes.
+
+## OpenTelemetry Tracing
+
+Tracing is opt-in for both `Client` and `AsyncClient`. It creates one logical
+request span of kind `CLIENT`, not a span per wire attempt or network phase.
+This is privacy-restricted HTTP tracing, **not full HTTP semantic-convention
+compliance**: in particular, the required `url.full` attribute is deliberately
+omitted. There is no unsafe full-URL opt-in.
+
+### Installation and API
+
+```shell
+python -m pip install "foghttp[opentelemetry]"
+```
+
+The extra installs only `opentelemetry-api>=1.45.1,<2`. The SDK, processors,
+exporters, sampling configuration and their lifecycle belong to the
+application. To run the local console example, also install a compatible SDK:
+
+```shell
+python -m pip install "foghttp[opentelemetry]" "opentelemetry-sdk>=1.45.1,<2"
+```
+
+The integration constructor is `OpenTelemetryTracing(*, tracer_provider=None)`:
+
+```python
+from foghttp import Client
+from foghttp.opentelemetry import OpenTelemetryTracing
+
+
+tracing = OpenTelemetryTracing()  # Uses the application's global provider.
+with Client(tracing=tracing) as client:
+    response = client.get("https://api.example.com/items")
+```
+
+Pass the same object to `AsyncClient(tracing=tracing)` for async requests. Both
+clients default to `tracing=None`; there is no per-request tracing override.
+An explicit `tracer_provider` takes precedence over the global provider.
+`None` uses the OpenTelemetry API's global-provider lookup/proxy without
+installing a provider. Without a configured provider, tracing is a valid
+no-op; the API proxy can use a global provider installed later by the
+application.
+
+Importing `foghttp` or `foghttp.opentelemetry`, and using an untraced client,
+does not require or import OpenTelemetry. Constructing `OpenTelemetryTracing`
+without the API package raises `ImportError` with extra-install guidance.
+Invalid provider or known-method configuration, or failure to obtain a tracer,
+fails configuration before network work. Passing the wrong object as a
+client's `tracing` option raises `TypeError`.
+
+Tracing composes with `telemetry=TelemetryConfig(...)` without replacing its
+sink or changing `on_hook_error`. Tracing alone does not enable native event
+journals or create typed telemetry events. With tracing disabled there is no
+OpenTelemetry context capture, span allocation or tracing background worker.
+
+The maintained [console tracing example](../examples/opentelemetry_tracing.py)
+accepts the endpoint as a required argument, creates an explicit application
+provider and prints spans locally. It sends no traces to an external exporter
+or collector. From a source checkout, with a local HTTP server already running:
+
+```shell
+uv run examples/opentelemetry_tracing.py http://127.0.0.1:8000/
+```
+
+The example deliberately uses synchronous console output for inspection, not
+as a production exporter setup.
+
+### Span lifetime and parent context
+
+The span starts when the request executes, after client admission and before
+request-start hooks. Building a request, creating an unrun async coroutine or
+creating a stream context without entering it produces no span. Reusing a
+request creates a fresh span for each execution.
+
+| Operation | Span boundary |
+| --- | --- |
+| Buffered request | Ends when the transport wrapper returns the buffered response, including body buffering, decoding and response mapping. Later `json()` or `raise_for_status()` calls are outside the span. |
+| Raw or decoded streaming request | Ends when the transport wrapper returns the acquired response, before response-header hooks and body handoff. It does not cover body consumption. |
+| Retries, redirects or authentication resends | Remain inside the same logical span. The original method and target identify the span; the final returned HTTP status is attached. |
+| Failure before a response result | Ends with the classification below, before secondary error hooks. No response status is invented from exceptions or history. |
+| Caller cancellation before a result | Ends when the executing request unwinds, with status `UNSET` and no `error.type`. Cancellation still propagates. |
+
+These are logical durations, not exact socket, DNS, TCP, TLS or first-byte
+timings. Work and inline hooks inside the boundary can contribute latency.
+OpenTelemetry supplies epoch start/end timestamps; monotonic telemetry event
+timestamps are not used as span timestamps.
+
+The span has already ended before native/success/header hooks run after a
+response result. A subsequent hook failure can still fail the public call, but
+does not rewrite that span's HTTP outcome. Post-header stream read/decode
+errors, cancellation, EOF, early close or abandonment do not change or reopen
+the span. Existing body telemetry and cleanup have their own lifecycle.
+
+The parent is the current OpenTelemetry context in the executing thread/task,
+captured at span start and passed explicitly. FogHTTP **does not activate its
+span** as current. Inline Python telemetry callbacks retain the caller's
+ambient context; nested requests there are siblings unless the application
+explicitly supplies a different parent. This does not promise context bridging
+into native auth/policy callbacks or arbitrary threads.
+
+Creating a coroutine under parent A and directly awaiting it under B selects
+B; separately scheduled tasks follow Python's normal task-context inheritance.
+Stream contexts capture their parent on entry, not when `stream()` is called.
+Non-recording spans and unsampled parents are respected, without replacement
+root spans. Terminal attributes are added only to recording spans.
+
+Each span successfully returned to FogHTTP receives one end attempt, not a
+guarantee of exactly-once export. Client shutdown does not own span completion;
+the executing request does. Await outstanding async request tasks before
+asserting completion or shutting down the application provider: `aclose()`
+alone does not guarantee that every Python send has unwound. Process exit or
+an event loop stopped without unwinding cannot guarantee finalization/export.
+
+### Attributes and privacy
+
+The instrumentation scope is `foghttp`, with the installed FogHTTP distribution
+version and schema URL `https://opentelemetry.io/schemas/1.44.0`. The version is
+resolved once when constructing the integration. This schema identifies the
+selected convention revision, not a claim of full compliance.
+
+Only these attributes originate from FogHTTP:
+
+| Attribute | Value |
+| --- | --- |
+| `http.request.method` | Original method if allowlisted; otherwise `_OTHER`. |
+| `server.address` | Canonical original target host, not proxy or redirect target. |
+| `server.port` | Original target's effective port. |
+| `url.scheme` | Original target scheme. |
+| `foghttp.request.mode` | `buffered` or `stream`. |
+| `http.response.status_code` | Final returned status, when available. |
+| `error.type` | Closed error classification below, only on error. |
+
+The first five attributes are supplied at start so application sampling can
+use them. A redirect does not relabel the original target or method, even for
+a POST-to-GET redirect. Span names are the known method, or `HTTP` for unknown
+methods; names contain no host, path or URL template.
+
+`OTEL_INSTRUMENTATION_HTTP_KNOWN_METHODS` is read once at integration
+construction. When absent, the allowlist is `foghttp.methods.HTTP_METHODS`:
+`GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `QUERY`, `OPTIONS`, `CONNECT`,
+`TRACE`. When present, it **replaces** that set with trimmed, nonempty,
+comma-separated, case-sensitive HTTP tokens; duplicates collapse. An empty
+list or invalid token raises `ConfigurationError`. This is trusted operator
+configuration: explicitly allowing custom methods affects exported values and
+cardinality. Unknown methods never appear in a raw/original-method attribute.
+
+FogHTTP never exports full URLs, paths, queries, fragments, userinfo, redirect
+locations, headers, cookies, bodies, credentials, arbitrary extensions/context,
+proxy details or native diagnostics. There are no exception events, exception
+messages/stacks or status descriptions. There are also no body/wire byte
+attributes, inferred network protocol, retry counts, resend counts or phase
+events. Event-hook URL redaction is a separate, less restrictive contract and
+is not used as a trace sanitizer.
+
+**Host and port remain visible.** If they are sensitive, filter/drop spans in
+the application SDK or leave tracing disabled. Application SDK resources,
+processors and other instrumentation may add their own data; this allowlist
+describes FogHTTP's contribution only.
+
+### Status and errors
+
+A returned HTTP status from 400 through 599 sets span status `ERROR` and uses
+its decimal string as `error.type`. Other HTTP statuses leave `UNSET` and omit
+the error type; FogHTTP never sets `OK`.
+
+An ordinary exception before the response result sets `ERROR`. The error type
+is the most specific matching built-in category from this closed list:
+`ConnectTimeout`, `ReadTimeout`, `WriteTimeout`, `PoolTimeout`, `TimeoutError`,
+`ResponseBodyTooLargeError`, `ResponseBodyBudgetExceededError`,
+`ResponseDecodingError`, `SSRFError`, `NetworkError`, `ClientClosedError`,
+`ConfigurationError`, `RequestError`, `ResponseError`, `LifecycleError`,
+`FogHTTPError`; otherwise it is `_OTHER`. Custom subclass names, exception
+messages and causes are not inspected/exported. The actual exception at the
+boundary is classified: a wrapped `TelemetryHookError` maps to `FogHTTPError`,
+while an unwrapped user `RuntimeError` maps to `_OTHER`.
+
+Intentional `CancelledError`, `KeyboardInterrupt`, `SystemExit` and
+`GeneratorExit` leave `UNSET` without an error type. An outer `asyncio.timeout`
+may translate cancellation after it has left FogHTTP.
+
+### Propagation, SDK ownership and failures
+
+There is **no automatic propagation**: FogHTTP never injects/extracts context
+or adds/removes `traceparent`, `tracestate`, baggage, B3 or vendor trace
+headers. Caller-provided headers follow the existing auth, retry and redirect
+rules, unchanged by tracing. This applies equally to cross-origin redirects,
+HTTPS downgrade, retries and raw/decoded streams. Manual propagation remains
+application-owned; manually supplied headers need not identify this local
+span.
+
+FogHTTP never sets the global provider, installs processors/exporters, flushes
+or shuts down the SDK, including on client close. One integration can be
+shared across clients, tasks and threads; SDK queue bounds and thread safety
+remain application responsibilities. SDK callbacks can run synchronously and
+block the request thread/event loop, so tracing has no hard latency bound.
+Do not use a tracing-enabled FogHTTP client as its own exporter's transport.
+
+Ordinary runtime instrumentation `Exception`s from context capture, span
+start/update/end or diagnostics are isolated from HTTP work. They do not
+replace the response, primary request error or cancellation. A failed start
+affects only that operation; later operations can try again. An end failure is
+not retried. Safe diagnostics contain no exception text, stack or request
+fields and are emitted at most once per integration lifetime.
+
+This fail-open policy is independent of `TelemetryConfig.on_hook_error`:
+user sink failures still follow the existing hook policy. Configuration
+failures remain explicit. New control-flow `BaseException`s from
+instrumentation are not silently swallowed when no request error is active;
+they propagate with request/resource cleanup preserved. During an existing
+failure or cancellation, secondary instrumentation cleanup cannot replace the
+original error.
 
 ## Event Hooks
 

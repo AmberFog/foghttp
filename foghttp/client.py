@@ -4,9 +4,9 @@ import threading
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Literal
 
-from ._client import stream_context
+from . import opentelemetry, telemetry
+from ._client import constants, stream_context, tracing, transport
 from ._client.config import ClientConfig
-from ._client.constants import DEFAULT_MAX_REDIRECTS
 from ._client.core import ClientCore
 from ._client.options import ClientOptions
 from ._client.raw.lifecycle import close_raw_client
@@ -20,7 +20,6 @@ from ._client.telemetry import (
     native_request_id_scope,
     start_request_telemetry,
 )
-from ._client.transport import RawSyncTransport, SyncTransport
 from ._upload_body import SyncRequestContent
 from .auth import Auth
 from .headers import HeaderSource
@@ -34,7 +33,6 @@ from .retry import RetryPolicy
 from .ssrf import SSRFPolicy
 from .stream_response import StreamResponse
 from .stream_response.bindings import bind_stream_telemetry
-from .telemetry import TelemetryConfig, TelemetryRequestMode
 from .timeouts import Timeouts
 from .tls import TLSConfig
 from .types import HttpVersions, QueryParams, RequestData, SyncMultipartFiles
@@ -46,7 +44,7 @@ if TYPE_CHECKING:
 
 
 class Client(ClientCore):
-    _transport: SyncTransport
+    _transport: transport.SyncTransport
 
     def __init__(
         self,
@@ -60,7 +58,7 @@ class Client(ClientCore):
         timeouts: Timeouts | None = None,
         http_versions: HttpVersions = None,
         follow_redirects: bool = False,
-        max_redirects: int = DEFAULT_MAX_REDIRECTS,
+        max_redirects: int = constants.DEFAULT_MAX_REDIRECTS,
         cookies: bool = False,
         trust_env: bool = False,
         proxy: str | URL | None = None,
@@ -70,7 +68,8 @@ class Client(ClientCore):
         policy_hooks: TransportPolicyHooks | None = None,
         retry: RetryPolicy | None = None,
         ssrf: SSRFPolicy | None = None,
-        telemetry: TelemetryConfig | None = None,
+        telemetry: telemetry.TelemetryConfig | None = None,
+        tracing: opentelemetry.OpenTelemetryTracing | None = None,
     ) -> None:
         super().__init__(
             config=ClientConfig.from_options(
@@ -95,6 +94,7 @@ class Client(ClientCore):
                     retry=retry,
                     ssrf=ssrf,
                     telemetry=telemetry,
+                    tracing=tracing,
                     lifecycle_debug=None,
                 ),
             ),
@@ -149,7 +149,7 @@ class Client(ClientCore):
         )
         return self.send(request, timeout=timeout)
 
-    def send(
+    def send(  # noqa: WPS210, WPS213 - separate lexical owners for admission, telemetry and tracing
         self,
         request: Request,
         *,
@@ -159,10 +159,12 @@ class Client(ClientCore):
         self._ensure_open()
         negotiation = self._request_auto_accept_encoding(request, override=auto_accept_encoding)
         sync_send_token = object()
-        telemetry_context = self._telemetry.request_context(request, mode=TelemetryRequestMode.BUFFERED)
+        telemetry_context = self._telemetry.request_context(request, mode=telemetry.TelemetryRequestMode.BUFFERED)
         telemetry_started = False
-        try:
+        request_span = None
+        try:  # noqa: WPS229 - keep admission/start/validation/transport within one cleanup boundary
             self._begin_sync_send(sync_send_token)
+            request_span = tracing.start_request_tracing(self._config.tracing, request, mode="buffered")
             telemetry_started = start_request_telemetry(telemetry_context)
             validate_safe_request_headers(request.headers)
             response = self._transport_send(
@@ -172,6 +174,7 @@ class Client(ClientCore):
                 auto_accept_encoding=negotiation,
             )
         except BaseException as error:
+            tracing.finish_request_tracing(request_span, error=error)
             bind_error_retry_trace(error)
             self._emit_native_telemetry(telemetry_context, suppress_hook_errors=True)
             emit_request_error_telemetry(
@@ -181,6 +184,7 @@ class Client(ClientCore):
             )
             raise
         else:
+            tracing.finish_request_tracing(request_span, response=response)
             self._emit_native_telemetry(telemetry_context, suppress_hook_errors=False)
             emit_buffered_response_telemetry(telemetry_context, response)
             return response
@@ -445,10 +449,12 @@ class Client(ClientCore):
     ) -> StreamResponse:
         self._ensure_open()
         sync_send_token = object()
-        telemetry_context = self._telemetry.request_context(request, mode=TelemetryRequestMode.STREAM)
+        telemetry_context = self._telemetry.request_context(request, mode=telemetry.TelemetryRequestMode.STREAM)
         telemetry_started = False
-        try:
+        request_span = None
+        try:  # noqa: WPS229 - keep admission/start/validation/transport within one cleanup boundary
             self._begin_sync_send(sync_send_token)
+            request_span = tracing.start_request_tracing(self._config.tracing, request, mode="stream")
             telemetry_started = start_request_telemetry(telemetry_context)
             validate_safe_request_headers(request.headers)
             response = self._transport_stream(
@@ -458,6 +464,7 @@ class Client(ClientCore):
                 decode_content=decode_content,
             )
         except BaseException as error:
+            tracing.finish_request_tracing(request_span, error=error)
             self._emit_stream_request_error_telemetry(
                 telemetry_context,
                 telemetry_started=telemetry_started,
@@ -465,6 +472,7 @@ class Client(ClientCore):
             )
             raise
         else:
+            tracing.finish_stream_tracing(request_span, response)
             _bind_stream_response_telemetry(
                 self,
                 telemetry_context,
@@ -531,8 +539,8 @@ class Client(ClientCore):
         with self._lifecycle_condition:
             return self._raw_client_locked()
 
-    def _create_transport(self) -> SyncTransport:
-        return RawSyncTransport(self._sync_send_raw_client, proxy_resolver=self._config.proxy_resolver)
+    def _create_transport(self) -> transport.SyncTransport:
+        return transport.RawSyncTransport(self._sync_send_raw_client, proxy_resolver=self._config.proxy_resolver)
 
     def _finish_sync_send(self, token: object) -> None:
         with self._lifecycle_condition:

@@ -66,6 +66,7 @@ repos:
       - id: mypy
         additional_dependencies:
           - no_implicit_optional
+          - opentelemetry-api>=1.45.1,<2
           - orjson>=3.11,<4
           - prometheus-client>=0.25,<1
           - typing-extensions>=4.3.0,<5

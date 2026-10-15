@@ -3,7 +3,7 @@ __all__ = ("ClientConfig",)
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from .. import telemetry, timeouts
+from .. import opentelemetry, telemetry, timeouts
 from ..lifecycle_debug import AsyncLifecycleDebugConfig
 from ..limits import Limits
 from ..policy import RetryPolicy, SSRFPolicy, TransportPolicyHooks
@@ -47,6 +47,7 @@ class ClientConfig:
     request_defaults: RequestBuildDefaults
     auth: AuthConfig | None = field(default=None, repr=False)
     auto_accept_encoding: bool = False
+    tracing: opentelemetry.OpenTelemetryTracing | None = None
 
     @classmethod
     def from_options(
@@ -83,6 +84,7 @@ class ClientConfig:
             retry=options.retry,
             ssrf=options.ssrf,
             telemetry=options.telemetry,
+            tracing=options.tracing,
             lifecycle_debug=options.lifecycle_debug,
             auth=normalize_auth(options.auth),
             auto_accept_encoding=options.auto_accept_encoding,
