@@ -159,41 +159,140 @@ fn raw_deflate_fallback_keeps_only_decoded_reservation() {
     assert_eq!(metrics.snapshot().buffered_response_bytes, 0);
 }
 
+fn deflate_payloads(content: &[u8]) -> [Vec<u8>; 2] {
+    let mut zlib = ZlibEncoder::new(Vec::new(), Compression::default());
+    zlib.write_all(content).unwrap();
+    let mut raw = DeflateEncoder::new(Vec::new(), Compression::default());
+    raw.write_all(content).unwrap();
+    [zlib.finish().unwrap(), raw.finish().unwrap()]
+}
+
+fn assert_deflate_error_preserves_encoded_reservation(encoded: &[u8]) {
+    let metrics = Arc::new(Metrics::default());
+    let budget = BufferedBodyBudget::new(None, Arc::clone(&metrics));
+    let mut reservation = budget.start_response();
+    reservation.reserve_chunk(encoded.len()).unwrap();
+    let error = decode_deflate(encoded, None, &mut reservation).expect_err("incomplete deflate");
+    assert!(matches!(
+        error,
+        ResponseBodyError::Decode {
+            coding: "deflate",
+            ..
+        }
+    ));
+    assert!(error.source().unwrap().is::<io::Error>());
+    assert_eq!(metrics.snapshot().buffered_response_bytes, encoded.len());
+    assert_eq!(metrics.snapshot().buffered_response_budget_rejections, 0);
+    drop(reservation);
+    assert_eq!(metrics.snapshot().buffered_response_bytes, 0);
+}
+
+#[test]
+fn deflate_requires_stream_end_for_zlib_and_raw_payloads() {
+    let content = vec![b'x'; super::DECODE_BUFFER_SIZE * 2 + 1];
+    for encoded in deflate_payloads(&content) {
+        assert_deflate_error_preserves_encoded_reservation(&encoded[..encoded.len() / 2]);
+        assert_deflate_error_preserves_encoded_reservation(&encoded[..encoded.len() - 1]);
+    }
+}
+
+#[test]
+fn zlib_requires_present_and_valid_checksum() {
+    let [mut encoded, _raw] = deflate_payloads(&vec![b'x'; super::DECODE_BUFFER_SIZE * 2 + 1]);
+    assert_deflate_error_preserves_encoded_reservation(&encoded[..encoded.len() - 4]);
+    let checksum_end = encoded.last_mut().unwrap();
+    *checksum_end ^= 0xff;
+    assert_deflate_error_preserves_encoded_reservation(&encoded);
+}
+
+#[test]
+fn zlib_framing_errors_do_not_fall_back_to_complete_raw_streams() {
+    let prefix = [
+        0x78, 0x01, 0x00, 0xfe, 0xff, 0x01, 0x00, 0x00, 0x00, 0xff, 0xff, 0x01, 0x00, 0x00, 0xff,
+        0xff,
+    ];
+    let dictionary_content = [b'x'; 32];
+    let mut dictionary_stream = vec![0x78, 0x20, 0x00, 0xdf, 0xff];
+    dictionary_stream.extend_from_slice(&dictionary_content);
+    dictionary_stream.extend_from_slice(&[0x01, 0x00, 0x00, 0xff, 0xff]);
+
+    for (encoded, content) in [
+        (prefix.as_slice(), [0x01].as_slice()),
+        (dictionary_stream.as_slice(), dictionary_content.as_slice()),
+    ] {
+        let mut decoder = flate2::Decompress::new(false);
+        let mut output = [0; 64];
+        let status = decoder
+            .decompress(encoded, &mut output, flate2::FlushDecompress::None)
+            .unwrap();
+        assert_eq!(status, flate2::Status::StreamEnd);
+        let produced = usize::try_from(decoder.total_out()).unwrap();
+        assert_eq!(&output[..produced], content);
+        assert_deflate_error_preserves_encoded_reservation(encoded);
+    }
+}
+
+#[test]
+fn complete_deflate_preserves_empty_and_buffer_boundary_payloads() {
+    for size in [
+        0,
+        super::DECODE_BUFFER_SIZE,
+        super::DECODE_BUFFER_SIZE * 2,
+        super::DECODE_BUFFER_SIZE * 2 + 1,
+    ] {
+        let content = vec![b'x'; size];
+        for encoded in deflate_payloads(&content) {
+            let metrics = Arc::new(Metrics::default());
+            let budget = BufferedBodyBudget::new(None, Arc::clone(&metrics));
+            let mut reservation = budget.start_response();
+            reservation.reserve_chunk(encoded.len()).unwrap();
+            let decoded = decode_deflate(&encoded, Some(size), &mut reservation)
+                .expect("complete zlib/raw deflate at buffer boundary");
+            assert_eq!(decoded, content);
+            assert_eq!(
+                metrics.snapshot().buffered_response_bytes,
+                encoded.len() + size
+            );
+            drop(reservation);
+            assert_eq!(metrics.snapshot().buffered_response_bytes, 0);
+        }
+    }
+}
+
 #[test]
 fn deflate_limits_do_not_fall_back_or_leak_attempt_bytes() {
     let content = vec![b'x'; super::DECODE_BUFFER_SIZE + 1];
-    let mut compressor = ZlibEncoder::new(Vec::new(), Compression::default());
-    compressor.write_all(&content).unwrap();
-    let encoded = compressor.finish().unwrap();
-    for size_limited in [true, false] {
-        let metrics = Arc::new(Metrics::default());
-        let budget_limit = encoded.len() + super::DECODE_BUFFER_SIZE;
-        let budget = BufferedBodyBudget::new(
-            (!size_limited).then_some(budget_limit),
-            Arc::clone(&metrics),
-        );
-        let mut reservation = budget.start_response();
-        reservation.reserve_chunk(encoded.len()).unwrap();
-        let error = decode_deflate(
-            &encoded,
-            size_limited.then_some(super::DECODE_BUFFER_SIZE),
-            &mut reservation,
-        )
-        .expect_err("decoded limit");
-        if size_limited {
-            assert!(
-                matches!(error, ResponseBodyError::TooLarge { limit } if limit == super::DECODE_BUFFER_SIZE)
+    for encoded in deflate_payloads(&content) {
+        for size_limited in [true, false] {
+            let metrics = Arc::new(Metrics::default());
+            let budget_limit = encoded.len() + super::DECODE_BUFFER_SIZE;
+            let budget = BufferedBodyBudget::new(
+                (!size_limited).then_some(budget_limit),
+                Arc::clone(&metrics),
             );
-            assert_eq!(metrics.snapshot().buffered_response_budget_rejections, 0);
-        } else {
-            assert!(
-                matches!(error, ResponseBodyError::BudgetExceeded { limit } if limit == budget_limit)
-            );
-            assert_eq!(metrics.snapshot().buffered_response_budget_rejections, 1);
+            let mut reservation = budget.start_response();
+            reservation.reserve_chunk(encoded.len()).unwrap();
+            let error = decode_deflate(
+                &encoded,
+                size_limited.then_some(super::DECODE_BUFFER_SIZE),
+                &mut reservation,
+            )
+            .expect_err("decoded limit");
+            if size_limited {
+                assert!(
+                    matches!(error, ResponseBodyError::TooLarge { limit } if limit == super::DECODE_BUFFER_SIZE)
+                );
+                assert_eq!(metrics.snapshot().buffered_response_budget_rejections, 0);
+            } else {
+                assert!(
+                    matches!(error, ResponseBodyError::BudgetExceeded { limit } if limit == budget_limit)
+                );
+                assert_eq!(metrics.snapshot().buffered_response_budget_rejections, 1);
+            }
+            assert_eq!(metrics.snapshot().buffered_response_bytes, encoded.len());
+            drop(reservation);
+            assert_eq!(metrics.snapshot().buffered_response_bytes, 0);
         }
-        assert_eq!(metrics.snapshot().buffered_response_bytes, encoded.len());
-        drop(reservation);
-        assert_eq!(metrics.snapshot().buffered_response_bytes, 0);
     }
 }
 
