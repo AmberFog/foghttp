@@ -395,8 +395,16 @@ stream parts are replayable.
 
 Unknown-length streaming bodies use transport-managed HTTP/1.1 framing. Binary
 file-like bodies use a known `Content-Length` when FogHTTP can determine the
-remaining length safely from regular-file metadata or seek/tell metadata on
-objects without a non-regular file descriptor.
+remaining length safely: unmodified standard-library `BytesIO`, `FileIO`, and
+`BufferedReader`/`BufferedRandom` backed directly by an unmodified `FileIO`.
+Regular files use their remaining bytes from the current logical position;
+in-memory `BytesIO` uses its buffer size without copying or consuming the body.
+
+Other binary readers, including subclasses, compression/transforming wrappers
+and generic file-like objects, stream with unknown length. A regular `fileno()`
+does not prove that its size matches the bytes returned by `read()`.
+FogHTTP does not probe arbitrary readers with `seek()` or eagerly read their
+bodies to infer a length. The same rule applies to multipart `files=` parts.
 
 ## Intentional Differences
 

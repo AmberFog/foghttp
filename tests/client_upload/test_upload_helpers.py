@@ -53,7 +53,6 @@ if TYPE_CHECKING:
 
 
 REGULAR_FILE_REMAINING_LENGTH = 4
-SEEKABLE_FALLBACK_REMAINING_LENGTH = 5
 UPLOAD_SOURCE_FAILURE = "upload source failed"
 SECONDARY_CLEANUP_FAILURE = "source cleanup failed"
 ERROR_FORMATTING_FAILURE = "error formatting failed"
@@ -2637,11 +2636,13 @@ def test_file_content_length_rejects_negative_regular_descriptor_remaining_size(
         assert file_content_length(OversizedTellFile(file.fileno())) is None
 
 
-def test_file_content_length_falls_back_when_fileno_fails() -> None:
+def test_file_content_length_keeps_generic_reader_streaming_when_fileno_fails() -> None:
     file = FailingFilenoSeekableFile(b"payload")
     file.read(2)
 
-    assert file_content_length(file) == SEEKABLE_FALLBACK_REMAINING_LENGTH
+    assert file_content_length(file) is None
+    assert file.tell() == len(b"pa")
+    assert b"".join(FileUploadSource(file)) == b"yload"
 
 
 def test_file_content_length_returns_none_for_non_seekable_without_fileno() -> None:
