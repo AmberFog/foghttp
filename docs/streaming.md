@@ -123,6 +123,16 @@ async with client.stream(GET, url) as response:
         process_line(line)
 ```
 
+If decoding, decoder setup, or a line limit fails, text and line iterators close
+the response and their underlying iterators before propagating the original
+exception. A secondary telemetry sink failure during that cleanup does not
+replace it. Ordinary completion and explicit close still follow
+`TelemetryConfig.on_hook_error`.
+
+At byte EOF, completion telemetry runs before the text decoder is finalized.
+A hook error raised at that point can therefore precede a decoding error for
+an incomplete final character.
+
 Clean content EOF marks the response body as completed. Leaving the context before EOF,
 cancelling a body read, a body transport error, or a response-body read timeout
 aborts the streamed body and releases the active request slot.

@@ -10,7 +10,6 @@ from ...telemetry import (
     TelemetryConfig,
     TelemetryEvent,
     TelemetryEventSink,
-    TelemetryHookError,
     TelemetryHookErrorPolicy,
     TelemetryRequestMode,
 )
@@ -20,7 +19,7 @@ from .emission import (
     TelemetryEmission,
     TelemetryEventContext,
 )
-from .hook_errors import handle_hook_error
+from .hook_errors import DeferredHookError, handle_hook_error, report_deferred_hook_error
 from .native import deliver_native_events
 from .request_context import TelemetryRequestContext
 from .url import redacted_url, url_origin
@@ -35,7 +34,7 @@ class _NativeDeliveryLifecycle:
         self._condition = threading.Condition()
         self._active_requests: dict[int, int] = {}
         self._closed = False
-        self._deferred_client_error: TelemetryHookError | None = None
+        self._deferred_client_error: DeferredHookError | None = None
 
     def begin_request(self) -> bool:
         with self._condition:
@@ -45,7 +44,7 @@ class _NativeDeliveryLifecycle:
             self._active_requests[thread_id] = self._active_requests.get(thread_id, 0) + 1
             return True
 
-    def finish_request(self, client_error: TelemetryHookError | None) -> None:
+    def finish_request(self, client_error: DeferredHookError | None) -> None:
         with self._condition:
             if client_error is not None and self._deferred_client_error is None:
                 self._deferred_client_error = client_error
@@ -62,7 +61,7 @@ class _NativeDeliveryLifecycle:
         with self._condition:
             return threading.get_ident() in self._active_requests
 
-    def begin_close(self) -> tuple[bool, TelemetryHookError | None]:
+    def begin_close(self) -> tuple[bool, DeferredHookError | None]:
         with self._condition:
             if threading.get_ident() in self._active_requests:
                 msg = "Cannot close native telemetry delivery from its active request"
@@ -158,7 +157,7 @@ class TelemetryDispatcher:
     ) -> None:
         if not self._native_delivery.begin_request():
             return
-        client_error: TelemetryHookError | None = None
+        client_error: DeferredHookError | None = None
         try:
             request_error, client_error = deliver_native_events(
                 raw_client,
@@ -188,11 +187,11 @@ class TelemetryDispatcher:
             request_id=None,
             emit=self.emit,
             hook_error_policy=self._hook_error_policy,
-            suppress_hook_errors=suppress_hook_errors,
+            suppress_hook_errors=suppress_hook_errors or deferred_client_error is not None,
         )
         client_error = deferred_client_error or client_error
-        if client_error is not None and not suppress_hook_errors:
-            raise client_error
+        if client_error is not None:
+            report_deferred_hook_error(client_error, suppress_hook_errors=suppress_hook_errors)
 
 
 class NativeTelemetryDrain:

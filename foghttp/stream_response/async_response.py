@@ -2,6 +2,7 @@ __all__ = ("AsyncStreamResponse",)
 
 import asyncio
 from collections.abc import AsyncIterator
+from functools import partial
 from types import TracebackType
 
 from foghttp._client.raw.errors import public_raw_error
@@ -54,7 +55,7 @@ class AsyncStreamResponse(StreamResponseBase):
             self._aiter_bytes(),
             encoding=self._text_encoding(encoding),
             errors=errors,
-            close=self.close,
+            close=partial(self._close, outcome=TelemetryRequestOutcome.CLOSED),
         )
 
     def aiter_lines(
@@ -71,9 +72,10 @@ class AsyncStreamResponse(StreamResponseBase):
                 self._aiter_bytes(),
                 encoding=self._text_encoding(encoding),
                 errors=errors,
-                close=self.close,
+                close=partial(self._close, outcome=TelemetryRequestOutcome.CLOSED),
             ),
             max_line_chars=max_line_chars,
+            close=partial(self._close, outcome=TelemetryRequestOutcome.CLOSED),
         )
 
     async def aclose(self) -> None:
