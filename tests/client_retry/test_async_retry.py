@@ -10,17 +10,15 @@ from tests.support.transport_stats import wait_for_async_transport_stats
 
 from .assertions import retry_events
 from .constants import (
+    ASYNC_EXPECTED_REPLAY_BODY as EXPECTED_REPLAY_BODY,
     CLOSE_THEN_OK_PATH,
     EARLY_STATUS_THEN_OK_PATH,
     EXPECTED_ATTEMPTS,
     STATUS_THEN_OK_PATH,
 )
+from .early_upload_assertions import assert_early_upload_order, assert_recovery_trace, assert_replayed_upload_trace
 from .server import RetryTestServer
 from .sources import AsyncBodyFactory, CoordinatedReplayBodyFactory
-
-
-EXPECTED_REPLAY_BODY = b"async-second-attempt-body"
-STALE_REPLAY_BODY = b"stale-async-first-attempt-body"
 
 
 async def test_async_retries_status_with_telemetry(retry_server: RetryTestServer) -> None:
@@ -61,8 +59,9 @@ async def test_async_query_replays_factory_body(retry_server: RetryTestServer) -
 
 async def test_async_retry_isolates_sync_upload_attempts_after_early_response(
     retry_server: RetryTestServer,
+    async_early_replay_body: CoordinatedReplayBodyFactory,
 ) -> None:
-    content = CoordinatedReplayBodyFactory(EXPECTED_REPLAY_BODY, STALE_REPLAY_BODY)
+    content = async_early_replay_body
     policy = foghttp.RetryPolicy(retries=1, backoff=0, jitter=0)
 
     async with foghttp.AsyncClient(retry=policy) as client:
@@ -70,14 +69,28 @@ async def test_async_retry_isolates_sync_upload_attempts_after_early_response(
             retry_server.url + EARLY_STATUS_THEN_OK_PATH,
             content=content,
         )
+        assert await asyncio.to_thread(content.first_closed.wait, 1.0)
+        assert await asyncio.to_thread(content.second_closed.wait, 1.0)
+        await wait_for_async_transport_stats(
+            client,
+            lambda stats: stats.active_requests == 0 and stats.pending_requests == 0,
+            message="early-response upload retry did not release request lifecycle",
+        )
+        recovery = await client.get(retry_server.url + "/recovery")
+        stats = client.stats()
 
     requests = retry_server.snapshot().requests_for(EARLY_STATUS_THEN_OK_PATH)
     assert response.status_code == OK
     assert response.content == EXPECTED_REPLAY_BODY
     assert tuple(request.body for request in requests) == (b"", EXPECTED_REPLAY_BODY)
     assert content.calls == EXPECTED_ATTEMPTS
-    assert await asyncio.to_thread(content.first_closed.wait, 1.0)
-    assert await asyncio.to_thread(content.second_closed.wait, 1.0)
+    assert requests[0].connection_id != requests[1].connection_id
+    assert_early_upload_order(retry_server, content)
+    assert_replayed_upload_trace(response)
+    assert recovery.status_code == OK
+    assert_recovery_trace(recovery)
+    assert stats.active_requests == 0
+    assert stats.pending_requests == 0
 
 
 async def test_async_retries_pre_header_network_failure(
