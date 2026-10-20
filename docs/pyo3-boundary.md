@@ -104,6 +104,13 @@ validation runs before a Python hook can veto a redirect mutation. See
 [Transport policy hooks](./policy-hooks.md) for the public execution and
 threading contract.
 
+Synchronous client shutdown rejects callback reentry with `LifecycleError` when
+it would wait for the caller's own admitted request or native telemetry drain.
+This check also covers native events delivered while consuming a stream after
+request acquisition has finished. Rejection precedes client shutdown state
+changes; ordinary close from another thread still waits for admitted work.
+The completed-shutdown `connection_closed` callback may call `close()` again.
+
 ## Review Checklist
 
 For PRs touching PyO3, runtime, cancellation, close/aclose, streaming, or
