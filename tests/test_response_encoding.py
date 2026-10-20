@@ -77,6 +77,62 @@ UTF_16_TEXT = "\u041f\u0440\u0438\u0432\u0435\u0442 FogHTTP"
             UTF_8_BOM_TEXT,
             id="default-utf-8",
         ),
+        pytest.param(
+            {"content-type": "text/plain; charset=hex_codec"},
+            UTF_8_BOM_TEXT.encode(),
+            "utf-8",
+            UTF_8_BOM_TEXT,
+            id="hex-charset-falls-back-to-utf-8",
+        ),
+        pytest.param(
+            {"content-type": "text/plain; charset=base64_codec"},
+            UTF_8_BOM_TEXT.encode(),
+            "utf-8",
+            UTF_8_BOM_TEXT,
+            id="base64-charset-falls-back-to-utf-8",
+        ),
+        pytest.param(
+            {"content-type": "text/plain; charset=zlib_codec"},
+            UTF_8_BOM_TEXT.encode(),
+            "utf-8",
+            UTF_8_BOM_TEXT,
+            id="zlib-charset-falls-back-to-utf-8",
+        ),
+        pytest.param(
+            {"content-type": "text/plain; charset=hex_codec"},
+            UTF_16_TEXT.encode("utf-16"),
+            "utf-16",
+            UTF_16_TEXT,
+            id="hex-charset-falls-back-to-bom",
+        ),
+        pytest.param(
+            {"content-type": "text/plain; charset=base64_codec"},
+            UTF_16_TEXT.encode("utf-16"),
+            "utf-16",
+            UTF_16_TEXT,
+            id="base64-charset-falls-back-to-bom",
+        ),
+        pytest.param(
+            {"content-type": "text/plain; charset=zlib_codec"},
+            UTF_16_TEXT.encode("utf-16"),
+            "utf-16",
+            UTF_16_TEXT,
+            id="zlib-charset-falls-back-to-bom",
+        ),
+        pytest.param(
+            {"content-type": 'text/plain; CHARSET="CP1251"'},
+            WINDOWS_1251_TEXT.encode("windows-1251"),
+            "cp1251",
+            WINDOWS_1251_TEXT,
+            id="quoted-uppercase-text-codec-alias",
+        ),
+        pytest.param(
+            {"content-type": "text/plain; charset=utf-8"},
+            b"\xef\xbb\xbf" + UTF_8_BOM_TEXT.encode(),
+            "utf-8",
+            "\ufeff" + UTF_8_BOM_TEXT,
+            id="valid-charset-precedes-bom",
+        ),
     ],
 )
 def test_response_text_uses_declared_charset_or_safe_fallback(
@@ -90,6 +146,8 @@ def test_response_text_uses_declared_charset_or_safe_fallback(
 
     assert response.encoding == expected_encoding
     assert response.text == expected_text
+    assert isinstance(response.text, str)
+    assert response.content == content
 
 
 def _response(

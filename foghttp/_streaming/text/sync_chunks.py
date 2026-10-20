@@ -3,6 +3,7 @@ __all__ = ("iter_text_chunks",)
 import codecs
 from collections.abc import Callable, Iterator
 
+from ..._response.encoding import validate_text_encoding
 from .iterators import close_iterator
 
 
@@ -14,6 +15,7 @@ def iter_text_chunks(
     close: Callable[[], None] | None = None,
 ) -> Iterator[str]:
     try:
+        validate_text_encoding(encoding)
         decoder = codecs.getincrementaldecoder(encoding)(errors=errors)
         for chunk in byte_chunks:
             if text := decoder.decode(chunk):
