@@ -62,6 +62,25 @@ buffered requests:
 - If a Rust stream state lock owns an active Python future handle, the lock must
   be released before scheduling cancellation or completion on the Python loop.
 
+## Streaming Redirect History Ownership
+
+High-level sync and async stream conversion takes redirect history once from
+`RawStreamResponse`. `take_history()` moves the buffered responses and their
+reservations together; the native response remains the driver for body reads.
+The public history keeps its bytes and metadata after EOF and close.
+
+Each buffered response releases its reservations after its public bytes have
+been handed off. Conversion cleanup also releases every transferred sibling
+and nested history, including elements not reached before an error. A failed
+conversion closes the final native stream before propagating the original
+exception, even when its traceback remains alive.
+
+The existing raw history getter remains a non-consuming copy operation.
+Reservation release remains separate from removing payloads. Retry trace
+captures redirect hops before handoff; ongoing body diagnostics and telemetry
+use the hop already stored by `StreamState`. Body, decoder, permit and
+cancellation ownership stay with that state.
+
 ## Internal Request/Response Policy Seam
 
 `src/core/policy/` is an internal, unstable seam for built-in transport
@@ -103,6 +122,13 @@ passes immutable Python snapshots without transport resources. Built-in
 validation runs before a Python hook can veto a redirect mutation. See
 [Transport policy hooks](./policy-hooks.md) for the public execution and
 threading contract.
+
+Synchronous client shutdown rejects callback reentry with `LifecycleError` when
+it would wait for the caller's own admitted request or native telemetry drain.
+This check also covers native events delivered while consuming a stream after
+request acquisition has finished. Rejection precedes client shutdown state
+changes; ordinary close from another thread still waits for admitted work.
+The completed-shutdown `connection_closed` callback may call `close()` again.
 
 ## Review Checklist
 

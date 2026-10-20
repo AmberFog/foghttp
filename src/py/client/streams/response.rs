@@ -144,6 +144,11 @@ impl RawStreamResponse {
         self.history.clone()
     }
 
+    fn take_history(&mut self) -> PyResult<Vec<RawResponse>> {
+        self.ensure_current_process()?;
+        Ok(std::mem::take(&mut self.history))
+    }
+
     #[getter]
     fn retry_trace(&self) -> Option<RawRetryTrace> {
         self.retry_trace.clone()
@@ -277,3 +282,7 @@ impl Drop for RawStreamResponse {
         self.close_resources();
     }
 }
+
+#[cfg(test)]
+#[path = "response_tests.rs"]
+mod tests;

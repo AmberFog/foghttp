@@ -2,7 +2,8 @@ use super::body::{enforce_response_body_limit, CollectedBody};
 use super::ResponseBodyError;
 use crate::core::headers::HeaderPairs;
 use brotli::Decompressor;
-use flate2::read::{DeflateDecoder, MultiGzDecoder, ZlibDecoder};
+use flate2::read::MultiGzDecoder;
+use flate2::{Decompress, FlushDecompress, Status};
 use hyper::header::CONTENT_ENCODING;
 use hyper::HeaderMap;
 use std::io::{Cursor, Read};
@@ -155,18 +156,73 @@ fn decode_deflate(
     reservation: &mut super::BufferedBodyReservation,
 ) -> Result<Vec<u8>, ResponseBodyError> {
     match decode_reader_result(
-        ZlibDecoder::new(Cursor::new(content)),
+        CompleteDeflateDecoder::new(content, Decompress::new(true)),
         max_response_body_size,
         reservation,
     ) {
         Ok(decoded) => Ok(decoded),
-        Err(DecodeAttemptError::Read(_err)) => decode_reader(
+        Err(DecodeAttemptError::Read(_err)) if !has_zlib_header(content) => decode_reader(
             ContentCoding::Deflate,
-            DeflateDecoder::new(Cursor::new(content)),
+            CompleteDeflateDecoder::new(content, Decompress::new(false)),
             max_response_body_size,
             reservation,
         ),
-        Err(DecodeAttemptError::Runtime(err)) => Err(err),
+        Err(err) => Err(decode_attempt_error(ContentCoding::Deflate, err)),
+    }
+}
+
+fn has_zlib_header(content: &[u8]) -> bool {
+    let Some(&[method, flags]) = content.first_chunk::<2>() else {
+        return false;
+    };
+    method & 0x0f == 8 && method >> 4 <= 7 && u16::from_be_bytes([method, flags]) % 31 == 0
+}
+
+struct CompleteDeflateDecoder<'a> {
+    input: &'a [u8],
+    decoder: Decompress,
+    finished: bool,
+}
+
+impl<'a> CompleteDeflateDecoder<'a> {
+    fn new(input: &'a [u8], decoder: Decompress) -> Self {
+        Self {
+            input,
+            decoder,
+            finished: false,
+        }
+    }
+}
+
+impl Read for CompleteDeflateDecoder<'_> {
+    fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
+        if self.finished || output.is_empty() {
+            return Ok(0);
+        }
+
+        loop {
+            let before_in = self.decoder.total_in();
+            let before_out = self.decoder.total_out();
+            let status = self
+                .decoder
+                .decompress(self.input, output, FlushDecompress::None)
+                .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+            let consumed = usize::try_from(self.decoder.total_in() - before_in)
+                .map_err(std::io::Error::other)?;
+            let produced = usize::try_from(self.decoder.total_out() - before_out)
+                .map_err(std::io::Error::other)?;
+            self.input = &self.input[consumed..];
+            self.finished = status == Status::StreamEnd;
+            if produced != 0 || self.finished {
+                return Ok(produced);
+            }
+            if consumed == 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "truncated deflate stream",
+                ));
+            }
+        }
     }
 }
 
