@@ -3,6 +3,7 @@ __all__ = ("aiter_text_chunks",)
 import codecs
 from collections.abc import AsyncIterator, Callable
 
+from ..._response.encoding import validate_text_encoding
 from .iterators import close_async_iterator
 
 
@@ -14,6 +15,7 @@ async def aiter_text_chunks(
     close: Callable[[], None] | None = None,
 ) -> AsyncIterator[str]:
     try:
+        validate_text_encoding(encoding)
         decoder = codecs.getincrementaldecoder(encoding)(errors=errors)
         async for chunk in byte_chunks:
             if text := decoder.decode(chunk):
