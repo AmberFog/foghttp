@@ -255,6 +255,14 @@ on the event loop. Keep sinks fast and non-blocking; exporters that write to
 files, sockets, queues, or tracing systems should enqueue compact redacted
 events and do heavier work outside the request path.
 
+For `Client`, a hook must not close the same client when shutdown would wait
+for the hook's own request or native event delivery. Such a call raises
+`LifecycleError` before starting shutdown, including when another thread has
+already started closing the client. Uncaught sink errors follow the configured
+`raise`, `warn`, or `ignore` policy; OpenTelemetry SDK failures remain fail-open.
+An already completed shutdown still permits `close()` from its
+`connection_closed` hook. See [Sync Close Semantics](./lifecycle.md#sync-close-semantics).
+
 For sync clients used concurrently from multiple threads, the same sink may be
 called concurrently. `event_sequence` orders event creation inside the client
 dispatcher; it is not a guarantee that a thread-safe sink will observe callbacks
