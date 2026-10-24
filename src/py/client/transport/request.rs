@@ -151,6 +151,7 @@ pub struct TransportRequest {
     pub write_timeout: f64,
     pub max_response_body_size: Option<usize>,
     pub buffered_body_budget: BufferedBodyBudget,
+    pub buffered_decoders: Arc<tokio::sync::Semaphore>,
     pub follow_redirects: bool,
     pub max_redirects: usize,
     pub retry_policy: Option<RetryPolicy>,
@@ -318,6 +319,7 @@ pub(super) struct RequestState {
     pub(super) write_timeout_secs: f64,
     pub(super) max_response_body_size: Option<usize>,
     pub(super) buffered_body_budget: BufferedBodyBudget,
+    pub(super) buffered_decoders: Arc<tokio::sync::Semaphore>,
     retry_attempt: usize,
     completed_retries: usize,
     retry_trace: RetryTraceRecorder,
@@ -409,8 +411,11 @@ impl RequestState {
             read_timeout: self.read_timeout,
             max_response_body_size: self.max_response_body_size,
             buffered_body_budget: self.buffered_body_budget.clone(),
+            buffered_decoders: Arc::clone(&self.buffered_decoders),
             origin,
             redirect_hop,
+            #[cfg(test)]
+            decode_checkpoint: None,
         }
     }
 
@@ -688,6 +693,7 @@ impl RequestState {
             write_timeout_secs: parts.write_timeout,
             max_response_body_size: parts.max_response_body_size,
             buffered_body_budget: parts.buffered_body_budget,
+            buffered_decoders: parts.buffered_decoders,
             retry_attempt: 1,
             completed_retries: 0,
             retry_trace,

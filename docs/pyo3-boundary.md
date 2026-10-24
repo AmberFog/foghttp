@@ -45,6 +45,35 @@ Core error-path tests must not initialize or attach to Python. Binding tests
 verify the native and public exception mapping separately. This separation
 does not make the extension crate's build/link toolchain Python-independent.
 
+## Buffered Content Decoding
+
+The core buffered decoder owns the collected body, codec state, intermediate
+output and byte reservation. Each step offers bounded input and output to one
+codec operation. Transport drives those steps without the GIL or a state lock,
+checks the request's original total deadline, and yields to Tokio between
+steps, including after the final codec step before returning a response.
+Core decoding stays independent of Tokio and Python timeout exceptions.
+
+Transport acquires a runtime-owned buffered-decoder slot before creating codec
+state and holds it until that state is dropped. Slots are shared by clients on
+the same runtime and capped at its worker count, so yielding cannot multiply
+retained codec workspaces by the number of in-flight requests. Admission waits
+use the original total deadline and remain cancellable; identity/opaque bodies
+bypass this gate. The body-byte budget does not account for codec workspaces.
+
+The existing async task owns cancellation: dropping it stops further codec
+steps and releases decoder state and reservations through RAII. No detached
+whole-body decode task survives cancellation. Async close uses this same abort
+path; ordinary sync close continues to wait for admitted sends.
+
+Connection-use completion occurs after the encoded HTTP body is collected and
+before content decoding. Decode failure, total timeout or cancellation after
+that point aborts content finalization without aborting an already released or
+reassigned connection. Per-response size and aggregate byte limits still apply
+to intermediate decoded layers, and malformed content retains its request-error
+mapping. Raw-deflate fallback and streaming decoding keep their separate
+compatibility policies. One synchronous codec call remains non-interruptible.
+
 ## Streaming Rules
 
 Streaming adds repeated Python/Rust handoff, so it needs stricter review than

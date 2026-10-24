@@ -62,6 +62,7 @@ pub struct RawClient {
     future_setters: PythonFutureSetters,
     max_response_body_size: Option<usize>,
     buffered_body_budget: BufferedBodyBudget,
+    buffered_decoders: Arc<tokio::sync::Semaphore>,
     max_stream_decoded_bytes: Option<usize>,
     max_stream_decoder_memory_bytes: usize,
     follow_redirects: bool,
@@ -263,6 +264,7 @@ impl RawClient {
             Arc::clone(&metrics),
         );
         let runtime = ClientRuntime::build(py, max_active_requests, runtime_mode, runtime_workers)?;
+        let buffered_decoders = runtime.buffered_decoders();
         let future_setters = PythonFutureSetters::new(py)?;
         let cookie_jar = cookies_enabled.then(CookieJar::new);
 
@@ -276,6 +278,7 @@ impl RawClient {
             future_setters,
             max_response_body_size,
             buffered_body_budget,
+            buffered_decoders,
             max_stream_decoded_bytes,
             max_stream_decoder_memory_bytes,
             follow_redirects,
@@ -340,6 +343,7 @@ impl RawClient {
         let metrics = Arc::clone(&self.metrics);
         let max_response_body_size = self.max_response_body_size;
         let buffered_body_budget = self.buffered_body_budget.clone();
+        let buffered_decoders = Arc::clone(&self.buffered_decoders);
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         let cookie_jar = self.cookie_jar.clone();
@@ -380,6 +384,7 @@ impl RawClient {
                         write_timeout,
                         max_response_body_size,
                         buffered_body_budget,
+                        buffered_decoders,
                         follow_redirects,
                         max_redirects,
                         retry_policy,
@@ -445,6 +450,7 @@ impl RawClient {
         let runtime = self.runtime_unchecked()?;
         let max_response_body_size = self.max_response_body_size;
         let buffered_body_budget = self.buffered_body_budget.clone();
+        let buffered_decoders = Arc::clone(&self.buffered_decoders);
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         let cookie_jar = self.cookie_jar.clone();
@@ -487,6 +493,7 @@ impl RawClient {
                     write_timeout,
                     max_response_body_size,
                     buffered_body_budget,
+                    buffered_decoders,
                     follow_redirects,
                     max_redirects,
                     retry_policy,
@@ -561,6 +568,7 @@ impl RawClient {
         let runtime_handle = runtime.handle().clone();
         let max_response_body_size = self.max_response_body_size;
         let buffered_body_budget = self.buffered_body_budget.clone();
+        let buffered_decoders = Arc::clone(&self.buffered_decoders);
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         let cookie_jar = self.cookie_jar.clone();
@@ -604,6 +612,7 @@ impl RawClient {
                         write_timeout,
                         max_response_body_size,
                         buffered_body_budget,
+                        buffered_decoders,
                         follow_redirects,
                         max_redirects,
                         retry_policy,
@@ -683,6 +692,7 @@ impl RawClient {
         };
         let max_response_body_size = self.max_response_body_size;
         let buffered_body_budget = self.buffered_body_budget.clone();
+        let buffered_decoders = Arc::clone(&self.buffered_decoders);
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         let cookie_jar = self.cookie_jar.clone();
@@ -724,6 +734,7 @@ impl RawClient {
                     write_timeout,
                     max_response_body_size,
                     buffered_body_budget,
+                    buffered_decoders,
                     follow_redirects,
                     max_redirects,
                     retry_policy,
