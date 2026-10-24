@@ -163,6 +163,20 @@ headers. A complete HTTP body and a complete compressed stream are separate
 conditions: a late decoding error releases the request slot and buffered
 reservations without aborting an already completed use of a healthy connection.
 
+Buffered decoding shares the original request `total` deadline across all
+coding layers and raw-deflate fallback, including the final check before the
+native response is returned. Expiry raises the base `TimeoutError` with
+`response_body` diagnostics. Codec steps yield to the runtime so async
+cancellation and client close can stop further decoding; ordinary sync close
+still waits for admitted sends. A single synchronous codec call cannot be
+interrupted, so this does not promise a hard latency bound for that call.
+See the [total timeout contract](./timeouts.md#total-timeout).
+
+Simultaneously live buffered decoders are limited to the runtime's worker count,
+shared across clients using that runtime. Waiting for a decoder slot consumes
+the original total budget. This bounds concurrency, not the bytes allocated by
+one codec; the buffered body-byte limits exclude internal codec workspaces.
+
 See [response streaming](./streaming.md#content-decoding) for the separate
 opt-in streaming contract.
 

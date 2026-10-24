@@ -1,12 +1,10 @@
 use super::body::{enforce_response_body_limit, CollectedBody};
+use super::codec::{Codec, CodecStatus, Coding as ContentCoding};
 use super::ResponseBodyError;
 use crate::core::headers::HeaderPairs;
-use brotli::Decompressor;
-use flate2::read::MultiGzDecoder;
-use flate2::{Decompress, FlushDecompress, Status};
 use hyper::header::CONTENT_ENCODING;
 use hyper::HeaderMap;
-use std::io::{Cursor, Read};
+use std::io;
 
 const DECODE_BUFFER_SIZE: usize = 8192;
 const CONTENT_ENCODING_HEADER: &str = "content-encoding";
@@ -22,11 +20,10 @@ pub struct ResponseBodyDecodingPlan {
     plan: ContentCodingPlan,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ContentCoding {
-    Gzip,
-    Deflate,
-    Brotli,
+impl ResponseBodyDecodingPlan {
+    pub fn is_decoding(&self) -> bool {
+        matches!(self.plan, ContentCodingPlan::Decode(_))
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -41,20 +38,229 @@ pub fn response_body_decoding_plan(headers: &HeaderMap) -> ResponseBodyDecodingP
     }
 }
 
-pub fn decode_body(
-    collected: CollectedBody,
-    decoding_plan: ResponseBodyDecodingPlan,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BufferedDecodeStatus {
+    Progress,
+    Finished,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DecodeAttempt {
+    Preferred,
+    RawDeflate,
+}
+
+struct DecodeLayer {
+    coding: ContentCoding,
+    codec: Codec,
+    offset: usize,
+    output: Vec<u8>,
+    attempt: DecodeAttempt,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DecoderState {
+    Active,
+    Failed,
+    Finished,
+}
+
+pub struct BufferedBodyDecoder {
+    // Release retained codec/output memory before the body's reservation.
+    layer: Option<DecodeLayer>,
+    codings: Vec<ContentCoding>,
+    scratch: Box<[u8]>,
     max_response_body_size: Option<usize>,
-) -> Result<ResponseBody, ResponseBodyError> {
-    match decoding_plan.plan {
-        ContentCodingPlan::Decode(codings) => {
-            decode_supported_body(collected, codings.as_slice(), max_response_body_size)
+    decoded: bool,
+    state: DecoderState,
+    body: CollectedBody,
+    #[cfg(test)]
+    completed_layers: usize,
+}
+
+impl BufferedBodyDecoder {
+    pub fn new(
+        body: CollectedBody,
+        plan: ResponseBodyDecodingPlan,
+        max_response_body_size: Option<usize>,
+    ) -> Self {
+        let codings = match plan.plan {
+            ContentCodingPlan::Decode(codings) => codings,
+            ContentCodingPlan::LeaveEncoded => Vec::new(),
+        };
+        let scratch = if codings.is_empty() {
+            Box::default()
+        } else {
+            vec![0; DECODE_BUFFER_SIZE].into_boxed_slice()
+        };
+        Self {
+            layer: None,
+            decoded: !codings.is_empty(),
+            state: if codings.is_empty() {
+                DecoderState::Finished
+            } else {
+                DecoderState::Active
+            },
+            codings,
+            scratch,
+            max_response_body_size,
+            body,
+            #[cfg(test)]
+            completed_layers: 0,
         }
-        ContentCodingPlan::LeaveEncoded => Ok(ResponseBody {
-            content: collected.content,
-            reservation: collected.reservation,
-            decoded: false,
-        }),
+    }
+
+    /// Each progress result requires a cancellation checkpoint before another
+    /// step. One step invokes at most one codec operation with bounded slices.
+    pub fn step(&mut self) -> Result<BufferedDecodeStatus, ResponseBodyError> {
+        match self.state {
+            DecoderState::Finished => return Ok(BufferedDecodeStatus::Finished),
+            DecoderState::Failed => {
+                return Err(incomplete_decoding("buffered decoding already failed"))
+            }
+            DecoderState::Active => {}
+        }
+        let result = self.advance();
+        match &result {
+            Ok(BufferedDecodeStatus::Finished) => self.state = DecoderState::Finished,
+            Err(_) => self.state = DecoderState::Failed,
+            Ok(BufferedDecodeStatus::Progress) => {}
+        }
+        result
+    }
+
+    fn advance(&mut self) -> Result<BufferedDecodeStatus, ResponseBodyError> {
+        if self.layer.is_none() {
+            let Some(coding) = self.codings.pop() else {
+                return Ok(BufferedDecodeStatus::Finished);
+            };
+            self.layer = Some(DecodeLayer {
+                coding,
+                codec: Codec::buffered(coding, DECODE_BUFFER_SIZE),
+                offset: 0,
+                output: Vec::new(),
+                attempt: DecodeAttempt::Preferred,
+            });
+        }
+        self.step_layer()
+    }
+
+    fn step_layer(&mut self) -> Result<BufferedDecodeStatus, ResponseBodyError> {
+        let layer = self.layer.as_mut().expect("step owns active decode layer");
+        let input = &self.body.content[layer.offset..];
+        let offered = input.len().min(DECODE_BUFFER_SIZE);
+        // Drain buffered output before reporting truncated input, preserving
+        // the reader path's output limit and error ordering.
+        let eof = input.is_empty() && layer.coding == ContentCoding::Gzip;
+        let result = layer.codec.step(&input[..offered], eof, &mut self.scratch);
+        let result = match result {
+            Ok(step)
+                if input.is_empty()
+                    && layer.coding != ContentCoding::Gzip
+                    && matches!(step.status, CodecStatus::NeedsInput) =>
+            {
+                Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "truncated content coding",
+                ))
+            }
+            result => result,
+        };
+        let result = match result {
+            Ok(result) => result,
+            Err(source) => {
+                self.body.reservation.release_chunk(layer.output.len())?;
+                layer.output.clear();
+                if layer.coding == ContentCoding::Deflate
+                    && layer.attempt == DecodeAttempt::Preferred
+                    && !has_zlib_header(&self.body.content)
+                {
+                    layer.codec = Codec::raw_deflate();
+                    layer.attempt = DecodeAttempt::RawDeflate;
+                    layer.offset = 0;
+                    return Ok(BufferedDecodeStatus::Progress);
+                }
+                return Err(ResponseBodyError::Decode {
+                    coding: layer.coding.name(),
+                    source,
+                });
+            }
+        };
+        layer.offset += result.consumed;
+        if let Err(error) = enforce_response_body_limit(
+            layer.output.len(),
+            result.produced,
+            self.max_response_body_size,
+        )
+        .and_then(|()| {
+            layer
+                .output
+                .len()
+                .checked_add(result.produced)
+                .ok_or(ResponseBodyError::DecodeReservationOverflow)?;
+            self.body.reservation.reserve_chunk(result.produced)
+        }) {
+            self.body.reservation.release_chunk(layer.output.len())?;
+            layer.output.clear();
+            return Err(error);
+        }
+        layer
+            .output
+            .extend_from_slice(&self.scratch[..result.produced]);
+        if matches!(result.status, CodecStatus::Ended) {
+            let encoded_size = self.body.content.len();
+            self.body.content = std::mem::take(&mut layer.output);
+            self.body.reservation.release_chunk(encoded_size)?;
+            self.layer = None;
+            #[cfg(test)]
+            {
+                self.completed_layers += 1;
+            }
+            if self.codings.is_empty() {
+                return Ok(BufferedDecodeStatus::Finished);
+            }
+        }
+        Ok(BufferedDecodeStatus::Progress)
+    }
+
+    pub fn finish(self) -> Result<ResponseBody, ResponseBodyError> {
+        if self.state != DecoderState::Finished {
+            return Err(incomplete_decoding("unfinished buffered decoding"));
+        }
+        Ok(ResponseBody {
+            content: self.body.content,
+            reservation: self.body.reservation,
+            decoded: self.decoded,
+        })
+    }
+
+    #[cfg(test)]
+    pub fn test_progress(&self) -> BufferedDecodeProgress {
+        BufferedDecodeProgress {
+            completed_layers: self.completed_layers,
+            remaining_layers: self.codings.len(),
+            output_bytes: self.layer.as_ref().map_or(0, |layer| layer.output.len()),
+            raw_deflate: self
+                .layer
+                .as_ref()
+                .is_some_and(|layer| layer.attempt == DecodeAttempt::RawDeflate),
+        }
+    }
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+pub struct BufferedDecodeProgress {
+    pub completed_layers: usize,
+    pub remaining_layers: usize,
+    pub output_bytes: usize,
+    pub raw_deflate: bool,
+}
+
+fn incomplete_decoding(reason: &'static str) -> ResponseBodyError {
+    ResponseBodyError::Decode {
+        coding: "response body",
+        source: io::Error::new(io::ErrorKind::UnexpectedEof, reason),
     }
 }
 
@@ -103,208 +309,11 @@ fn supported_content_coding(coding: &str) -> Option<ContentCoding> {
     }
 }
 
-fn decode_supported_body(
-    mut body: CollectedBody,
-    codings: &[ContentCoding],
-    max_response_body_size: Option<usize>,
-) -> Result<ResponseBody, ResponseBodyError> {
-    let mut content = std::mem::take(&mut body.content);
-    for coding in codings.iter().rev().copied() {
-        let encoded_size = content.len();
-        content = decode_content_coding(
-            coding,
-            &content,
-            max_response_body_size,
-            &mut body.reservation,
-        )?;
-        body.reservation.release_chunk(encoded_size)?;
-    }
-
-    Ok(ResponseBody {
-        content,
-        reservation: body.reservation,
-        decoded: true,
-    })
-}
-
-fn decode_content_coding(
-    coding: ContentCoding,
-    content: &[u8],
-    max_response_body_size: Option<usize>,
-    reservation: &mut super::BufferedBodyReservation,
-) -> Result<Vec<u8>, ResponseBodyError> {
-    match coding {
-        ContentCoding::Gzip => decode_reader(
-            coding,
-            MultiGzDecoder::new(Cursor::new(content)),
-            max_response_body_size,
-            reservation,
-        ),
-        ContentCoding::Deflate => decode_deflate(content, max_response_body_size, reservation),
-        ContentCoding::Brotli => decode_reader(
-            coding,
-            Decompressor::new(Cursor::new(content), DECODE_BUFFER_SIZE),
-            max_response_body_size,
-            reservation,
-        ),
-    }
-}
-
-fn decode_deflate(
-    content: &[u8],
-    max_response_body_size: Option<usize>,
-    reservation: &mut super::BufferedBodyReservation,
-) -> Result<Vec<u8>, ResponseBodyError> {
-    match decode_reader_result(
-        CompleteDeflateDecoder::new(content, Decompress::new(true)),
-        max_response_body_size,
-        reservation,
-    ) {
-        Ok(decoded) => Ok(decoded),
-        Err(DecodeAttemptError::Read(_err)) if !has_zlib_header(content) => decode_reader(
-            ContentCoding::Deflate,
-            CompleteDeflateDecoder::new(content, Decompress::new(false)),
-            max_response_body_size,
-            reservation,
-        ),
-        Err(err) => Err(decode_attempt_error(ContentCoding::Deflate, err)),
-    }
-}
-
 fn has_zlib_header(content: &[u8]) -> bool {
     let Some(&[method, flags]) = content.first_chunk::<2>() else {
         return false;
     };
     method & 0x0f == 8 && method >> 4 <= 7 && u16::from_be_bytes([method, flags]) % 31 == 0
-}
-
-struct CompleteDeflateDecoder<'a> {
-    input: &'a [u8],
-    decoder: Decompress,
-    finished: bool,
-}
-
-impl<'a> CompleteDeflateDecoder<'a> {
-    fn new(input: &'a [u8], decoder: Decompress) -> Self {
-        Self {
-            input,
-            decoder,
-            finished: false,
-        }
-    }
-}
-
-impl Read for CompleteDeflateDecoder<'_> {
-    fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
-        if self.finished || output.is_empty() {
-            return Ok(0);
-        }
-
-        loop {
-            let before_in = self.decoder.total_in();
-            let before_out = self.decoder.total_out();
-            let status = self
-                .decoder
-                .decompress(self.input, output, FlushDecompress::None)
-                .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
-            let consumed = usize::try_from(self.decoder.total_in() - before_in)
-                .map_err(std::io::Error::other)?;
-            let produced = usize::try_from(self.decoder.total_out() - before_out)
-                .map_err(std::io::Error::other)?;
-            self.input = &self.input[consumed..];
-            self.finished = status == Status::StreamEnd;
-            if produced != 0 || self.finished {
-                return Ok(produced);
-            }
-            if consumed == 0 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::UnexpectedEof,
-                    "truncated deflate stream",
-                ));
-            }
-        }
-    }
-}
-
-fn decode_reader<R: Read>(
-    coding: ContentCoding,
-    reader: R,
-    max_response_body_size: Option<usize>,
-    reservation: &mut super::BufferedBodyReservation,
-) -> Result<Vec<u8>, ResponseBodyError> {
-    decode_reader_result(reader, max_response_body_size, reservation)
-        .map_err(|err| decode_attempt_error(coding, err))
-}
-
-enum DecodeAttemptError {
-    Read(std::io::Error),
-    Runtime(ResponseBodyError),
-}
-
-fn decode_reader_result<R: Read>(
-    mut reader: R,
-    max_response_body_size: Option<usize>,
-    reservation: &mut super::BufferedBodyReservation,
-) -> Result<Vec<u8>, DecodeAttemptError> {
-    let mut decoded = Vec::new();
-    let mut buffer = [0_u8; DECODE_BUFFER_SIZE];
-    let mut attempt_reserved = 0_usize;
-
-    loop {
-        let read = match reader.read(&mut buffer) {
-            Ok(read) => read,
-            Err(err) => {
-                if let Err(release_error) = reservation.release_chunk(attempt_reserved) {
-                    return Err(DecodeAttemptError::Runtime(release_error));
-                }
-                return Err(DecodeAttemptError::Read(err));
-            }
-        };
-        if read == 0 {
-            return Ok(decoded);
-        }
-
-        if let Err(err) = enforce_response_body_limit(decoded.len(), read, max_response_body_size) {
-            if let Err(release_error) = reservation.release_chunk(attempt_reserved) {
-                return Err(DecodeAttemptError::Runtime(release_error));
-            }
-            return Err(DecodeAttemptError::Runtime(err));
-        }
-        if let Err(err) = reservation.reserve_chunk(read) {
-            if let Err(release_error) = reservation.release_chunk(attempt_reserved) {
-                return Err(DecodeAttemptError::Runtime(release_error));
-            }
-            return Err(DecodeAttemptError::Runtime(err));
-        }
-        let Some(next_attempt_reserved) = attempt_reserved.checked_add(read) else {
-            if let Err(release_error) = reservation.release_chunk(attempt_reserved) {
-                return Err(DecodeAttemptError::Runtime(release_error));
-            }
-            return Err(DecodeAttemptError::Runtime(
-                ResponseBodyError::DecodeReservationOverflow,
-            ));
-        };
-        attempt_reserved = next_attempt_reserved;
-        decoded.extend_from_slice(&buffer[..read]);
-    }
-}
-
-fn decode_attempt_error(coding: ContentCoding, err: DecodeAttemptError) -> ResponseBodyError {
-    match err {
-        DecodeAttemptError::Read(source) => ResponseBodyError::Decode {
-            coding: content_coding_name(coding),
-            source,
-        },
-        DecodeAttemptError::Runtime(err) => err,
-    }
-}
-
-fn content_coding_name(coding: ContentCoding) -> &'static str {
-    match coding {
-        ContentCoding::Gzip => "gzip",
-        ContentCoding::Deflate => "deflate",
-        ContentCoding::Brotli => "br",
-    }
 }
 
 fn decoded_body_header(name: &str) -> bool {
