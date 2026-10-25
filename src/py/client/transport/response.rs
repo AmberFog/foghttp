@@ -1,12 +1,12 @@
 use super::body::{collect_response_body, drain_response_body, response_body_can_be_decoded};
 use super::context::{RawResponseContext, RawStreamResponseContext};
-use super::errors::response_body_error;
+use super::decoding::{decode_response_body, ensure_decode_deadline};
 use crate::core::client::{ConnectionAbortReason, ConnectionUseGuard};
 use crate::core::headers::HeaderPairs;
 use crate::core::metrics::{Metrics, OriginMetrics, ResponseBodyLifecycleOutcome};
 use crate::core::numeric::duration_from_secs;
 use crate::core::response::{
-    decode_body, decoded_response_headers, response_body_decoding_plan, StreamingDecodePlan,
+    decoded_response_headers, response_body_decoding_plan, StreamingDecodePlan,
 };
 use crate::core::telemetry::TelemetryErrorType;
 use crate::errors::{
@@ -124,21 +124,21 @@ pub(super) async fn raw_response(
         }
     };
     lifecycle.finish_connection();
-    let (headers, response_content, body_reservation) = if let Some(decoding_plan) = decoding_plan {
-        let body = decode_body(collected, decoding_plan, context.max_response_body_size)
-            .map_err(|error| response_body_error(&error))?;
-        (
-            decoded_response_headers(headers, body.decoded),
-            body.content,
-            body.reservation,
-        )
-    } else {
-        (headers, collected.content, collected.reservation)
-    };
-    lifecycle.finish_body();
+    let (headers, response_content, body_reservation, decoded) =
+        if let Some(decoding_plan) = decoding_plan {
+            let body = decode_response_body(collected, decoding_plan, &context).await?;
+            (
+                decoded_response_headers(headers, body.decoded),
+                body.content,
+                body.reservation,
+                body.decoded,
+            )
+        } else {
+            (headers, collected.content, collected.reservation, false)
+        };
     let url = request.url.clone();
 
-    Ok(RawResponse::from_parts(RawResponseParts {
+    let raw = RawResponse::from_parts(RawResponseParts {
         status_code,
         headers,
         content: response_content,
@@ -149,7 +149,16 @@ pub(super) async fn raw_response(
         history: Vec::new(),
         retry_trace: None,
         body_reservation: Some(body_reservation),
-    }))
+    });
+    if decoded {
+        #[cfg(test)]
+        if let Some(checkpoint) = context.decode_checkpoint {
+            checkpoint.before_return().await;
+        }
+        ensure_decode_deadline(&context)?;
+    }
+    lifecycle.finish_body();
+    Ok(raw)
 }
 
 fn response_body_error_type(error: &PyErr) -> TelemetryErrorType {

@@ -53,7 +53,6 @@ if TYPE_CHECKING:
 
 
 REGULAR_FILE_REMAINING_LENGTH = 4
-SEEKABLE_FALLBACK_REMAINING_LENGTH = 5
 UPLOAD_SOURCE_FAILURE = "upload source failed"
 SECONDARY_CLEANUP_FAILURE = "source cleanup failed"
 ERROR_FORMATTING_FAILURE = "error formatting failed"
@@ -779,8 +778,11 @@ def test_sync_streaming_body_propagates_feeder_cleanup_base_exception(
         start_callback: object,
         _replayable: object,
         _ready_callback: object,
+        *,
+        raw_client: object | None = None,
     ) -> Mock:
         raw_body.start_callback = start_callback
+        raw_body.raw_client = raw_client
         return raw_body
 
     monkeypatch.setattr(
@@ -808,14 +810,18 @@ async def test_async_streaming_body_propagates_feeder_cleanup_base_exception(
     source = _SeparateAsyncIteratorSource([], source_close_error=source_error)
     raw_body = Mock()
     raw_body.send_nowait.return_value = True
+    raw_body.send_part_nowait.return_value = 1
 
     def raw_body_factory(
         _content_length: int | None,
         start_callback: object,
         _replayable: object,
         _ready_callback: object,
+        *,
+        raw_client: object | None = None,
     ) -> Mock:
         raw_body.start_callback = start_callback
+        raw_body.raw_client = raw_client
         return raw_body
 
     monkeypatch.setattr(
@@ -2637,11 +2643,13 @@ def test_file_content_length_rejects_negative_regular_descriptor_remaining_size(
         assert file_content_length(OversizedTellFile(file.fileno())) is None
 
 
-def test_file_content_length_falls_back_when_fileno_fails() -> None:
+def test_file_content_length_keeps_generic_reader_streaming_when_fileno_fails() -> None:
     file = FailingFilenoSeekableFile(b"payload")
     file.read(2)
 
-    assert file_content_length(file) == SEEKABLE_FALLBACK_REMAINING_LENGTH
+    assert file_content_length(file) is None
+    assert file.tell() == len(b"pa")
+    assert b"".join(FileUploadSource(file)) == b"yload"
 
 
 def test_file_content_length_returns_none_for_non_seekable_without_fileno() -> None:

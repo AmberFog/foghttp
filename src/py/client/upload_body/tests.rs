@@ -17,7 +17,7 @@ fn zero_length_upload_waits_for_explicit_producer_completion() {
     initialize_python();
     Python::attach(|py| -> PyResult<()> {
         let callback = py.eval(c_str!("lambda body: None"), None, None)?.unbind();
-        let body = RawUploadBody::new(Some(0), callback, false, None);
+        let body = RawUploadBody::new(Some(0), callback, false, None, None)?;
         let (receiver, content_length) = body.take_receiver(py)?;
         let (mut request_body, completion) = streaming_request_body(receiver, content_length, None);
 
@@ -43,11 +43,11 @@ fn empty_final_chunk_reports_success_only_when_it_closes_the_channel() {
     initialize_python();
     Python::attach(|py| -> PyResult<()> {
         let callback = py.eval(c_str!("lambda body: None"), None, None)?.unbind();
-        let blocking = RawUploadBody::new(None, callback.clone_ref(py), false, None);
-        let nonblocking = RawUploadBody::new(None, callback, false, None);
+        let blocking = RawUploadBody::new(None, callback.clone_ref(py), false, None, None)?;
+        let nonblocking = RawUploadBody::new(None, callback, false, None, None)?;
 
-        assert!(blocking.send_final(py, b""));
-        assert!(!blocking.send_final(py, b""));
+        assert!(blocking.send_final(py, b"")?);
+        assert!(!blocking.send_final(py, b"")?);
         assert!(nonblocking.send_final_nowait(b""));
         assert!(!nonblocking.send_final_nowait(b""));
         Ok(())
@@ -60,7 +60,7 @@ fn replay_reset_invokes_ready_callback_without_holding_owner_lock() {
     initialize_python();
     Python::attach(|py| -> PyResult<()> {
         let start_callback = py.eval(c_str!("lambda body: None"), None, None)?.unbind();
-        let body = RawUploadBody::new(None, start_callback, true, None);
+        let body = RawUploadBody::new(None, start_callback, true, None, None)?;
         let RawUploadBodyInner::Owner(state) = &body.inner else {
             unreachable!("new upload body owns its channel state");
         };

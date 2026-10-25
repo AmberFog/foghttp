@@ -41,6 +41,7 @@ class _SyncStreamingUploadBody:
         content_length: int | None,
         *,
         replayable: bool,
+        raw_client: _foghttp.RawClient | None = None,
     ) -> None:
         self.buffered_body: bytes | None = None
         self.raw_body: _foghttp.RawUploadBody | None = _foghttp.RawUploadBody(
@@ -48,6 +49,7 @@ class _SyncStreamingUploadBody:
             self.start,
             replayable,
             None,
+            raw_client=raw_client,
         )
         self._source = source
         self._context = copy_context()
@@ -177,6 +179,7 @@ class _AsyncStreamingUploadBody:
         content_length: int | None,
         *,
         replayable: bool,
+        raw_client: _foghttp.RawClient | None = None,
     ) -> None:
         self.buffered_body: bytes | None = None
         self.raw_body: _foghttp.RawUploadBody | None = _foghttp.RawUploadBody(
@@ -184,6 +187,7 @@ class _AsyncStreamingUploadBody:
             self.start,
             replayable,
             self._notify_ready,
+            raw_client=raw_client,
         )
         self._source = source
         self._context = copy_context()
@@ -367,7 +371,11 @@ class _AsyncStreamingUploadBody:
             return
 
 
-def prepare_sync_upload_body(body: RequestBody) -> upload_models.SyncUploadBody:
+def prepare_sync_upload_body(
+    body: RequestBody,
+    *,
+    raw_client: _foghttp.RawClient | None = None,
+) -> upload_models.SyncUploadBody:
     if body.stream is None:
         return upload_models.BufferedUploadBody(body.content)
     if is_async_stream(body.stream):
@@ -376,16 +384,22 @@ def prepare_sync_upload_body(body: RequestBody) -> upload_models.SyncUploadBody:
         body.stream,
         body.content_length,
         replayable=body.replayable,
+        raw_client=raw_client,
     )
 
 
-def prepare_async_upload_body(body: RequestBody) -> upload_models.AsyncUploadBody:
+def prepare_async_upload_body(
+    body: RequestBody,
+    *,
+    raw_client: _foghttp.RawClient | None = None,
+) -> upload_models.AsyncUploadBody:
     if body.stream is None:
         return upload_models.BufferedUploadBody(body.content)
     return _AsyncStreamingUploadBody(
         body.stream,
         body.content_length,
         replayable=body.replayable,
+        raw_client=raw_client,
     )
 
 

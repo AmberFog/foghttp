@@ -5,9 +5,13 @@ mod ssrf;
 mod telemetry;
 mod write_timeout;
 
+#[cfg(test)]
+pub(crate) use body::upload_body_channel;
 pub(crate) use body::{
-    buffered_request_body, streaming_request_body, upload_body_channel, RequestBody,
-    RequestBodyCompletion, UploadBodyReceiver, UploadBodySendError, UploadBodySender,
+    buffered_request_body, streaming_request_body, upload_body_channel_with_budget, RequestBody,
+    RequestBodyCompletion, UploadBodyAccount, UploadBodyBudget, UploadBodyReceiver,
+    UploadBodySendError, UploadBodySender, DEFAULT_MAX_BUFFERED_UPLOAD_BYTES,
+    DEFAULT_MAX_UPLOAD_BUFFER_BYTES,
 };
 pub(crate) use connection_limit::{
     connection_acquire_timeout_from_error, with_connection_limit_timeout, ConnectionGate,

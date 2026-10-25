@@ -41,7 +41,7 @@ def send_raw_request(
     request: RawRequestOptions,
     telemetry_request_id: int | None = None,
 ) -> _foghttp.RawResponse:
-    body = prepare_sync_upload_body(request.body)
+    body = prepare_sync_upload_body(request.body, raw_client=raw_client)
     try:
         return raw_client.request(
             method=request.method.upper(),
@@ -74,7 +74,7 @@ def send_raw_stream_request(
     telemetry_request_id: int | None = None,
     decode_content: bool = False,
 ) -> _foghttp.RawStreamResponse:
-    body = prepare_sync_upload_body(request.body)
+    body = prepare_sync_upload_body(request.body, raw_client=raw_client)
     try:
         return raw_client.request_stream(
             method=request.method.upper(),
@@ -107,7 +107,7 @@ async def send_raw_request_async(
     request: RawRequestOptions,
     telemetry_request_id: int | None = None,
 ) -> _foghttp.RawResponse:
-    body = prepare_async_upload_body(request.body)
+    body = prepare_async_upload_body(request.body, raw_client=raw_client)
     try:
         return await raw_client.request_async(
             method=request.method.upper(),
@@ -140,7 +140,7 @@ async def send_raw_stream_request_async(
     telemetry_request_id: int | None = None,
     decode_content: bool = False,
 ) -> _foghttp.RawStreamResponse:
-    body = prepare_async_upload_body(request.body)
+    body = prepare_async_upload_body(request.body, raw_client=raw_client)
     try:
         return await raw_client.request_stream_async(
             method=request.method.upper(),
