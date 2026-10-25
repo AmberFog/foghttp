@@ -19,7 +19,7 @@ from foghttp._client.raw.requests import (
 )
 from foghttp._client.runtime.constants import RUNTIME_WORKERS_ENV
 from foghttp._request_body import RequestBody
-from foghttp.limits import Limits
+from foghttp.limits import DEFAULT_MAX_TOTAL_UPLOAD_BUFFER_BYTES, DEFAULT_MAX_UPLOAD_BUFFER_BYTES, Limits
 from foghttp.methods import GET
 from foghttp.policy import TransportPolicyHooks, TransportPolicyRequest
 from foghttp.request_extensions import RequestExtensions
@@ -65,6 +65,8 @@ RAW_CLIENT_INIT_ARGUMENTS = (
     "telemetry_enabled",
     "max_stream_decoded_bytes",
     "max_stream_decoder_memory_bytes",
+    "max_upload_buffer_bytes",
+    "max_total_upload_buffer_bytes",
 )
 
 RAW_REQUEST_ARGUMENTS = (
@@ -169,6 +171,8 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
         keepalive=False,
         max_stream_decoded_bytes=37,
         max_stream_decoder_memory_bytes=41,
+        max_upload_buffer_bytes=43,
+        max_total_upload_buffer_bytes=47,
     )
     timeouts = Timeouts(connect=2.5)
     follow_redirects = True
@@ -226,6 +230,8 @@ def test_create_raw_client_passes_transport_limits_to_rust_client(
         "telemetry_enabled": False,
         "max_stream_decoded_bytes": limits.max_stream_decoded_bytes,
         "max_stream_decoder_memory_bytes": limits.max_stream_decoder_memory_bytes,
+        "max_upload_buffer_bytes": limits.max_upload_buffer_bytes,
+        "max_total_upload_buffer_bytes": limits.max_total_upload_buffer_bytes,
     }
 
 
@@ -323,6 +329,8 @@ def test_create_raw_client_uses_shared_runtime_by_default(
 
     assert isinstance(raw_client, RawClientProbe)
     _assert_raw_client_argument_names(captured_options)
+    assert captured_options["max_upload_buffer_bytes"] == DEFAULT_MAX_UPLOAD_BUFFER_BYTES
+    assert captured_options["max_total_upload_buffer_bytes"] == DEFAULT_MAX_TOTAL_UPLOAD_BUFFER_BYTES
     assert captured_options["runtime"] == "shared"
     assert captured_options["runtime_workers"] is None
 

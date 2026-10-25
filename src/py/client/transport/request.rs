@@ -109,6 +109,13 @@ impl CapturedConnectionUse {
 
     fn into_guard(mut self) -> Option<ConnectionUseGuard> {
         self.observe();
+        if !self.request_body_completion.is_complete() {
+            if let Some(connected) = self.capture.connection_metadata().as_ref() {
+                // Python closes the upload producer after receiving headers. Its
+                // EOF must not return an unfinished upload connection to the pool.
+                connected.poison();
+            }
+        }
         self.guard.take()
     }
 
@@ -1020,3 +1027,6 @@ impl RequestBodyState {
 
 #[cfg(test)]
 mod response_header_timeout_tests;
+
+#[cfg(test)]
+mod early_response_pool_tests;

@@ -144,6 +144,19 @@ Wait before using FogHTTP when:
 - you need HTTP/2 multiplexed stream limits
 - you need to share one async client across multiple event loops
 
+## Streaming Upload Memory
+
+Streaming content and multipart uploads reserve native byte capacity before
+copying. Defaults are 512 KiB per logical upload and 16 MiB across one client;
+both limits are positive finite integers. Provider chunks are fragmented into
+at most 64 KiB native buffers, or the smaller configured limit. Queued and
+in-flight application-owned allocations remain charged until their final owner
+is released, including old retry-attempt data.
+
+The limits exclude caller input, one Python snapshot for mutable chunks,
+buffered request bodies and internal Hyper/TLS/socket copies. They do not bound
+provider allocations or total process RSS. See [upload byte limits](./timeouts.md#upload-byte-limits).
+
 ## Buffered Content Decoding
 
 Buffered responses transparently decode `gzip`, `deflate`, and `br`.

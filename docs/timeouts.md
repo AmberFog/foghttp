@@ -409,6 +409,32 @@ HTTP/1.1 connections to the idle pool. A write timeout, cancellation, or
 body-provider failure aborts the assigned connection; FogHTTP never returns a
 connection with an incomplete request body to the pool.
 
+## Upload Byte Limits
+
+Streaming content and multipart uploads use two finite native byte budgets:
+
+- `Limits.max_upload_buffer_bytes` defaults to `512 * 1024` bytes per logical
+  upload, including retained data from its previous retry attempt.
+- `Limits.max_total_upload_buffer_bytes` defaults to `16 * 1024 * 1024` bytes
+  across uploads belonging to one client. Separate clients have separate budgets.
+
+Both options require a positive integer; `0`, `None` and booleans are rejected.
+A native fragment is at most 64 KiB, or the smaller configured limit. Large
+provider chunks are transferred in fragments without truncating their payload.
+Admission waits apply backpressure before copying the next native fragment.
+Existing request write-progress and total timeouts remain in force.
+
+Reservations include queued data, admitted senders and application-owned
+in-flight data until its last native owner releases it. Queue removal alone
+does not release the bytes. Close, cancellation and retry reset discard queued
+data and wake blocked senders; retained in-flight owners keep their reservation
+until they release it.
+
+These budgets exclude caller-owned input, the one Python snapshot of a mutable
+chunk, buffered `content=bytes`, and copies inside Hyper, TLS or socket buffers.
+They do not bound process RSS or arbitrary allocations made by a provider.
+The separate response limits below do not account for upload data.
+
 ## Buffered Body Limit
 
 Buffered responses are collected into memory before the `Response` object is

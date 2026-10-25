@@ -778,8 +778,11 @@ def test_sync_streaming_body_propagates_feeder_cleanup_base_exception(
         start_callback: object,
         _replayable: object,
         _ready_callback: object,
+        *,
+        raw_client: object | None = None,
     ) -> Mock:
         raw_body.start_callback = start_callback
+        raw_body.raw_client = raw_client
         return raw_body
 
     monkeypatch.setattr(
@@ -807,14 +810,18 @@ async def test_async_streaming_body_propagates_feeder_cleanup_base_exception(
     source = _SeparateAsyncIteratorSource([], source_close_error=source_error)
     raw_body = Mock()
     raw_body.send_nowait.return_value = True
+    raw_body.send_part_nowait.return_value = 1
 
     def raw_body_factory(
         _content_length: int | None,
         start_callback: object,
         _replayable: object,
         _ready_callback: object,
+        *,
+        raw_client: object | None = None,
     ) -> Mock:
         raw_body.start_callback = start_callback
+        raw_body.raw_client = raw_client
         return raw_body
 
     monkeypatch.setattr(
