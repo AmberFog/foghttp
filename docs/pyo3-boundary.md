@@ -74,6 +74,48 @@ to intermediate decoded layers, and malformed content retains its request-error
 mapping. Raw-deflate fallback and streaming decoding keep their separate
 compatibility policies. One synchronous codec call remains non-interruptible.
 
+## Upload Byte Ownership
+
+`RawClient` owns the aggregate upload budget. A logical `RawUploadBody` owns an
+account shared by every attempt, so a retry cannot evade the per-upload limit
+while data from an older attempt is still retained. `RawUploadBody` must be
+constructed with its receiving `raw_client` before sending; a request rejects
+a body belonging to another client or to a standalone raw budget. Standalone
+raw bodies remain useful for channel operations with finite private defaults.
+
+The channel reserves both byte and queue capacity before copying a bounded
+fragment. The reservation lives in the `Bytes` owner and survives cloning,
+slicing, queue removal and transport handoff until the final owner is dropped.
+Readiness callbacks run after channel and budget locks are released. Closing a
+channel also discards queued data after producer completion and wakes waiters.
+The raw owner's close remains effective after producer finish or failure.
+
+`RawUploadBody` invokes its start callback before the transport consumer starts.
+Inline `send`, `send_final` and `fail` calls may complete without waiting. If
+queue or byte admission would wait on this callback's call stack, the attempt
+closes with `FogHttpLifecycleError` before any request is sent. Catching that
+error inside the callback does not make startup succeed. A producer that needs
+backpressure must start a feeder and return from the callback; the feeder keeps
+normal blocking send behavior.
+
+Blocking raw sends iterate bounded fragments. Whole-chunk `send_nowait` and
+`send_final_nowait` accept only one bounded fragment atomically; oversized input
+returns `False` before copying. Async feeders use `send_part_nowait` with the
+original immutable bytes and an offset, advancing only by the accepted count.
+Only the final accepted fragment may finish the attempt. This avoids duplicate
+prefixes after backpressure and avoids Python slice copies. Empty-chunk and
+explicit producer-completion behavior stay separate.
+
+Before returning response headers to Python, transport excludes the captured
+connection from Hyper's pool if the request body is incomplete. This happens
+before Python closes the upload producer, so discarding its bounded queue cannot
+make the truncated upload eligible for reuse. Pool exclusion preserves reading
+the response body; the existing response guard still owns the final abort.
+
+Caller-owned input, the existing mutable Python snapshot, buffered request
+bodies and internal Hyper/TLS/socket copies are outside these native streaming
+budgets. There is no process RSS guarantee.
+
 ## Streaming Rules
 
 Streaming adds repeated Python/Rust handoff, so it needs stricter review than

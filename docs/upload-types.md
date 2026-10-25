@@ -112,6 +112,17 @@ classification; the ownership and replayability rules for a direct provider
 apply.
 
 Providers should yield `bytes`, `bytearray`, or `memoryview` chunks. Mutable
-chunks are copied before they cross the Rust transport boundary. Text, paths,
+chunks are snapshotted once before waiting for transport capacity. Native
+transfers use bounded fragments from that snapshot; changing the original
+mutable input cannot change the bytes being sent. Immutable input does not
+require a full Python copy for fragmentation.
+
+Streaming content and multipart share the client upload byte budgets: 512 KiB
+per logical upload and 16 MiB aggregate by default. Capacity is reserved before
+each native copy and stays charged while that allocation is in flight, even
+after it leaves the queue. See [upload byte limits](./timeouts.md#upload-byte-limits)
+for configuration and the exact accounting boundary.
+
+Text, paths,
 and arbitrary iterables are not upload chunks; callers should encode or open
 them explicitly before passing them through streaming `content=`.
