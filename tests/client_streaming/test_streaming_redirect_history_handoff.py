@@ -111,7 +111,7 @@ def test_sync_history_conversion_failure_reclaims_resources_with_live_traceback(
         assert probe.reserved_before[0] == sum(map(len, conversion_history_server.history_bodies))
         wait_for_sync_transport_stats(
             client,
-            stream_resources_released,
+            lambda stats: stream_resources_released(stats) and stats.active_connections == 0,
             message="failed conversion must release resources while the exception and traceback remain alive",
         )
         assert client.stats().active_connections == 0
@@ -148,7 +148,7 @@ async def test_async_history_conversion_failure_reclaims_resources_with_live_tra
         assert probe.reserved_before[0] == sum(map(len, conversion_history_server.history_bodies))
         await wait_for_async_transport_stats(
             client,
-            stream_resources_released,
+            lambda stats: stream_resources_released(stats) and stats.active_connections == 0,
             message="failed conversion must release resources while the exception and traceback remain alive",
         )
         assert client.stats().active_connections == 0
