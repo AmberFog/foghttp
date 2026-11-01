@@ -157,6 +157,20 @@ The limits exclude caller input, one Python snapshot for mutable chunks,
 buffered request bodies and internal Hyper/TLS/socket copies. They do not bound
 provider allocations or total process RSS. See [upload byte limits](./timeouts.md#upload-byte-limits).
 
+## Upload Cleanup Capacity
+
+Upload cleanup has process-wide admission and execution limits shared across
+clients. Defaults are 4096 reservation units and eight executing callbacks;
+source and possible distinct-iterator cleanup consume separate units. Admission
+can raise `LifecycleError` before provider ownership or factory creation.
+
+The limits do not forcibly cancel user callbacks. A request's bounded cleanup
+wait can finish while accepted cleanup remains pending or running. Client churn
+and event-loop changes do not release a still-running callback's reservation.
+Unfinished async cleanup on a closed loop remains stalled. See
+[cleanup admission](./upload-types.md#cleanup-admission-and-execution) for
+ownership, ordering and recovery details.
+
 ## Buffered Content Decoding
 
 Buffered responses transparently decode `gzip`, `deflate`, and `br`.

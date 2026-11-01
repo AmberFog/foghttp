@@ -6,20 +6,20 @@ import threading
 
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
+from .. import messages
+from .._client.process import current_process_id, forked_process_error
 from .._request_body import RequestBody
-from ..messages import SYNC_CLIENT_ASYNC_BODY_UNSUPPORTED
 from . import (
+    attempt as upload_attempt,
     cleanup as upload_cleanup,
     models as upload_models,
+    predicates as upload_predicates,
 )
 from .feeders import feed_async_upload_body, feed_sync_upload_body
-from .predicates import is_async_stream
 from .thread_bridge import (
     AsyncFeederRunner,
     UploadFeederState,
     consume_future_exception,
-    run_daemon_callbacks_bounded,
-    start_daemon_worker,
 )
 
 
@@ -43,18 +43,27 @@ class _SyncStreamingUploadBody:
         replayable: bool,
         raw_client: _foghttp.RawClient | None = None,
     ) -> None:
+        self._created_process_id = current_process_id()
+        reservation = None if replayable else upload_cleanup.reserve_cleanup()
         self.buffered_body: bytes | None = None
-        self.raw_body: _foghttp.RawUploadBody | None = _foghttp.RawUploadBody(
-            content_length,
-            self.start,
-            replayable,
-            None,
-            raw_client=raw_client,
-        )
+        try:
+            self.raw_body: _foghttp.RawUploadBody | None = _foghttp.RawUploadBody(
+                content_length,
+                self.start,
+                replayable,
+                None,
+                raw_client=raw_client,
+            )
+        except BaseException:
+            if reservation is not None:
+                reservation.release()
+            raise
         self._source = source
         self._context = copy_context()
         self._content_length = content_length
-        self._source_cleanups = [] if replayable else [upload_cleanup.UploadSourceCleanup(source)]
+        self._source_cleanups = (
+            [] if replayable else [upload_cleanup.UploadSourceCleanup(source, reservation=reservation)]
+        )
         self._feeder_errors: list[UploadFeederState] = []
         self._threads: list[threading.Thread] = []
         self._lifecycle_lock = threading.Lock()
@@ -62,6 +71,12 @@ class _SyncStreamingUploadBody:
         self._replayable = replayable
 
     def start(self, raw_body: _foghttp.RawUploadBody) -> None:
+        if current_process_id() != self._created_process_id:
+            raise forked_process_error(
+                resource="upload body",
+                created_process_id=self._created_process_id,
+                current_process_id=current_process_id(),
+            )
         if self._closed.is_set():
             raw_body.close()
             return
@@ -70,19 +85,21 @@ class _SyncStreamingUploadBody:
         if self._closed.is_set():
             raw_body.close()
             return
-        if attempt_context.run(is_async_stream, source):
+        if attempt_context.run(upload_predicates.is_async_stream, source):
             attempt_context.run(source_cleanup.aclose_from_sync)
-            raise TypeError(SYNC_CLIENT_ASYNC_BODY_UNSUPPORTED)
+            raise TypeError(messages.SYNC_CLIENT_ASYNC_BODY_UNSUPPORTED)
         feeder_state = UploadFeederState(self._content_length)
         thread = threading.Thread(
             target=attempt_context.run,
             args=(self._feed_body, raw_body, source, source_cleanup, feeder_state),
             daemon=True,
         )
-        if not self._start_feeder(thread, feeder_state):
+        if not self._start_feeder(thread, feeder_state, source_cleanup):
             raw_body.close()
 
     def close(self) -> None:
+        if current_process_id() != self._created_process_id:
+            return
         with self._lifecycle_lock:
             self._closed.set()
             if self.raw_body is not None:
@@ -93,10 +110,7 @@ class _SyncStreamingUploadBody:
                 thread.join(UPLOAD_FEEDER_JOIN_TIMEOUT)
         for feeder_state in self._feeder_errors:
             feeder_state.cancel()
-        source_error = run_daemon_callbacks_bounded(
-            (source_cleanup.interrupt for source_cleanup in self._source_cleanups),
-            timeout=upload_cleanup.ASYNC_SOURCE_CLOSE_TIMEOUT,
-        )
+        source_error = upload_attempt.wait_sync_cleanups(self._source_cleanups)
         feeder_error = next(
             (error for state in self._feeder_errors if (error := state.get()) is not None),
             None,
@@ -110,15 +124,18 @@ class _SyncStreamingUploadBody:
         self,
         thread: threading.Thread,
         feeder_state: UploadFeederState,
+        source_cleanup: upload_cleanup.UploadSourceCleanup,
     ) -> bool:
         with self._lifecycle_lock:
             if self._closed.is_set():
                 return False
+            source_cleanup.iteration.reserve()
             self._feeder_errors.append(feeder_state)
             self._threads.append(thread)
             try:
                 thread.start()
             except BaseException:
+                source_cleanup.iteration.release()
                 self._threads.remove(thread)
                 self._feeder_errors.remove(feeder_state)
                 raise
@@ -131,6 +148,9 @@ class _SyncStreamingUploadBody:
         source_cleanup: upload_cleanup.UploadSourceCleanup,
         feeder_state: UploadFeederState,
     ) -> None:
+        with self._lifecycle_lock:
+            if threading.current_thread() not in self._threads:
+                return
         try:
             feed_sync_upload_body(
                 raw_body,
@@ -140,21 +160,17 @@ class _SyncStreamingUploadBody:
             )
         except BaseException as error:  # noqa: BLE001
             feeder_state.publish(error)
+        finally:
+            source_cleanup.iteration.release()
 
     def _fresh_source(self) -> tuple[object, upload_cleanup.UploadSourceCleanup]:
         if self._replayable:
-            source, source_cleanup, source_error = _prepare_factory_source(self._source)
+            source, source_cleanup, source_error = upload_attempt.prepare_factory_source(self._source)
             registered = self._register_source_cleanup(source_cleanup)
             if not registered:
-                start_daemon_worker(
-                    source_cleanup.interrupt,
-                    capture_start_error=True,
-                ).add_done_callback(consume_future_exception)
+                source_cleanup.start_sync_cleanup()
             if source_error is not None:
-                cleanup_error = run_daemon_callbacks_bounded(
-                    (source_cleanup.interrupt,),
-                    timeout=upload_cleanup.ASYNC_SOURCE_CLOSE_TIMEOUT,
-                )
+                cleanup_error = upload_attempt.wait_sync_cleanups((source_cleanup,))
                 if cleanup_error is not None:
                     raise source_error from cleanup_error
                 raise source_error
@@ -181,27 +197,42 @@ class _AsyncStreamingUploadBody:
         replayable: bool,
         raw_client: _foghttp.RawClient | None = None,
     ) -> None:
+        self._created_process_id = current_process_id()
+        self._loop = asyncio.get_running_loop()
+        reservation = None if replayable else upload_cleanup.reserve_cleanup()
         self.buffered_body: bytes | None = None
-        self.raw_body: _foghttp.RawUploadBody | None = _foghttp.RawUploadBody(
-            content_length,
-            self.start,
-            replayable,
-            self._notify_ready,
-            raw_client=raw_client,
-        )
+        try:
+            self.raw_body: _foghttp.RawUploadBody | None = _foghttp.RawUploadBody(
+                content_length,
+                self.start,
+                replayable,
+                self._notify_ready,
+                raw_client=raw_client,
+            )
+        except BaseException:
+            if reservation is not None:
+                reservation.release()
+            raise
         self._source = source
         self._context = copy_context()
         self._content_length = content_length
-        self._loop = asyncio.get_running_loop()
         self._ready = asyncio.Event()
         self._feeders: list[AsyncFeeder] = []
         self._factory_error: BaseException | None = None
         self._lifecycle_lock = threading.Lock()
         self._closed = threading.Event()
-        self._source_cleanups = [] if replayable else [upload_cleanup.UploadSourceCleanup(source)]
+        self._source_cleanups = (
+            [] if replayable else [upload_cleanup.UploadSourceCleanup(source, reservation=reservation)]
+        )
         self._replayable = replayable
 
     def start(self, raw_body: _foghttp.RawUploadBody) -> None:
+        if current_process_id() != self._created_process_id:
+            raise forked_process_error(
+                resource="upload body",
+                created_process_id=self._created_process_id,
+                current_process_id=current_process_id(),
+            )
         if self._closed.is_set():
             raw_body.close()
             return
@@ -223,6 +254,7 @@ class _AsyncStreamingUploadBody:
             if self._closed.is_set():
                 raw_body.close()
                 return
+            source_cleanup.iteration.reserve()
             self._feeders.append((runner, feeder_state, source_cleanup))
         runner.completion.add_done_callback(
             partial(
@@ -237,11 +269,14 @@ class _AsyncStreamingUploadBody:
         try:
             runner.start(context=attempt_context)
         except BaseException:
+            source_cleanup.iteration.release()
             with self._lifecycle_lock, suppress(ValueError):
                 self._feeders.remove((runner, feeder_state, source_cleanup))
             raise
 
     async def aclose(self) -> None:
+        if current_process_id() != self._created_process_id:
+            return
         with self._lifecycle_lock:
             self._closed.set()
         if self.raw_body is not None:
@@ -267,7 +302,7 @@ class _AsyncStreamingUploadBody:
 
     def _fresh_source(self) -> tuple[object, upload_cleanup.UploadSourceCleanup]:
         if self._replayable:
-            source, source_cleanup, source_error = _prepare_factory_source(self._source)
+            source, source_cleanup, source_error = upload_attempt.prepare_factory_source(self._source)
             with self._lifecycle_lock:
                 if self._closed.is_set():
                     registered = False
@@ -275,11 +310,7 @@ class _AsyncStreamingUploadBody:
                     self._source_cleanups.append(source_cleanup)
                     registered = True
             if not registered:
-                completion = start_daemon_worker(
-                    source_cleanup.interrupt,
-                    capture_start_error=True,
-                )
-                completion.add_done_callback(consume_future_exception)
+                source_cleanup.start_sync_cleanup()
             if source_error is not None:
                 self._factory_error = source_error
                 raise source_error
@@ -304,7 +335,7 @@ class _AsyncStreamingUploadBody:
                 ),
             ),
         )
-        done: set[asyncio.Task[None]] = set()
+        done: set[asyncio.Future[None]] = set()
         if tasks:
             done.update(
                 (
@@ -378,8 +409,8 @@ def prepare_sync_upload_body(
 ) -> upload_models.SyncUploadBody:
     if body.stream is None:
         return upload_models.BufferedUploadBody(body.content)
-    if is_async_stream(body.stream):
-        raise TypeError(SYNC_CLIENT_ASYNC_BODY_UNSUPPORTED)
+    if upload_predicates.is_async_stream(body.stream):
+        raise TypeError(messages.SYNC_CLIENT_ASYNC_BODY_UNSUPPORTED)
     return _SyncStreamingUploadBody(
         body.stream,
         body.content_length,
@@ -403,15 +434,6 @@ def prepare_async_upload_body(
     )
 
 
-def _prepare_factory_source(
-    source_factory: object,
-) -> tuple[object, upload_cleanup.UploadSourceCleanup, BaseException | None]:
-    source = source_factory()  # type: ignore[operator]
-    if isinstance(source, upload_cleanup.UploadSourceFactoryFailure):
-        return source.source, upload_cleanup.UploadSourceCleanup(source.source), source.error
-    return source, upload_cleanup.UploadSourceCleanup(source), None
-
-
 def _pending_cleanup_ids(feeders: list[AsyncFeeder]) -> set[int]:
     pending_cleanup_ids: set[int] = set()
     for runner, state, source_cleanup in feeders:
@@ -428,7 +450,9 @@ def _finish_feeder_attempt(
     _completion: object,
 ) -> None:
     if not runner.task_started:
+        source_cleanup.iteration.release()
         with suppress(BaseException):
             raw_body.close()
     if not feeder_state.worker_pending():
+        source_cleanup.iteration.release()
         source_cleanup.start_async_cleanup()

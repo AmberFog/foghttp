@@ -75,6 +75,7 @@ async def test_async_file_content_rejects_sync_source() -> None:
         await anext(aiter_file_content(file))
 
 
+@pytest.mark.usefixtures("cold_cleanup_owner")
 async def test_async_sync_file_content_uses_dedicated_iteration_and_cleanup_workers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
