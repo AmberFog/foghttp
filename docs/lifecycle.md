@@ -325,6 +325,18 @@ An admitted sync transport entry is a `send()` or `stream()` context enter that
 passed the client lifecycle gate before shutdown started. Calls racing after
 shutdown starts are rejected as new work.
 
+Calling `close()` from an inline callback raises `LifecycleError` if shutdown
+would wait for that callback's own admitted request or native telemetry delivery.
+This includes callbacks during stream acquisition and native events delivered
+while reading a stream after acquisition. Nested requests do not remove the
+outer request's ownership of that work.
+
+The rejected call does not start shutdown. If the callback catches the error,
+the client remains usable unless another thread has already started closing it.
+An external close keeps its state and still waits for admitted sends. Repeating
+`close()` after shutdown is complete remains safe, including from the
+`connection_closed` telemetry callback.
+
 ```python
 import foghttp
 

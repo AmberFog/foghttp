@@ -1,20 +1,19 @@
-use super::codec::{CodecStatus, CodecStep};
-use super::OUTPUT_SIZE;
+use super::{CodecStatus, CodecStep};
 use flate2::write::MultiGzDecoder;
 use std::io::{self, Write};
 
-pub(super) struct Gzip {
+pub(in crate::core::response) struct Gzip {
     decoder: MultiGzDecoder<Output>,
     flush_pending: bool,
 }
 
 impl Gzip {
-    pub(super) fn new() -> Self {
+    pub(super) fn new(output_capacity: usize) -> Self {
         Self {
             decoder: MultiGzDecoder::new(Output {
-                bytes: vec![0; OUTPUT_SIZE].into_boxed_slice(),
+                bytes: vec![0; output_capacity].into_boxed_slice(),
                 position: 0,
-                limit: OUTPUT_SIZE,
+                limit: output_capacity,
             }),
             flush_pending: false,
         }

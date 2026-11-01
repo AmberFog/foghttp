@@ -1,9 +1,12 @@
-__all__ = ("deferred_hook_error", "handle_hook_error")
+__all__ = ("DeferredHookError", "deferred_hook_error", "handle_hook_error", "report_deferred_hook_error")
 
-from typing import NoReturn
+from typing import NoReturn, TypeAlias
 import warnings
 
 from ...telemetry import TelemetryHookError, TelemetryHookErrorPolicy
+
+
+DeferredHookError: TypeAlias = TelemetryHookError | RuntimeWarning
 
 
 _HOOK_ERROR_MESSAGE = "telemetry event sink failed"
@@ -28,7 +31,8 @@ def deferred_hook_error(
     *,
     hook_error_policy: TelemetryHookErrorPolicy,
     suppress_hook_errors: bool,
-) -> TelemetryHookError | None:
+    defer_warning_errors: bool = False,
+) -> DeferredHookError | None:
     try:
         handle_hook_error(
             error,
@@ -37,7 +41,26 @@ def deferred_hook_error(
         )
     except TelemetryHookError as hook_error:
         return hook_error
+    except RuntimeWarning as warning_error:
+        if defer_warning_errors:
+            return warning_error
+        raise
     return None
+
+
+def report_deferred_hook_error(
+    error: DeferredHookError,
+    *,
+    suppress_hook_errors: bool,
+) -> None:
+    if suppress_hook_errors:
+        return
+    if isinstance(error, RuntimeWarning):
+        if error.__cause__ is None:
+            error.__cause__ = error.__context__
+        warnings.warn(error, stacklevel=6)
+    else:
+        raise error
 
 
 def _raise_hook_error(error: Exception) -> NoReturn:

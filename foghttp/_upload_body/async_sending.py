@@ -11,6 +11,8 @@ class AsyncUploadSender(Protocol):
 
     def send_final_nowait(self, chunk: bytes) -> bool: ...
 
+    def send_part_nowait(self, chunk: bytes, offset: int, *, final: bool = False) -> int: ...
+
     def fail_nowait(self, message: str) -> bool: ...
 
     def is_closed(self) -> bool: ...
@@ -25,14 +27,39 @@ async def send_async_upload_chunk(
     *,
     final: bool = False,
 ) -> bool:
+    offset = 0
+    chunk_size = bytes.__len__(chunk)
+    if not chunk_size:
+        return await _send_empty_upload_chunk(raw_body, ready, chunk, final=final)
+    while True:
+        ready.clear()
+        accepted = raw_body.send_part_nowait(chunk, offset, final=final)
+        if accepted:
+            offset += accepted
+            if offset == chunk_size:
+                return True
+            await asyncio.sleep(0)
+            continue
+        if raw_body.is_closed():
+            return False
+        await ready.wait()
+
+
+async def _send_empty_upload_chunk(
+    raw_body: AsyncUploadSender,
+    ready: asyncio.Event,
+    chunk: bytes,
+    *,
+    final: bool,
+) -> bool:
     while True:
         ready.clear()
         send = raw_body.send_final_nowait if final else raw_body.send_nowait
         if send(chunk):
-            if not chunk and not final:
-                await asyncio.sleep(0)
-                return not raw_body.is_closed()
-            return True
+            if final:
+                return True
+            await asyncio.sleep(0)
+            return not raw_body.is_closed()
         if raw_body.is_closed():
             return False
         await ready.wait()

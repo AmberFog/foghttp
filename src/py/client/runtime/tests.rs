@@ -132,3 +132,39 @@ fn shared_runtime_workers_fallback_is_conservative() {
         SHARED_RUNTIME_WORKER_FALLBACK,
     );
 }
+
+#[test]
+fn clients_on_shared_runtime_share_decoder_admission_and_close_does_not_reset_it() {
+    use std::sync::Arc;
+    let resources = Arc::new(super::RuntimeResources::new(
+        super::build_multi_thread_runtime(2).unwrap(),
+    ));
+    let first = ClientRuntime::Shared(Arc::clone(&resources));
+    let second = ClientRuntime::Shared(resources);
+    let first_gate = first.buffered_decoders();
+    let second_gate = second.buffered_decoders();
+    assert!(Arc::ptr_eq(&first_gate, &second_gate));
+    assert_eq!(first_gate.available_permits(), 2);
+    let held = first_gate.try_acquire().unwrap();
+    first.shutdown_background();
+    assert_eq!(second_gate.available_permits(), 1);
+    drop(held);
+    assert_eq!(second_gate.available_permits(), 2);
+}
+
+#[test]
+fn dedicated_runtimes_have_independent_worker_sized_decoder_admission() {
+    use std::sync::Arc;
+    let first = ClientRuntime::Dedicated(super::RuntimeResources::new(
+        super::build_multi_thread_runtime(1).unwrap(),
+    ));
+    let second = ClientRuntime::Dedicated(super::RuntimeResources::new(
+        super::build_multi_thread_runtime(2).unwrap(),
+    ));
+    assert!(!Arc::ptr_eq(
+        &first.buffered_decoders(),
+        &second.buffered_decoders()
+    ));
+    assert_eq!(first.buffered_decoders().available_permits(), 1);
+    assert_eq!(second.buffered_decoders().available_permits(), 2);
+}

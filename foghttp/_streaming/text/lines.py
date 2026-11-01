@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 import re
 
 from ...errors import ResponseError
-from .iterators import close_async_iterator, close_iterator
+from .iterators import CloseStream, close_async_iterator, close_iterator, closing_stream
 
 
 DEFAULT_MAX_STREAM_LINE_CHARS = 1024 * 1024
@@ -22,12 +22,14 @@ def iter_lines(
     text_chunks: Iterator[str],
     *,
     max_line_chars: int | None = DEFAULT_MAX_STREAM_LINE_CHARS,
+    close: CloseStream | None = None,
 ) -> Iterator[str]:
     splitter = _LineSplitter(max_line_chars=max_line_chars)
     try:
-        for chunk in text_chunks:
-            yield from splitter.feed(chunk)
-        yield from splitter.flush()
+        with closing_stream(close):
+            for chunk in text_chunks:
+                yield from splitter.feed(chunk)
+            yield from splitter.flush()
     finally:
         close_iterator(text_chunks)
 
@@ -36,14 +38,16 @@ async def aiter_lines(
     text_chunks: AsyncIterator[str],
     *,
     max_line_chars: int | None = DEFAULT_MAX_STREAM_LINE_CHARS,
+    close: CloseStream | None = None,
 ) -> AsyncIterator[str]:
     splitter = _LineSplitter(max_line_chars=max_line_chars)
     try:
-        async for chunk in text_chunks:
-            for line in splitter.feed(chunk):
+        with closing_stream(close):
+            async for chunk in text_chunks:
+                for line in splitter.feed(chunk):
+                    yield line
+            for line in splitter.flush():
                 yield line
-        for line in splitter.flush():
-            yield line
     finally:
         await close_async_iterator(text_chunks)
 

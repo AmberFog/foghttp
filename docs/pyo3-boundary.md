@@ -45,6 +45,77 @@ Core error-path tests must not initialize or attach to Python. Binding tests
 verify the native and public exception mapping separately. This separation
 does not make the extension crate's build/link toolchain Python-independent.
 
+## Buffered Content Decoding
+
+The core buffered decoder owns the collected body, codec state, intermediate
+output and byte reservation. Each step offers bounded input and output to one
+codec operation. Transport drives those steps without the GIL or a state lock,
+checks the request's original total deadline, and yields to Tokio between
+steps, including after the final codec step before returning a response.
+Core decoding stays independent of Tokio and Python timeout exceptions.
+
+Transport acquires a runtime-owned buffered-decoder slot before creating codec
+state and holds it until that state is dropped. Slots are shared by clients on
+the same runtime and capped at its worker count, so yielding cannot multiply
+retained codec workspaces by the number of in-flight requests. Admission waits
+use the original total deadline and remain cancellable; identity/opaque bodies
+bypass this gate. The body-byte budget does not account for codec workspaces.
+
+The existing async task owns cancellation: dropping it stops further codec
+steps and releases decoder state and reservations through RAII. No detached
+whole-body decode task survives cancellation. Async close uses this same abort
+path; ordinary sync close continues to wait for admitted sends.
+
+Connection-use completion occurs after the encoded HTTP body is collected and
+before content decoding. Decode failure, total timeout or cancellation after
+that point aborts content finalization without aborting an already released or
+reassigned connection. Per-response size and aggregate byte limits still apply
+to intermediate decoded layers, and malformed content retains its request-error
+mapping. Raw-deflate fallback and streaming decoding keep their separate
+compatibility policies. One synchronous codec call remains non-interruptible.
+
+## Upload Byte Ownership
+
+`RawClient` owns the aggregate upload budget. A logical `RawUploadBody` owns an
+account shared by every attempt, so a retry cannot evade the per-upload limit
+while data from an older attempt is still retained. `RawUploadBody` must be
+constructed with its receiving `raw_client` before sending; a request rejects
+a body belonging to another client or to a standalone raw budget. Standalone
+raw bodies remain useful for channel operations with finite private defaults.
+
+The channel reserves both byte and queue capacity before copying a bounded
+fragment. The reservation lives in the `Bytes` owner and survives cloning,
+slicing, queue removal and transport handoff until the final owner is dropped.
+Readiness callbacks run after channel and budget locks are released. Closing a
+channel also discards queued data after producer completion and wakes waiters.
+The raw owner's close remains effective after producer finish or failure.
+
+`RawUploadBody` invokes its start callback before the transport consumer starts.
+Inline `send`, `send_final` and `fail` calls may complete without waiting. If
+queue or byte admission would wait on this callback's call stack, the attempt
+closes with `FogHttpLifecycleError` before any request is sent. Catching that
+error inside the callback does not make startup succeed. A producer that needs
+backpressure must start a feeder and return from the callback; the feeder keeps
+normal blocking send behavior.
+
+Blocking raw sends iterate bounded fragments. Whole-chunk `send_nowait` and
+`send_final_nowait` accept only one bounded fragment atomically; oversized input
+returns `False` before copying. Async feeders use `send_part_nowait` with the
+original immutable bytes and an offset, advancing only by the accepted count.
+Only the final accepted fragment may finish the attempt. This avoids duplicate
+prefixes after backpressure and avoids Python slice copies. Empty-chunk and
+explicit producer-completion behavior stay separate.
+
+Before returning response headers to Python, transport excludes the captured
+connection from Hyper's pool if the request body is incomplete. This happens
+before Python closes the upload producer, so discarding its bounded queue cannot
+make the truncated upload eligible for reuse. Pool exclusion preserves reading
+the response body; the existing response guard still owns the final abort.
+
+Caller-owned input, the existing mutable Python snapshot, buffered request
+bodies and internal Hyper/TLS/socket copies are outside these native streaming
+budgets. There is no process RSS guarantee.
+
 ## Streaming Rules
 
 Streaming adds repeated Python/Rust handoff, so it needs stricter review than
@@ -61,6 +132,25 @@ buffered requests:
   poisoned connection to reusable pool state.
 - If a Rust stream state lock owns an active Python future handle, the lock must
   be released before scheduling cancellation or completion on the Python loop.
+
+## Streaming Redirect History Ownership
+
+High-level sync and async stream conversion takes redirect history once from
+`RawStreamResponse`. `take_history()` moves the buffered responses and their
+reservations together; the native response remains the driver for body reads.
+The public history keeps its bytes and metadata after EOF and close.
+
+Each buffered response releases its reservations after its public bytes have
+been handed off. Conversion cleanup also releases every transferred sibling
+and nested history, including elements not reached before an error. A failed
+conversion closes the final native stream before propagating the original
+exception, even when its traceback remains alive.
+
+The existing raw history getter remains a non-consuming copy operation.
+Reservation release remains separate from removing payloads. Retry trace
+captures redirect hops before handoff; ongoing body diagnostics and telemetry
+use the hop already stored by `StreamState`. Body, decoder, permit and
+cancellation ownership stay with that state.
 
 ## Internal Request/Response Policy Seam
 
@@ -103,6 +193,13 @@ passes immutable Python snapshots without transport resources. Built-in
 validation runs before a Python hook can veto a redirect mutation. See
 [Transport policy hooks](./policy-hooks.md) for the public execution and
 threading contract.
+
+Synchronous client shutdown rejects callback reentry with `LifecycleError` when
+it would wait for the caller's own admitted request or native telemetry drain.
+This check also covers native events delivered while consuming a stream after
+request acquisition has finished. Rejection precedes client shutdown state
+changes; ordinary close from another thread still waits for admitted work.
+The completed-shutdown `connection_closed` callback may call `close()` again.
 
 ## Review Checklist
 

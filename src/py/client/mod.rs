@@ -12,7 +12,9 @@ mod timeout_diagnostics;
 mod transport;
 mod upload_body;
 
-use crate::core::client::{build_client_with_connection_gate, ClientOptions, ConnectionGate};
+use crate::core::client::{
+    build_client_with_connection_gate, ClientOptions, ConnectionGate, UploadBodyBudget,
+};
 use crate::core::headers::HeaderPairs;
 use crate::core::metrics::Metrics;
 use crate::core::policy::{CookieJar, RetryPolicy, SsrfPolicy};
@@ -30,8 +32,9 @@ use crate::py::client::auth::PythonAuth;
 use crate::py::client::future::PythonFutureSetters;
 use crate::py::client::options::{
     extract_stream_decode_content, extract_stream_decoded_byte_limit,
-    extract_stream_decoder_memory_limit, validate_numeric_client_options,
-    validate_request_timeouts, NumericClientOptions,
+    extract_stream_decoder_memory_limit, extract_total_upload_buffer_limit,
+    extract_upload_buffer_limit, validate_numeric_client_options, validate_request_timeouts,
+    NumericClientOptions,
 };
 use crate::py::client::policy_hooks::PythonPolicyHooks;
 use crate::py::client::process::{client_used_after_fork, current_process_id, ProcessId};
@@ -62,6 +65,9 @@ pub struct RawClient {
     future_setters: PythonFutureSetters,
     max_response_body_size: Option<usize>,
     buffered_body_budget: BufferedBodyBudget,
+    buffered_decoders: Arc<tokio::sync::Semaphore>,
+    upload_body_budget: Arc<UploadBodyBudget>,
+    max_upload_buffer_bytes: usize,
     max_stream_decoded_bytes: Option<usize>,
     max_stream_decoder_memory_bytes: usize,
     follow_redirects: bool,
@@ -117,7 +123,9 @@ impl RawClient {
         ssrf_allowed_domains,
         telemetry_enabled,
         max_stream_decoded_bytes=None,
-        max_stream_decoder_memory_bytes=134_217_728
+        max_stream_decoder_memory_bytes=134_217_728,
+        max_upload_buffer_bytes=524_288,
+        max_total_upload_buffer_bytes=16_777_216
     ))]
     #[allow(
         clippy::fn_params_excessive_bools,
@@ -168,6 +176,9 @@ impl RawClient {
         >,
         #[pyo3(from_py_with = extract_stream_decoder_memory_limit)]
         max_stream_decoder_memory_bytes: usize,
+        #[pyo3(from_py_with = extract_upload_buffer_limit)] max_upload_buffer_bytes: usize,
+        #[pyo3(from_py_with = extract_total_upload_buffer_limit)]
+        max_total_upload_buffer_bytes: usize,
     ) -> PyResult<Self> {
         validate_numeric_client_options(NumericClientOptions {
             max_active_requests,
@@ -263,6 +274,7 @@ impl RawClient {
             Arc::clone(&metrics),
         );
         let runtime = ClientRuntime::build(py, max_active_requests, runtime_mode, runtime_workers)?;
+        let buffered_decoders = runtime.buffered_decoders();
         let future_setters = PythonFutureSetters::new(py)?;
         let cookie_jar = cookies_enabled.then(CookieJar::new);
 
@@ -276,6 +288,9 @@ impl RawClient {
             future_setters,
             max_response_body_size,
             buffered_body_budget,
+            buffered_decoders,
+            upload_body_budget: Arc::new(UploadBodyBudget::new(max_total_upload_buffer_bytes)),
+            max_upload_buffer_bytes,
             max_stream_decoded_bytes,
             max_stream_decoder_memory_bytes,
             follow_redirects,
@@ -333,6 +348,7 @@ impl RawClient {
     ) -> PyResult<RawResponse> {
         self.ensure_current_process()?;
         validate_request_timeouts(pool_timeout, read_timeout, write_timeout, total_timeout)?;
+        self.validate_upload_body(py, body_stream.as_ref())?;
 
         let clients = self.clients_unchecked()?.clone();
         let runtime = self.runtime_unchecked()?;
@@ -340,6 +356,7 @@ impl RawClient {
         let metrics = Arc::clone(&self.metrics);
         let max_response_body_size = self.max_response_body_size;
         let buffered_body_budget = self.buffered_body_budget.clone();
+        let buffered_decoders = Arc::clone(&self.buffered_decoders);
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         let cookie_jar = self.cookie_jar.clone();
@@ -380,6 +397,7 @@ impl RawClient {
                         write_timeout,
                         max_response_body_size,
                         buffered_body_budget,
+                        buffered_decoders,
                         follow_redirects,
                         max_redirects,
                         retry_policy,
@@ -440,11 +458,13 @@ impl RawClient {
     ) -> PyResult<Py<PyAny>> {
         self.ensure_current_process()?;
         validate_request_timeouts(pool_timeout, read_timeout, write_timeout, total_timeout)?;
+        self.validate_upload_body(py, body_stream.as_ref())?;
 
         let clients = self.clients_unchecked()?.clone();
         let runtime = self.runtime_unchecked()?;
         let max_response_body_size = self.max_response_body_size;
         let buffered_body_budget = self.buffered_body_budget.clone();
+        let buffered_decoders = Arc::clone(&self.buffered_decoders);
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         let cookie_jar = self.cookie_jar.clone();
@@ -487,6 +507,7 @@ impl RawClient {
                     write_timeout,
                     max_response_body_size,
                     buffered_body_budget,
+                    buffered_decoders,
                     follow_redirects,
                     max_redirects,
                     retry_policy,
@@ -547,6 +568,7 @@ impl RawClient {
     ) -> PyResult<RawStreamResponse> {
         self.ensure_current_process()?;
         validate_request_timeouts(pool_timeout, read_timeout, write_timeout, total_timeout)?;
+        self.validate_upload_body(py, body_stream.as_ref())?;
 
         let clients = self.clients_unchecked()?.clone();
         let runtime = self.runtime_unchecked()?;
@@ -561,6 +583,7 @@ impl RawClient {
         let runtime_handle = runtime.handle().clone();
         let max_response_body_size = self.max_response_body_size;
         let buffered_body_budget = self.buffered_body_budget.clone();
+        let buffered_decoders = Arc::clone(&self.buffered_decoders);
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         let cookie_jar = self.cookie_jar.clone();
@@ -604,6 +627,7 @@ impl RawClient {
                         write_timeout,
                         max_response_body_size,
                         buffered_body_budget,
+                        buffered_decoders,
                         follow_redirects,
                         max_redirects,
                         retry_policy,
@@ -673,6 +697,7 @@ impl RawClient {
     ) -> PyResult<Py<PyAny>> {
         self.ensure_current_process()?;
         validate_request_timeouts(pool_timeout, read_timeout, write_timeout, total_timeout)?;
+        self.validate_upload_body(py, body_stream.as_ref())?;
 
         let clients = self.clients_unchecked()?.clone();
         let runtime = self.runtime_unchecked()?;
@@ -683,6 +708,7 @@ impl RawClient {
         };
         let max_response_body_size = self.max_response_body_size;
         let buffered_body_budget = self.buffered_body_budget.clone();
+        let buffered_decoders = Arc::clone(&self.buffered_decoders);
         let follow_redirects = self.follow_redirects;
         let max_redirects = self.max_redirects;
         let cookie_jar = self.cookie_jar.clone();
@@ -724,6 +750,7 @@ impl RawClient {
                     write_timeout,
                     max_response_body_size,
                     buffered_body_budget,
+                    buffered_decoders,
                     follow_redirects,
                     max_redirects,
                     retry_policy,
@@ -812,6 +839,19 @@ impl RawClient {
             .ok_or_else(|| FogHttpError::new_err("client runtime is closed"))
     }
 
+    fn validate_upload_body(
+        &self,
+        py: Python<'_>,
+        body_stream: Option<&Py<RawUploadBody>>,
+    ) -> PyResult<()> {
+        if let Some(body_stream) = body_stream {
+            body_stream
+                .borrow(py)
+                .ensure_budget(&self.upload_body_budget)?;
+        }
+        Ok(())
+    }
+
     fn ensure_current_process(&self) -> PyResult<()> {
         let current_process_id = current_process_id();
         if self.process_id == current_process_id {
@@ -824,6 +864,7 @@ impl RawClient {
         self.cookie_jar.take();
         let current_process = self.process_id == current_process_id();
         if current_process {
+            self.upload_body_budget.close();
             self.active_async_requests.abort_all();
             self.active_streams.abort_all();
             if let Some(telemetry) = &self.telemetry {

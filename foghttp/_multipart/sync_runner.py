@@ -13,7 +13,17 @@ _ITER_DONE = object()
 
 
 class SyncIteratorRunner:
-    def __init__(self, iterator: Iterator[bytes]) -> None:
+    def __init__(
+        self,
+        iterator: Iterator[bytes],
+        *,
+        cleanup: upload_cleanup.UploadSourceCleanup | None = None,
+    ) -> None:
+        self._cleanup = (
+            upload_cleanup.UploadSourceCleanup(iterator, reservation=upload_cleanup.reserve_cleanup(1))
+            if cleanup is None
+            else cleanup
+        )
         self._closed = False
         self._completion: ConcurrentFuture[None] = ConcurrentFuture()
         self._completion.set_running_or_notify_cancel()
@@ -23,7 +33,12 @@ class SyncIteratorRunner:
         self._requests: SimpleQueue[ConcurrentFuture[bytes | object] | None] = SimpleQueue()
         self._stop_requested = False
         self._worker_pending = 0
-        threading.Thread(target=self._run, daemon=True).start()
+        try:
+            threading.Thread(target=self._run, daemon=True).start()
+        except BaseException:
+            self._requests.put(None)
+            self._cleanup.start_sync_cleanup()
+            raise
 
     async def next(self) -> bytes | object:
         request: ConcurrentFuture[bytes | object] = ConcurrentFuture()
@@ -57,7 +72,7 @@ class SyncIteratorRunner:
     def _run(self) -> None:
         try:
             self._consume_requests()
-            self._context.run(upload_cleanup.close_sync_source, self._iterator)
+            self._context.run(self._cleanup.close)
         except BaseException as error:  # noqa: BLE001
             self._completion.set_exception(error)
         else:

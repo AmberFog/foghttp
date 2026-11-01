@@ -55,6 +55,21 @@ async def early_response_http_server() -> AsyncIterator[str]:
 
 
 @pytest.fixture
+async def gated_early_response_http_server() -> AsyncIterator[tuple[str, asyncio.Event]]:
+    release = asyncio.Event()
+    release_eof = asyncio.Event()
+    handlers: set[asyncio.Task[None]] = set()
+    server = await _start_async_early_response_server(release, handlers, release_eof=release_eof)
+    try:
+        host, port = server.sockets[0].getsockname()
+        yield f"http://{host}:{port}", release_eof
+    finally:
+        release_eof.set()
+        release.set()
+        await _close_async_server(server, handlers)
+
+
+@pytest.fixture
 def slow_upload_request_headers_received() -> asyncio.Event:
     return asyncio.Event()
 
@@ -113,6 +128,8 @@ async def _start_async_timeout_server(
 async def _start_async_early_response_server(
     release: asyncio.Event,
     handlers: set[asyncio.Task[None]],
+    *,
+    release_eof: asyncio.Event | None = None,
 ) -> asyncio.AbstractServer:
     async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
@@ -123,9 +140,16 @@ async def _start_async_early_response_server(
             path = urlsplit(target).path
             if path in {EARLY_CLOSE_RESPONSE_PATH, EARLY_RESPONSE_PATH}:
                 writer.write(
-                    _raw_early_response(connection_close=path == EARLY_CLOSE_RESPONSE_PATH),
+                    _raw_early_response(
+                        connection_close=path == EARLY_CLOSE_RESPONSE_PATH,
+                        chunked=release_eof is not None,
+                    ),
                 )
                 await writer.drain()
+                if release_eof is not None:
+                    await release_eof.wait()
+                    writer.write(b"0\r\n\r\n")
+                    await writer.drain()
                 await release.wait()
                 return
 
@@ -186,11 +210,10 @@ def _raw_ok_response() -> bytes:
     return (f"HTTP/1.1 {OK} OK\r\ncontent-length: {len(OK_BODY)}\r\nconnection: keep-alive\r\n\r\n").encode() + OK_BODY
 
 
-def _raw_early_response(*, connection_close: bool) -> bytes:
+def _raw_early_response(*, connection_close: bool, chunked: bool = False) -> bytes:
     connection = "close" if connection_close else "keep-alive"
-    return (
-        f"HTTP/1.1 {PAYLOAD_TOO_LARGE} Payload Too Large\r\ncontent-length: 0\r\nconnection: {connection}\r\n\r\n"
-    ).encode()
+    framing = "transfer-encoding: chunked" if chunked else "content-length: 0"
+    return (f"HTTP/1.1 {PAYLOAD_TOO_LARGE} Payload Too Large\r\n{framing}\r\nconnection: {connection}\r\n\r\n").encode()
 
 
 def _raw_incomplete_response() -> bytes:

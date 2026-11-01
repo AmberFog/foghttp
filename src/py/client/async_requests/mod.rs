@@ -8,3 +8,6 @@ pub(crate) use active::RequestCompletion;
 pub use registry::AsyncRequestRegistry;
 pub use spawn::{spawn_async_request, AsyncRequestSpawn};
 pub use stream_spawn::{spawn_async_stream_request, AsyncStreamRequestSpawn};
+
+#[cfg(test)]
+pub(crate) mod test_support;

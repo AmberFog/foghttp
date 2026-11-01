@@ -20,6 +20,7 @@ from foghttp.status_codes.success import OK
 from tests.client_multipart.sources import BlockingAsyncChunks, BlockingSyncChunks, CallableSyncChunks
 from tests.redirect_helpers import SECURITY_HEADERS_PATH
 from tests.support.transport_stats import wait_for_async_transport_stats
+from tests.support.upload_requests import known_length_upload_request
 
 
 if TYPE_CHECKING:
@@ -71,7 +72,7 @@ def test_sync_iterable_content_accepts_bytes_like_chunks(
     assert response.json()["body"] == bytes(chunk).decode()
 
 
-def test_sync_file_like_content_streams_with_known_length(sync_http_server: str) -> None:
+def test_sync_generic_file_like_content_streams_with_unknown_length(sync_http_server: str) -> None:
     content = _ClosingBytesFile(b"file-upload")
 
     with foghttp.Client() as client:
@@ -82,8 +83,8 @@ def test_sync_file_like_content_streams_with_known_length(sync_http_server: str)
 
     payload = response.json()
     assert payload["body"] == "file-upload"
-    assert payload["headers"]["content-length"] == [str(len(b"file-upload"))]
-    assert payload["headers"]["transfer-encoding"] == []
+    assert payload["headers"]["content-length"] == []
+    assert payload["headers"]["transfer-encoding"] == ["chunked"]
     assert content.closed is True
 
 
@@ -327,11 +328,13 @@ def test_sync_streaming_upload_ignores_source_close_error(sync_http_server: str)
 def test_sync_cleanup_control_error_does_not_mask_transport_error(
     sync_http_server: str,
 ) -> None:
-    content = _SyncCleanupControlErrorFile(b"complete body")
+    payload = b"complete body"
+    content = _SyncCleanupControlErrorFile(payload)
 
     with foghttp.Client() as client:
+        request = known_length_upload_request(client, sync_http_server, content, len(payload))
         with pytest.raises(foghttp.RequestError):
-            client.post(sync_http_server, content=content)
+            client.send(request)
         stats_after_error = client.stats()
         recovery_response = client.get(sync_http_server)
         final_stats = client.stats()
@@ -478,7 +481,8 @@ async def test_async_client_accepts_sync_file_like_upload(http_server: str) -> N
 
     payload = response.json()
     assert payload["body"] == "async-file-upload"
-    assert payload["headers"]["content-length"] == [str(len(b"async-file-upload"))]
+    assert payload["headers"]["content-length"] == []
+    assert payload["headers"]["transfer-encoding"] == ["chunked"]
     assert content.closed is True
 
 

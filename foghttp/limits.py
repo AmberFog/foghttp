@@ -2,6 +2,8 @@ __all__ = (
     "DEFAULT_MAX_BUFFERED_RESPONSE_BYTES",
     "DEFAULT_MAX_RESPONSE_BODY_SIZE",
     "DEFAULT_MAX_STREAM_DECODER_MEMORY_BYTES",
+    "DEFAULT_MAX_TOTAL_UPLOAD_BUFFER_BYTES",
+    "DEFAULT_MAX_UPLOAD_BUFFER_BYTES",
     "Limits",
 )
 
@@ -11,12 +13,15 @@ from ._validation.numeric import (
     validate_non_negative_int,
     validate_non_negative_seconds,
     validate_optional_non_negative_int,
+    validate_positive_int,
 )
 
 
 DEFAULT_MAX_RESPONSE_BODY_SIZE = 10 * 1024 * 1024
 DEFAULT_MAX_BUFFERED_RESPONSE_BYTES = 100 * 1024 * 1024
 DEFAULT_MAX_STREAM_DECODER_MEMORY_BYTES = 134_217_728
+DEFAULT_MAX_UPLOAD_BUFFER_BYTES = 524_288
+DEFAULT_MAX_TOTAL_UPLOAD_BUFFER_BYTES = 16_777_216
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +38,8 @@ class Limits:
     keepalive: bool = True
     max_stream_decoded_bytes: int | None = None
     max_stream_decoder_memory_bytes: int = DEFAULT_MAX_STREAM_DECODER_MEMORY_BYTES
+    max_upload_buffer_bytes: int = DEFAULT_MAX_UPLOAD_BUFFER_BYTES
+    max_total_upload_buffer_bytes: int = DEFAULT_MAX_TOTAL_UPLOAD_BUFFER_BYTES
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -48,22 +55,11 @@ class Limits:
                 self.max_active_requests_per_origin,
             ),
         )
-        object.__setattr__(
-            self,
-            "max_connections",
-            validate_optional_non_negative_int(
-                "Limits.max_connections",
-                self.max_connections,
-            ),
-        )
-        object.__setattr__(
-            self,
-            "max_connections_per_host",
-            validate_optional_non_negative_int(
-                "Limits.max_connections_per_host",
-                self.max_connections_per_host,
-            ),
-        )
+        for name, limit in (
+            ("max_connections", self.max_connections),
+            ("max_connections_per_host", self.max_connections_per_host),
+        ):
+            object.__setattr__(self, name, validate_optional_non_negative_int(f"Limits.{name}", limit))
         object.__setattr__(
             self,
             "max_pending_requests",
@@ -93,3 +89,8 @@ class Limits:
             "max_stream_decoder_memory_bytes",
             validate_non_negative_int("Limits.max_stream_decoder_memory_bytes", self.max_stream_decoder_memory_bytes),
         )
+        for name, limit in (
+            ("max_upload_buffer_bytes", self.max_upload_buffer_bytes),
+            ("max_total_upload_buffer_bytes", self.max_total_upload_buffer_bytes),
+        ):
+            object.__setattr__(self, name, validate_positive_int(f"Limits.{name}", limit))

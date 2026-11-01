@@ -1,14 +1,12 @@
 //! Strict, demand-driven content decoding. Network and reservation ownership
 //! remain with the caller; each step invokes at most one codec API once.
 
-mod codec;
 mod error;
-mod gzip;
 
 pub use error::StreamDecodeError;
 
+use super::codec::{Codec, CodecStatus, Coding};
 use bytes::{Buf, Bytes};
-use codec::{Codec, CodecStatus};
 use hyper::header::CONTENT_ENCODING;
 use hyper::HeaderMap;
 
@@ -18,22 +16,7 @@ const MAX_LAYERS: usize = 4;
 const INFLATE_RESERVATION: usize = 1024 * 1024;
 const BROTLI_RESERVATION: usize = 32 * 1024 * 1024;
 
-#[derive(Clone, Copy, Debug)]
-enum Coding {
-    Gzip,
-    Deflate,
-    Brotli,
-}
-
 impl Coding {
-    fn name(self) -> &'static str {
-        match self {
-            Self::Gzip => "gzip",
-            Self::Deflate => "deflate",
-            Self::Brotli => "br",
-        }
-    }
-
     fn reservation(self) -> usize {
         match self {
             Self::Gzip | Self::Deflate => INFLATE_RESERVATION,
@@ -150,7 +133,7 @@ impl StreamingDecoder {
                 .into_iter()
                 .map(|coding| Layer {
                     coding,
-                    codec: Codec::new(coding),
+                    codec: Codec::new(coding, OUTPUT_SIZE),
                     input: Bytes::new(),
                     produced: 0,
                     state: LayerState::NeedsInput,

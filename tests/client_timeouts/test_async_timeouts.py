@@ -112,8 +112,9 @@ async def test_async_early_stream_response_aborts_incomplete_chunked_upload(
 
 
 async def test_async_waiting_request_cannot_reuse_early_response_connection(
-    early_response_http_server: str,
+    gated_early_response_http_server: tuple[str, asyncio.Event],
 ) -> None:
+    early_response_http_server, release_eof = gated_early_response_http_server
     body = b"x" * SLOW_UPLOAD_BODY_SIZE
     limits = foghttp.Limits(max_connections=1)
 
@@ -127,14 +128,18 @@ async def test_async_waiting_request_cannot_reuse_early_response_connection(
         asyncio.TaskGroup() as requests,
     ):
         recovery_task = requests.create_task(client.get(early_response_http_server))
-        await wait_for_async_stats(
-            client,
-            lambda stats: (
-                stats.active_requests == EXPECTED_CONCURRENT_REQUESTS
-                and stats.connections_opened == 1
-                and stats.connections_reused == 0
-            ),
-        )
+        try:
+            await wait_for_async_stats(
+                client,
+                lambda stats: (
+                    stats.active_requests == EXPECTED_CONCURRENT_REQUESTS
+                    and stats.connections_opened == 1
+                    and stats.connections_reused == 0
+                ),
+            )
+            assert not recovery_task.done()
+        finally:
+            release_eof.set()
         response_body = b"".join([chunk async for chunk in response.aiter_bytes()])
         recovery_response = await recovery_task
         final_stats = client.stats()
