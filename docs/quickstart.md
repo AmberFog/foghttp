@@ -476,9 +476,11 @@ must not carry a body, such as `HEAD`, `204 No Content`, `205 Reset Content`,
 and `304 Not Modified`, are not decoded and keep their original body metadata
 headers.
 
-`response.text` uses the `Content-Type` charset when it names a valid Python
-codec. If the charset is missing or invalid, FogHTTP falls back to a Unicode BOM
-when present, otherwise to UTF-8.
+`response.text` returns `str` and uses the `Content-Type` charset when it names a
+Python text encoding. Missing, malformed, unknown, or non-text charsets such as
+`hex_codec`, `base64_codec`, and `zlib_codec` fall back to a Unicode BOM when
+present, otherwise to UTF-8. A valid text charset takes precedence over a BOM.
+Charset selection does not change the bytes available through `response.content`.
 
 ## Request Metadata
 

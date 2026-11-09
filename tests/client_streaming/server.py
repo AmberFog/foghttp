@@ -63,7 +63,11 @@ class SyncStreamingHTTPServer(ThreadingHTTPServer):
 
 
 @asynccontextmanager
-async def start_async_streaming_server() -> AsyncIterator[AsyncStreamingServer]:
+async def start_async_streaming_server(
+    *,
+    content_type: str = "text/plain; charset=utf-8",
+    chunks: tuple[bytes, ...] = TEXT_LINES_STREAM_CHUNKS,
+) -> AsyncIterator[AsyncStreamingServer]:
     first_chunk_sent = asyncio.Event()
     release_tail = asyncio.Event()
 
@@ -78,6 +82,8 @@ async def start_async_streaming_server() -> AsyncIterator[AsyncStreamingServer]:
                 writer=writer,
                 first_chunk_sent=first_chunk_sent,
                 release_tail=release_tail,
+                content_type=content_type,
+                chunks=chunks,
             )
         except (asyncio.IncompleteReadError, OSError):
             return
@@ -100,7 +106,11 @@ async def start_async_streaming_server() -> AsyncIterator[AsyncStreamingServer]:
 
 
 @contextmanager
-def start_sync_streaming_server() -> Iterator[SyncStreamingServer]:
+def start_sync_streaming_server(
+    *,
+    content_type: str = "text/plain; charset=utf-8",
+    chunks: tuple[bytes, ...] = TEXT_LINES_STREAM_CHUNKS,
+) -> Iterator[SyncStreamingServer]:
     first_chunk_sent = threading.Event()
     release_tail = threading.Event()
 
@@ -115,6 +125,8 @@ def start_sync_streaming_server() -> Iterator[SyncStreamingServer]:
                     writer=self.wfile,
                     first_chunk_sent=first_chunk_sent,
                     release_tail=release_tail,
+                    content_type=content_type,
+                    chunks=chunks,
                 )
 
         def log_message(self, _format: str, *_args: object) -> None:
@@ -143,6 +155,8 @@ async def _write_stream_response(
     writer: asyncio.StreamWriter,
     first_chunk_sent: asyncio.Event,
     release_tail: asyncio.Event,
+    content_type: str,
+    chunks: tuple[bytes, ...],
 ) -> None:
     if path == GATED_STREAM_PATH:
         await _write_gated_stream(
@@ -158,7 +172,7 @@ async def _write_stream_response(
         await _write_broken_ready_tail_stream(writer=writer, first_chunk_sent=first_chunk_sent)
         return
     if path == TEXT_LINES_STREAM_PATH:
-        await _write_chunked_stream(writer=writer, chunks=TEXT_LINES_STREAM_CHUNKS)
+        await _write_chunked_stream(writer=writer, chunks=chunks, content_type=content_type)
         return
     if path == LATIN1_TEXT_STREAM_PATH:
         await _write_chunked_stream(
@@ -182,6 +196,8 @@ def _write_sync_stream_response(
     writer: SyncStreamWriter,
     first_chunk_sent: threading.Event,
     release_tail: threading.Event,
+    content_type: str,
+    chunks: tuple[bytes, ...],
 ) -> None:
     if path == GATED_STREAM_PATH:
         _write_sync_gated_stream(
@@ -197,7 +213,7 @@ def _write_sync_stream_response(
         _write_sync_broken_ready_tail_stream(writer=writer, first_chunk_sent=first_chunk_sent)
         return
     if path == TEXT_LINES_STREAM_PATH:
-        _write_sync_chunked_stream(writer=writer, chunks=TEXT_LINES_STREAM_CHUNKS)
+        _write_sync_chunked_stream(writer=writer, chunks=chunks, content_type=content_type)
         return
     if path == LATIN1_TEXT_STREAM_PATH:
         _write_sync_chunked_stream(

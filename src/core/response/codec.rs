@@ -1,8 +1,26 @@
-use super::gzip::Gzip;
-use super::Coding;
+mod gzip;
+
 use brotli::{BrotliDecompressStream, BrotliResult, BrotliState, HeapAlloc, HuffmanCode};
 use flate2::{Decompress, FlushDecompress, Status};
+use gzip::Gzip;
 use std::io;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Coding {
+    Gzip,
+    Deflate,
+    Brotli,
+}
+
+impl Coding {
+    pub(super) fn name(self) -> &'static str {
+        match self {
+            Self::Gzip => "gzip",
+            Self::Deflate => "deflate",
+            Self::Brotli => "br",
+        }
+    }
+}
 
 type BrotliDecoder = BrotliState<HeapAlloc<u8>, HeapAlloc<u32>, HeapAlloc<HuffmanCode>>;
 
@@ -25,9 +43,9 @@ pub(super) struct CodecStep {
 }
 
 impl Codec {
-    pub(super) fn new(coding: Coding) -> Self {
+    pub(super) fn new(coding: Coding, output_capacity: usize) -> Self {
         match coding {
-            Coding::Gzip => Self::Gzip(Box::new(Gzip::new())),
+            Coding::Gzip => Self::Gzip(Box::new(Gzip::new(output_capacity))),
             Coding::Deflate => Self::Deflate(Decompress::new(true)),
             Coding::Brotli => Self::Brotli(Box::new(BrotliState::new_strict(
                 HeapAlloc::default(),
@@ -35,6 +53,21 @@ impl Codec {
                 HeapAlloc::default(),
             ))),
         }
+    }
+
+    pub(super) fn buffered(coding: Coding, output_capacity: usize) -> Self {
+        match coding {
+            Coding::Brotli => Self::Brotli(Box::new(BrotliState::new(
+                HeapAlloc::default(),
+                HeapAlloc::default(),
+                HeapAlloc::default(),
+            ))),
+            _ => Self::new(coding, output_capacity),
+        }
+    }
+
+    pub(super) fn raw_deflate() -> Self {
+        Self::Deflate(Decompress::new(false))
     }
 
     pub(super) fn step(

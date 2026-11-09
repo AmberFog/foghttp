@@ -16,6 +16,9 @@ class RetryRequest:
 @dataclass(frozen=True, slots=True)
 class RetryServerSnapshot:
     requests: tuple[RetryRequest, ...]
+    early_upload_gate_passed: bool | None = None
+    early_upload_gate_error: str | None = None
+    early_upload_events: tuple[tuple[str, int], ...] = ()
 
     def requests_for(self, path: str) -> tuple[RetryRequest, ...]:
         return tuple(request for request in self.requests if request.path == path)

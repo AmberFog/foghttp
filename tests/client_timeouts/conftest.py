@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
-from contextlib import suppress
+from contextlib import contextmanager, suppress
+from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import socket
 import threading
@@ -55,19 +56,50 @@ async def early_response_http_server() -> AsyncIterator[str]:
 
 
 @pytest.fixture
+async def gated_early_response_http_server() -> AsyncIterator[tuple[str, asyncio.Event]]:
+    release = asyncio.Event()
+    release_eof = asyncio.Event()
+    handlers: set[asyncio.Task[None]] = set()
+    server = await _start_async_early_response_server(release, handlers, release_eof=release_eof)
+    try:
+        host, port = server.sockets[0].getsockname()
+        yield f"http://{host}:{port}", release_eof
+    finally:
+        release_eof.set()
+        release.set()
+        await _close_async_server(server, handlers)
+
+
+@pytest.fixture
 def slow_upload_request_headers_received() -> asyncio.Event:
     return asyncio.Event()
 
 
 @pytest.fixture
 def sync_timeout_http_server() -> Iterator[str]:
-    server = ThreadingHTTPServer(("127.0.0.1", 0), TimeoutHTTPHandler)
+    with _sync_timeout_server() as url:
+        yield url
+
+
+@pytest.fixture
+def gated_sync_early_response_http_server() -> Iterator[tuple[str, threading.Event]]:
+    release_eof = threading.Event()
+    with _sync_timeout_server(release_eof=release_eof) as url:
+        yield url, release_eof
+
+
+@contextmanager
+def _sync_timeout_server(*, release_eof: threading.Event | None = None) -> Iterator[str]:
+    handler = partial(TimeoutHTTPHandler, release_eof=release_eof)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     host, port = server.server_address
     try:
         yield f"http://{host}:{port}"
     finally:
+        if release_eof is not None:
+            release_eof.set()
         server.shutdown()
         server.server_close()
         thread.join(timeout=1)
@@ -113,6 +145,8 @@ async def _start_async_timeout_server(
 async def _start_async_early_response_server(
     release: asyncio.Event,
     handlers: set[asyncio.Task[None]],
+    *,
+    release_eof: asyncio.Event | None = None,
 ) -> asyncio.AbstractServer:
     async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
@@ -123,9 +157,16 @@ async def _start_async_early_response_server(
             path = urlsplit(target).path
             if path in {EARLY_CLOSE_RESPONSE_PATH, EARLY_RESPONSE_PATH}:
                 writer.write(
-                    _raw_early_response(connection_close=path == EARLY_CLOSE_RESPONSE_PATH),
+                    _raw_early_response(
+                        connection_close=path == EARLY_CLOSE_RESPONSE_PATH,
+                        chunked=release_eof is not None,
+                    ),
                 )
                 await writer.drain()
+                if release_eof is not None:
+                    await release_eof.wait()
+                    writer.write(b"0\r\n\r\n")
+                    await writer.drain()
                 await release.wait()
                 return
 
@@ -186,11 +227,10 @@ def _raw_ok_response() -> bytes:
     return (f"HTTP/1.1 {OK} OK\r\ncontent-length: {len(OK_BODY)}\r\nconnection: keep-alive\r\n\r\n").encode() + OK_BODY
 
 
-def _raw_early_response(*, connection_close: bool) -> bytes:
+def _raw_early_response(*, connection_close: bool, chunked: bool = False) -> bytes:
     connection = "close" if connection_close else "keep-alive"
-    return (
-        f"HTTP/1.1 {PAYLOAD_TOO_LARGE} Payload Too Large\r\ncontent-length: 0\r\nconnection: {connection}\r\n\r\n"
-    ).encode()
+    framing = "transfer-encoding: chunked" if chunked else "content-length: 0"
+    return (f"HTTP/1.1 {PAYLOAD_TOO_LARGE} Payload Too Large\r\n{framing}\r\nconnection: {connection}\r\n\r\n").encode()
 
 
 def _raw_incomplete_response() -> bytes:
@@ -199,6 +239,17 @@ def _raw_incomplete_response() -> bytes:
 
 class TimeoutHTTPHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+
+    def __init__(
+        self,
+        request: socket.socket,
+        client_address: tuple[str, int],
+        server: ThreadingHTTPServer,
+        *,
+        release_eof: threading.Event | None = None,
+    ) -> None:
+        self._release_eof = release_eof
+        super().__init__(request, client_address, server)
 
     def setup(self) -> None:
         self.request.setsockopt(
@@ -218,13 +269,23 @@ class TimeoutHTTPHandler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path in {EARLY_CLOSE_RESPONSE_PATH, EARLY_RESPONSE_PATH}:
             self.send_response(PAYLOAD_TOO_LARGE)
-            self.send_header("content-length", "0")
+            release_eof = self._release_eof
+            if release_eof is None:
+                self.send_header("content-length", "0")
+            else:
+                self.send_header("transfer-encoding", "chunked")
             connection = "close" if path == EARLY_CLOSE_RESPONSE_PATH else "keep-alive"
             self.send_header("connection", connection)
             self.end_headers()
             self.wfile.flush()
-            time.sleep(SLOW_UPLOAD_HOLD_DELAY)
             self.close_connection = True
+            if release_eof is not None:
+                if not release_eof.wait(timeout=2.0):
+                    return
+                with suppress(OSError):
+                    self.wfile.write(b"0\r\n\r\n")
+                    self.wfile.flush()
+            time.sleep(SLOW_UPLOAD_HOLD_DELAY)
             return
         if path == SLOW_UPLOAD_PATH:
             self.close_connection = True

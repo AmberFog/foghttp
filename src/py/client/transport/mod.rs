@@ -2,6 +2,7 @@ mod body;
 mod buffered;
 mod client;
 mod context;
+mod decoding;
 mod errors;
 mod request;
 mod response;

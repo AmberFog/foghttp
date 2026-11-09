@@ -255,6 +255,14 @@ on the event loop. Keep sinks fast and non-blocking; exporters that write to
 files, sockets, queues, or tracing systems should enqueue compact redacted
 events and do heavier work outside the request path.
 
+For `Client`, a hook must not close the same client when shutdown would wait
+for the hook's own request or native event delivery. Such a call raises
+`LifecycleError` before starting shutdown, including when another thread has
+already started closing the client. Uncaught sink errors follow the configured
+`raise`, `warn`, or `ignore` policy; OpenTelemetry SDK failures remain fail-open.
+An already completed shutdown still permits `close()` from its
+`connection_closed` hook. See [Sync Close Semantics](./lifecycle.md#sync-close-semantics).
+
 For sync clients used concurrently from multiple threads, the same sink may be
 called concurrently. `event_sequence` orders event creation inside the client
 dispatcher; it is not a guarantee that a thread-safe sink will observe callbacks
@@ -343,8 +351,11 @@ requests.
 | `ignore` | suppress sink failures |
 
 If a request is already failing because of transport, timeout, cancellation, or
-stream cleanup, telemetry cleanup errors are suppressed so the original request
-failure is not masked.
+text/line iteration (including decoder setup and line limits), telemetry cleanup
+errors are suppressed so the original failure is not masked. Successful
+iteration and explicit close without a primary error retain the configured
+hook policy. Byte EOF completion hooks run before final text decoder flushing;
+a hook error raised before a late decoding error retains that ordering.
 
 ## Structured debug logging
 
@@ -419,6 +430,14 @@ configured behavior. A full client drain during close reports overflow through
 the same policy. Request-scoped records forced out by client shutdown are still
 delivered, but their hook failures are suppressed because cancellation or
 cleanup remains the primary outcome.
+
+If warning filters turn a client-scoped `warn` into an exception during cleanup
+of a failing request, FogHTTP defers that warning to client close. Cleanup
+preserves the request error and delivers the remaining selected records.
+At client close without a primary error, the original warning is processed
+using the filters then in effect. An already pending client failure takes
+precedence over later close-hook failures.
+
 Concurrent requests do not deliver each other's request-scoped records or
 inherit each other's `raise` hook failures. Use `request_id` for correlation;
 client-scoped callbacks and callbacks from concurrent request owners may still

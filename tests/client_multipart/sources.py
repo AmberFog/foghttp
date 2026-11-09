@@ -107,6 +107,7 @@ class BlockingSyncChunks:
         self.started = threading.Event()
         self.finished = threading.Event()
         self.release = threading.Event()
+        self.close_finished = threading.Event()
         self.closed: bool = False
         self.close_calls = 0
 
@@ -125,6 +126,7 @@ class BlockingSyncChunks:
         self.close_calls += 1
         self.closed = True
         self.release.set()
+        self.close_finished.set()
 
 
 class BlockingAsyncChunks:

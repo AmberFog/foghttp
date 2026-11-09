@@ -70,6 +70,42 @@ with `uv --locked`; coverage remains on Python 3.14 with a 98% floor. Wheel
 smoke instead uses ordinary pip resolution from package metadata and requires
 binary dependencies, so an implicit source build cannot hide a missing wheel.
 
+### Exact Candidate And Source Archive Gate
+
+CI covers pull requests into `main` and any branch matching `release/**`.
+Both CI and Release call `full_checks.yml` from the caller's own commit.
+That workflow owns the pre-commit, Rust stable/MSRV and complete CPython
+3.11-3.15 suites. Release reruns these checks for its own immutable event
+commit. A version match or a successful run for another PR, branch head or
+synthetic merge is insufficient.
+Every source checkout is pinned to the full candidate SHA and verifies its
+identity against `github.sha`. Required jobs must all report `success`;
+missing, failed, cancelled and skipped results cannot qualify a candidate.
+
+The source-distribution producer records the candidate SHA, archive filename
+and SHA-256 in the separate `sdist-provenance` artifact. The `sdist-smoke` job
+downloads that exact archive, verifies its identity and `Cargo.lock`, and
+rebuilds a wheel in a fresh environment outside the checkout. Pip's build
+isolation stays enabled, caches are disabled, and Maturin receives `--locked`.
+The rebuilt wheel passes the existing isolated install smoke, including both
+Python and native module origins, URL handling, examples and real local sync
+and async requests. Its receipt retains the source SHA and archive/rebuilt-wheel
+digests; the source archive is checked again after the smoke.
+
+`release-gate` requires the full-check and sdist receipts to name that same
+candidate, alongside every existing wheel audit and native smoke. Publication
+downloads only `wheels-*` and `sdist`, then rechecks the retained source identity.
+Quality receipts, provenance and the locally rebuilt qualification wheel are
+kept out of the distribution directory. All artifacts are from the current
+workflow run; no historical-run lookup or approval of an older SHA is used.
+
+Record `full-checks-evidence`, `sdist-provenance`, `sdist-rebuild-evidence`
+and `release-evidence` with the run URL and immutable candidate SHA in the
+release-readiness record. A local test of this wiring does not execute the
+GitHub scheduler or establish a complete platform-matrix result. Benchmark
+review/report or an explicitly approved waiver remain manual requirements
+under [benchmarks.md](./benchmarks.md); this gate does not automate TASK-336.
+
 Before publishing, the release-readiness record also captures the installed-
 wheel example smoke runs and the bounded benchmark smoke evidence defined in
 [benchmarks.md](./benchmarks.md).
@@ -78,7 +114,8 @@ wheel example smoke runs and the bounded benchmark smoke evidence defined in
 
 The `Release` workflow also accepts a manual `workflow_dispatch` run. It
 builds the same five wheels and source distribution, audits every wheel and
-runs the full native install-smoke matrix above. Manual runs validate matching
+runs the full suites, source rebuild and native install-smoke matrix above.
+Manual runs validate matching
 Python/Cargo package versions without requiring a release tag. The `publish`
 job runs only for a published GitHub Release event; a manual run cannot publish
 to PyPI, including when it selects a tag.
@@ -94,7 +131,7 @@ Record the run URL and source commit, artifact identities, ABI audit and each
 platform/Python smoke result. A successful build or intentionally skipped
 `publish` job is not evidence that smoke jobs passed. Linux aarch64 remains
 cross-build/audit-only. This verification does not create a release or replace
-the full-suite CI and release-readiness checks.
+the remaining manual release-readiness checks.
 
 Python versions newer than the 3.11-3.15 validation matrix may be ABI
 compatible, but they are not part of the release compatibility claim until

@@ -11,11 +11,27 @@ use pyo3::prelude::*;
 use shared::shared_runtime;
 use std::sync::Arc;
 use tokio::runtime::{Builder, Runtime};
+use tokio::sync::Semaphore;
 use workers::runtime_workers;
 
 pub enum ClientRuntime {
-    Shared(Arc<Runtime>),
-    Dedicated(Runtime),
+    Shared(Arc<RuntimeResources>),
+    Dedicated(RuntimeResources),
+}
+
+pub struct RuntimeResources {
+    runtime: Runtime,
+    buffered_decoders: Arc<Semaphore>,
+}
+
+impl RuntimeResources {
+    fn new(runtime: Runtime) -> Self {
+        let buffered_decoders = Arc::new(Semaphore::new(runtime.metrics().num_workers()));
+        Self {
+            runtime,
+            buffered_decoders,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -39,21 +55,30 @@ impl ClientRuntime {
                 shared_runtime(py).map(Self::Shared)
             }
             RuntimeMode::Dedicated => {
-                build_dedicated_runtime(max_active_requests, explicit_workers).map(Self::Dedicated)
+                build_dedicated_runtime(max_active_requests, explicit_workers)
+                    .map(RuntimeResources::new)
+                    .map(Self::Dedicated)
             }
         }
     }
 
     pub fn runtime(&self) -> &Runtime {
         match self {
-            Self::Shared(runtime) => runtime,
-            Self::Dedicated(runtime) => runtime,
+            Self::Shared(resources) => &resources.runtime,
+            Self::Dedicated(resources) => &resources.runtime,
+        }
+    }
+
+    pub fn buffered_decoders(&self) -> Arc<Semaphore> {
+        match self {
+            Self::Shared(resources) => Arc::clone(&resources.buffered_decoders),
+            Self::Dedicated(resources) => Arc::clone(&resources.buffered_decoders),
         }
     }
 
     pub fn shutdown_background(self) {
-        if let Self::Dedicated(runtime) = self {
-            runtime.shutdown_background();
+        if let Self::Dedicated(resources) = self {
+            resources.runtime.shutdown_background();
         }
     }
 

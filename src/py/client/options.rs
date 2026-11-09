@@ -16,24 +16,35 @@ pub fn extract_stream_decoded_byte_limit(value: &Bound<'_, PyAny>) -> PyResult<O
     if value.is_none() {
         return Ok(None);
     }
-    extract_byte_limit("Limits.max_stream_decoded_bytes", value).map(Some)
+    extract_byte_limit("Limits.max_stream_decoded_bytes", value, 0).map(Some)
 }
 
 pub fn extract_stream_decoder_memory_limit(value: &Bound<'_, PyAny>) -> PyResult<usize> {
-    extract_byte_limit("Limits.max_stream_decoder_memory_bytes", value)
+    extract_byte_limit("Limits.max_stream_decoder_memory_bytes", value, 0)
 }
 
-fn extract_byte_limit(name: &str, value: &Bound<'_, PyAny>) -> PyResult<usize> {
+pub fn extract_upload_buffer_limit(value: &Bound<'_, PyAny>) -> PyResult<usize> {
+    extract_byte_limit("Limits.max_upload_buffer_bytes", value, 1)
+}
+
+pub fn extract_total_upload_buffer_limit(value: &Bound<'_, PyAny>) -> PyResult<usize> {
+    extract_byte_limit("Limits.max_total_upload_buffer_bytes", value, 1)
+}
+
+fn extract_byte_limit(name: &str, value: &Bound<'_, PyAny>, minimum: usize) -> PyResult<usize> {
     let invalid = || {
         PyValueError::new_err(format!(
-            "{name} must be an integer between 0 and {MAX_NUMERIC_OPTION}"
+            "{name} must be an integer between {minimum} and {MAX_NUMERIC_OPTION}"
         ))
     };
     if value.is_instance_of::<PyBool>() || !value.is_instance_of::<PyInt>() {
         return Err(invalid());
     }
     let value = value.extract::<usize>().map_err(|_| invalid())?;
-    validate_usize_option(name, value).map_err(PyValueError::new_err)
+    if value < minimum {
+        return Err(invalid());
+    }
+    validate_usize_option(name, value).map_err(|_| invalid())
 }
 
 #[derive(Clone, Copy)]

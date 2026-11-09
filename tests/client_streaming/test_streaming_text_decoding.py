@@ -6,6 +6,7 @@ import foghttp
 from foghttp._streaming.text.async_chunks import aiter_text_chunks
 from foghttp._streaming.text.lines import aiter_lines, iter_lines
 from foghttp._streaming.text.sync_chunks import iter_text_chunks
+from tests.client_streaming.text_codec_cases import NON_TEXT_CODECS
 from tests.client_streaming.text_decoding_sources import (
     AsyncClosableByteIterator,
     ClosableByteIterator,
@@ -114,21 +115,31 @@ async def test_async_streaming_line_decoder_matches_sync_line_endings() -> None:
     assert [line async for line in aiter_lines(text_source())] == ["alpha", "beta"]
 
 
-def test_text_decoder_closes_sync_source_when_decoder_setup_fails() -> None:
+@pytest.mark.parametrize("encoding", ["foghttp-unknown-codec", *NON_TEXT_CODECS])
+@pytest.mark.parametrize("errors", ["replace", "strict"])
+def test_text_decoder_closes_sync_source_when_decoder_setup_fails(encoding: str, errors: str) -> None:
     byte_chunks = ClosableByteIterator((b"alpha",))
-    text_chunks = iter_text_chunks(byte_chunks, encoding="foghttp-unknown-codec", errors="replace")
+    text_chunks = iter_text_chunks(byte_chunks, encoding=encoding, errors=errors)
+    assert not byte_chunks.closed
+    assert byte_chunks.read_count == 0
 
     with pytest.raises(LookupError):
         next(text_chunks)
 
     assert byte_chunks.closed
+    assert byte_chunks.read_count == 0
 
 
-async def test_text_decoder_closes_async_source_when_decoder_setup_fails() -> None:
+@pytest.mark.parametrize("encoding", ["foghttp-unknown-codec", *NON_TEXT_CODECS])
+@pytest.mark.parametrize("errors", ["replace", "strict"])
+async def test_text_decoder_closes_async_source_when_decoder_setup_fails(encoding: str, errors: str) -> None:
     byte_chunks = AsyncClosableByteIterator((b"alpha",))
-    text_chunks = aiter_text_chunks(byte_chunks, encoding="foghttp-unknown-codec", errors="replace")
+    text_chunks = aiter_text_chunks(byte_chunks, encoding=encoding, errors=errors)
+    assert not byte_chunks.closed
+    assert byte_chunks.read_count == 0
 
     with pytest.raises(LookupError):
         await anext(text_chunks)
 
     assert byte_chunks.closed
+    assert byte_chunks.read_count == 0
