@@ -72,11 +72,12 @@ binary dependencies, so an implicit source build cannot hide a missing wheel.
 
 ### Exact Candidate And Source Archive Gate
 
-CI covers pull requests into `main` and `release/0.4.2`. Both CI and Release
-call `full_checks.yml` from the caller's own commit. That workflow owns the
-pre-commit, Rust stable/MSRV and complete CPython 3.11-3.15 suites. Release
-reruns these checks for its own immutable event commit; a version match or a
-successful run for another PR, branch head or synthetic merge is insufficient.
+CI covers pull requests into `main` and any branch matching `release/**`.
+Both CI and Release call `full_checks.yml` from the caller's own commit.
+That workflow owns the pre-commit, Rust stable/MSRV and complete CPython
+3.11-3.15 suites. Release reruns these checks for its own immutable event
+commit. A version match or a successful run for another PR, branch head or
+synthetic merge is insufficient.
 Every source checkout is pinned to the full candidate SHA and verifies its
 identity against `github.sha`. Required jobs must all report `success`;
 missing, failed, cancelled and skipped results cannot qualify a candidate.

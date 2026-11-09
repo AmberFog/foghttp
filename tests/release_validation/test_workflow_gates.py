@@ -9,7 +9,7 @@ from tests.release_validation.workflow_assertions import named_step, required_ch
 def test_ci_schedules_shared_quality_checks_for_release_prs(workflow_documents: dict[str, dict[str, Any]]) -> None:
     workflow = workflow_documents["ci"]
 
-    assert workflow["on"]["pull_request"]["branches"] == ["main", "release/0.4.2"]
+    assert workflow["on"]["pull_request"]["branches"] == ["main", "release/**"]
     assert "workflow_dispatch" in workflow["on"]
     assert workflow["jobs"]["quality"]["uses"] == "./.github/workflows/full_checks.yml"
     assert workflow["jobs"]["quality"]["with"]["candidate-sha"] == "${{ github.sha }}"
