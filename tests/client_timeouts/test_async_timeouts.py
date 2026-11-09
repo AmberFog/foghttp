@@ -46,7 +46,8 @@ async def test_async_early_response_does_not_reuse_incomplete_upload(
     path: str,
     streaming: bool,
 ) -> None:
-    timeouts = foghttp.Timeouts(write=WRITE_TIMEOUT, total=WRITE_TIMEOUT_TOTAL)
+    # The total budget gives a loaded runner time to deliver the early response.
+    timeouts = foghttp.Timeouts(total=WRITE_TIMEOUT_TOTAL)
     body = b"x" * SLOW_UPLOAD_BODY_SIZE
 
     async with foghttp.AsyncClient(timeouts=timeouts) as client:

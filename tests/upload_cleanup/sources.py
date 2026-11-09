@@ -35,9 +35,11 @@ class AsyncCloseGate:
         self.release = asyncio.Event()
         self.finished = asyncio.Event()
         self.calls = 0
+        self.task: asyncio.Task[None] | None = None
 
     async def aclose(self) -> None:
         self.calls += 1
+        self.task = asyncio.current_task()
         self.entered.set()
         try:
             await asyncio.wait_for(self.release.wait(), CALLBACK_WATCHDOG)

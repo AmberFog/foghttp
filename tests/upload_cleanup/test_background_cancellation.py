@@ -40,15 +40,16 @@ async def test_cancelled_async_callback_releases_only_after_its_finally_finishes
 ) -> None:
     source = AsyncCloseGate()
     source_cleanup = cleanup.UploadSourceCleanup(source, reservation=isolated_cleanup_owner.reserve(1))
-    existing_tasks = asyncio.all_tasks()
     completion = source_cleanup.start_async_cleanup()
     assert completion is not None
     try:
         await asyncio.wait_for(source.entered.wait(), COMPLETION_WATCHDOG)
-        callback_tasks = asyncio.all_tasks() - existing_tasks
-        assert len(callback_tasks) == 1
+        callback_task = source.task
+        assert callback_task is not None
+        assert completion.done() is False
+        assert isolated_cleanup_owner.snapshot()["reserved"] == 1
 
-        callback_tasks.pop().cancel()
+        callback_task.cancel()
 
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(asyncio.shield(completion), COMPLETION_WATCHDOG)

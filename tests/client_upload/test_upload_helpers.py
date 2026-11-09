@@ -760,8 +760,11 @@ async def test_async_streaming_body_releases_raw_callback_cycle_after_cleanup_er
     del body
     del source
     del source_error
-    await asyncio.sleep(0)
-    gc.collect()
+    # The dispatching worker can retain the error traceback after completion.
+    async with asyncio.timeout(1.0):
+        while body_ref() is not None:
+            await asyncio.sleep(0.01)
+            gc.collect()
 
     assert body_ref() is None
 
@@ -991,7 +994,7 @@ def _set_async_body_feeders(
     body: Any,
     feeders: list[AsyncFeeder],
 ) -> None:
-    source_cleanup = body._source_cleanups[0]  # noqa: SLF001
+    source_cleanup = _async_body_source_cleanup(body)
     body._feeders = []  # noqa: SLF001
     for future, state in feeders:
         runner = Mock(completion=future)
@@ -1004,6 +1007,16 @@ def _async_body_feeders(body: Any) -> list[AsyncFeeder]:
         (runner.completion, state)
         for runner, state, _source_cleanup in body._feeders  # noqa: SLF001
     ]
+
+
+def _async_body_source_cleanup(body: Any) -> upload_cleanup.UploadSourceCleanup:
+    return body._source_cleanups[0]  # noqa: SLF001
+
+
+async def _wait_for_async_body_source_cleanup(body: Any) -> None:
+    source_cleanup = _async_body_source_cleanup(body)
+    completion = asyncio.wrap_future(source_cleanup.completion)
+    await asyncio.wait_for(asyncio.shield(completion), timeout=1.0)
 
 
 async def _drain_async_body_feeders(body: Any) -> BaseException | None:
@@ -1544,10 +1557,7 @@ async def test_pending_async_runner_starts_cleanup_after_owner_cancellation(
 
     assert source.close_calls == 0
     runner_completion.cancel()
-    for _attempt in range(10):
-        if source.close_calls:
-            break
-        await asyncio.sleep(0)
+    await _wait_for_async_body_source_cleanup(body)
     assert source.close_calls == EXPECTED_CLEANUP_CALLS
 
 
@@ -1720,10 +1730,7 @@ async def test_async_sync_worker_start_failure_closes_body_and_source(
 
     with pytest.raises(RuntimeError, match=RUNNER_START_FAILURE):
         await asyncio.wrap_future(_async_body_feeders(body)[0][0])
-    for _attempt in range(10):
-        if source.close_calls:
-            break
-        await asyncio.sleep(0)
+    await _wait_for_async_body_source_cleanup(body)
 
     assert raw_body.closed is True
     assert source.close_calls == 1
@@ -1748,10 +1755,7 @@ async def test_async_source_classification_failure_closes_body_and_source(
 
     with pytest.raises(RuntimeError, match=UPLOAD_SOURCE_FAILURE):
         await asyncio.wrap_future(_async_body_feeders(body)[0][0])
-    for _attempt in range(10):
-        if source.close_calls:
-            break
-        await asyncio.sleep(0)
+    await _wait_for_async_body_source_cleanup(body)
 
     assert raw_body.closed is True
     assert source.close_calls == 1
@@ -1887,10 +1891,7 @@ async def test_async_runner_task_factory_failure_closes_body_and_source(
         raw_body.start_callback(raw_body)
         with pytest.raises(RuntimeError, match=RUNNER_START_FAILURE):
             await asyncio.wrap_future(_async_body_feeders(body)[0][0])
-        for _attempt in range(10):
-            if source.close_calls:
-                break
-            await asyncio.sleep(0)
+        await _wait_for_async_body_source_cleanup(body)
     finally:
         loop.set_task_factory(previous_factory)
 
