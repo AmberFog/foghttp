@@ -12,9 +12,28 @@ jobs:
   validate-version:
     name: Validate release version
     runs-on: ubuntu-latest
+    outputs:
+      candidate-sha: ${{ steps.candidate.outputs.candidate-sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Resolve immutable candidate
+        id: candidate
+        env:
+          CANDIDATE_SHA: ${{ github.sha }}
+        run: |
+          python scripts/check_release_candidate.py \
+            --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA" \
+            --checkout-sha "$(git rev-parse HEAD)"
+          echo "candidate-sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Check package versions and release tag
         shell: python
@@ -44,6 +63,13 @@ jobs:
           if len(set(versions.values())) != 1:
               raise SystemExit(f"release versions do not match: {versions}")
 
+  full-checks:
+    name: Full candidate checks
+    needs: validate-version
+    uses: ./.github/workflows/full_checks.yml
+    with:
+      candidate-sha: ${{ needs.validate-version.outputs.candidate-sha }}
+
   linux-wheels:
     name: Build Linux wheel (${{ matrix.target }})
     runs-on: ubuntu-latest
@@ -56,11 +82,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-version.outputs.candidate-sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Verify candidate identity
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+        run: >-
+          python scripts/check_release_candidate.py
+          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
+          --checkout-sha "$(git rev-parse HEAD)"
 
       - name: Set up QEMU
         if: matrix.target == 'aarch64'
@@ -87,7 +124,7 @@ jobs:
   linux-wheel-smoke:
     name: Smoke Linux wheel (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    needs: linux-wheels
+    needs: [validate-version, linux-wheels]
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -96,11 +133,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-version.outputs.candidate-sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
+      - name: Verify candidate identity
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+        run: >-
+          python scripts/check_release_candidate.py
+          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
+          --checkout-sha "$(git rev-parse HEAD)"
 
       - name: Download x86_64 wheel
         uses: actions/download-artifact@v4
@@ -129,11 +177,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-version.outputs.candidate-sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Verify candidate identity
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+        run: >-
+          python scripts/check_release_candidate.py
+          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
+          --checkout-sha "$(git rev-parse HEAD)"
 
       - name: Build wheel
         uses: PyO3/maturin-action@v1
@@ -153,7 +212,7 @@ jobs:
   macos-wheel-smoke:
     name: Smoke macOS wheel (${{ matrix.platform.name }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.platform.runner }}
-    needs: macos-wheels
+    needs: [validate-version, macos-wheels]
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -167,11 +226,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-version.outputs.candidate-sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
+      - name: Verify candidate identity
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+        run: >-
+          python scripts/check_release_candidate.py
+          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
+          --checkout-sha "$(git rev-parse HEAD)"
 
       - name: Download wheel
         uses: actions/download-artifact@v4
@@ -190,12 +260,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-version.outputs.candidate-sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           architecture: x64
+
+      - name: Verify candidate identity
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+        run: >-
+          python scripts/check_release_candidate.py
+          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
+          --checkout-sha "$(git rev-parse HEAD)"
 
       - name: Build wheel
         uses: PyO3/maturin-action@v1
@@ -214,7 +295,7 @@ jobs:
   windows-wheel-smoke:
     name: Smoke Windows wheel (Python ${{ matrix.python-version }})
     runs-on: windows-latest
-    needs: windows-wheels
+    needs: [validate-version, windows-wheels]
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -223,12 +304,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-version.outputs.candidate-sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           architecture: x64
+
+      - name: Verify candidate identity
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+        run: >-
+          python scripts/check_release_candidate.py
+          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
+          --checkout-sha "$(git rev-parse HEAD)"
 
       - name: Download wheel
         uses: actions/download-artifact@v4
@@ -272,12 +364,49 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-version.outputs.candidate-sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify candidate identity
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+        run: >-
+          python scripts/check_release_candidate.py
+          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
+          --checkout-sha "$(git rev-parse HEAD)"
 
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
           command: sdist
           args: --out dist
+
+      - name: Record source archive identity
+        shell: python
+        env:
+          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+        run: |
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          archives = list(Path("dist").glob("*.tar.gz"))
+          if len(archives) != 1:
+              raise SystemExit("expected exactly one source archive")
+          archive = archives[0]
+          manifest = {
+              "candidate_sha": os.environ["CANDIDATE_SHA"],
+              "archive": archive.name,
+              "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+          }
+          Path("sdist-provenance.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
       - name: Upload sdist artifact
         uses: actions/upload-artifact@v4
@@ -286,28 +415,192 @@ jobs:
           path: dist/*.tar.gz
           if-no-files-found: error
 
+      - name: Retain source archive identity
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist-provenance
+          path: sdist-provenance.json
+          if-no-files-found: error
+
+  sdist-smoke:
+    name: Rebuild and smoke the retained source archive
+    runs-on: ubuntu-latest
+    needs: [validate-version, sdist]
+    timeout-minutes: 45
+    outputs:
+      candidate-sha: ${{ steps.verify.outputs.candidate-sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-version.outputs.candidate-sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify candidate identity
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+        run: >-
+          python scripts/check_release_candidate.py
+          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
+          --checkout-sha "$(git rev-parse HEAD)"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Download source archive
+        uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+
+      - name: Download source identity
+        uses: actions/download-artifact@v4
+        with:
+          name: sdist-provenance
+          path: evidence
+
+      - name: Rebuild and verify source archive
+        id: verify
+        env:
+          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+        run: |
+          python -I -S scripts/check_sdist.py \
+            --dist-dir dist --manifest evidence/sdist-provenance.json \
+            --candidate-sha "$CANDIDATE_SHA" --receipt sdist-rebuilt.json
+          echo "candidate-sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Retain source rebuild evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist-rebuild-evidence
+          path: sdist-rebuilt.json
+          if-no-files-found: error
+
+  release-gate:
+    name: Verify candidate release evidence
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    needs:
+      - validate-version
+      - full-checks
+      - audit-wheels
+      - linux-wheel-smoke
+      - macos-wheel-smoke
+      - windows-wheel-smoke
+      - sdist-smoke
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-version.outputs.candidate-sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Require every release check for this candidate
+        env:
+          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+          QUALITY_SHA: ${{ needs.full-checks.outputs.candidate-sha }}
+          SDIST_SHA: ${{ needs.sdist-smoke.outputs.candidate-sha }}
+          CHECK_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python scripts/check_release_candidate.py \
+            --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA" \
+            --checkout-sha "$(git rev-parse HEAD)" --needs-json "$CHECK_RESULTS" \
+            --required-check validate-version --required-check full-checks \
+            --required-check audit-wheels --required-check linux-wheel-smoke \
+            --required-check macos-wheel-smoke --required-check windows-wheel-smoke \
+            --required-check sdist-smoke --evidence-sha "$QUALITY_SHA" \
+            --evidence-sha "$SDIST_SHA" --receipt release-evidence.json
+
+      - name: Retain release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-evidence
+          path: release-evidence.json
+          if-no-files-found: error
+
   publish:
     name: Publish to PyPI
     if: github.event_name == 'release' && github.event.action == 'published'
     runs-on: ubuntu-latest
     needs:
-      - audit-wheels
-      - linux-wheel-smoke
-      - macos-wheel-smoke
-      - windows-wheel-smoke
-      - sdist
+      - validate-version
+      - release-gate
     environment: pypi
     timeout-minutes: 15
     permissions:
       contents: read
       id-token: write
     steps:
-      - name: Download distributions
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate-version.outputs.candidate-sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify candidate identity
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+        run: >-
+          python scripts/check_release_candidate.py
+          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
+          --checkout-sha "$(git rev-parse HEAD)"
+
+      - name: Download release wheels
         uses: actions/download-artifact@v4
         with:
-          pattern: "*"
+          pattern: wheels-*
           path: dist
           merge-multiple: true
+
+      - name: Download verified source archive
+        uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+
+      - name: Download source archive identity
+        uses: actions/download-artifact@v4
+        with:
+          name: sdist-provenance
+          path: evidence
+
+      - name: Verify source archive before publication
+        shell: python
+        env:
+          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+        run: |
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = json.loads(Path("evidence/sdist-provenance.json").read_text())
+          archives = list(Path("dist").glob("*.tar.gz"))
+          if len(archives) != 1:
+              raise SystemExit("expected exactly one verified source archive")
+          archive = archives[0]
+          expected = {
+              "candidate_sha": os.environ["CANDIDATE_SHA"],
+              "archive": archive.name,
+              "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+          }
+          if manifest != expected:
+              raise SystemExit("source archive does not match the verified candidate")
 
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

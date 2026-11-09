@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, release/0.4.2]
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
@@ -14,75 +14,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  pre-commit:
-    name: Pre-commit
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-
-      - name: Run pre-commit hooks
-        run: uv run --no-project --with pre-commit pre-commit run --all-files --show-diff-on-failure
-
-  rust:
-    name: Rust
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-
-      - name: Check formatting
-        run: cargo fmt --check
-
-      - name: Run clippy
-        run: cargo clippy --all-targets -- -D warnings
-
-      - name: Run Rust tests
-        run: cargo test --all-targets
-
-  rust-msrv:
-    name: Rust MSRV (1.88)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Rust MSRV
-        uses: dtolnay/rust-toolchain@1.88.0
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-
-      - name: Show Rust version
-        run: rustc --version
-
-      - name: Run Rust tests at MSRV
-        run: cargo test --locked --all-targets
-
-      - name: Check release features at MSRV
-        run: cargo check --locked --all-targets --all-features
+  quality:
+    name: Full checks
+    uses: ./.github/workflows/full_checks.yml
+    with:
+      candidate-sha: ${{ github.sha }}
 
   abi3-wheel:
     name: Build and audit abi3 wheel
@@ -91,11 +27,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Verify candidate identity
+        env:
+          CANDIDATE_SHA: ${{ github.sha }}
+        run: >-
+          python scripts/check_release_candidate.py
+          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
+          --checkout-sha "$(git rev-parse HEAD)"
 
       - name: Build wheel
         uses: PyO3/maturin-action@v1
@@ -131,11 +77,21 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
+      - name: Verify candidate identity
+        env:
+          CANDIDATE_SHA: ${{ github.sha }}
+        run: >-
+          python scripts/check_release_candidate.py
+          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
+          --checkout-sha "$(git rev-parse HEAD)"
 
       - name: Download wheel
         uses: actions/download-artifact@v4
@@ -145,66 +101,3 @@ jobs:
 
       - name: Smoke test wheel install
         run: python -I -S scripts/install_wheel_smoke.py --dist-dir dist
-
-  tests:
-    name: Tests (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      UV_PYTHON: ${{ matrix.python-version }}
-      UV_PYTHON_DOWNLOADS: never
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-
-      - name: Build extension in place
-        run: uv run --locked --extra dev --with "maturin>=1.7,<2" maturin develop --locked --skip-install
-
-      - name: Verify test interpreter
-        env:
-          EXPECTED_PYTHON: ${{ matrix.python-version }}
-        run: |
-          uv run --locked --extra dev python - <<'PY'
-          import os
-          import sys
-          import sysconfig
-
-          print(sys.version, sys.executable)
-          assert f"{sys.version_info.major}.{sys.version_info.minor}" == os.environ["EXPECTED_PYTHON"]
-          assert sys.version_info.releaselevel == "final"
-          assert sys.implementation.name == "cpython"
-          assert not sysconfig.get_config_var("Py_GIL_DISABLED")
-          PY
-
-      - name: Run tests
-        if: matrix.python-version != '3.14'
-        run: uv run --locked --extra dev pytest -vv
-
-      - name: Run tests with coverage
-        if: matrix.python-version == '3.14'
-        run: uv run --locked --extra dev coverage run -m pytest -vv
-
-      - name: Report coverage
-        if: matrix.python-version == '3.14'
-        run: uv run --locked --extra dev coverage report -m
