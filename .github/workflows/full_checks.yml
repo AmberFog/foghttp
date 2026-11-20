@@ -2,11 +2,6 @@ name: Full checks
 
 on:
   workflow_call:
-    inputs:
-      candidate-sha:
-        description: Immutable commit checked by this workflow
-        required: true
-        type: string
     outputs:
       candidate-sha:
         description: Commit verified by every required quality job
@@ -24,7 +19,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.candidate-sha }}
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -33,11 +28,10 @@ jobs:
 
       - name: Verify candidate identity
         env:
-          CANDIDATE_SHA: ${{ inputs.candidate-sha }}
-          EXPECTED_SHA: ${{ github.sha }}
+          CANDIDATE_SHA: ${{ github.sha }}
         run: >-
           python scripts/check_release_candidate.py
-          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$EXPECTED_SHA"
+          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
           --checkout-sha "$(git rev-parse HEAD)"
 
       - name: Set up uv
@@ -57,7 +51,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.candidate-sha }}
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -66,11 +60,10 @@ jobs:
 
       - name: Verify candidate identity
         env:
-          CANDIDATE_SHA: ${{ inputs.candidate-sha }}
-          EXPECTED_SHA: ${{ github.sha }}
+          CANDIDATE_SHA: ${{ github.sha }}
         run: >-
           python scripts/check_release_candidate.py
-          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$EXPECTED_SHA"
+          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
           --checkout-sha "$(git rev-parse HEAD)"
 
       - name: Set up Rust
@@ -98,7 +91,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.candidate-sha }}
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -107,11 +100,10 @@ jobs:
 
       - name: Verify candidate identity
         env:
-          CANDIDATE_SHA: ${{ inputs.candidate-sha }}
-          EXPECTED_SHA: ${{ github.sha }}
+          CANDIDATE_SHA: ${{ github.sha }}
         run: >-
           python scripts/check_release_candidate.py
-          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$EXPECTED_SHA"
+          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
           --checkout-sha "$(git rev-parse HEAD)"
 
       - name: Set up Rust MSRV
@@ -144,7 +136,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.candidate-sha }}
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -153,11 +145,10 @@ jobs:
 
       - name: Verify candidate identity
         env:
-          CANDIDATE_SHA: ${{ inputs.candidate-sha }}
-          EXPECTED_SHA: ${{ github.sha }}
+          CANDIDATE_SHA: ${{ github.sha }}
         run: >-
           python scripts/check_release_candidate.py
-          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$EXPECTED_SHA"
+          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
           --checkout-sha "$(git rev-parse HEAD)"
 
       - name: Set up Rust
@@ -215,7 +206,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.candidate-sha }}
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -225,12 +216,11 @@ jobs:
       - name: Require every full check
         id: verify
         env:
-          CANDIDATE_SHA: ${{ inputs.candidate-sha }}
-          EXPECTED_SHA: ${{ github.sha }}
+          CANDIDATE_SHA: ${{ github.sha }}
           CHECK_RESULTS: ${{ toJSON(needs) }}
         run: |
           python scripts/check_release_candidate.py \
-            --candidate-sha "$CANDIDATE_SHA" --expected-sha "$EXPECTED_SHA" \
+            --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA" \
             --checkout-sha "$(git rev-parse HEAD)" --needs-json "$CHECK_RESULTS" \
             --required-check pre-commit --required-check rust \
             --required-check rust-msrv --required-check tests \

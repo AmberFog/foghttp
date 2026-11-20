@@ -12,8 +12,6 @@ jobs:
   validate-version:
     name: Validate release version
     runs-on: ubuntu-latest
-    outputs:
-      candidate-sha: ${{ steps.candidate.outputs.candidate-sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,34 +23,24 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Resolve immutable candidate
-        id: candidate
+      - name: Verify candidate identity
         env:
           CANDIDATE_SHA: ${{ github.sha }}
         run: |
           python scripts/check_release_candidate.py \
             --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA" \
             --checkout-sha "$(git rev-parse HEAD)"
-          echo "candidate-sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Check package versions and release tag
         shell: python
         run: |
           import os
-          import re
           import tomllib
           from pathlib import Path
 
-          pyproject_version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
-          cargo_toml = Path("Cargo.toml").read_text()
-          cargo_version = re.search(r'^version\s*=\s*"([^"]+)"', cargo_toml, re.MULTILINE)
-
-          if cargo_version is None:
-              raise SystemExit("Cargo.toml package version was not found")
-
           versions = {
-              "pyproject.toml": pyproject_version,
-              "Cargo.toml": cargo_version.group(1),
+              "pyproject.toml": tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"],
+              "Cargo.toml": tomllib.loads(Path("Cargo.toml").read_text(encoding="utf-8"))["package"]["version"],
           }
           if os.environ["GITHUB_EVENT_NAME"] == "release":
               ref = os.environ["GITHUB_REF"]
@@ -67,8 +55,6 @@ jobs:
     name: Full candidate checks
     needs: validate-version
     uses: ./.github/workflows/full_checks.yml
-    with:
-      candidate-sha: ${{ needs.validate-version.outputs.candidate-sha }}
 
   linux-wheels:
     name: Build Linux wheel (${{ matrix.target }})
@@ -83,7 +69,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.validate-version.outputs.candidate-sha }}
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -93,7 +79,7 @@ jobs:
       - name: Verify candidate identity
         shell: bash
         env:
-          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+          CANDIDATE_SHA: ${{ github.sha }}
         run: >-
           python scripts/check_release_candidate.py
           --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
@@ -134,7 +120,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.validate-version.outputs.candidate-sha }}
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -144,7 +130,7 @@ jobs:
       - name: Verify candidate identity
         shell: bash
         env:
-          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+          CANDIDATE_SHA: ${{ github.sha }}
         run: >-
           python scripts/check_release_candidate.py
           --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
@@ -178,7 +164,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.validate-version.outputs.candidate-sha }}
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -188,7 +174,7 @@ jobs:
       - name: Verify candidate identity
         shell: bash
         env:
-          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+          CANDIDATE_SHA: ${{ github.sha }}
         run: >-
           python scripts/check_release_candidate.py
           --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
@@ -227,7 +213,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.validate-version.outputs.candidate-sha }}
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -237,7 +223,7 @@ jobs:
       - name: Verify candidate identity
         shell: bash
         env:
-          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+          CANDIDATE_SHA: ${{ github.sha }}
         run: >-
           python scripts/check_release_candidate.py
           --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
@@ -261,7 +247,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.validate-version.outputs.candidate-sha }}
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -272,7 +258,7 @@ jobs:
       - name: Verify candidate identity
         shell: bash
         env:
-          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+          CANDIDATE_SHA: ${{ github.sha }}
         run: >-
           python scripts/check_release_candidate.py
           --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
@@ -305,7 +291,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.validate-version.outputs.candidate-sha }}
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -316,7 +302,7 @@ jobs:
       - name: Verify candidate identity
         shell: bash
         env:
-          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+          CANDIDATE_SHA: ${{ github.sha }}
         run: >-
           python scripts/check_release_candidate.py
           --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
@@ -336,11 +322,26 @@ jobs:
     runs-on: ubuntu-latest
     needs: [linux-wheels, macos-wheels, windows-wheels]
     timeout-minutes: 15
+    outputs:
+      wheel-digest: ${{ steps.inventory.outputs.wheel-digest }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Verify candidate identity
+        env:
+          CANDIDATE_SHA: ${{ github.sha }}
+        run: >-
+          python scripts/check_release_candidate.py
+          --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
+          --checkout-sha "$(git rev-parse HEAD)"
 
       - name: Download wheel artifacts
         uses: actions/download-artifact@v4
@@ -351,6 +352,12 @@ jobs:
 
       - name: Install abi3audit
         run: python -m pip install --disable-pip-version-check "abi3audit==0.0.26"
+
+      - name: Verify release wheel inventory
+        id: inventory
+        run: |
+          digest=$(python -I scripts/check_release_wheels.py --dist-dir dist)
+          echo "wheel-digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: Audit stable ABI compatibility
         shell: bash
@@ -365,7 +372,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.validate-version.outputs.candidate-sha }}
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -375,7 +382,7 @@ jobs:
       - name: Verify candidate identity
         shell: bash
         env:
-          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+          CANDIDATE_SHA: ${{ github.sha }}
         run: >-
           python scripts/check_release_candidate.py
           --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
@@ -390,7 +397,7 @@ jobs:
       - name: Record source archive identity
         shell: python
         env:
-          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+          CANDIDATE_SHA: ${{ github.sha }}
         run: |
           import hashlib
           import json
@@ -433,7 +440,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.validate-version.outputs.candidate-sha }}
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -443,7 +450,7 @@ jobs:
       - name: Verify candidate identity
         shell: bash
         env:
-          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+          CANDIDATE_SHA: ${{ github.sha }}
         run: >-
           python scripts/check_release_candidate.py
           --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
@@ -467,7 +474,7 @@ jobs:
       - name: Rebuild and verify source archive
         id: verify
         env:
-          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+          CANDIDATE_SHA: ${{ github.sha }}
         run: |
           python -I -S scripts/check_sdist.py \
             --dist-dir dist --manifest evidence/sdist-provenance.json \
@@ -498,7 +505,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.validate-version.outputs.candidate-sha }}
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -507,7 +514,7 @@ jobs:
 
       - name: Require every release check for this candidate
         env:
-          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+          CANDIDATE_SHA: ${{ github.sha }}
           QUALITY_SHA: ${{ needs.full-checks.outputs.candidate-sha }}
           SDIST_SHA: ${{ needs.sdist-smoke.outputs.candidate-sha }}
           CHECK_RESULTS: ${{ toJSON(needs) }}
@@ -535,6 +542,7 @@ jobs:
     needs:
       - validate-version
       - release-gate
+      - audit-wheels
     environment: pypi
     timeout-minutes: 15
     permissions:
@@ -544,7 +552,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.validate-version.outputs.candidate-sha }}
+          ref: ${{ github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -554,7 +562,7 @@ jobs:
       - name: Verify candidate identity
         shell: bash
         env:
-          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+          CANDIDATE_SHA: ${{ github.sha }}
         run: >-
           python scripts/check_release_candidate.py
           --candidate-sha "$CANDIDATE_SHA" --expected-sha "$GITHUB_SHA"
@@ -567,11 +575,16 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Verify audited wheels before publication
+        env:
+          AUDITED_WHEEL_DIGEST: ${{ needs.audit-wheels.outputs.wheel-digest }}
+        run: python -I -S scripts/check_release_wheels.py --dist-dir dist --expected-digest "$AUDITED_WHEEL_DIGEST"
+
       - name: Download verified source archive
         uses: actions/download-artifact@v4
         with:
           name: sdist
-          path: dist
+          path: source-dist
 
       - name: Download source archive identity
         uses: actions/download-artifact@v4
@@ -582,7 +595,7 @@ jobs:
       - name: Verify source archive before publication
         shell: python
         env:
-          CANDIDATE_SHA: ${{ needs.validate-version.outputs.candidate-sha }}
+          CANDIDATE_SHA: ${{ github.sha }}
         run: |
           import hashlib
           import json
@@ -590,8 +603,8 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path("evidence/sdist-provenance.json").read_text())
-          archives = list(Path("dist").glob("*.tar.gz"))
-          if len(archives) != 1:
+          archives = list(Path("source-dist").glob("*.tar.gz"))
+          if len(archives) != 1 or not archives[0].is_file() or archives[0].is_symlink():
               raise SystemExit("expected exactly one verified source archive")
           archive = archives[0]
           expected = {
@@ -601,6 +614,7 @@ jobs:
           }
           if manifest != expected:
               raise SystemExit("source archive does not match the verified candidate")
+          archive.replace(Path("dist") / archive.name)
 
       - name: Publish package distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
