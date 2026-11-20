@@ -78,9 +78,11 @@ That workflow owns the pre-commit, Rust stable/MSRV and complete CPython
 3.11-3.15 suites. Release reruns these checks for its own immutable event
 commit. A version match or a successful run for another PR, branch head or
 synthetic merge is insufficient.
-Every source checkout is pinned to the full candidate SHA and verifies its
-identity against `github.sha`. Required jobs must all report `success`;
-missing, failed, cancelled and skipped results cannot qualify a candidate.
+Every source checkout takes its immutable revision directly from `github.sha`
+and verifies the checked-out commit against the runner's `GITHUB_SHA`. The
+shared workflow uses its caller's event SHA. Job outputs carry evidence for
+the gates. Required jobs must all report `success`; missing, failed, cancelled
+and skipped results cannot qualify a candidate.
 
 The source-distribution producer records the candidate SHA, archive filename
 and SHA-256 in the separate `sdist-provenance` artifact. The `sdist-smoke` job
@@ -93,8 +95,11 @@ and async requests. Its receipt retains the source SHA and archive/rebuilt-wheel
 digests; the source archive is checked again after the smoke.
 
 `release-gate` requires the full-check and sdist receipts to name that same
-candidate, alongside every existing wheel audit and native smoke. Publication
-downloads only `wheels-*` and `sdist`, then rechecks the retained source identity.
+candidate, alongside every wheel audit and native smoke. Before the ABI audit,
+the workflow requires exactly one wheel for each of the five release targets.
+It records a SHA-256 digest covering every wheel filename and its contents.
+Publication recomputes that digest after downloading the wheels. It separately
+verifies the source archive against its provenance and adds it to the five wheels.
 Quality receipts, provenance and the locally rebuilt qualification wheel are
 kept out of the distribution directory. All artifacts are from the current
 workflow run; no historical-run lookup or approval of an older SHA is used.

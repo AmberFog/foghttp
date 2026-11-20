@@ -9,8 +9,8 @@ mod py;
 
 use pyo3::prelude::*;
 
-#[pymodule]
-fn _foghttp(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
+#[pymodule(name = "_foghttp")]
+fn foghttp_module(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     py::register(module)?;
     errors::register(py, module)?;
     Ok(())

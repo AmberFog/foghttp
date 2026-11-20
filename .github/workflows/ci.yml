@@ -17,8 +17,6 @@ jobs:
   quality:
     name: Full checks
     uses: ./.github/workflows/full_checks.yml
-    with:
-      candidate-sha: ${{ github.sha }}
 
   abi3-wheel:
     name: Build and audit abi3 wheel
