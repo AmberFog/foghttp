@@ -267,8 +267,11 @@ fn trailing_bytes_and_non_gzip_concatenation_are_rejected() {
 
 #[test]
 fn checksum_and_member_header_errors_are_terminal() {
+    let payload = b"checksum payload".repeat(8192);
     for coding in ["gzip", "deflate"] {
-        let encoded = encode(coding, &b"checksum payload".repeat(8192));
+        let encoded = encode(coding, &payload);
+        // Allow for bytewise input, output drains and internal flush/EOF transitions.
+        let step_budget = 4 * (encoded.len() + payload.len().div_ceil(OUTPUT_SIZE) + 1);
         for corruption in if coding == "gzip" {
             vec![0, 3, encoded.len() - 8, encoded.len() - 1]
         } else {
@@ -278,15 +281,21 @@ fn checksum_and_member_header_errors_are_terminal() {
             input[corruption] ^= 0x80;
             let mut decoder = StreamingDecoder::new(plan(coding), None);
             let mut offset = 0;
-            let error = loop {
-                match decoder.step(&input[offset..], true) {
+            let error = (0..step_budget)
+                .find_map(|_| match decoder.step(&input[offset..], true) {
                     Ok(step) => {
                         assert_ne!(step.status, StepStatus::Finished);
                         offset += step.consumed;
+                        None
                     }
-                    Err(error) => break error,
-                }
-            };
+                    Err(error) => Some(error),
+                })
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{coding} corruption at {corruption}: no error after {step_budget} steps, consumed {offset}/{}",
+                        input.len()
+                    )
+                });
             assert!(matches!(error, StreamDecodeError::Decode { .. }));
             assert_eq!(
                 decoder.step(b"", true).unwrap_err().to_string(),
@@ -433,9 +442,10 @@ fn gzip_starvation_drains_available_output_before_requesting_input() {
 }
 
 fn assert_gzip_starvation_output(prefix: usize, pending_output: usize) {
-    let payload = vec![0x5a; 2 * OUTPUT_SIZE];
-    let encoded = encode("gzip", &payload);
-    // GzEncoder's default header has no optional fields; exclude its trailer.
+    // flate2 1.1.9 (miniz_oxide 0.8.9), Compression::fast(), 128 KiB of 0x5a.
+    // After the 10-byte header, 167 DEFLATE bytes yield 32 KiB. Byte 168
+    // makes another 258 output bytes available on the empty-input call.
+    let encoded = include_bytes!("fixtures/gzip_starvation.gz");
     assert_eq!(&encoded[..4], &[0x1f, 0x8b, 8, 0]);
     let body = &encoded[10..encoded.len() - 8];
     let mut scratch = vec![0; OUTPUT_SIZE];
@@ -444,6 +454,7 @@ fn assert_gzip_starvation_output(prefix: usize, pending_output: usize) {
         .unwrap();
     assert_eq!(usize::try_from(raw.total_in()).unwrap(), prefix);
     let initial_output = usize::try_from(raw.total_out()).unwrap();
+    assert_eq!(initial_output, 32 * 1024);
     let mut expected = scratch[..initial_output].to_vec();
     // No new compressed bytes and no Finish: extra output is not input hunger.
     raw.decompress(&[], &mut scratch, flate2::FlushDecompress::None)
