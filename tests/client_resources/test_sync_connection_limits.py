@@ -11,6 +11,7 @@ from tests.client_keepalive.server import start_keepalive_server
 from tests.client_timeouts.helpers import assert_timeout_diagnostic
 
 from .constants import SLOW_RESPONSE_PATH
+from .gates import SyncResponseGate
 from .helpers import wait_for_sync_stats
 
 
@@ -20,6 +21,7 @@ EXPECTED_IDLE_ORIGINS = 2
 
 def test_global_connection_limit_waits_without_pending_request_queue(
     sync_resource_http_server: str,
+    sync_resource_gate: SyncResponseGate,
 ) -> None:
     limits = foghttp.Limits(
         max_active_requests=2,
@@ -32,10 +34,11 @@ def test_global_connection_limit_waits_without_pending_request_queue(
     with foghttp.Client(limits=limits, timeouts=timeouts) as client:
         with ThreadPoolExecutor(max_workers=2) as executor:
             slow = executor.submit(client.get, f"{sync_resource_http_server}{SLOW_RESPONSE_PATH}")
-            wait_for_sync_stats(client, lambda stats: stats.active_connections == 1)
+            with sync_resource_gate.hold():
+                wait_for_sync_stats(client, lambda stats: stats.active_connections == 1)
 
-            fast = executor.submit(client.get, sync_resource_http_server)
-            wait_for_sync_stats(client, lambda stats: stats.connection_acquire_waited == 1)
+                fast = executor.submit(client.get, sync_resource_http_server)
+                wait_for_sync_stats(client, lambda stats: stats.connection_acquire_waited == 1)
 
             assert slow.result(timeout=2.0).status_code == OK
             assert fast.result(timeout=2.0).status_code == OK
@@ -58,6 +61,7 @@ def test_global_connection_limit_waits_without_pending_request_queue(
 
 def test_global_connection_limit_timeout_uses_pool_timeout_diagnostic(
     sync_resource_http_server: str,
+    sync_resource_gate: SyncResponseGate,
 ) -> None:
     limits = foghttp.Limits(
         max_active_requests=2,
@@ -70,11 +74,12 @@ def test_global_connection_limit_timeout_uses_pool_timeout_diagnostic(
     with foghttp.Client(limits=limits, timeouts=timeouts) as client:
         with ThreadPoolExecutor(max_workers=2) as executor:
             slow = executor.submit(client.get, f"{sync_resource_http_server}{SLOW_RESPONSE_PATH}")
-            wait_for_sync_stats(client, lambda stats: stats.active_connections == 1)
+            with sync_resource_gate.hold():
+                wait_for_sync_stats(client, lambda stats: stats.active_connections == 1)
 
-            fast = executor.submit(client.get, sync_resource_http_server)
-            with pytest.raises(foghttp.PoolTimeout, match=CONNECTION_ACQUIRE_TIMEOUT) as exc_info:
-                fast.result(timeout=1.0)
+                fast = executor.submit(client.get, sync_resource_http_server)
+                with pytest.raises(foghttp.PoolTimeout, match=CONNECTION_ACQUIRE_TIMEOUT) as exc_info:
+                    fast.result(timeout=1.0)
 
             assert slow.result(timeout=2.0).status_code == OK
 
@@ -97,6 +102,7 @@ def test_global_connection_limit_timeout_uses_pool_timeout_diagnostic(
 
 def test_per_host_connection_limit_reports_origin_pressure(
     sync_resource_http_server: str,
+    sync_resource_gate: SyncResponseGate,
 ) -> None:
     limits = foghttp.Limits(
         max_active_requests=2,
@@ -110,11 +116,12 @@ def test_per_host_connection_limit_reports_origin_pressure(
     with foghttp.Client(limits=limits, timeouts=timeouts) as client:
         with ThreadPoolExecutor(max_workers=2) as executor:
             slow = executor.submit(client.get, f"{sync_resource_http_server}{SLOW_RESPONSE_PATH}")
-            wait_for_sync_stats(client, lambda stats: stats.active_connections == 1)
+            with sync_resource_gate.hold():
+                wait_for_sync_stats(client, lambda stats: stats.active_connections == 1)
 
-            fast = executor.submit(client.get, sync_resource_http_server)
-            with pytest.raises(foghttp.PoolTimeout, match=CONNECTION_ACQUIRE_TIMEOUT):
-                fast.result(timeout=1.0)
+                fast = executor.submit(client.get, sync_resource_http_server)
+                with pytest.raises(foghttp.PoolTimeout, match=CONNECTION_ACQUIRE_TIMEOUT):
+                    fast.result(timeout=1.0)
 
             assert slow.result(timeout=2.0).status_code == OK
 

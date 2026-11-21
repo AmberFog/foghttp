@@ -10,11 +10,13 @@ from .constants import (
     PER_ORIGIN_ACTIVE_REQUESTS_BLOCK,
     SLOW_RESPONSE_PATH,
 )
+from .gates import AsyncResponseGate
 from .helpers import has_pending_pool_waiter, wait_for_async_pool_diagnostics, wait_for_async_stats
 
 
 async def test_dump_pool_diagnostics_reports_per_origin_pressure_and_clears_cancelled_waiter(
     resource_http_server: str,
+    resource_gate: AsyncResponseGate,
 ) -> None:
     limits = foghttp.Limits(
         max_active_requests=2,
@@ -27,29 +29,30 @@ async def test_dump_pool_diagnostics_reports_per_origin_pressure_and_clears_canc
         blocker = asyncio.create_task(client.get(resource_http_server + SLOW_RESPONSE_PATH))
         waiter = None
         try:
-            await wait_for_async_stats(client, lambda stats: stats.active_requests == 1)
+            async with resource_gate.hold():
+                await wait_for_async_stats(client, lambda stats: stats.active_requests == 1)
 
-            waiter = asyncio.create_task(client.get(resource_http_server))
-            await wait_for_async_stats(client, lambda stats: stats.pending_requests == 1)
+                waiter = asyncio.create_task(client.get(resource_http_server))
+                await wait_for_async_stats(client, lambda stats: stats.pending_requests == 1)
 
-            diagnostics = await wait_for_async_pool_diagnostics(
-                client,
-                lambda diagnostics: has_pending_pool_waiter(
-                    diagnostics,
-                    origin=resource_http_server,
-                    blocked_by=PER_ORIGIN_ACTIVE_REQUESTS_BLOCK,
-                ),
-            )
-            origin_diagnostics = diagnostics["origins"][resource_http_server]
+                diagnostics = await wait_for_async_pool_diagnostics(
+                    client,
+                    lambda diagnostics: has_pending_pool_waiter(
+                        diagnostics,
+                        origin=resource_http_server,
+                        blocked_by=PER_ORIGIN_ACTIVE_REQUESTS_BLOCK,
+                    ),
+                )
+                origin_diagnostics = diagnostics["origins"][resource_http_server]
 
-            waiter.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await waiter
-            await wait_for_async_stats(
-                client,
-                lambda stats: stats.active_requests == 1 and stats.pending_requests == 0,
-            )
-            cancelled_diagnostics = client.dump_pool_diagnostics()
+                waiter.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await waiter
+                await wait_for_async_stats(
+                    client,
+                    lambda stats: stats.active_requests == 1 and stats.pending_requests == 0,
+                )
+                cancelled_diagnostics = client.dump_pool_diagnostics()
 
             blocker_response = await blocker
         finally:
