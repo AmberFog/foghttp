@@ -1,6 +1,6 @@
 from collections.abc import Callable, Iterator
 import gc
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import importlib
 import sys
 import threading
@@ -14,6 +14,7 @@ from foghttp._client.raw import requests as raw_requests
 from foghttp.status_codes.server_error import INTERNAL_SERVER_ERROR
 from foghttp.status_codes.success import OK
 from tests.client_streaming.server import SyncStreamingServer, start_sync_streaming_server
+from tests.support.sync_server import SyncHTTPServer
 
 from .constants import BLOCKING_RESPONSE_PATH, OK_BODY
 from .helpers import (
@@ -100,9 +101,8 @@ def sync_blocking_http_server() -> Iterator[BlockingSyncHTTPServer]:
         def log_message(self, _format: str, *_args: Any) -> None:
             return
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), BlockingHTTPHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    server = SyncHTTPServer(("127.0.0.1", 0), BlockingHTTPHandler)
+    thread = server.start()
     host, port = server.server_address
     try:
         yield BlockingSyncHTTPServer(
@@ -112,9 +112,7 @@ def sync_blocking_http_server() -> Iterator[BlockingSyncHTTPServer]:
         )
     finally:
         release_response.set()
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=1)
+        server.stop(thread)
 
 
 @pytest.fixture

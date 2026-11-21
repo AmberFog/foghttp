@@ -9,7 +9,7 @@ import asyncio
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager, suppress
 from dataclasses import dataclass
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import sys
 import threading
 import time
@@ -17,6 +17,7 @@ from typing import Protocol
 from urllib.parse import urlsplit
 
 from foghttp.status_codes.success import OK
+from tests.support.sync_server import SyncHTTPServer
 
 from .constants import (
     BROKEN_READY_TAIL_STREAM_PATH,
@@ -54,7 +55,7 @@ class SyncStreamWriter(Protocol):
     def flush(self) -> None: ...
 
 
-class SyncStreamingHTTPServer(ThreadingHTTPServer):
+class SyncStreamingHTTPServer(SyncHTTPServer):
     def handle_error(self, request: object, client_address: object) -> None:
         error_type, _error_value, _traceback = sys.exc_info()
         if error_type is not None and issubclass(error_type, OSError):
@@ -133,8 +134,7 @@ def start_sync_streaming_server(
             return
 
     server = SyncStreamingHTTPServer(("127.0.0.1", 0), SyncStreamingHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    thread = server.start()
     host, port = server.server_address
     try:
         yield SyncStreamingServer(
@@ -144,9 +144,7 @@ def start_sync_streaming_server(
         )
     finally:
         release_tail.set()
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=1)
+        server.stop(thread)
 
 
 async def _write_stream_response(

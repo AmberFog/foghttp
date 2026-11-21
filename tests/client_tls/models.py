@@ -1,18 +1,16 @@
 __all__ = ("TLSServer",)
 
 from dataclasses import dataclass
-from http.server import ThreadingHTTPServer
 import threading
+
+from tests.support.sync_server import SyncHTTPServer
 
 from .constants import TLS_HOST
 
 
-SERVER_JOIN_TIMEOUT = 1.0
-
-
 @dataclass(slots=True)
 class TLSServer:
-    server: ThreadingHTTPServer
+    server: SyncHTTPServer
     thread: threading.Thread
 
     @property
@@ -21,9 +19,7 @@ class TLSServer:
         return f"https://{TLS_HOST}:{port}"
 
     def close(self) -> None:
-        self.server.shutdown()
-        self.server.server_close()
-        self.thread.join(timeout=SERVER_JOIN_TIMEOUT)
+        self.server.stop(self.thread)
 
     def __enter__(self) -> "TLSServer":
         return self

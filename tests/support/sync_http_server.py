@@ -2,7 +2,7 @@ __all__ = ("secondary_sync_http_server", "sync_http_server")
 
 from collections.abc import Iterator
 from functools import partial
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import threading
 from typing import Any, BinaryIO
 from urllib.parse import urlsplit
@@ -33,6 +33,7 @@ from tests.support.raw_responses import (
     json_payload,
     security_headers_payload,
 )
+from tests.support.sync_server import SyncHTTPServer
 
 
 INCOMPLETE_CHUNKED_BODY = "chunked request body ended before the terminating chunk"
@@ -276,10 +277,9 @@ class SyncHTTPHandler(BaseHTTPRequestHandler):
         self.wfile.write(content)
 
 
-def _start_sync_http_server() -> tuple[ThreadingHTTPServer, threading.Thread, str]:
-    server = ThreadingHTTPServer(("127.0.0.1", 0), SyncHTTPHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+def _start_sync_http_server() -> tuple[SyncHTTPServer, threading.Thread, str]:
+    server = SyncHTTPServer(("127.0.0.1", 0), SyncHTTPHandler)
+    thread = server.start()
     host, port = server.server_address
     return server, thread, f"http://{host}:{port}"
 
@@ -311,9 +311,7 @@ def sync_http_server() -> Iterator[str]:
     try:
         yield base_url
     finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=1)
+        server.stop(thread)
 
 
 @pytest.fixture
@@ -322,6 +320,4 @@ def secondary_sync_http_server() -> Iterator[str]:
     try:
         yield base_url
     finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=1)
+        server.stop(thread)

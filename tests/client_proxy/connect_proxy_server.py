@@ -12,6 +12,7 @@ import socketserver
 import threading
 
 from foghttp.status_codes.redirect import FOUND
+from tests.support.sync_server import SyncTCPServer
 
 
 PROXY_HOST = "127.0.0.1"
@@ -46,7 +47,7 @@ class _ProxyConfig:
 
 @dataclass(slots=True)
 class ConnectProxy:
-    server: socketserver.ThreadingTCPServer
+    server: SyncTCPServer
     thread: threading.Thread
     _records: list[ConnectRecord] = field(default_factory=list)
     _http_records: list[ConnectHttpRecord] = field(default_factory=list)
@@ -76,9 +77,7 @@ class ConnectProxy:
             self._http_records.append(request)
 
     def close(self) -> None:
-        self.server.shutdown()
-        self.server.server_close()
-        self.thread.join(timeout=1)
+        self.server.stop(self.thread)
 
 
 def start_connect_proxy(
@@ -103,17 +102,14 @@ def start_connect_proxy(
         hang=hang,
     )
 
-    class _Server(socketserver.ThreadingTCPServer):
+    class _Server(SyncTCPServer):
         allow_reuse_address = True
-        daemon_threads = True
 
     server = _Server((PROXY_HOST, 0), _ConnectHandler)
     proxy = ConnectProxy(server=server, thread=threading.Thread())
     server.proxy = proxy  # type: ignore[attr-defined]
     server.config = config  # type: ignore[attr-defined]
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    proxy.thread = thread
+    proxy.thread = server.start()
     return proxy
 
 
