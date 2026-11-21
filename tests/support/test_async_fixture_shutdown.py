@@ -4,7 +4,9 @@ __all__ = (
     "codec_streaming_server",
     "early_response_http_server",
     "gated_early_response_http_server",
+    "resource_gate",
     "resource_http_server",
+    "secondary_resource_gate",
     "secondary_resource_http_server",
     "slow_upload_request_headers_received",
     "streaming_server",
@@ -28,7 +30,12 @@ from tests.client_proxy.http_proxy_server import (
     async_http_proxy,
     start_async_http_proxy,
 )
-from tests.client_resources.conftest import resource_http_server, secondary_resource_http_server
+from tests.client_resources.conftest import (
+    resource_gate,
+    resource_http_server,
+    secondary_resource_gate,
+    secondary_resource_http_server,
+)
 from tests.client_streaming.conftest import codec_streaming_server, streaming_server
 from tests.client_streaming.constants import FIRST_CHUNK, GATED_STREAM_PATH
 from tests.client_streaming.server import AsyncStreamingServer, start_async_streaming_server

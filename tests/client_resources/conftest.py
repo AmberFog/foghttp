@@ -1,8 +1,9 @@
 import asyncio
 from collections.abc import AsyncIterator, Iterator
+from contextlib import contextmanager
+from functools import partial
 from http.server import BaseHTTPRequestHandler
-import threading
-import time
+import socket
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -18,44 +19,73 @@ from .constants import (
     REDIRECT_LOCATION_QUERY_PARAM,
     REDIRECT_STATUS_QUERY_PARAM,
     REDIRECT_TO_LOCATION_PATH,
-    SLOW_RESPONSE_DELAY,
     SLOW_RESPONSE_PATH,
 )
+from .gates import AsyncResponseGate, SyncResponseGate
 
 
 @pytest.fixture
-async def resource_http_server() -> AsyncIterator[str]:
-    async with serve_tcp(_handle_resource_request) as port:
+def resource_gate() -> AsyncResponseGate:
+    return AsyncResponseGate()
+
+
+@pytest.fixture
+def secondary_resource_gate() -> AsyncResponseGate:
+    return AsyncResponseGate()
+
+
+@pytest.fixture
+def sync_resource_gate() -> SyncResponseGate:
+    return SyncResponseGate()
+
+
+@pytest.fixture
+def secondary_sync_resource_gate() -> SyncResponseGate:
+    return SyncResponseGate()
+
+
+@pytest.fixture
+async def resource_http_server(resource_gate: AsyncResponseGate) -> AsyncIterator[str]:
+    async with serve_tcp(partial(_handle_resource_request, gate=resource_gate)) as port:
         yield f"http://127.0.0.1:{port}"
 
 
 @pytest.fixture
-async def secondary_resource_http_server() -> AsyncIterator[str]:
-    async with serve_tcp(_handle_resource_request) as port:
+async def secondary_resource_http_server(secondary_resource_gate: AsyncResponseGate) -> AsyncIterator[str]:
+    async with serve_tcp(partial(_handle_resource_request, gate=secondary_resource_gate)) as port:
         yield f"http://127.0.0.1:{port}"
 
 
 @pytest.fixture
-def sync_resource_http_server() -> Iterator[str]:
-    server, thread = _start_sync_resource_server()
-    try:
-        host, port = server.server_address
-        yield f"http://{host}:{port}"
-    finally:
-        server.stop(thread)
+def sync_resource_http_server(sync_resource_gate: SyncResponseGate) -> Iterator[str]:
+    with _sync_resource_server(sync_resource_gate) as url:
+        yield url
 
 
 @pytest.fixture
-def secondary_sync_resource_http_server() -> Iterator[str]:
-    server, thread = _start_sync_resource_server()
+def secondary_sync_resource_http_server(secondary_sync_resource_gate: SyncResponseGate) -> Iterator[str]:
+    with _sync_resource_server(secondary_sync_resource_gate) as url:
+        yield url
+
+
+@contextmanager
+def _sync_resource_server(gate: SyncResponseGate) -> Iterator[str]:
+    host = "127.0.0.1"
+    server = SyncHTTPServer((host, 0), partial(ResourceHTTPHandler, gate=gate))
+    thread = server.start()
     try:
-        host, port = server.server_address
-        yield f"http://{host}:{port}"
+        yield f"http://{host}:{server.server_port}"
     finally:
+        gate.release_response.set()
         server.stop(thread)
 
 
-async def _handle_resource_request(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+async def _handle_resource_request(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    *,
+    gate: AsyncResponseGate,
+) -> None:
     try:
         head = await reader.readuntil(b"\r\n\r\n")
         request_line = head.decode("iso-8859-1").splitlines()[0]
@@ -68,7 +98,8 @@ async def _handle_resource_request(reader: asyncio.StreamReader, writer: asyncio
 
         target_parts = urlsplit(target)
         if target_parts.path == SLOW_RESPONSE_PATH:
-            await asyncio.sleep(SLOW_RESPONSE_DELAY)
+            gate.request_started.set()
+            await gate.release_response.wait()
         await _write_ok_response(writer)
     except (asyncio.IncompleteReadError, OSError):
         return
@@ -112,6 +143,17 @@ def _raw_redirect_response(status_code: int, location: str) -> bytes:
 class ResourceHTTPHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
+    def __init__(
+        self,
+        request: socket.socket,
+        client_address: tuple[str, int],
+        server: SyncHTTPServer,
+        *,
+        gate: SyncResponseGate,
+    ) -> None:
+        self._gate = gate
+        super().__init__(request, client_address, server)
+
     def do_GET(self) -> None:
         redirect = _redirect_to_location(self.path)
         if redirect is not None:
@@ -121,7 +163,8 @@ class ResourceHTTPHandler(BaseHTTPRequestHandler):
 
         target_parts = urlsplit(self.path)
         if target_parts.path == SLOW_RESPONSE_PATH:
-            time.sleep(SLOW_RESPONSE_DELAY)
+            self._gate.request_started.set()
+            self._gate.release_response.wait()
 
         self.send_response(OK)
         self.send_header("content-length", str(len(OK_BODY)))
@@ -138,9 +181,3 @@ class ResourceHTTPHandler(BaseHTTPRequestHandler):
         self.send_header("content-length", "0")
         self.send_header("connection", "close")
         self.end_headers()
-
-
-def _start_sync_resource_server() -> tuple[SyncHTTPServer, threading.Thread]:
-    server = SyncHTTPServer(("127.0.0.1", 0), ResourceHTTPHandler)
-    thread = server.start()
-    return server, thread

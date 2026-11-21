@@ -12,6 +12,7 @@ from .constants import (
     NO_POOL_BLOCK,
     SLOW_RESPONSE_PATH,
 )
+from .gates import SyncResponseGate
 from .helpers import has_pending_pool_waiter, wait_for_sync_pool_diagnostics, wait_for_sync_stats
 
 
@@ -39,6 +40,7 @@ def test_dump_pool_diagnostics_reports_empty_state_before_transport_creation() -
 
 def test_dump_pool_diagnostics_reports_global_active_request_pressure(
     sync_resource_http_server: str,
+    sync_resource_gate: SyncResponseGate,
 ) -> None:
     limits = foghttp.Limits(max_active_requests=1, max_pending_requests=1)
     timeouts = foghttp.Timeouts(pool=1.0, total=2.0)
@@ -51,20 +53,21 @@ def test_dump_pool_diagnostics_reports_global_active_request_pressure(
             client.get,
             sync_resource_http_server + SLOW_RESPONSE_PATH,
         )
-        wait_for_sync_stats(client, lambda stats: stats.active_requests == 1)
+        with sync_resource_gate.hold():
+            wait_for_sync_stats(client, lambda stats: stats.active_requests == 1)
 
-        waiter = executor.submit(client.get, sync_resource_http_server)
-        wait_for_sync_stats(client, lambda stats: stats.pending_requests == 1)
+            waiter = executor.submit(client.get, sync_resource_http_server)
+            wait_for_sync_stats(client, lambda stats: stats.pending_requests == 1)
 
-        diagnostics = wait_for_sync_pool_diagnostics(
-            client,
-            lambda diagnostics: has_pending_pool_waiter(
-                diagnostics,
-                origin=sync_resource_http_server,
-                blocked_by=GLOBAL_ACTIVE_REQUESTS_BLOCK,
-            ),
-        )
-        origin_diagnostics = diagnostics["origins"][sync_resource_http_server]
+            diagnostics = wait_for_sync_pool_diagnostics(
+                client,
+                lambda diagnostics: has_pending_pool_waiter(
+                    diagnostics,
+                    origin=sync_resource_http_server,
+                    blocked_by=GLOBAL_ACTIVE_REQUESTS_BLOCK,
+                ),
+            )
+            origin_diagnostics = diagnostics["origins"][sync_resource_http_server]
 
         blocker_response = blocker.result(timeout=1)
         waiter_response = waiter.result(timeout=1)
