@@ -6,12 +6,13 @@ __all__ = (
     "ProxyRequest",
     "SyncHTTPProxy",
     "async_http_proxy",
+    "start_async_http_proxy",
     "sync_http_proxy",
 )
 
 import asyncio
 from collections.abc import AsyncIterator, Iterator
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler
 import json
@@ -23,6 +24,7 @@ import pytest
 
 from foghttp.status_codes.redirect import FOUND
 from foghttp.status_codes.success import OK
+from tests.support.async_server import serve_tcp
 from tests.support.raw_responses import raw_response
 from tests.support.sync_server import SyncHTTPServer
 
@@ -69,13 +71,8 @@ class SyncHTTPProxy:
 
 @dataclass(slots=True)
 class AsyncHTTPProxy:
-    server: asyncio.AbstractServer
     base_url: str
-    requests: list[ProxyRequest] = field(default_factory=list)
-
-    async def close(self) -> None:
-        self.server.close()
-        await self.server.wait_closed()
+    requests: list[ProxyRequest]
 
 
 class SyncHTTPProxyHandler(BaseHTTPRequestHandler):
@@ -156,37 +153,32 @@ def sync_http_proxy() -> Iterator[SyncHTTPProxy]:
 
 @pytest.fixture
 async def async_http_proxy() -> AsyncIterator[AsyncHTTPProxy]:
-    proxy: AsyncHTTPProxy | None = None
+    async with start_async_http_proxy() as proxy:
+        yield proxy
+
+
+@asynccontextmanager
+async def start_async_http_proxy() -> AsyncIterator[AsyncHTTPProxy]:
+    requests: list[ProxyRequest] = []
 
     async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             head, body = await _read_request(reader)
-            request = ProxyRequest(
-                request_line=head.splitlines()[0],
-                headers=_headers_from_head(head),
-                body=body,
-            )
-            if proxy is None:
-                msg = "async proxy fixture was not initialized"
-                raise RuntimeError(msg)
-            proxy.requests.append(request)
-            if _target_path(_request_target(request)) == PROXY_STREAM_EARLY_CLOSE_PATH:
-                await _write_async_chunked_stream_response(writer)
-            else:
-                writer.write(_raw_proxy_response(request))
-                await writer.drain()
-        finally:
-            writer.close()
-            with suppress(asyncio.CancelledError, OSError):
-                await writer.wait_closed()
+        except (asyncio.IncompleteReadError, ConnectionResetError):
+            return
+        request = ProxyRequest(
+            request_line=head.splitlines()[0],
+            headers=_headers_from_head(head),
+            body=body,
+        )
+        requests.append(request)
+        if _target_path(_request_target(request)) == PROXY_STREAM_EARLY_CLOSE_PATH:
+            await _write_async_chunked_stream_response(writer)
+        else:
+            await _write_if_connected(writer, _raw_proxy_response(request))
 
-    server = await asyncio.start_server(handle, "127.0.0.1", 0)
-    host, port = server.sockets[0].getsockname()
-    proxy = AsyncHTTPProxy(server=server, base_url=f"http://{host}:{port}")
-    try:
-        yield proxy
-    finally:
-        await proxy.close()
+    async with serve_tcp(handle) as port:
+        yield AsyncHTTPProxy(base_url=f"http://127.0.0.1:{port}", requests=requests)
 
 
 async def _read_request(reader: asyncio.StreamReader) -> tuple[str, bytes]:
@@ -241,25 +233,31 @@ def _proxy_payload(request: ProxyRequest) -> bytes:
 
 
 async def _write_async_chunked_stream_response(writer: asyncio.StreamWriter) -> None:
-    writer.write(
-        raw_response(
-            OK,
-            "OK",
-            [
-                ("content-type", "application/octet-stream"),
-                ("transfer-encoding", "chunked"),
-                ("connection", "close"),
-            ],
-        ),
+    head = raw_response(
+        OK,
+        "OK",
+        [
+            ("content-type", "application/octet-stream"),
+            ("transfer-encoding", "chunked"),
+            ("connection", "close"),
+        ],
     )
-    await writer.drain()
-    with suppress(OSError):
-        for _index in range(PROXY_STREAM_CHUNKS):
-            writer.write(_chunk_frame(PROXY_STREAM_CHUNK))
-            await writer.drain()
-            await asyncio.sleep(PROXY_STREAM_CHUNK_DELAY_SECONDS)
-        writer.write(b"0\r\n\r\n")
+    if not await _write_if_connected(writer, head):
+        return
+    for _index in range(PROXY_STREAM_CHUNKS):
+        if not await _write_if_connected(writer, _chunk_frame(PROXY_STREAM_CHUNK)):
+            return
+        await asyncio.sleep(PROXY_STREAM_CHUNK_DELAY_SECONDS)
+    await _write_if_connected(writer, b"0\r\n\r\n")
+
+
+async def _write_if_connected(writer: asyncio.StreamWriter, data: bytes) -> bool:
+    try:
+        writer.write(data)
         await writer.drain()
+    except (BrokenPipeError, ConnectionResetError):
+        return False
+    return True
 
 
 def _request_target(request: ProxyRequest) -> str:

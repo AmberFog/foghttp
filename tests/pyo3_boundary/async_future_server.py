@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 import foghttp
 from foghttp.status_codes.success import OK
+from tests.support.async_server import serve_tcp
 
 from .constants import WAIT_TIMEOUT
 
@@ -35,28 +36,24 @@ async def delayed_response_server(
     async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             await reader.readuntil(b"\r\n\r\n")
-            request_seen.set()
-            await release_response.wait()
-            if response is not None:
+        except (asyncio.IncompleteReadError, ConnectionResetError):
+            return
+        request_seen.set()
+        await release_response.wait()
+        if response is not None:
+            with suppress(BrokenPipeError, ConnectionResetError):
                 writer.write(response)
                 await writer.drain()
-        finally:
-            writer.close()
-            with suppress(asyncio.CancelledError, OSError):
-                await writer.wait_closed()
 
-    server = await asyncio.start_server(handle, "127.0.0.1", 0)
-    host, port = server.sockets[0].getsockname()
-    try:
-        yield DelayedResponseServer(
-            base_url=f"http://{host}:{port}",
-            request_seen=request_seen,
-            release_response=release_response,
-        )
-    finally:
-        release_response.set()
-        server.close()
-        await server.wait_closed()
+    async with serve_tcp(handle) as port:
+        try:
+            yield DelayedResponseServer(
+                base_url=f"http://127.0.0.1:{port}",
+                request_seen=request_seen,
+                release_response=release_response,
+            )
+        finally:
+            release_response.set()
 
 
 async def cache_async_client_future_setters(client: foghttp.AsyncClient) -> None:

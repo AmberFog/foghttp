@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 import pytest
 
 from tests.http_body_scenarios import write_async_body_safety_response
+from tests.support.async_server import serve_tcp
 from tests.support.raw_responses import raw_http_server_response
 
 
@@ -32,7 +33,7 @@ async def _read_request(reader: asyncio.StreamReader) -> tuple[str, bytes]:
 async def _read_chunked_body(reader: asyncio.StreamReader) -> bytes:
     body = bytearray()
     while True:
-        size_line = await reader.readline()
+        size_line = await reader.readuntil(b"\n")
         size = int(size_line.split(b";", maxsplit=1)[0].strip(), 16)
         if size == 0:
             await _read_trailers(reader)
@@ -48,42 +49,26 @@ async def _read_trailers(reader: asyncio.StreamReader) -> None:
             return
 
 
-async def _start_async_http_server() -> tuple[asyncio.AbstractServer, str]:
-    async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        try:
-            headers, body = await _read_request(reader)
-            _method, target, _version = headers.splitlines()[0].split()
-            path = urlsplit(target).path
-            if not await write_async_body_safety_response(path, writer):
-                writer.write(raw_http_server_response(headers, body))
-                await writer.drain()
-        except OSError:
-            return
-        finally:
-            writer.close()
-            with suppress(asyncio.CancelledError, OSError):
-                await writer.wait_closed()
-
-    server = await asyncio.start_server(handle, "127.0.0.1", 0)
-    host, port = server.sockets[0].getsockname()
-    return server, f"http://{host}:{port}"
+async def _handle_request(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    try:
+        headers, body = await _read_request(reader)
+    except (asyncio.IncompleteReadError, OSError):
+        return
+    _method, target, _version = headers.splitlines()[0].split()
+    path = urlsplit(target).path
+    with suppress(OSError):
+        if not await write_async_body_safety_response(path, writer):
+            writer.write(raw_http_server_response(headers, body))
+            await writer.drain()
 
 
 @pytest.fixture
 async def http_server() -> AsyncIterator[str]:
-    server, base_url = await _start_async_http_server()
-    try:
-        yield base_url
-    finally:
-        server.close()
-        await server.wait_closed()
+    async with serve_tcp(_handle_request) as port:
+        yield f"http://127.0.0.1:{port}"
 
 
 @pytest.fixture
 async def secondary_http_server() -> AsyncIterator[str]:
-    server, base_url = await _start_async_http_server()
-    try:
-        yield base_url
-    finally:
-        server.close()
-        await server.wait_closed()
+    async with serve_tcp(_handle_request) as port:
+        yield f"http://127.0.0.1:{port}"

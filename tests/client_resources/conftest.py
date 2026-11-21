@@ -1,6 +1,5 @@
 import asyncio
 from collections.abc import AsyncIterator, Iterator
-from contextlib import suppress
 from http.server import BaseHTTPRequestHandler
 import threading
 import time
@@ -11,6 +10,7 @@ import pytest
 
 from foghttp.status_codes.redirect import FOUND
 from foghttp.status_codes.success import OK
+from tests.support.async_server import serve_tcp
 from tests.support.sync_server import SyncHTTPServer
 
 from .constants import (
@@ -25,24 +25,14 @@ from .constants import (
 
 @pytest.fixture
 async def resource_http_server() -> AsyncIterator[str]:
-    server = await _start_async_resource_server()
-    try:
-        host, port = server.sockets[0].getsockname()
-        yield f"http://{host}:{port}"
-    finally:
-        server.close()
-        await server.wait_closed()
+    async with serve_tcp(_handle_resource_request) as port:
+        yield f"http://127.0.0.1:{port}"
 
 
 @pytest.fixture
 async def secondary_resource_http_server() -> AsyncIterator[str]:
-    server = await _start_async_resource_server()
-    try:
-        host, port = server.sockets[0].getsockname()
-        yield f"http://{host}:{port}"
-    finally:
-        server.close()
-        await server.wait_closed()
+    async with serve_tcp(_handle_resource_request) as port:
+        yield f"http://127.0.0.1:{port}"
 
 
 @pytest.fixture
@@ -65,30 +55,23 @@ def secondary_sync_resource_http_server() -> Iterator[str]:
         server.stop(thread)
 
 
-async def _start_async_resource_server() -> asyncio.AbstractServer:
-    async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        try:
-            head = await reader.readuntil(b"\r\n\r\n")
-            request_line = head.decode("iso-8859-1").splitlines()[0]
-            _method, target, _version = request_line.split()
-            redirect = _redirect_to_location(target)
-            if redirect is not None:
-                status_code, location = redirect
-                await _write_redirect_response(writer, status_code, location)
-                return
-
-            target_parts = urlsplit(target)
-            if target_parts.path == SLOW_RESPONSE_PATH:
-                await asyncio.sleep(SLOW_RESPONSE_DELAY)
-            await _write_ok_response(writer)
-        except (asyncio.IncompleteReadError, OSError):
+async def _handle_resource_request(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    try:
+        head = await reader.readuntil(b"\r\n\r\n")
+        request_line = head.decode("iso-8859-1").splitlines()[0]
+        _method, target, _version = request_line.split()
+        redirect = _redirect_to_location(target)
+        if redirect is not None:
+            status_code, location = redirect
+            await _write_redirect_response(writer, status_code, location)
             return
-        finally:
-            writer.close()
-            with suppress(asyncio.CancelledError, OSError):
-                await writer.wait_closed()
 
-    return await asyncio.start_server(handle, "127.0.0.1", 0)
+        target_parts = urlsplit(target)
+        if target_parts.path == SLOW_RESPONSE_PATH:
+            await asyncio.sleep(SLOW_RESPONSE_DELAY)
+        await _write_ok_response(writer)
+    except (asyncio.IncompleteReadError, OSError):
+        return
 
 
 def _redirect_to_location(target: str) -> tuple[int, str] | None:
