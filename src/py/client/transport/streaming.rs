@@ -1,7 +1,9 @@
 use super::client::TransportClients;
 use super::context::RawStreamResponseContext;
 use super::errors::{is_retryable_network_error, transport_error};
-use super::request::{acquire_request_slot, send_current_hop, RequestState, TransportRequest};
+use super::request::{
+    acquire_request_slot, send_current_hop, RequestState, ResponseDisposition, TransportRequest,
+};
 use super::response::{raw_response, raw_stream_response, ResponseLifecycleGuards};
 use super::retry::{retry_after_network_error, retry_after_response};
 use crate::core::headers::response_headers;
@@ -137,14 +139,8 @@ async fn send_stream_request_attempts(
             ResponseLifecycleGuards::new(&response, connection_use, metrics, &origin_metrics);
         let headers = response_headers(response.headers());
         let status_code = response.status().as_u16();
-        let response_action = state.on_response_headers(status_code, &headers, redirect_hop)?;
-        let retry_decision = response_action
-            .is_none()
-            .then(|| state.retry_on_response(status_code, &headers))
-            .flatten();
-
-        if let Some(pending) = retry_decision {
-            if pending.should_retry() {
+        let redirect = match state.on_response_headers(status_code, &headers, redirect_hop)? {
+            ResponseDisposition::Retry(pending) => {
                 retry_after_response(
                     state,
                     &pending,
@@ -156,35 +152,38 @@ async fn send_stream_request_attempts(
                 .await?;
                 continue;
             }
-            state.commit_retry_decision(
-                &pending,
-                started.elapsed(),
-                redirect_hop,
-                RetryAttemptCompletion::Complete,
-            );
-        }
+            ResponseDisposition::Redirect(action) => action,
+            ResponseDisposition::Return(stopped) => {
+                if let Some(stopped) = stopped {
+                    state.commit_retry_decision(
+                        &stopped,
+                        started.elapsed(),
+                        redirect_hop,
+                        RetryAttemptCompletion::Complete,
+                    );
+                }
 
-        let Some(response_action) = response_action else {
-            return raw_stream_response(
-                response,
-                request_info,
-                headers,
-                response_lifecycle,
-                RawStreamResponseContext {
-                    started,
-                    read_timeout: state.read_timeout,
-                    origin,
-                    metrics: Arc::clone(metrics),
-                    active_streams,
-                    runtime_handle,
-                    completion,
-                    permit,
-                    future_setters,
-                    redirect_hop,
-                    history: std::mem::take(history),
-                    decode_options,
-                },
-            );
+                return raw_stream_response(
+                    response,
+                    request_info,
+                    headers,
+                    response_lifecycle,
+                    RawStreamResponseContext {
+                        started,
+                        read_timeout: state.read_timeout,
+                        origin,
+                        metrics: Arc::clone(metrics),
+                        active_streams,
+                        runtime_handle,
+                        completion,
+                        permit,
+                        future_setters,
+                        redirect_hop,
+                        history: std::mem::take(history),
+                        decode_options,
+                    },
+                );
+            }
         };
 
         let raw = raw_response(
@@ -197,7 +196,7 @@ async fn send_stream_request_attempts(
         .await?;
         drop(permit);
 
-        state.after_response_body(response_action, history.len())?;
+        state.after_response_body(redirect, history.len())?;
         history.push(raw);
     }
 }
