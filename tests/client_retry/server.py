@@ -4,16 +4,18 @@ from dataclasses import dataclass
 from socket import socket
 from socketserver import BaseRequestHandler, ThreadingTCPServer
 import threading
+import time
 from typing import Self, cast
 from urllib.parse import urlsplit
 
-from foghttp.status_codes.server_error import SERVICE_UNAVAILABLE
+from foghttp.status_codes.server_error import INTERNAL_SERVER_ERROR, SERVICE_UNAVAILABLE
 from foghttp.status_codes.success import OK
 
 from .constants import (
     ALWAYS_CLOSE_PATH,
     ALWAYS_STATUS_PATH,
     CLOSE_THEN_OK_PATH,
+    EARLY_CLOSE_THEN_OK_PATH,
     EARLY_STATUS_THEN_OK_PATH,
     INCOMPLETE_RETRYABLE_RESPONSE_PATH,
     STATUS_THEN_OK_PATH,
@@ -23,6 +25,7 @@ from .models import RetryRequest, RetryServerSnapshot
 
 HTTP_HEAD_END = b"\r\n\r\n"
 HTTP_LINE_END = b"\r\n"
+EARLY_UPLOAD_GATE_TIMEOUT = "first upload did not reach blocked state"
 MAX_REQUEST_BODY_SIZE = 1024 * 1024
 MAX_REQUEST_HEAD_SIZE = 64 * 1024
 INVALID_CHUNK_DELIMITER = "invalid chunk delimiter"
@@ -53,6 +56,18 @@ class RetryTestServer:
 
     def snapshot(self) -> RetryServerSnapshot:
         return self.server.state.snapshot()
+
+    @property
+    def first_upload_gate_waiting(self) -> threading.Event:
+        return self.server.state.first_upload_gate_waiting
+
+    def coordinate_upload(
+        self,
+        first_waiting: threading.Event,
+        *,
+        path: str = EARLY_STATUS_THEN_OK_PATH,
+    ) -> None:
+        self.server.state.coordinate_upload(path, first_waiting)
 
     def close(self) -> None:
         self.server.shutdown()
@@ -110,23 +125,7 @@ class RetryHTTPHandler(BaseRequestHandler):
                 break
 
             path = urlsplit(request_head.target).path
-            if path == EARLY_STATUS_THEN_OK_PATH and server.state.record_first_request(
-                RetryRequest(
-                    path=path,
-                    method=request_head.method,
-                    body=b"",
-                    connection_id=connection_id,
-                    authorization=request_head.headers.get("authorization"),
-                    accept_encoding=request_head.headers.get("accept-encoding"),
-                ),
-            ):
-                response = _raw_response(
-                    SERVICE_UNAVAILABLE,
-                    "Service Unavailable",
-                    b"retryable",
-                    close=True,
-                )
-                connection.sendall(response)
+            if _handle_early_request(connection, server.state, request_head, connection_id, path):
                 return
 
             try:
@@ -177,6 +176,34 @@ class RetryServerState:
         self._lock = threading.Lock()
         self._next_connection_id = 0
         self._requests: list[RetryRequest] = []
+        self._upload_gates: dict[str, threading.Event] = {}
+        self._early_upload_gate_passed: bool | None = None
+        self._early_upload_gate_error: str | None = None
+        self._early_upload_events: list[tuple[str, int]] = []
+        self.first_upload_gate_waiting = threading.Event()
+
+    def coordinate_upload(self, path: str, first_waiting: threading.Event) -> None:
+        with self._lock:
+            self._upload_gates[path] = first_waiting
+
+    def wait_for_upload(self, path: str) -> bool:
+        self.record_upload_event("headers_received")
+        with self._lock:
+            first_waiting = self._upload_gates.get(path)
+        if first_waiting is None:
+            return True
+        self.record_upload_event("gate_wait_entered")
+        self.first_upload_gate_waiting.set()
+        passed = first_waiting.wait(SOCKET_TIMEOUT)
+        with self._lock:
+            self._early_upload_gate_passed = passed
+            if not passed:
+                self._early_upload_gate_error = EARLY_UPLOAD_GATE_TIMEOUT
+        return passed
+
+    def record_upload_event(self, name: str) -> None:
+        with self._lock:
+            self._early_upload_events.append((name, time.monotonic_ns()))
 
     def register_connection(self) -> int:
         with self._lock:
@@ -197,7 +224,12 @@ class RetryServerState:
 
     def snapshot(self) -> RetryServerSnapshot:
         with self._lock:
-            return RetryServerSnapshot(requests=tuple(self._requests))
+            return RetryServerSnapshot(
+                requests=tuple(self._requests),
+                early_upload_gate_passed=self._early_upload_gate_passed,
+                early_upload_gate_error=self._early_upload_gate_error,
+                early_upload_events=tuple(self._early_upload_events),
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,6 +245,49 @@ class ParsedRequestHead:
     method: str
     target: str
     headers: dict[str, str]
+
+
+def _handle_early_request(
+    connection: socket,
+    state: RetryServerState,
+    request_head: ParsedRequestHead,
+    connection_id: int,
+    path: str,
+) -> bool:
+    if path not in {EARLY_STATUS_THEN_OK_PATH, EARLY_CLOSE_THEN_OK_PATH}:
+        return False
+    if not state.record_first_request(
+        RetryRequest(
+            path=path,
+            method=request_head.method,
+            body=b"",
+            connection_id=connection_id,
+            authorization=request_head.headers.get("authorization"),
+            accept_encoding=request_head.headers.get("accept-encoding"),
+        ),
+    ):
+        return False
+    if not state.wait_for_upload(path):
+        connection.sendall(
+            _raw_response(
+                INTERNAL_SERVER_ERROR,
+                "Internal Server Error",
+                EARLY_UPLOAD_GATE_TIMEOUT.encode(),
+                close=True,
+            ),
+        )
+    elif path == EARLY_CLOSE_THEN_OK_PATH:
+        state.record_upload_event("early_close")
+    else:
+        response = _raw_response(
+            SERVICE_UNAVAILABLE,
+            "Service Unavailable",
+            b"retryable",
+            close=True,
+        )
+        state.record_upload_event("early_status")
+        connection.sendall(response)
+    return True
 
 
 def _read_parsed_request_head(

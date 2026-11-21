@@ -6,6 +6,7 @@ import foghttp
 from foghttp.status_codes.success import OK
 
 from .constants import SLOW_RESPONSE_PATH
+from .gates import AsyncResponseGate
 from .helpers import wait_for_async_stats
 
 
@@ -14,6 +15,7 @@ EXPECTED_ACQUIRE_ATTEMPTS_UNDER_PRESSURE = 2
 
 async def test_dump_transport_state_reports_active_and_pending_pressure(
     resource_http_server: str,
+    resource_gate: AsyncResponseGate,
 ) -> None:
     limits = foghttp.Limits(max_active_requests=1, max_pending_requests=1)
     timeouts = foghttp.Timeouts(pool=1.0, total=2.0)
@@ -22,13 +24,14 @@ async def test_dump_transport_state_reports_active_and_pending_pressure(
         blocker = asyncio.create_task(client.get(resource_http_server + SLOW_RESPONSE_PATH))
         waiter: asyncio.Task[foghttp.Response] | None = None
         try:
-            await wait_for_async_stats(client, lambda stats: stats.active_requests == 1)
+            async with resource_gate.hold():
+                await wait_for_async_stats(client, lambda stats: stats.active_requests == 1)
 
-            waiter = asyncio.create_task(client.get(resource_http_server))
-            await wait_for_async_stats(client, lambda stats: stats.pending_requests == 1)
+                waiter = asyncio.create_task(client.get(resource_http_server))
+                await wait_for_async_stats(client, lambda stats: stats.pending_requests == 1)
 
-            state = client.dump_transport_state()
-            origin_pressure = state["origins"][resource_http_server]
+                state = client.dump_transport_state()
+                origin_pressure = state["origins"][resource_http_server]
 
             blocker_response = await blocker
             waiter_response = await waiter

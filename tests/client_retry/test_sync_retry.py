@@ -9,6 +9,7 @@ from foghttp.status_codes.server_error import SERVICE_UNAVAILABLE
 from foghttp.status_codes.success import OK
 from tests.client_telemetry.models import RecordingTelemetrySink
 from tests.support.timeout_diagnostics import assert_timeout_diagnostic
+from tests.support.transport_stats import wait_for_sync_transport_stats
 
 from .assertions import require_retry_trace, retry_events, single_retry_event
 from .constants import (
@@ -17,9 +18,11 @@ from .constants import (
     CLOSE_THEN_OK_PATH,
     EARLY_STATUS_THEN_OK_PATH,
     EXPECTED_ATTEMPTS,
+    EXPECTED_REPLAY_BODY,
     INCOMPLETE_RETRYABLE_RESPONSE_PATH,
     STATUS_THEN_OK_PATH,
 )
+from .early_upload_assertions import assert_early_upload_order, assert_recovery_trace, assert_replayed_upload_trace
 from .server import RetryTestServer
 from .sources import (
     CoordinatedReplayBodyFactory,
@@ -32,8 +35,6 @@ from .sources import (
 
 UPLOAD_FAILURE = "retry upload source failed"
 REPLAY_FACTORY_FAILURE = "retry replay factory failed"
-EXPECTED_REPLAY_BODY = b"second-attempt-body"
-STALE_REPLAY_BODY = b"stale-first-attempt-body"
 STALLED_PROVIDER_SLEEP = 0.05
 RETRY_WRITE_TIMEOUT = 0.005
 RETRY_TOTAL_TIMEOUT = 0.5
@@ -225,8 +226,9 @@ def test_sync_query_replays_factory_body(retry_server: RetryTestServer) -> None:
 
 def test_sync_retry_isolates_replayable_upload_attempts_after_early_response(
     retry_server: RetryTestServer,
+    sync_early_replay_body: CoordinatedReplayBodyFactory,
 ) -> None:
-    content = CoordinatedReplayBodyFactory(EXPECTED_REPLAY_BODY, STALE_REPLAY_BODY)
+    content = sync_early_replay_body
     policy = foghttp.RetryPolicy(retries=1, backoff=0, jitter=0)
 
     with foghttp.Client(retry=policy) as client:
@@ -234,14 +236,28 @@ def test_sync_retry_isolates_replayable_upload_attempts_after_early_response(
             retry_server.url + EARLY_STATUS_THEN_OK_PATH,
             content=content,
         )
+        assert content.first_closed.wait(timeout=1.0)
+        assert content.second_closed.wait(timeout=1.0)
+        wait_for_sync_transport_stats(
+            client,
+            lambda stats: stats.active_requests == 0 and stats.pending_requests == 0,
+            message="early-response upload retry did not release request lifecycle",
+        )
+        recovery = client.get(retry_server.url + "/recovery")
+        stats = client.stats()
 
     requests = retry_server.snapshot().requests_for(EARLY_STATUS_THEN_OK_PATH)
     assert response.status_code == OK
     assert response.content == EXPECTED_REPLAY_BODY
     assert tuple(request.body for request in requests) == (b"", EXPECTED_REPLAY_BODY)
     assert content.calls == EXPECTED_ATTEMPTS
-    assert content.first_closed.wait(timeout=1.0)
-    assert content.second_closed.wait(timeout=1.0)
+    assert requests[0].connection_id != requests[1].connection_id
+    assert_early_upload_order(retry_server, content)
+    assert_replayed_upload_trace(response)
+    assert recovery.status_code == OK
+    assert_recovery_trace(recovery)
+    assert stats.active_requests == 0
+    assert stats.pending_requests == 0
 
 
 def test_sync_query_blocks_non_replayable_body(retry_server: RetryTestServer) -> None:

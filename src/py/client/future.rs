@@ -19,6 +19,14 @@ impl PythonFutureSetters {
         })
     }
 
+    #[cfg(test)]
+    pub(super) fn unused_for_test(py: Python<'_>) -> Self {
+        Self {
+            set_result_if_pending: py.None(),
+            set_exception_if_pending: py.None(),
+        }
+    }
+
     pub fn clone_ref(&self, py: Python<'_>) -> Self {
         Self {
             set_result_if_pending: self.set_result_if_pending.clone_ref(py),

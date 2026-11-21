@@ -26,7 +26,7 @@ with foghttp.Client(timeouts=timeouts) as client:
 |---|---:|---|---|
 | `connect` | `2.0` | Client-level Rust connector TCP connect timeout. It is read when the lazy Rust transport is created from the client constructor settings. | No stable dedicated `ConnectTimeout` mapping yet; low-level connect failures surface as `NetworkError`, while the outer `total` deadline can raise `TimeoutError`. |
 | `pool` | `1.0` | Waiting for a global/per-origin active request slot or an opt-in global/per-host physical connection slot. Each acquire phase gets its own `pool` budget; `total` bounds the whole request hop. | `PoolTimeout` for acquire timeout or full pending queue. |
-| `total` | `30.0` | Buffered path: outer deadline for acquiring a request slot, sending the request body, waiting for response headers, and collecting the buffered response body for each transport hop. Stream path: acquire, redirect hops, streaming upload send, and response headers before the response stream is returned. The same budget is shared across redirect hops and retry attempts. | Base `TimeoutError`. |
+| `total` | `30.0` | Buffered path: shared deadline for acquiring a request slot, sending the request body, waiting for response headers, collecting the response body, and decoding its content. Stream path: acquire, redirect hops, streaming upload send, and response headers before the response stream is returned. The same budget is shared across redirect hops and retry attempts. | Base `TimeoutError`. |
 | `read` | `10.0` | Waiting for the next response body frame/chunk while collecting a buffered response body or consuming a streamed body. | `ReadTimeout`. |
 | `write` | `10.0` | Waiting for buffered request body write progress, streaming upload provider chunks, and streaming upload socket write progress while sending a non-empty request body. | `WriteTimeout`. |
 
@@ -247,7 +247,25 @@ path. For buffered responses it wraps:
 - sending the request body for the current hop, together with `write`
 - waiting for response headers for the current hop
 - collecting the buffered response body for the current hop
+- decoding every supported content-coding layer, including raw-deflate fallback
 - redirect hops as one shared budget
+
+Buffered content decoding checks the original deadline between bounded codec
+steps and after the final step before returning the native response. Expiry
+raises the base `TimeoutError` with `diagnostic.phase == "response_body"` and
+the original total budget. `read` applies to network waits, not codec work.
+
+Decoding yields to the runtime between steps, allowing async request
+cancellation and `AsyncClient.aclose()` to stop further decoding. Ordinary
+`Client.close()` still waits for admitted sends, whose decoding shares their
+total deadline. A synchronous codec call cannot be interrupted mid-call, so
+these checkpoints do not promise a hard latency bound for one codec call.
+
+HTTP completion remains separate from content decoding. Once the complete
+encoded body has made a connection reusable, a later decode timeout or failure
+does not abort another request that has already borrowed that connection.
+No-body responses and opaque or identity-only content retain their bypass
+behavior.
 
 For streaming responses, `total` wraps acquire, redirect hops, and response
 headers before the stream is returned, including any buffered or streaming
@@ -380,8 +398,8 @@ blocked.
 The timeout is scoped to request body progress for the current request hop:
 transport writes and, for streaming bodies, availability of the next provider
 chunk. It does not replace `Timeouts.total`; the broader total deadline still
-covers acquire, redirect hops, response headers, and buffered response body
-collection.
+covers acquire, redirect hops, response headers, buffered response body
+collection, and buffered content decoding.
 
 The write deadline is registered when the pool assigns a connection to the
 request and remains owned by that connection-use lifecycle until it either
@@ -390,6 +408,32 @@ while allowing successful buffered and streaming uploads to return healthy
 HTTP/1.1 connections to the idle pool. A write timeout, cancellation, or
 body-provider failure aborts the assigned connection; FogHTTP never returns a
 connection with an incomplete request body to the pool.
+
+## Upload Byte Limits
+
+Streaming content and multipart uploads use two finite native byte budgets:
+
+- `Limits.max_upload_buffer_bytes` defaults to `512 * 1024` bytes per logical
+  upload, including retained data from its previous retry attempt.
+- `Limits.max_total_upload_buffer_bytes` defaults to `16 * 1024 * 1024` bytes
+  across uploads belonging to one client. Separate clients have separate budgets.
+
+Both options require a positive integer; `0`, `None` and booleans are rejected.
+A native fragment is at most 64 KiB, or the smaller configured limit. Large
+provider chunks are transferred in fragments without truncating their payload.
+Admission waits apply backpressure before copying the next native fragment.
+Existing request write-progress and total timeouts remain in force.
+
+Reservations include queued data, admitted senders and application-owned
+in-flight data until its last native owner releases it. Queue removal alone
+does not release the bytes. Close, cancellation and retry reset discard queued
+data and wake blocked senders; retained in-flight owners keep their reservation
+until they release it.
+
+These budgets exclude caller-owned input, the one Python snapshot of a mutable
+chunk, buffered `content=bytes`, and copies inside Hyper, TLS or socket buffers.
+They do not bound process RSS or arbitrary allocations made by a provider.
+The separate response limits below do not account for upload data.
 
 ## Buffered Body Limit
 
@@ -424,8 +468,15 @@ safe body size and aggregate memory budget. Large downloads should use
 `Client.stream()` or `AsyncClient.stream()`.
 
 The aggregate budget tracks in-flight buffered response bodies while Rust is
-collecting them. Once a `Response` is returned, its Python `bytes` lifetime is
+collecting and decoding them, including simultaneously retained encoded and
+decoded bytes. Once a `Response` is returned, its Python `bytes` lifetime is
 controlled by application code.
+
+Internal codec workspaces are separate from this byte budget. Buffered decoding
+uses at most one live decoder per runtime worker across clients on that runtime.
+Waiting for a decoder slot is cancellable and consumes the request's original
+`total`, not `pool` or `read`. Expiry raises base `TimeoutError` with
+`response_body` diagnostics. Identity and unsupported codings bypass admission.
 
 ## Streaming Decoder Limits
 

@@ -110,7 +110,7 @@ def test_build_request_keeps_file_multipart_streaming_and_non_replayable() -> No
     assert request.content is None
     assert body.stream is not None
     assert body.replayable is False
-    assert body.content_length is not None
+    assert body.content_length is None
     assert file_obj.closed is False
 
 

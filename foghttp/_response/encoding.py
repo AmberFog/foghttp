@@ -1,4 +1,4 @@
-__all__ = ("response_encoding",)
+__all__ = ("response_encoding", "validate_text_encoding")
 
 from codecs import BOM_UTF8, BOM_UTF16_BE, BOM_UTF16_LE, BOM_UTF32_BE, BOM_UTF32_LE, lookup
 from email.message import Message
@@ -26,6 +26,13 @@ def response_encoding(headers: Headers, content: bytes) -> str:
     return DEFAULT_RESPONSE_ENCODING
 
 
+def validate_text_encoding(encoding: str) -> None:
+    codec = lookup(encoding)
+    if not getattr(codec, "_is_text_encoding", True):
+        msg = f"'{encoding}' is not a text encoding"
+        raise LookupError(msg)
+
+
 def _valid_content_type_charset(headers: Headers) -> str | None:
     content_type = headers.get(CONTENT_TYPE)
     if content_type is None:
@@ -41,7 +48,7 @@ def _valid_content_type_charset(headers: Headers) -> str | None:
         return None
 
     try:
-        lookup(charset)
+        validate_text_encoding(charset)
     except LookupError:
         return None
     return charset

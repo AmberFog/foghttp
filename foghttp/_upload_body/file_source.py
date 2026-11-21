@@ -1,10 +1,14 @@
 from collections.abc import Iterator
 from dataclasses import dataclass
+import io
 import os
 import stat
+from typing import cast
 
 
 UPLOAD_CHUNK_SIZE = 65_536
+_STANDARD_FILE_TYPES = (io.BytesIO, io.FileIO, io.BufferedReader, io.BufferedRandom)
+_IO_METHODS = frozenset(("read", "readinto", "readall", "write", "tell", "seek", "fileno", "getbuffer"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,62 +23,30 @@ class FileUploadSource:
             yield chunk
 
 
-@dataclass(frozen=True, slots=True)
-class FileDescriptorLength:
-    checked: bool
-    value: int | None
-
-
 def file_content_length(file: object) -> int | None:
-    descriptor_length = _file_descriptor_remaining_size(file)
-    if descriptor_length.checked:
-        return descriptor_length.value
-    return _seekable_remaining_size(file)
-
-
-def _file_descriptor_remaining_size(file: object) -> FileDescriptorLength:
-    file_stat = _file_descriptor_stat(file)
-    if file_stat is None:
-        return FileDescriptorLength(checked=False, value=None)
-    if not stat.S_ISREG(file_stat.st_mode):
-        return FileDescriptorLength(checked=True, value=None)
-    return FileDescriptorLength(
-        checked=True,
-        value=_regular_file_remaining_size(file, file_stat.st_size),
-    )
-
-
-def _file_descriptor_stat(file: object) -> "os.stat_result | None":
-    fileno = getattr(file, "fileno", None)
-    if not callable(fileno):
+    # Subclasses and instance overrides can return bytes unrelated to storage.
+    if type(file) not in _STANDARD_FILE_TYPES or _IO_METHODS.intersection(vars(file)):  # noqa: WPS421, WPS516
         return None
+    stream = cast("io.BytesIO | io.FileIO | io.BufferedReader | io.BufferedRandom", file)
     try:
-        return os.fstat(fileno())
-    except (OSError, TypeError, ValueError):
-        return None
-
-
-def _regular_file_remaining_size(file: object, size: int) -> int | None:
-    tell = getattr(file, "tell", None)
-    if not callable(tell):
-        return None
-    try:
-        current = int(tell())
+        size = _standard_file_size(stream)
+        if size is None:
+            return None
+        current = stream.tell()
     except (OSError, TypeError, ValueError):
         return None
     return size - current if size >= current else None
 
 
-def _seekable_remaining_size(file: object) -> int | None:
-    tell = getattr(file, "tell", None)
-    seek = getattr(file, "seek", None)
-    if not callable(tell) or not callable(seek):
+def _standard_file_size(file: io.BytesIO | io.FileIO | io.BufferedReader | io.BufferedRandom) -> int | None:
+    if isinstance(file, io.BytesIO):
+        current = file.tell()
+        size = file.seek(0, io.SEEK_END)
+        file.seek(current)
+        return size
+    raw = file if isinstance(file, io.FileIO) else file.raw
+    # Buffered reads can flush pending output through a customized raw.write.
+    if type(raw) is not io.FileIO or _IO_METHODS.intersection(vars(raw)):  # noqa: WPS421, WPS516
         return None
-    try:
-        current = int(tell())
-        seek(0, os.SEEK_END)
-        end = int(tell())
-        seek(current, os.SEEK_SET)
-    except (OSError, TypeError, ValueError):
-        return None
-    return end - current if end >= current else None
+    file_stat = os.fstat(raw.fileno())
+    return file_stat.st_size if stat.S_ISREG(file_stat.st_mode) else None

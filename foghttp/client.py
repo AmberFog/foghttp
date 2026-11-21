@@ -4,7 +4,7 @@ import threading
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Literal
 
-from . import opentelemetry, telemetry
+from . import methods, opentelemetry, telemetry
 from ._client import constants, stream_context, tracing, transport
 from ._client.config import ClientConfig
 from ._client.core import ClientCore
@@ -22,9 +22,9 @@ from ._client.telemetry import (
 )
 from ._upload_body import SyncRequestContent
 from .auth import Auth
+from .errors import LifecycleError
 from .headers import HeaderSource
 from .limits import Limits
-from .methods import DELETE, GET, HEAD, PATCH, POST, PUT, QUERY
 from .policy import TransportPolicyHooks
 from .request import Request
 from .request_extensions import RequestExtensionsSource
@@ -100,7 +100,7 @@ class Client(ClientCore):
             ),
         )
         self._lifecycle_condition = threading.Condition(self._client_lock)
-        self._active_sync_send_tokens: set[object] = set()
+        self._active_sync_send_tokens: dict[object, int] = {}
         self._close_complete = False
         self._transport = self._create_transport()
 
@@ -236,7 +236,7 @@ class Client(ClientCore):
         auto_accept_encoding: bool | None = None,
     ) -> Response:
         return self.request(
-            GET,
+            methods.GET,
             url,
             headers=headers,
             params=params,
@@ -256,7 +256,7 @@ class Client(ClientCore):
         auto_accept_encoding: bool | None = None,
     ) -> Response:
         return self.request(
-            HEAD,
+            methods.HEAD,
             url,
             headers=headers,
             params=params,
@@ -280,7 +280,7 @@ class Client(ClientCore):
         auto_accept_encoding: bool | None = None,
     ) -> Response:
         return self.request(
-            POST,
+            methods.POST,
             url,
             headers=headers,
             params=params,
@@ -308,7 +308,7 @@ class Client(ClientCore):
         auto_accept_encoding: bool | None = None,
     ) -> Response:
         return self.request(
-            QUERY,
+            methods.QUERY,
             url,
             headers=headers,
             params=params,
@@ -336,7 +336,7 @@ class Client(ClientCore):
         auto_accept_encoding: bool | None = None,
     ) -> Response:
         return self.request(
-            PUT,
+            methods.PUT,
             url,
             headers=headers,
             params=params,
@@ -364,7 +364,7 @@ class Client(ClientCore):
         auto_accept_encoding: bool | None = None,
     ) -> Response:
         return self.request(
-            PATCH,
+            methods.PATCH,
             url,
             headers=headers,
             params=params,
@@ -392,7 +392,7 @@ class Client(ClientCore):
         auto_accept_encoding: bool | None = None,
     ) -> Response:
         return self.request(
-            DELETE,
+            methods.DELETE,
             url,
             headers=headers,
             params=params,
@@ -412,6 +412,12 @@ class Client(ClientCore):
 
         raw_client = None
         with self._lifecycle_condition:
+            if not self._close_complete and (
+                threading.get_ident() in self._active_sync_send_tokens.values()
+                or self._telemetry.owns_current_native_delivery
+            ):
+                msg = "Cannot close a sync client from its active request or native telemetry delivery"
+                raise LifecycleError(msg)
             if self._closed:
                 while not self._close_complete:
                     self._lifecycle_condition.wait()
@@ -532,7 +538,7 @@ class Client(ClientCore):
     def _begin_sync_send(self, token: object) -> None:
         with self._lifecycle_condition:
             self._ensure_not_closed()
-            self._active_sync_send_tokens.add(token)
+            self._active_sync_send_tokens[token] = threading.get_ident()
 
     def _sync_send_raw_client(self) -> "_foghttp.RawClient":
         self._ensure_current_process()
@@ -547,7 +553,7 @@ class Client(ClientCore):
             self._finish_sync_send_locked(token)
 
     def _finish_sync_send_locked(self, token: object) -> None:
-        self._active_sync_send_tokens.discard(token)
+        self._active_sync_send_tokens.pop(token, None)
         if not self._active_sync_send_tokens:
             self._lifecycle_condition.notify_all()
 

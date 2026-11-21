@@ -1,9 +1,6 @@
 import asyncio
-from collections.abc import Callable, Coroutine, Iterable
-from concurrent.futures import (
-    Future as ConcurrentFuture,
-    wait,
-)
+from collections.abc import Callable, Coroutine
+from concurrent.futures import Future as ConcurrentFuture
 from contextlib import suppress
 from contextvars import Context, copy_context
 import threading
@@ -141,42 +138,30 @@ async def run_sync_in_daemon(
 run_sync_upload_feeder = run_sync_in_daemon
 
 
-def run_daemon_callbacks_bounded(
-    callbacks: Iterable[Callable[[], None]],
-    *,
-    timeout: float,
-) -> BaseException | None:
-    completions = tuple(start_daemon_worker(callback, capture_start_error=True) for callback in callbacks)
-    for completion in completions:
-        completion.add_done_callback(consume_future_exception)
-    done, _pending = wait(completions, timeout=timeout)
-    for completion in completions:
-        if completion not in done:
-            continue
-        error = consume_future_exception(completion)
-        if error is not None:
-            return error
-    return None
-
-
 def start_daemon_worker(
     callback: Callable[[], _FutureResult],
     *,
     capture_start_error: bool = False,
 ) -> ConcurrentFuture[_FutureResult]:
     completion: ConcurrentFuture[_FutureResult] = ConcurrentFuture()
+    start_outcome: ConcurrentFuture[bool] = ConcurrentFuture()
     context = copy_context()
     thread = threading.Thread(
         target=_run_daemon_worker,
-        args=(callback, context, completion),
+        args=(callback, context, completion, start_outcome),
         daemon=True,
     )
+    started = False
     try:
         thread.start()
     except Exception as error:
         if not capture_start_error:
             raise
         completion.set_exception(error)
+    else:
+        started = True
+    finally:
+        start_outcome.set_result(started)
     return completion
 
 
@@ -184,7 +169,10 @@ def _run_daemon_worker(
     callback: Callable[[], _FutureResult],
     context: Context,
     completion: ConcurrentFuture[_FutureResult],
+    start_outcome: ConcurrentFuture[bool],
 ) -> None:
+    if not start_outcome.result():
+        return
     try:
         result = context.run(callback)
     except BaseException as error:  # noqa: BLE001

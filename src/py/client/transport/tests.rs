@@ -227,6 +227,7 @@ fn transport_request(body: Option<Vec<u8>>, body_replayable: bool) -> TransportR
         write_timeout: WRITE_TIMEOUT,
         max_response_body_size: None,
         buffered_body_budget: BufferedBodyBudget::new(None, Arc::new(Metrics::default())),
+        buffered_decoders: Arc::new(tokio::sync::Semaphore::new(1)),
         follow_redirects: true,
         max_redirects: 20,
         retry_policy: None,

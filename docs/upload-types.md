@@ -96,10 +96,43 @@ FogHTTP-owned provider cleanup is best effort: FogHTTP invokes the applicable
 `close()` or `aclose()` method at most once and suppresses cleanup errors so they
 do not mask the request outcome. Waiting for `aclose()` is bounded so a broken
 cleanup implementation cannot indefinitely hold request completion or
-cancellation; the cleanup may continue in a dedicated daemon thread. An async
+cancellation; the cleanup may continue after that wait ends. An async
 client does not run a synchronous provider's `close()` on its event-loop thread.
 If a sync client must reject an async provider returned by a factory, `aclose()`
 runs on a dedicated thread under the same best-effort contract.
+
+### Cleanup Admission And Execution
+
+Cleanup capacity is shared by all clients in one process: at most 4096 cleanup
+reservation units and eight executing cleanup callbacks. A provider reserves
+capacity for its source and a possible distinct iterator before FogHTTP takes
+ownership. Factory calls and multipart factory results are admitted before
+creation. Iterator and source cleanup retain their own capacity until their
+actual completion; returning from a bounded wait does not release it.
+
+When capacity is exhausted, admission raises `LifecycleError`. A rejected
+direct `content=` provider remains caller-owned, and a rejected factory is not
+called. Already accepted multipart results remain FogHTTP-owned and are cleaned
+up even when a later part fails admission. Direct `files=` providers remain
+caller-owned; FogHTTP accounts for distinct iterators it owns.
+
+Synchronous cleanup uses dedicated daemon workers, separate from upload
+feeders. Async cleanup submitted from an event loop runs on that loop and shares
+the execution limit. A known iterator's cleanup completes before source cleanup starts.
+An interrupt may close a source while its `iter()` call is still blocked;
+capacity for a possible late iterator remains reserved.
+
+If starting a feeder thread fails, that thread cannot later begin provider
+iteration. Already accepted sources retain their cleanup obligations.
+
+Request cancellation, client close and event-loop changes do not reset capacity
+held by a running synchronous callback. A closed event loop cannot execute its
+unfinished async cleanup: that obligation remains retained as stalled, rather
+than silently discarded or moved to another loop. A completed callback releases
+capacity, including when its request waiter no longer exists. After `fork`, the
+child starts with independent capacity and does not close parent-owned sources.
+Arbitrary provider callbacks cannot be forcibly stopped, so permanently blocked
+cleanup can exhaust capacity until the provider is released or the process ends.
 
 Request construction, pre-transport validation, an unsent prepared request, and
 a stream context that was created but never entered have not handed the request
@@ -112,6 +145,17 @@ classification; the ownership and replayability rules for a direct provider
 apply.
 
 Providers should yield `bytes`, `bytearray`, or `memoryview` chunks. Mutable
-chunks are copied before they cross the Rust transport boundary. Text, paths,
+chunks are snapshotted once before waiting for transport capacity. Native
+transfers use bounded fragments from that snapshot; changing the original
+mutable input cannot change the bytes being sent. Immutable input does not
+require a full Python copy for fragmentation.
+
+Streaming content and multipart share the client upload byte budgets: 512 KiB
+per logical upload and 16 MiB aggregate by default. Capacity is reserved before
+each native copy and stays charged while that allocation is in flight, even
+after it leaves the queue. See [upload byte limits](./timeouts.md#upload-byte-limits)
+for configuration and the exact accounting boundary.
+
+Text, paths,
 and arbitrary iterables are not upload chunks; callers should encode or open
 them explicitly before passing them through streaming `content=`.

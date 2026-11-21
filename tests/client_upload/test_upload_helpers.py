@@ -28,7 +28,6 @@ import foghttp._upload_body.runtime as upload_runtime
 from foghttp._upload_body.thread_bridge import (
     UploadFeederState,
     consume_future_exception,
-    run_daemon_callbacks_bounded,
     run_sync_in_daemon,
     run_sync_upload_feeder,
 )
@@ -49,11 +48,12 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
     from pathlib import Path
 
+    from foghttp._upload_body.cleanup_owner import CleanupOwner
+
     AsyncFeeder = tuple[Future[None], UploadFeederState]
 
 
 REGULAR_FILE_REMAINING_LENGTH = 4
-SEEKABLE_FALLBACK_REMAINING_LENGTH = 5
 UPLOAD_SOURCE_FAILURE = "upload source failed"
 SECONDARY_CLEANUP_FAILURE = "source cleanup failed"
 ERROR_FORMATTING_FAILURE = "error formatting failed"
@@ -760,8 +760,11 @@ async def test_async_streaming_body_releases_raw_callback_cycle_after_cleanup_er
     del body
     del source
     del source_error
-    await asyncio.sleep(0)
-    gc.collect()
+    # The dispatching worker can retain the error traceback after completion.
+    async with asyncio.timeout(1.0):
+        while body_ref() is not None:
+            await asyncio.sleep(0.01)
+            gc.collect()
 
     assert body_ref() is None
 
@@ -779,8 +782,11 @@ def test_sync_streaming_body_propagates_feeder_cleanup_base_exception(
         start_callback: object,
         _replayable: object,
         _ready_callback: object,
+        *,
+        raw_client: object | None = None,
     ) -> Mock:
         raw_body.start_callback = start_callback
+        raw_body.raw_client = raw_client
         return raw_body
 
     monkeypatch.setattr(
@@ -808,14 +814,18 @@ async def test_async_streaming_body_propagates_feeder_cleanup_base_exception(
     source = _SeparateAsyncIteratorSource([], source_close_error=source_error)
     raw_body = Mock()
     raw_body.send_nowait.return_value = True
+    raw_body.send_part_nowait.return_value = 1
 
     def raw_body_factory(
         _content_length: int | None,
         start_callback: object,
         _replayable: object,
         _ready_callback: object,
+        *,
+        raw_client: object | None = None,
     ) -> Mock:
         raw_body.start_callback = start_callback
+        raw_body.raw_client = raw_client
         return raw_body
 
     monkeypatch.setattr(
@@ -984,7 +994,7 @@ def _set_async_body_feeders(
     body: Any,
     feeders: list[AsyncFeeder],
 ) -> None:
-    source_cleanup = body._source_cleanups[0]  # noqa: SLF001
+    source_cleanup = _async_body_source_cleanup(body)
     body._feeders = []  # noqa: SLF001
     for future, state in feeders:
         runner = Mock(completion=future)
@@ -997,6 +1007,16 @@ def _async_body_feeders(body: Any) -> list[AsyncFeeder]:
         (runner.completion, state)
         for runner, state, _source_cleanup in body._feeders  # noqa: SLF001
     ]
+
+
+def _async_body_source_cleanup(body: Any) -> upload_cleanup.UploadSourceCleanup:
+    return body._source_cleanups[0]  # noqa: SLF001
+
+
+async def _wait_for_async_body_source_cleanup(body: Any) -> None:
+    source_cleanup = _async_body_source_cleanup(body)
+    completion = asyncio.wrap_future(source_cleanup.completion)
+    await asyncio.wait_for(asyncio.shield(completion), timeout=1.0)
 
 
 async def _drain_async_body_feeders(body: Any) -> BaseException | None:
@@ -1022,8 +1042,8 @@ def test_sync_streaming_body_prefers_feeder_error_over_source_cleanup_error(
         upload_runtime.RequestBody.replayable_streaming_body(empty_source),
     )
     feeder_error = GeneratorExit(UPLOAD_SOURCE_FAILURE)
-    source_cleanup = Mock()
-    source_cleanup.interrupt.side_effect = GeneratorExit(SECONDARY_CLEANUP_FAILURE)
+    source = _SeparateSyncIteratorSource([], source_close_error=GeneratorExit(SECONDARY_CLEANUP_FAILURE))
+    source_cleanup = upload_cleanup.UploadSourceCleanup(source)
     feeder_error_state = UploadFeederState()
     feeder_error_state.publish(feeder_error)
     body._feeder_errors, body._source_cleanups = (  # noqa: SLF001
@@ -1035,7 +1055,7 @@ def test_sync_streaming_body_prefers_feeder_error_over_source_cleanup_error(
         body.close()
 
     assert exc_info.value is feeder_error
-    source_cleanup.interrupt.assert_called_once_with()
+    assert source.close_calls == 1
 
 
 async def test_async_streaming_body_prefers_feeder_error_over_source_cleanup_error() -> None:
@@ -1143,18 +1163,27 @@ def test_sync_cleanup_interrupt_retries_after_thread_start_failure(
 
 def test_bounded_daemon_callbacks_do_not_run_cleanup_inline_after_start_failure(
     monkeypatch: pytest.MonkeyPatch,
+    cold_cleanup_owner: CleanupOwner,
 ) -> None:
-    callback = Mock(side_effect=AssertionError)
+    callback = Mock()
+    source = Mock(close=callback)
+    source_cleanup = upload_cleanup.UploadSourceCleanup(source)
+    start_error = RuntimeError(RUNNER_START_FAILURE)
+    failed_start = Mock(side_effect=start_error)
+    original_start = threading.Thread.start
+    monkeypatch.setattr(upload_cleanup, "ASYNC_SOURCE_CLOSE_TIMEOUT", 0.01)
+    monkeypatch.setattr(threading.Thread, "start", failed_start)
 
-    def fail_start(_thread: threading.Thread) -> None:
-        raise RuntimeError(RUNNER_START_FAILURE)
+    source_cleanup.close()
 
-    monkeypatch.setattr(threading.Thread, "start", fail_start)
-
-    error = run_daemon_callbacks_bounded((callback,), timeout=0.01)
-
-    assert isinstance(error, RuntimeError)
+    assert failed_start.called
+    assert cold_cleanup_owner.snapshot()["reserved"] == 1
+    assert cold_cleanup_owner.snapshot()["pending"] == 1
     callback.assert_not_called()
+    monkeypatch.setattr(threading.Thread, "start", original_start)
+    source_cleanup.close()
+    callback.assert_called_once_with()
+    assert cold_cleanup_owner.snapshot()["reserved"] == 0
 
 
 def test_sync_cleanup_suppresses_cleanup_lookup_error() -> None:
@@ -1220,7 +1249,8 @@ async def test_async_cleanup_retries_after_task_factory_failure() -> None:
 
 
 async def test_interrupt_cleanup_task_factory_failure_is_best_effort() -> None:
-    source = SyncChunks(())
+    source = _BlockingSyncClose()
+    source.close_release.set()
     source_cleanup = upload_cleanup.UploadSourceCleanup(source)
     captured_coroutines: list[Any] = []
     loop = asyncio.get_running_loop()
@@ -1240,10 +1270,10 @@ async def test_interrupt_cleanup_task_factory_failure_is_best_effort() -> None:
     finally:
         loop.set_task_factory(previous_factory)
 
-    assert len(captured_coroutines) == 1
-    assert captured_coroutines[0].cr_frame is None
+    assert captured_coroutines == []
     source_cleanup.close()
     assert source.close_calls == 1
+    assert source.close_thread_id != threading.get_ident()
 
 
 def test_sync_streaming_body_joins_feeders_before_cleanup_base_exception(
@@ -1259,22 +1289,27 @@ def test_sync_streaming_body_joins_feeders_before_cleanup_base_exception(
     body: Any = upload_runtime.prepare_sync_upload_body(
         upload_runtime.RequestBody.replayable_streaming_body(empty_source),
     )
-    interrupted_cleanup = Mock()
-    interrupted_cleanup.interrupt.side_effect = GeneratorExit(UPLOAD_SOURCE_FAILURE)
-    remaining_cleanup = Mock()
-    remaining_cleanup.interrupt.side_effect = GeneratorExit(SECONDARY_CLEANUP_FAILURE)
+    events: list[str] = []
+    first_error = GeneratorExit(UPLOAD_SOURCE_FAILURE)
+    interrupted_source = _SeparateSyncIteratorSource(events, source_close_error=first_error)
+    remaining_source = _SeparateSyncIteratorSource(events, source_close_error=GeneratorExit(SECONDARY_CLEANUP_FAILURE))
+    interrupted_cleanup = upload_cleanup.UploadSourceCleanup(interrupted_source)
+    remaining_cleanup = upload_cleanup.UploadSourceCleanup(remaining_source)
     feeder_thread = Mock()
+    feeder_thread.join.side_effect = lambda _timeout: events.append("feeder_join")
     body._source_cleanups, body._threads = (  # noqa: SLF001
         [interrupted_cleanup, remaining_cleanup],
         [feeder_thread],
     )
     raw_body = body.raw_body
 
-    with pytest.raises(GeneratorExit, match=UPLOAD_SOURCE_FAILURE):
+    with pytest.raises(GeneratorExit, match=UPLOAD_SOURCE_FAILURE) as error:
         body.close()
 
-    interrupted_cleanup.interrupt.assert_called_once_with()
-    remaining_cleanup.interrupt.assert_called_once_with()
+    assert error.value is first_error
+    assert interrupted_source.close_calls == 1
+    assert remaining_source.close_calls == 1
+    assert events[0] == "feeder_join"
     feeder_thread.join.assert_called_once_with(upload_runtime.UPLOAD_FEEDER_JOIN_TIMEOUT)
     assert raw_body.closed is True
     assert body.raw_body is None
@@ -1421,6 +1456,7 @@ def test_sync_cleanup_does_not_wait_for_stalled_interrupt(
     source.close_release.set()
     interrupt.join(timeout=1.0)
     closer.join(timeout=1.0)
+    source_cleanup.completion.result(timeout=1.0)
     assert source.close_finished.is_set()
     assert source.close_calls == 1
 
@@ -1521,10 +1557,7 @@ async def test_pending_async_runner_starts_cleanup_after_owner_cancellation(
 
     assert source.close_calls == 0
     runner_completion.cancel()
-    for _attempt in range(10):
-        if source.close_calls:
-            break
-        await asyncio.sleep(0)
+    await _wait_for_async_body_source_cleanup(body)
     assert source.close_calls == EXPECTED_CLEANUP_CALLS
 
 
@@ -1697,10 +1730,7 @@ async def test_async_sync_worker_start_failure_closes_body_and_source(
 
     with pytest.raises(RuntimeError, match=RUNNER_START_FAILURE):
         await asyncio.wrap_future(_async_body_feeders(body)[0][0])
-    for _attempt in range(10):
-        if source.close_calls:
-            break
-        await asyncio.sleep(0)
+    await _wait_for_async_body_source_cleanup(body)
 
     assert raw_body.closed is True
     assert source.close_calls == 1
@@ -1725,10 +1755,7 @@ async def test_async_source_classification_failure_closes_body_and_source(
 
     with pytest.raises(RuntimeError, match=UPLOAD_SOURCE_FAILURE):
         await asyncio.wrap_future(_async_body_feeders(body)[0][0])
-    for _attempt in range(10):
-        if source.close_calls:
-            break
-        await asyncio.sleep(0)
+    await _wait_for_async_body_source_cleanup(body)
 
     assert raw_body.closed is True
     assert source.close_calls == 1
@@ -1864,10 +1891,7 @@ async def test_async_runner_task_factory_failure_closes_body_and_source(
         raw_body.start_callback(raw_body)
         with pytest.raises(RuntimeError, match=RUNNER_START_FAILURE):
             await asyncio.wrap_future(_async_body_feeders(body)[0][0])
-        for _attempt in range(10):
-            if source.close_calls:
-                break
-            await asyncio.sleep(0)
+        await _wait_for_async_body_source_cleanup(body)
     finally:
         loop.set_task_factory(previous_factory)
 
@@ -2637,11 +2661,13 @@ def test_file_content_length_rejects_negative_regular_descriptor_remaining_size(
         assert file_content_length(OversizedTellFile(file.fileno())) is None
 
 
-def test_file_content_length_falls_back_when_fileno_fails() -> None:
+def test_file_content_length_keeps_generic_reader_streaming_when_fileno_fails() -> None:
     file = FailingFilenoSeekableFile(b"payload")
     file.read(2)
 
-    assert file_content_length(file) == SEEKABLE_FALLBACK_REMAINING_LENGTH
+    assert file_content_length(file) is None
+    assert file.tell() == len(b"pa")
+    assert b"".join(FileUploadSource(file)) == b"yload"
 
 
 def test_file_content_length_returns_none_for_non_seekable_without_fileno() -> None:

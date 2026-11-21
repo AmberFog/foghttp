@@ -1,147 +1,144 @@
-from __future__ import annotations
+__all__ = ("current_task_is_cancelling", "reserve_cleanup")
 
 import asyncio
+from concurrent.futures import Future, TimeoutError
 from contextvars import Context, copy_context
-import sys
-import threading
+from functools import partial, partialmethod
+import os
+from typing import TYPE_CHECKING, TypeVar
 
-from .file_source import FileUploadSource
-from .thread_bridge import (
-    consume_future_exception,
-    run_sync_in_daemon,
-    start_daemon_worker,
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+from .cleanup_callbacks import (
+    close_async_source_from_sync,
+    close_sync_source,
+    current_task_is_cancelling,
+    source_async_close,
 )
+from .cleanup_iteration import CleanupIteration
+from .cleanup_owner import CleanupReservation, reserve_cleanup
+from .cleanup_waiters import CleanupWaiters
+from .thread_bridge import consume_future_exception
 
 
 ASYNC_SOURCE_CLOSE_TIMEOUT = 1.0
-_BACKGROUND_ASYNC_CLEANUPS: set[asyncio.Task[None]] = set()  # noqa: WPS407
+_IteratorT = TypeVar("_IteratorT")
 
 
 class UploadSourceCleanup:
-    __slots__ = (
-        "_async_cleanup",
-        "_claimed",
-        "_context",
-        "_interrupt_finished",
-        "_lock",
-        "_source",
-    )
-
-    def __init__(self, source: object, *, context: Context | None = None) -> None:
+    def __init__(
+        self,
+        source: object,
+        *,
+        context: Context | None = None,
+        reservation: CleanupReservation | None = None,
+    ) -> None:
         self._source = source
-        self._async_cleanup: asyncio.Task[None] | None = None
-        self._claimed = False
-        self._context = copy_context() if context is None else context.copy()
-        self._interrupt_finished = threading.Event()
-        self._interrupt_finished.set()
-        self._lock = threading.Lock()
+        self.context = copy_context() if context is None else context.copy()
+        self._reservation = reserve_cleanup() if reservation is None else reservation
+        self.completion = self._reservation.completion
+        self.iteration = CleanupIteration(self, self._reservation)
+        self.waiters = CleanupWaiters(self.completion)
+        self._sync_error_reported = False
 
-    def close(self) -> None:
-        if not self._interrupt_finished.wait(ASYNC_SOURCE_CLOSE_TIMEOUT):
-            return
-        with self._lock:
-            if not self._interrupt_finished.is_set() or self._claimed:
-                return
-            self._claimed = True
-        started = self._context.copy().run(close_sync_source, self._source)
-        if not started:
-            with self._lock:
-                self._claimed = False
+    def create_iterator(self, factory: "Callable[[], _IteratorT]") -> _IteratorT:
+        self.iteration.reserve(creating=True)
+        try:
+            iterator = factory()
+        except BaseException:
+            self.iteration.release()
+            raise
+        if iterator is self._source:
+            self.iteration.release()
+        else:
+            self.iteration.track(iterator)
+        return iterator
 
-    async def aclose(
+    def start_sync_cleanup(
         self,
         *,
-        after: UploadSourceCleanup | None = None,
-        bounded: bool = True,
-    ) -> None:
-        task = self._get_or_create_async_cleanup(after)
-        if task is not None:
-            timeout = ASYNC_SOURCE_CLOSE_TIMEOUT if bounded else None
-            done, _pending = await asyncio.wait((task,), timeout=timeout)
-            if task in done:
-                task.result()
+        after: "UploadSourceCleanup | None" = None,
+        close_source: "Callable[[object], None]" = close_sync_source,
+    ) -> Future[None] | None:
+        if self._reservation.pid != os.getpid():
+            return None
+        predecessor = None if after is None else after.start_sync_cleanup()
+        dependency, submit = self.iteration.claim(predecessor)
+        if submit:
+            return self._reservation.submit_sync(
+                partial(close_source, self._source),
+                context=self.context,
+                after=dependency,
+            )
+        self._reservation.owner.retry()
+        return self.completion
+
+    def close(self, *, close_source: "Callable[[object], None]" = close_sync_source) -> None:
+        completion = self.start_sync_cleanup(close_source=close_source)
+        if completion is None:
+            return
+        try:
+            completion.result(timeout=ASYNC_SOURCE_CLOSE_TIMEOUT)
+        except TimeoutError:
+            return
+        except BaseException:  # noqa: BLE001
+            error = self.consume_sync_error()
+            if error is not None:
+                raise error from None
+
+    async def aclose(self, *, after: "UploadSourceCleanup | None" = None, bounded: bool = True) -> None:
+        future = self.start_async_cleanup(after=after)
+        if future is None:
+            return
+        timeout = ASYNC_SOURCE_CLOSE_TIMEOUT if bounded else None
+        done, _pending = await asyncio.wait((future,), timeout=timeout)
+        if future in done:
+            future.result()
 
     def start_async_cleanup(
         self,
         *,
         interrupt: bool = False,
-        after: UploadSourceCleanup | None = None,
-    ) -> asyncio.Task[None] | None:
-        if interrupt:
-            cleanup = run_sync_in_daemon(self.interrupt)
-            try:
-                task = asyncio.create_task(
-                    cleanup,
-                    context=self._context.copy(),
-                )
-            except BaseException as error:
-                cleanup.close()
-                if isinstance(error, Exception):
-                    return None
-                raise
-            _BACKGROUND_ASYNC_CLEANUPS.add(task)
-            task.add_done_callback(_BACKGROUND_ASYNC_CLEANUPS.discard)
-            task.add_done_callback(consume_future_exception)
-            return task
-        return self._get_or_create_async_cleanup(after)
-
-    def aclose_from_sync(self) -> None:
-        with self._lock:
-            if self._claimed:
-                return
-            self._claimed = True
-        started, error = self._context.copy().run(close_async_source_from_sync, self._source)
-        if not started:
-            with self._lock:
-                self._claimed = False
-        if error is not None and not isinstance(error, Exception):
-            raise error
-
-    def interrupt(self) -> None:
-        with self._lock:
-            if self._claimed:
-                return
-            self._claimed = True
-            self._interrupt_finished.clear()
+        after: "UploadSourceCleanup | None" = None,
+    ) -> asyncio.Future[None] | None:
+        if self._reservation.pid != os.getpid():
+            return None
         try:
-            started = self._context.copy().run(close_sync_source, self._source)
-        except BaseException:
-            self._interrupt_finished.set()
-            raise
-        with self._lock:
-            if not started:
-                self._claimed = False
-            self._interrupt_finished.set()
-
-    def _get_or_create_async_cleanup(
-        self,
-        after: UploadSourceCleanup | None = None,
-    ) -> asyncio.Task[None] | None:
-        with self._lock:
-            if self._async_cleanup is not None:
-                return self._async_cleanup
-            if self._claimed:
-                return None
-            self._claimed = True
-            cleanup = (
-                close_async_source(self._source) if after is None else close_async_source_after(after, self._source)
-            )
-            try:
-                task = asyncio.create_task(
-                    cleanup,
-                    context=self._context.copy(),
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return None
+        predecessor = None
+        if after is not None:
+            after.start_async_cleanup()
+            predecessor = after.completion
+        dependency, submit = self.iteration.claim(predecessor)
+        if submit:
+            callback = None if interrupt else self.context.copy().run(source_async_close, self._source)
+            if callback is None:
+                self._reservation.submit_sync(
+                    partial(close_sync_source, self._source),
+                    context=self.context,
+                    after=dependency,
                 )
-            except BaseException as error:
-                cleanup.close()
-                self._claimed = False
-                if isinstance(error, Exception):
-                    return None
-                raise
-            self._async_cleanup = task
-            _BACKGROUND_ASYNC_CLEANUPS.add(self._async_cleanup)
-            self._async_cleanup.add_done_callback(_BACKGROUND_ASYNC_CLEANUPS.discard)
-            self._async_cleanup.add_done_callback(consume_future_exception)
-            return self._async_cleanup
+            else:
+                self._reservation.submit_async(callback, context=self.context, after=dependency)
+        else:
+            self._reservation.owner.retry()
+        return self.waiters.future()
+
+    def consume_sync_error(self) -> BaseException | None:
+        if self._reservation.pid != os.getpid() or not self.completion.done():
+            return None
+        with self.iteration.lock:
+            if self._sync_error_reported:
+                return None
+            self._sync_error_reported = True
+        return consume_future_exception(self.completion)
+
+    interrupt = close
+    aclose_from_sync = partialmethod(close, close_source=close_async_source_from_sync)
 
 
 class UploadSourceFactoryFailure:
@@ -150,80 +147,3 @@ class UploadSourceFactoryFailure:
     def __init__(self, source: object, error: BaseException) -> None:
         self.source = source
         self.error = error
-
-
-def close_sync_source(source: object) -> bool:
-    try:
-        target = source.file if isinstance(source, FileUploadSource) else source
-        close = getattr(target, "close", None)
-        if callable(close):
-            close()
-            return True
-        aclose = getattr(target, "aclose", None)
-    except Exception:  # noqa: BLE001
-        return True
-    if not callable(aclose):
-        return True
-    started, error = close_async_source_from_sync(target)
-    if error is None or isinstance(error, Exception):
-        return started
-    raise error
-
-
-async def close_async_source(source: object) -> None:
-    try:
-        target = source.file if isinstance(source, FileUploadSource) else source
-        aclose = getattr(target, "aclose", None)
-        if callable(aclose):
-            await aclose()
-        else:
-            await run_sync_in_daemon(lambda: close_sync_source(source))
-    except asyncio.CancelledError:
-        if current_task_is_cancelling():
-            raise
-    except Exception:  # noqa: BLE001
-        return
-
-
-async def close_async_source_after(
-    first: UploadSourceCleanup,
-    source: object,
-) -> None:
-    first_error: BaseException | None = None
-    source_error: BaseException | None = None
-    try:
-        await first.aclose(bounded=False)
-    except BaseException as error:  # noqa: BLE001
-        first_error = error
-    try:
-        await close_async_source(source)
-    except BaseException as error:  # noqa: BLE001
-        source_error = error
-    cleanup_error = first_error or source_error
-    if cleanup_error is None:
-        return
-    raise cleanup_error
-
-
-def close_async_source_from_sync(source: object) -> tuple[bool, BaseException | None]:
-    try:
-        completion = start_daemon_worker(
-            lambda: asyncio.run(close_async_source(source)),
-        )
-    except BaseException as error:  # noqa: BLE001
-        return False, error
-    completion.add_done_callback(consume_future_exception)
-    try:
-        completion.result(timeout=ASYNC_SOURCE_CLOSE_TIMEOUT)
-    except TimeoutError:
-        return True, None
-    except BaseException as error:  # noqa: BLE001
-        return True, error
-    return True, None
-
-
-def current_task_is_cancelling(*, propagating_only: bool = False) -> bool:
-    if propagating_only:
-        return isinstance(sys.exception(), asyncio.CancelledError)
-    current_task = asyncio.current_task()
-    return current_task is not None and bool(current_task.cancelling())

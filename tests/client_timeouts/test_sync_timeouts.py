@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+import threading
 
 import pytest
 
@@ -106,8 +107,9 @@ def test_sync_early_stream_response_aborts_incomplete_chunked_upload(
 
 
 def test_sync_waiting_request_cannot_reuse_early_response_connection(
-    sync_timeout_http_server: str,
+    gated_sync_early_response_http_server: tuple[str, threading.Event],
 ) -> None:
+    sync_timeout_http_server, release_eof = gated_sync_early_response_http_server
     body = b"x" * SLOW_UPLOAD_BODY_SIZE
     limits = foghttp.Limits(max_connections=1)
 
@@ -121,14 +123,18 @@ def test_sync_waiting_request_cannot_reuse_early_response_connection(
             content=iter((body,)),
         ) as response:
             recovery_future = executor.submit(client.get, sync_timeout_http_server)
-            wait_for_sync_stats(
-                client,
-                lambda stats: (
-                    stats.active_requests == EXPECTED_CONCURRENT_REQUESTS
-                    and stats.connections_opened == 1
-                    and stats.connections_reused == 0
-                ),
-            )
+            try:
+                wait_for_sync_stats(
+                    client,
+                    lambda stats: (
+                        stats.active_requests == EXPECTED_CONCURRENT_REQUESTS
+                        and stats.connections_opened == 1
+                        and stats.connections_reused == 0
+                    ),
+                )
+                assert not recovery_future.done()
+            finally:
+                release_eof.set()
             response_body = b"".join(response.iter_bytes())
         recovery_response = recovery_future.result(timeout=1)
         final_stats = client.stats()

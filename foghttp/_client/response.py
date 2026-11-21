@@ -4,6 +4,8 @@ __all__ = (
     "stream_response_from_raw",
 )
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 import time
 
 import foghttp._foghttp as _foghttp  # noqa: PLR0402
@@ -60,9 +62,9 @@ def stream_response_from_raw(
     started: float,
     extensions: RequestExtensions,
 ) -> StreamResponse:
-    try:
+    with _stream_response_conversion(raw) as raw_history:
         elapsed = raw.elapsed if raw.elapsed >= 0 else time.perf_counter() - started
-        history = tuple(response_from_raw(raw=item, started=started, extensions=extensions) for item in raw.history)
+        history = tuple(response_from_raw(raw=item, started=started, extensions=extensions) for item in raw_history)
         return bind_retry_trace(
             StreamResponse(
                 status_code=raw.status_code,
@@ -76,8 +78,6 @@ def stream_response_from_raw(
             ),
             retry_trace_from_raw(raw),
         )
-    finally:
-        raw.release_buffered_body_reservations()
 
 
 def async_stream_response_from_raw(
@@ -86,9 +86,9 @@ def async_stream_response_from_raw(
     started: float,
     extensions: RequestExtensions,
 ) -> AsyncStreamResponse:
-    try:
+    with _stream_response_conversion(raw) as raw_history:
         elapsed = raw.elapsed if raw.elapsed >= 0 else time.perf_counter() - started
-        history = tuple(response_from_raw(raw=item, started=started, extensions=extensions) for item in raw.history)
+        history = tuple(response_from_raw(raw=item, started=started, extensions=extensions) for item in raw_history)
         return bind_retry_trace(
             AsyncStreamResponse(
                 status_code=raw.status_code,
@@ -102,5 +102,19 @@ def async_stream_response_from_raw(
             ),
             retry_trace_from_raw(raw),
         )
+
+
+@contextmanager
+def _stream_response_conversion(
+    raw: _foghttp.RawStreamResponse,
+) -> Iterator[list[_foghttp.RawResponse]]:
+    history: list[_foghttp.RawResponse] = []
+    try:
+        history = raw.take_history()
+        yield history
+    except BaseException:
+        raw.close()
+        raise
     finally:
-        raw.release_buffered_body_reservations()
+        for item in history:
+            item.release_buffered_body_reservations()

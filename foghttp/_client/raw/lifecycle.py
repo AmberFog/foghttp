@@ -65,6 +65,8 @@ def create_raw_client(
             telemetry_enabled=config.telemetry is not None and config.telemetry.enabled,
             max_stream_decoded_bytes=limits.max_stream_decoded_bytes,
             max_stream_decoder_memory_bytes=limits.max_stream_decoder_memory_bytes,
+            max_upload_buffer_bytes=limits.max_upload_buffer_bytes,
+            max_total_upload_buffer_bytes=limits.max_total_upload_buffer_bytes,
         )
     except _RAW_CLIENT_SETUP_ERRORS as exc:
         raise ConfigurationError(str(exc)) from exc

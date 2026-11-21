@@ -229,18 +229,22 @@ async def test_async_multipart_cancellation_closes_sync_source(http_server: str)
 
         await asyncio.wait_for(source_created.wait(), timeout=2.0)
         source = sources[0]
-        assert await asyncio.to_thread(source.started.wait, 2.0)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await asyncio.wait_for(task, timeout=CANCELLATION_TIMEOUT)
+        try:
+            assert await asyncio.to_thread(source.started.wait, 2.0)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(task, timeout=CANCELLATION_TIMEOUT)
 
-        assert source.close_calls == 1
-        assert await asyncio.to_thread(source.finished.wait, 2.0)
-        await wait_for_async_transport_stats(
-            client,
-            lambda stats: stats.active_requests == 0 and stats.pending_requests == 0,
-            message="multipart upload cancellation did not release request slot",
-        )
+            assert await asyncio.to_thread(source.close_finished.wait, CANCELLATION_TIMEOUT)
+            assert source.close_calls == 1
+            assert await asyncio.to_thread(source.finished.wait, 2.0)
+            await wait_for_async_transport_stats(
+                client,
+                lambda stats: stats.active_requests == 0 and stats.pending_requests == 0,
+                message="multipart upload cancellation did not release request slot",
+            )
+        finally:
+            source.release.set()
 
 
 async def test_async_multipart_cancellation_keeps_direct_async_source_open(http_server: str) -> None:

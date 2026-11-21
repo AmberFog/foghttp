@@ -6,7 +6,7 @@ __all__ = (
 from dataclasses import dataclass
 import json
 from socket import socket
-from socketserver import BaseRequestHandler, ThreadingTCPServer
+from socketserver import BaseRequestHandler
 import threading
 from typing import Self, cast
 from urllib.parse import urlsplit
@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 from foghttp.status_codes.client_error import BAD_REQUEST, NOT_FOUND
 from foghttp.status_codes.redirect import PERMANENT_REDIRECT, TEMPORARY_REDIRECT
 from foghttp.status_codes.success import OK
+from tests.support.sync_server import SyncTCPServer
 
 from .constants import (
     CONNECTION_ID_KEY,
@@ -32,7 +33,6 @@ INCOMPLETE_REQUEST_BODY = "request ended before expected body length"
 INCOMPLETE_REQUEST_LINE = "request ended before line delimiter"
 INVALID_CHUNK_DELIMITER = "invalid chunk delimiter"
 SERVER_HOST = "127.0.0.1"
-SERVER_JOIN_TIMEOUT = 1.0
 SOCKET_READ_SIZE = 4096
 SOCKET_TIMEOUT = 1.0
 
@@ -51,9 +51,7 @@ class KeepAliveServer:
         return self.server.state.snapshot()
 
     def close(self) -> None:
-        self.server.shutdown()
-        self.server.server_close()
-        self.thread.join(timeout=SERVER_JOIN_TIMEOUT)
+        self.server.stop(self.thread)
 
     def __enter__(self) -> Self:
         return self
@@ -72,14 +70,12 @@ def start_keepalive_server(
     server.disconnect_after_response = disconnect_after_response
     server.socket_timeout = socket_timeout
     server.state = state
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    thread = server.start()
     return KeepAliveServer(server=server, thread=thread)
 
 
-class KeepAliveTCPServer(ThreadingTCPServer):
+class KeepAliveTCPServer(SyncTCPServer):
     allow_reuse_address = True
-    daemon_threads = True
     disconnect_after_response: bool
     socket_timeout: float | None
     state: "KeepAliveState"

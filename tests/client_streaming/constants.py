@@ -1,4 +1,5 @@
 __all__ = (
+    "BOM_TEXT_STREAM_CHUNKS",
     "BROKEN_READY_TAIL_STREAM_PATH",
     "EMPTY_STREAM_PATH",
     "ENTER_STREAM_TIMEOUT",
@@ -19,6 +20,8 @@ __all__ = (
     "TEXT_LINES_STREAM_CHUNKS",
     "TEXT_LINES_STREAM_PATH",
 )
+
+from codecs import BOM_UTF8
 
 import foghttp
 
@@ -47,3 +50,4 @@ TEXT_LINES_STREAM_CHUNKS = (
     b"\n\nfinal-no-newline",
 )
 TEXT_LINES_STREAM_PATH = "/stream/text-lines"
+BOM_TEXT_STREAM_CHUNKS = (BOM_UTF8, *TEXT_LINES_STREAM_CHUNKS)

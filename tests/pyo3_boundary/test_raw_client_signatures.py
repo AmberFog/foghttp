@@ -1,6 +1,7 @@
 import inspect
 
 from foghttp import _foghttp
+from foghttp.limits import DEFAULT_MAX_TOTAL_UPLOAD_BUFFER_BYTES, DEFAULT_MAX_UPLOAD_BUFFER_BYTES
 
 
 RAW_CLIENT_KEYWORD_ONLY_PARAMETERS = (
@@ -41,6 +42,8 @@ RAW_CLIENT_KEYWORD_ONLY_PARAMETERS = (
     "telemetry_enabled",
     "max_stream_decoded_bytes",
     "max_stream_decoder_memory_bytes",
+    "max_upload_buffer_bytes",
+    "max_total_upload_buffer_bytes",
 )
 
 RAW_REQUEST_KEYWORD_ONLY_PARAMETERS = (
@@ -70,6 +73,8 @@ def test_raw_client_init_signature_is_kw_only() -> None:
     assert all(parameter.kind is inspect.Parameter.KEYWORD_ONLY for parameter in signature.parameters.values())
     assert signature.parameters["max_stream_decoded_bytes"].default is None
     assert signature.parameters["max_stream_decoder_memory_bytes"].default == 128 * 1024 * 1024
+    assert signature.parameters["max_upload_buffer_bytes"].default == DEFAULT_MAX_UPLOAD_BUFFER_BYTES
+    assert signature.parameters["max_total_upload_buffer_bytes"].default == DEFAULT_MAX_TOTAL_UPLOAD_BUFFER_BYTES
 
 
 def test_raw_request_signatures_are_kw_only() -> None:

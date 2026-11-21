@@ -69,8 +69,8 @@ def test_sync_client_streams_file_multipart_without_closing_external_file(sync_h
         )
 
     payload = response.json()
-    assert payload["headers"]["content-length"]
-    assert payload["headers"]["transfer-encoding"] == []
+    assert payload["headers"]["content-length"] == []
+    assert payload["headers"]["transfer-encoding"] == ["chunked"]
     assert file_obj.closed is False
     assert_multipart_parts(
         multipart_parts_from_payload(payload),

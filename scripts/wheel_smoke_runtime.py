@@ -130,6 +130,13 @@ def main() -> int:
         Path(package_file).resolve().is_relative_to(target_dir),
         "foghttp was not imported from the installed wheel target",
     )
+    native_module = import_module("foghttp._foghttp")
+    native_file = getattr(native_module, "__file__", None)
+    require(native_file is not None, "installed foghttp native module has no file location")
+    require(
+        Path(native_file).resolve().is_relative_to(target_dir),
+        "foghttp native module was not imported from the installed wheel target",
+    )
     run_examples(examples_dir)
 
     with loopback_server_url() as url:

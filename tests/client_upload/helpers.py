@@ -6,11 +6,13 @@ __all__ = (
     "FilenoOnly",
     "MisreportedLengthFile",
     "OversizedTellFile",
+    "ProgressRawBody",
     "ReadOnlyFile",
     "RecordingRawUploadBody",
     "RetryingAsyncRawBody",
 )
 
+import asyncio
 import io
 import os
 import time
@@ -19,6 +21,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+
+NONEMPTY_PROGRESS_REQUIRED = "nonempty upload must use bounded progress"
 
 
 class RetryingAsyncRawBody:
@@ -47,6 +52,10 @@ class RetryingAsyncRawBody:
         self.events.append("final")
         return next(self._send_results)
 
+    def send_part_nowait(self, chunk: bytes, offset: int, *, final: bool = False) -> int:
+        send = self.send_final_nowait if final else self.send_nowait
+        return bytes.__len__(chunk) - offset if send(chunk) else 0
+
     def fail_nowait(self, message: str) -> bool:
         self.failures.append(message)
         self.events.append("fail")
@@ -70,9 +79,54 @@ class RecordingRawUploadBody:
         start_callback: object,
         _replayable: object,
         _ready_callback: object,
+        *,
+        raw_client: object | None = None,
     ) -> None:
         self.start_callback = start_callback
+        self.raw_client = raw_client
         self.closed: bool = False
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class ProgressRawBody:
+    def __init__(self, accepted: list[int], *, close_on_backpressure: bool = False) -> None:
+        self._accepted = iter(accepted)
+        self._close_on_backpressure = close_on_backpressure
+        self.closed = False
+        self.calls: list[tuple[bytes, int, bool]] = []
+        self.received = bytearray()
+        self.first_accepted = asyncio.Event()
+        self.backpressure = asyncio.Event()
+
+    def send_part_nowait(self, chunk: bytes, offset: int, *, final: bool = False) -> int:
+        self.calls.append((chunk, offset, final))
+        accepted = next(self._accepted)
+        self.received.extend(chunk[offset : offset + accepted])
+        if accepted:
+            self.first_accepted.set()
+        else:
+            self.backpressure.set()
+        if not accepted and self._close_on_backpressure:
+            self.closed = True
+        return accepted
+
+    def send_nowait(self, chunk: bytes) -> bool:
+        if chunk:
+            raise AssertionError(NONEMPTY_PROGRESS_REQUIRED)
+        return True
+
+    def send_final_nowait(self, chunk: bytes) -> bool:
+        if chunk:
+            raise AssertionError(NONEMPTY_PROGRESS_REQUIRED)
+        return True
+
+    def fail_nowait(self, message: str) -> bool:
+        raise AssertionError(message)
+
+    def is_closed(self) -> bool:
+        return self.closed
 
     def close(self) -> None:
         self.closed = True

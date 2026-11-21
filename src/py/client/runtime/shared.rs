@@ -1,17 +1,16 @@
-use super::{build_multi_thread_runtime, shared_runtime_workers};
+use super::{build_multi_thread_runtime, shared_runtime_workers, RuntimeResources};
 use crate::errors::FogHttpError;
 use crate::py::client::process::{current_process_id, ProcessId};
 use pyo3::exceptions::PyAttributeError;
 use pyo3::prelude::*;
 use std::sync::Arc;
-use tokio::runtime::Runtime;
 
 const SHARED_RUNTIME_ATTRIBUTE: &str = "_shared_runtime_state";
 
 #[pyclass(module = "foghttp._foghttp")]
 struct SharedRuntimeState {
     process_id: ProcessId,
-    runtime: Option<Arc<Runtime>>,
+    runtime: Option<Arc<RuntimeResources>>,
 }
 
 impl Drop for SharedRuntimeState {
@@ -22,7 +21,7 @@ impl Drop for SharedRuntimeState {
     }
 }
 
-pub(super) fn shared_runtime(py: Python<'_>) -> PyResult<Arc<Runtime>> {
+pub(super) fn shared_runtime(py: Python<'_>) -> PyResult<Arc<RuntimeResources>> {
     let process_id = current_process_id();
     let module = py.import("foghttp._foghttp")?;
 
@@ -59,7 +58,9 @@ pub(super) fn shared_runtime(py: Python<'_>) -> PyResult<Arc<Runtime>> {
     Ok(runtime)
 }
 
-fn build_shared_runtime() -> PyResult<Arc<Runtime>> {
+fn build_shared_runtime() -> PyResult<Arc<RuntimeResources>> {
     let worker_threads = shared_runtime_workers();
-    build_multi_thread_runtime(worker_threads).map(Arc::new)
+    build_multi_thread_runtime(worker_threads)
+        .map(RuntimeResources::new)
+        .map(Arc::new)
 }

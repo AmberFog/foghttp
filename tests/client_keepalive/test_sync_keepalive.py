@@ -19,6 +19,7 @@ from tests.client_streaming.server import start_sync_streaming_server
 from tests.client_upload.helpers import DelayedCloseEmptyFile, MisreportedLengthFile
 from tests.support.transport_state import wait_for_sync_transport_state
 from tests.support.transport_stats import wait_for_sync_transport_stats
+from tests.support.upload_requests import known_length_upload_request
 
 from .assertions import (
     assert_distinct_connection_payloads,
@@ -166,11 +167,13 @@ def test_sync_multipart_file_upload_reuses_connection(
 def test_sync_known_length_upload_finishes_without_reading_past_declared_body(
     keepalive_http_server: KeepAliveServer,
 ) -> None:
-    content = FailsWhenReadPastExactLengthFile(b"known-length-body")
+    body = b"known-length-body"
+    content = FailsWhenReadPastExactLengthFile(body)
     url = keepalive_http_server.url + KEEPALIVE_PATH
 
     with foghttp.Client() as client:
-        first_response = client.post(url, content=content)
+        request = known_length_upload_request(client, url, content, len(body))
+        first_response = client.send(request)
         second_response = client.get(url)
         stats = client.stats()
 
@@ -204,7 +207,8 @@ def test_sync_delayed_zero_length_file_upload_reuses_connection(
     url = keepalive_http_server.url + KEEPALIVE_PATH
 
     with foghttp.Client() as client:
-        first_response = client.post(url, content=DelayedCloseEmptyFile())
+        request = known_length_upload_request(client, url, DelayedCloseEmptyFile(), 0)
+        first_response = client.send(request)
         second_response = client.get(url)
         stats = client.stats()
 
@@ -229,11 +233,12 @@ def test_sync_invalid_known_length_upload_aborts_connection_before_recovery(
     url = keepalive_http_server.url + KEEPALIVE_PATH
 
     with foghttp.Client() as client:
+        request = known_length_upload_request(client, url, source, declared_length)
         if request_succeeds:
-            assert client.post(url, content=source).status_code == OK
+            assert client.send(request).status_code == OK
         else:
             with pytest.raises(foghttp.RequestError, match="early end"):
-                client.post(url, content=source)
+                client.send(request)
         recovery_response = client.get(url)
         stats = client.stats()
 
