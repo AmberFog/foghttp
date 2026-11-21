@@ -165,12 +165,22 @@ Policy stages run in this order:
 
 1. Before send, the pipeline selects the direct or proxy transport for the
    normalized request URL.
-2. After response headers, it may produce an opaque pending redirect decision.
-3. After the redirect response body has been consumed, it validates the
-   redirect limit, request-body replayability, and environment-derived proxy
-   boundary before returning a typed request mutation.
+2. After response headers, `RequestState::on_response_headers` selects the
+   next action for both buffered and streaming requests. A pending redirect
+   takes priority. Otherwise, the retry policy determines whether to retry
+   or return the response.
+3. Once the transport has consumed the redirect response body,
+   `PolicyPipeline::after_response_body` checks the redirect limit, request-body
+   replayability and environment-derived proxy boundary before returning a
+   typed request mutation.
 4. `RequestState` applies the mutation before the next send. The policy layer
    never owns sockets, permits, response bodies, or Python objects.
+
+When a status retry is declined, the buffered path keeps the retry attempt
+pending until body processing finishes. The streaming path records the
+decision as complete before handing the response to the caller. Both paths
+drain a response selected for retry before recording the retry and advancing
+to the next attempt.
 
 The current mutation surface can replace the method and URL, remove request
 headers, and either preserve or drop the request body. A non-replayable body is

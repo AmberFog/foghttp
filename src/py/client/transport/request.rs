@@ -467,7 +467,7 @@ impl RequestState {
         status_code: u16,
         headers: &HeaderPairs,
         redirect_hop: usize,
-    ) -> PyResult<Option<PendingResponsePolicyAction>> {
+    ) -> PyResult<ResponseDisposition> {
         if let Some(cookies) = self.cookies.as_ref() {
             cookies.store_response(&self.url, headers);
         }
@@ -478,24 +478,31 @@ impl RequestState {
         if let Some(hooks) = self.policy_hooks.as_ref() {
             hooks.on_response_headers(request, response, redirect_hop, self.extensions.as_ref())?;
         }
-        Ok(action.map(|action| PendingResponsePolicyAction {
-            action,
-            response: self.response_body_snapshot(status_code, headers),
-        }))
+        if let Some(action) = action {
+            return Ok(ResponseDisposition::Redirect(PendingResponsePolicyAction {
+                action,
+                response: self.response_body_snapshot(status_code, headers),
+            }));
+        }
+        Ok(match self.retry_on_response(request, response) {
+            Some(pending) if matches!(pending.decision, RetryDecision::Retry { .. }) => {
+                ResponseDisposition::Retry(pending)
+            }
+            stopped => ResponseDisposition::Return(stopped),
+        })
     }
 
-    pub(super) fn retry_on_response(
+    fn retry_on_response(
         &self,
-        status_code: u16,
-        headers: &HeaderPairs,
+        request: PolicyRequest<'_>,
+        response: ResponseHead<'_>,
     ) -> Option<PendingRetryDecision> {
         if !self.policy.retries_enabled() {
             return None;
         }
-        let response = ResponseHead::new(status_code, headers);
         self.policy
             .on_retryable_response(
-                self.policy_request(),
+                request,
                 response,
                 self.completed_retries,
                 fastrand::f64(),
@@ -503,7 +510,7 @@ impl RequestState {
             )
             .map(|decision| PendingRetryDecision {
                 decision,
-                trigger: RetryTrigger::Status(status_code),
+                trigger: RetryTrigger::Status(response.status_code()),
             })
     }
 
@@ -889,10 +896,6 @@ pub(super) struct PendingRetryDecision {
 }
 
 impl PendingRetryDecision {
-    pub(super) fn should_retry(&self) -> bool {
-        matches!(self.decision, RetryDecision::Retry { .. })
-    }
-
     fn action(&self) -> RetryAction {
         match self.decision {
             RetryDecision::Retry { delay } => RetryAction::Retry(delay),
@@ -969,6 +972,12 @@ impl RetryTrigger {
 pub(super) enum RetryAction {
     Retry(Duration),
     Stop,
+}
+
+pub(super) enum ResponseDisposition {
+    Redirect(PendingResponsePolicyAction),
+    Retry(PendingRetryDecision),
+    Return(Option<PendingRetryDecision>),
 }
 
 pub(super) struct PendingResponsePolicyAction {
