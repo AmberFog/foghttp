@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import AsyncIterator, Iterator
 from contextlib import suppress
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import threading
 import time
 from typing import Any
@@ -11,6 +11,7 @@ import pytest
 
 from foghttp.status_codes.redirect import FOUND
 from foghttp.status_codes.success import OK
+from tests.support.sync_server import SyncHTTPServer
 
 from .constants import (
     OK_BODY,
@@ -51,9 +52,7 @@ def sync_resource_http_server() -> Iterator[str]:
         host, port = server.server_address
         yield f"http://{host}:{port}"
     finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=1)
+        server.stop(thread)
 
 
 @pytest.fixture
@@ -63,9 +62,7 @@ def secondary_sync_resource_http_server() -> Iterator[str]:
         host, port = server.server_address
         yield f"http://{host}:{port}"
     finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=1)
+        server.stop(thread)
 
 
 async def _start_async_resource_server() -> asyncio.AbstractServer:
@@ -160,8 +157,7 @@ class ResourceHTTPHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
-def _start_sync_resource_server() -> tuple[ThreadingHTTPServer, threading.Thread]:
-    server = ThreadingHTTPServer(("127.0.0.1", 0), ResourceHTTPHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+def _start_sync_resource_server() -> tuple[SyncHTTPServer, threading.Thread]:
+    server = SyncHTTPServer(("127.0.0.1", 0), ResourceHTTPHandler)
+    thread = server.start()
     return server, thread

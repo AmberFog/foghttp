@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import contextmanager, suppress
 from functools import partial
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import socket
 import threading
 import time
@@ -13,6 +13,7 @@ import pytest
 
 from foghttp.status_codes.client_error import PAYLOAD_TOO_LARGE
 from foghttp.status_codes.success import OK
+from tests.support.sync_server import SyncHTTPServer
 
 from .constants import (
     EARLY_CLOSE_RESPONSE_PATH,
@@ -91,18 +92,15 @@ def gated_sync_early_response_http_server() -> Iterator[tuple[str, threading.Eve
 @contextmanager
 def _sync_timeout_server(*, release_eof: threading.Event | None = None) -> Iterator[str]:
     handler = partial(TimeoutHTTPHandler, release_eof=release_eof)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    server = SyncHTTPServer(("127.0.0.1", 0), handler)
+    thread = server.start()
     host, port = server.server_address
     try:
         yield f"http://{host}:{port}"
     finally:
         if release_eof is not None:
             release_eof.set()
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=1)
+        server.stop(thread)
 
 
 async def _start_async_timeout_server(
@@ -244,7 +242,7 @@ class TimeoutHTTPHandler(BaseHTTPRequestHandler):
         self,
         request: socket.socket,
         client_address: tuple[str, int],
-        server: ThreadingHTTPServer,
+        server: SyncHTTPServer,
         *,
         release_eof: threading.Event | None = None,
     ) -> None:

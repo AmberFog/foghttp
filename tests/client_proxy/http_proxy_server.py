@@ -13,7 +13,7 @@ import asyncio
 from collections.abc import AsyncIterator, Iterator
 from contextlib import suppress
 from dataclasses import dataclass, field
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import json
 import threading
 from typing import Any
@@ -24,6 +24,7 @@ import pytest
 from foghttp.status_codes.redirect import FOUND
 from foghttp.status_codes.success import OK
 from tests.support.raw_responses import raw_response
+from tests.support.sync_server import SyncHTTPServer
 
 
 PROXY_REDIRECT_LOCATION_PARAM = "location"
@@ -43,7 +44,7 @@ class ProxyRequest:
 
 @dataclass(slots=True)
 class SyncHTTPProxy:
-    server: ThreadingHTTPServer
+    server: SyncHTTPServer
     thread: threading.Thread
     base_url: str
     _requests: list[ProxyRequest] = field(default_factory=list)
@@ -63,9 +64,7 @@ class SyncHTTPProxy:
         self._stream_delay.wait(PROXY_STREAM_CHUNK_DELAY_SECONDS)
 
     def close(self) -> None:
-        self.server.shutdown()
-        self.server.server_close()
-        self.thread.join(timeout=1)
+        self.server.stop(self.thread)
 
 
 @dataclass(slots=True)
@@ -144,9 +143,8 @@ class SyncHTTPProxyHandler(BaseHTTPRequestHandler):
 
 @pytest.fixture
 def sync_http_proxy() -> Iterator[SyncHTTPProxy]:
-    server = ThreadingHTTPServer(("127.0.0.1", 0), SyncHTTPProxyHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    server = SyncHTTPServer(("127.0.0.1", 0), SyncHTTPProxyHandler)
+    thread = server.start()
     host, port = server.server_address
     proxy = SyncHTTPProxy(server=server, thread=thread, base_url=f"http://{host}:{port}")
     server.proxy = proxy  # type: ignore[attr-defined]

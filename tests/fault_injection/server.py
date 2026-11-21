@@ -4,12 +4,13 @@ __all__ = (
 )
 
 from dataclasses import dataclass
-from socketserver import BaseRequestHandler, ThreadingTCPServer
+from socketserver import BaseRequestHandler
 import threading
 from typing import TYPE_CHECKING, Self, cast
 from urllib.parse import urlsplit
 
 from foghttp.status_codes.client_error import BAD_REQUEST, NOT_FOUND
+from tests.support.sync_server import SyncTCPServer
 
 from .constants import DELAYED_PEER_CLOSE_BEFORE_HEADERS_PATH
 from .models import FaultInjectionSnapshot
@@ -23,7 +24,6 @@ if TYPE_CHECKING:
 
 
 SERVER_HOST = "127.0.0.1"
-SERVER_JOIN_TIMEOUT = 1.0
 SOCKET_TIMEOUT = 1.0
 WAIT_TIMEOUT = 2.0
 
@@ -55,9 +55,7 @@ class FaultInjectionServer:
 
     def close(self) -> None:
         self.release_delayed_peer_close()
-        self.server.shutdown()
-        self.server.server_close()
-        self.thread.join(timeout=SERVER_JOIN_TIMEOUT)
+        self.server.stop(self.thread)
 
     def __enter__(self) -> Self:
         return self
@@ -70,14 +68,12 @@ def start_fault_injection_server() -> FaultInjectionServer:
     state = FaultInjectionState()
     server = FaultInjectionTCPServer((SERVER_HOST, 0), FaultInjectionHTTPHandler)
     server.state = state
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    thread = server.start()
     return FaultInjectionServer(server=server, thread=thread)
 
 
-class FaultInjectionTCPServer(ThreadingTCPServer):
+class FaultInjectionTCPServer(SyncTCPServer):
     allow_reuse_address = True
-    daemon_threads = True
     state: FaultInjectionState
 
 
