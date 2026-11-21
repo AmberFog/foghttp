@@ -146,14 +146,16 @@ def test_raw_sync_transport_sends_prepared_request_through_raw_client(
     )
 
 
-def test_raw_sync_transport_marks_http_requests_for_proxy(
+@pytest.mark.parametrize("scheme", [pytest.param("http", id="http"), pytest.param("https", id="https")])
+def test_raw_sync_transport_routes_through_explicit_proxy(
+    scheme: str,
     faker: Faker,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured_request: dict[str, object] = {}
     raw_client = object()
     raw_response = object()
-    request = Request(GET, f"http://{faker.domain_name()}/{faker.uri_path()}")
+    request = Request(GET, f"{scheme}://{faker.domain_name()}/{faker.uri_path()}")
     response = response_for_request(request)
     proxy_resolver = ProxyResolver.from_explicit(
         proxy=ProxyUrl.parse("http://proxy.example:8080"),
@@ -177,41 +179,7 @@ def test_raw_sync_transport_marks_http_requests_for_proxy(
     assert result is response
     raw_request = captured_request["request"]
     assert isinstance(raw_request, RawRequestOptions)
-    assert raw_request.use_proxy_transport is True
-    assert raw_request.proxy_policy is ProxyTransportPolicy.EXPLICIT_PROXY
-
-
-def test_raw_sync_transport_routes_https_requests_through_explicit_proxy(
-    faker: Faker,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured_request: dict[str, object] = {}
-    raw_client = object()
-    raw_response = object()
-    request = Request(GET, f"https://{faker.domain_name()}/{faker.uri_path()}")
-    response = response_for_request(request)
-    proxy_resolver = ProxyResolver.from_explicit(
-        proxy=ProxyUrl.parse("http://proxy.example:8080"),
-    )
-
-    def fake_send_raw_request(**kwargs: object) -> object:
-        captured_request.update(kwargs)
-        return raw_response
-
-    def fake_response_from_raw(**_kwargs: object) -> object:
-        return response
-
-    monkeypatch.setattr("foghttp._client.raw.requests.send_raw_request", fake_send_raw_request)
-    monkeypatch.setattr("foghttp._client.transport.response_from_raw", fake_response_from_raw)
-
-    result = RawSyncTransport(lambda: raw_client, proxy_resolver=proxy_resolver).send(
-        request,
-        timeouts=Timeouts(),
-    )
-
-    assert result is response
-    raw_request = captured_request["request"]
-    assert isinstance(raw_request, RawRequestOptions)
+    assert raw_request.url == request.url
     assert raw_request.use_proxy_transport is True
     assert raw_request.proxy_policy is ProxyTransportPolicy.EXPLICIT_PROXY
 

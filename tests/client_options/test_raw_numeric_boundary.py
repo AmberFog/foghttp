@@ -187,40 +187,21 @@ def test_raw_client_rejects_non_callable_policy_hook_without_panic() -> None:
         _foghttp.RawClient(**raw_client_options(policy_hooks=policy_hooks))
 
 
-def test_raw_client_sync_request_rejects_positional_arguments(faker: Faker) -> None:
-    raw_client = _raw_client()
-    try:
-        with pytest.raises(TypeError, match="positional"):
-            raw_client.request(*_raw_request_options(url=faker.url()).values())
-    finally:
-        raw_client.close()
-
-
-def test_raw_client_async_request_rejects_positional_arguments(faker: Faker) -> None:
-    raw_client = _raw_client()
-    try:
-        with pytest.raises(TypeError, match="positional"):
-            raw_client.request_async(*_raw_request_options(url=faker.url()).values())
-    finally:
-        raw_client.close()
-
-
-def test_raw_client_sync_stream_request_rejects_positional_arguments(faker: Faker) -> None:
-    raw_client = _raw_client()
-    try:
-        with pytest.raises(TypeError, match="positional"):
-            raw_client.request_stream(*_raw_request_options(url=faker.url()).values())
-    finally:
-        raw_client.close()
-
-
-def test_raw_client_async_stream_request_rejects_positional_arguments(faker: Faker) -> None:
-    raw_client = _raw_client()
-    try:
-        with pytest.raises(TypeError, match="positional"):
-            raw_client.request_stream_async(*_raw_request_options(url=faker.url()).values())
-    finally:
-        raw_client.close()
+@pytest.mark.parametrize(
+    "request_method",
+    [
+        pytest.param("request", id="request"),
+        pytest.param("request_async", id="request_async"),
+        pytest.param("request_stream", id="request_stream"),
+        pytest.param("request_stream_async", id="request_stream_async"),
+    ],
+)
+def test_raw_client_rejects_positional_request_arguments(request_method: str, faker: Faker) -> None:
+    with closing(_raw_client()) as raw_client:
+        request = getattr(raw_client, request_method)
+        with pytest.raises(TypeError, match="takes 0 positional arguments"):
+            request(*_raw_request_options(url=faker.url()).values())
+        assert raw_client.stats().total_requests == 0
 
 
 def test_raw_client_sync_request_rejects_invalid_timeout_without_panic(faker: Faker) -> None:
