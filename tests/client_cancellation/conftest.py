@@ -1,12 +1,12 @@
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import suppress
 from urllib.parse import urlsplit
 
 import pytest
 
 from foghttp.methods import HEAD
 from foghttp.status_codes.success import OK
+from tests.support.async_server import serve_tcp
 
 from .constants import OK_BODY, SLOW_BODY_PATH, SLOW_HEADERS_PATH, SLOW_RESPONSE_DELAY
 
@@ -38,18 +38,9 @@ async def cancellation_server() -> AsyncIterator[str]:
             await _write_response(writer, body)
         except (asyncio.IncompleteReadError, OSError):
             return
-        finally:
-            writer.close()
-            with suppress(asyncio.CancelledError, OSError):
-                await writer.wait_closed()
 
-    server = await asyncio.start_server(handle, "127.0.0.1", 0)
-    try:
-        host, port = server.sockets[0].getsockname()
-        yield f"http://{host}:{port}"
-    finally:
-        server.close()
-        await server.wait_closed()
+    async with serve_tcp(handle) as port:
+        yield f"http://127.0.0.1:{port}"
 
 
 async def _write_headers(writer: asyncio.StreamWriter, content_length: int) -> None:

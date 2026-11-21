@@ -1,6 +1,6 @@
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
-from contextlib import contextmanager, suppress
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager, suppress
 from functools import partial
 from http.server import BaseHTTPRequestHandler
 import socket
@@ -13,6 +13,7 @@ import pytest
 
 from foghttp.status_codes.client_error import PAYLOAD_TOO_LARGE
 from foghttp.status_codes.success import OK
+from tests.support.async_server import serve_tcp
 from tests.support.sync_server import SyncHTTPServer
 
 from .constants import (
@@ -34,41 +35,22 @@ OK_BODY = b"OK"
 async def timeout_http_server(
     slow_upload_request_headers_received: asyncio.Event,
 ) -> AsyncIterator[str]:
-    handlers: set[asyncio.Task[None]] = set()
-    server = await _start_async_timeout_server(slow_upload_request_headers_received, handlers)
-    try:
-        host, port = server.sockets[0].getsockname()
-        yield f"http://{host}:{port}"
-    finally:
-        await _close_async_server(server, handlers)
+    handle = partial(_handle_timeout_request, headers_received=slow_upload_request_headers_received)
+    async with serve_tcp(handle) as port:
+        yield f"http://127.0.0.1:{port}"
 
 
 @pytest.fixture
 async def early_response_http_server() -> AsyncIterator[str]:
-    release = asyncio.Event()
-    handlers: set[asyncio.Task[None]] = set()
-    server = await _start_async_early_response_server(release, handlers)
-    try:
-        host, port = server.sockets[0].getsockname()
-        yield f"http://{host}:{port}"
-    finally:
-        release.set()
-        await _close_async_server(server, handlers)
+    async with _early_response_server() as url:
+        yield url
 
 
 @pytest.fixture
 async def gated_early_response_http_server() -> AsyncIterator[tuple[str, asyncio.Event]]:
-    release = asyncio.Event()
     release_eof = asyncio.Event()
-    handlers: set[asyncio.Task[None]] = set()
-    server = await _start_async_early_response_server(release, handlers, release_eof=release_eof)
-    try:
-        host, port = server.sockets[0].getsockname()
-        yield f"http://{host}:{port}", release_eof
-    finally:
-        release_eof.set()
-        release.set()
-        await _close_async_server(server, handlers)
+    async with _early_response_server(release_eof=release_eof) as url:
+        yield url, release_eof
 
 
 @pytest.fixture
@@ -103,49 +85,42 @@ def _sync_timeout_server(*, release_eof: threading.Event | None = None) -> Itera
         server.stop(thread)
 
 
-async def _start_async_timeout_server(
-    slow_upload_request_headers_received: asyncio.Event,
-    handlers: set[asyncio.Task[None]],
-) -> asyncio.AbstractServer:
-    async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        try:
-            _set_async_receive_buffer(writer)
-            while True:
-                head = await reader.readuntil(b"\r\n\r\n")
-                request_line = head.decode("iso-8859-1").splitlines()[0]
-                _method, target, _version = request_line.split()
-                path = urlsplit(target).path
-                if path == SLOW_UPLOAD_RESPONSE_PATH:
-                    slow_upload_request_headers_received.set()
-                    writer.write(_raw_incomplete_response())
-                    await writer.drain()
-                    await asyncio.sleep(SLOW_UPLOAD_HOLD_DELAY)
-                    return
-                if path == SLOW_UPLOAD_PATH:
-                    slow_upload_request_headers_received.set()
-                    await asyncio.sleep(SLOW_UPLOAD_HOLD_DELAY)
-                    return
-                if path == SLOW_RESPONSE_PATH:
-                    await asyncio.sleep(SLOW_RESPONSE_DELAY)
-
-                writer.write(_raw_ok_response())
-                await writer.drain()
-        except (asyncio.IncompleteReadError, OSError, ValueError):
-            return
-        finally:
-            writer.close()
-            with suppress(asyncio.CancelledError, OSError):
-                await writer.wait_closed()
-
-    return await asyncio.start_server(_tracked_handler(handle, handlers), "127.0.0.1", 0)
-
-
-async def _start_async_early_response_server(
-    release: asyncio.Event,
-    handlers: set[asyncio.Task[None]],
+async def _handle_timeout_request(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
     *,
-    release_eof: asyncio.Event | None = None,
-) -> asyncio.AbstractServer:
+    headers_received: asyncio.Event,
+) -> None:
+    try:
+        _set_async_receive_buffer(writer)
+        while True:
+            head = await reader.readuntil(b"\r\n\r\n")
+            request_line = head.decode("iso-8859-1").splitlines()[0]
+            _method, target, _version = request_line.split()
+            path = urlsplit(target).path
+            if path == SLOW_UPLOAD_RESPONSE_PATH:
+                headers_received.set()
+                writer.write(_raw_incomplete_response())
+                await writer.drain()
+                await asyncio.sleep(SLOW_UPLOAD_HOLD_DELAY)
+                return
+            if path == SLOW_UPLOAD_PATH:
+                headers_received.set()
+                await asyncio.sleep(SLOW_UPLOAD_HOLD_DELAY)
+                return
+            if path == SLOW_RESPONSE_PATH:
+                await asyncio.sleep(SLOW_RESPONSE_DELAY)
+
+            writer.write(_raw_ok_response())
+            await writer.drain()
+    except (asyncio.IncompleteReadError, OSError, ValueError):
+        return
+
+
+@asynccontextmanager
+async def _early_response_server(*, release_eof: asyncio.Event | None = None) -> AsyncIterator[str]:
+    release = asyncio.Event()
+
     async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             _set_async_receive_buffer(writer)
@@ -172,43 +147,14 @@ async def _start_async_early_response_server(
             await writer.drain()
         except (asyncio.IncompleteReadError, OSError, ValueError):
             return
+
+    async with serve_tcp(handle) as port:
+        try:
+            yield f"http://127.0.0.1:{port}"
         finally:
-            writer.close()
-            with suppress(asyncio.CancelledError, OSError):
-                await writer.wait_closed()
-
-    return await asyncio.start_server(_tracked_handler(handle, handlers), "127.0.0.1", 0)
-
-
-def _tracked_handler(
-    handler: Callable[[asyncio.StreamReader, asyncio.StreamWriter], Awaitable[None]],
-    handlers: set[asyncio.Task[None]],
-) -> Callable[[asyncio.StreamReader, asyncio.StreamWriter], None]:
-    def start(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        task = asyncio.create_task(handler(reader, writer))
-        handlers.add(task)
-
-    return start
-
-
-async def _close_async_server(
-    server: asyncio.AbstractServer,
-    handlers: set[asyncio.Task[None]],
-) -> None:
-    server.close()
-    await server.wait_closed()
-    tasks = tuple(handlers)
-    pending_tasks = {task for task in tasks if not task.done()}
-    for task in pending_tasks:
-        task.cancel()
-    if tasks:
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        for task, result in zip(tasks, results, strict=True):
-            if not isinstance(result, BaseException):
-                continue
-            if task in pending_tasks and isinstance(result, asyncio.CancelledError):
-                continue
-            raise result
+            if release_eof is not None:
+                release_eof.set()
+            release.set()
 
 
 def _set_async_receive_buffer(writer: asyncio.StreamWriter) -> None:

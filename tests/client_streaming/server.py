@@ -17,6 +17,7 @@ from typing import Protocol
 from urllib.parse import urlsplit
 
 from foghttp.status_codes.success import OK
+from tests.support.async_server import serve_tcp
 from tests.support.sync_server import SyncHTTPServer
 
 from .constants import (
@@ -88,22 +89,16 @@ async def start_async_streaming_server(
             )
         except (asyncio.IncompleteReadError, OSError):
             return
-        finally:
-            writer.close()
-            with suppress(asyncio.CancelledError, OSError):
-                await writer.wait_closed()
 
-    server = await asyncio.start_server(handle, "127.0.0.1", 0)
-    host, port = server.sockets[0].getsockname()
-    try:
-        yield AsyncStreamingServer(
-            base_url=f"http://{host}:{port}",
-            first_chunk_sent=first_chunk_sent,
-            release_tail=release_tail,
-        )
-    finally:
-        server.close()
-        await server.wait_closed()
+    async with serve_tcp(handle) as port:
+        try:
+            yield AsyncStreamingServer(
+                base_url=f"http://127.0.0.1:{port}",
+                first_chunk_sent=first_chunk_sent,
+                release_tail=release_tail,
+            )
+        finally:
+            release_tail.set()
 
 
 @contextmanager
