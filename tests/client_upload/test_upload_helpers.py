@@ -8,12 +8,13 @@ import gc
 import io
 import threading
 from typing import TYPE_CHECKING, Any, cast
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 import weakref
 
 import pytest
 
 from foghttp import _foghttp
+from foghttp._upload_body import cleanup_execution
 from foghttp._upload_body.async_sending import (
     fail_async_upload_body,
     handle_async_upload_error,
@@ -42,6 +43,7 @@ from tests.client_upload.helpers import (
     RecordingRawUploadBody,
     RetryingAsyncRawBody,
 )
+from tests.upload_cleanup.constants import COMPLETION_WATCHDOG
 
 
 if TYPE_CHECKING:
@@ -1104,61 +1106,31 @@ def test_sync_cleanup_bridge_preserves_context() -> None:
     assert observations == ["request-value"]
 
 
-def test_sync_cleanup_bridge_retries_after_thread_start_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+@pytest.mark.parametrize(
+    "method",
+    [
+        pytest.param("aclose_from_sync", id="aclose_from_sync"),
+        pytest.param("close", id="close"),
+        pytest.param("interrupt", id="interrupt"),
+    ],
+)
+def test_sync_cleanup_retries_after_thread_start_failure(method: str, cold_cleanup_owner: CleanupOwner) -> None:
     source = AsyncChunks(())
     source_cleanup = upload_cleanup.UploadSourceCleanup(source)
-    real_start = threading.Thread.start
+    cleanup = getattr(source_cleanup, method)
 
-    def fail_start(_thread: threading.Thread) -> None:
-        raise RuntimeError(RUNNER_START_FAILURE)
+    with patch.object(cleanup_execution, "threading", spec_set=threading) as worker_threads:
+        failed_start = worker_threads.Thread.return_value.start
+        failed_start.side_effect = RuntimeError(RUNNER_START_FAILURE)
+        cleanup()
+        failed_start.assert_called()
 
-    monkeypatch.setattr(threading.Thread, "start", fail_start)
-    source_cleanup.aclose_from_sync()
-    monkeypatch.setattr(threading.Thread, "start", real_start)
-
-    source_cleanup.aclose_from_sync()
-
+    assert cold_cleanup_owner.snapshot()["pending"] == 1
+    assert source.close_calls == 0
+    cleanup()
+    source_cleanup.completion.result(timeout=COMPLETION_WATCHDOG)
     assert source.close_calls == 1
-
-
-def test_sync_cleanup_close_retries_after_thread_start_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    source = AsyncChunks(())
-    source_cleanup = upload_cleanup.UploadSourceCleanup(source)
-    real_start = threading.Thread.start
-
-    def fail_start(_thread: threading.Thread) -> None:
-        raise RuntimeError(RUNNER_START_FAILURE)
-
-    monkeypatch.setattr(threading.Thread, "start", fail_start)
-    source_cleanup.close()
-    monkeypatch.setattr(threading.Thread, "start", real_start)
-
-    source_cleanup.close()
-
-    assert source.close_calls == 1
-
-
-def test_sync_cleanup_interrupt_retries_after_thread_start_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    source = AsyncChunks(())
-    source_cleanup = upload_cleanup.UploadSourceCleanup(source)
-    real_start = threading.Thread.start
-
-    def fail_start(_thread: threading.Thread) -> None:
-        raise RuntimeError(RUNNER_START_FAILURE)
-
-    monkeypatch.setattr(threading.Thread, "start", fail_start)
-    source_cleanup.interrupt()
-    monkeypatch.setattr(threading.Thread, "start", real_start)
-
-    source_cleanup.interrupt()
-
-    assert source.close_calls == 1
+    assert cold_cleanup_owner.snapshot()["reserved"] == 0
 
 
 def test_bounded_daemon_callbacks_do_not_run_cleanup_inline_after_start_failure(
