@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections import deque
+from collections import abc, deque
 import dataclasses
 from enum import Enum, auto
 import os
@@ -10,16 +10,18 @@ from typing import TYPE_CHECKING, Any
 
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
     from concurrent.futures import Future
     from contextvars import Context
 
     from .cleanup_owner import CleanupReservation
 
+from .cleanup_group import CleanupGroup
+
 
 class CleanupPhase(Enum):
     PENDING = auto()
     WAITING = auto()
+    JOINING = auto()
     ACTIVE = auto()
     STALLED = auto()
     DONE = auto()
@@ -49,7 +51,7 @@ class CleanupState:
 @dataclasses.dataclass(slots=True)
 class CleanupJob:
     reservation: CleanupReservation
-    callback: Callable[[], Any]
+    callback: abc.Callable[[], Any]
     context: Context
     loop: asyncio.AbstractEventLoop | None
     after: Future[None] | None
@@ -59,12 +61,15 @@ class CleanupJob:
     started: bool = False
 
     def run_sync(self) -> None:
-        error: BaseException | None = None
         try:
-            self.context.run(self.callback)
+            outcome = self.context.run(self.callback)
         except BaseException as caught:  # noqa: BLE001
-            error = caught
-        self.scheduler.finish(self, error)
+            self.scheduler.finish(self, caught)
+        else:
+            _complete_job(self, outcome)
+
+    def finish_group(self, completed: Future[None]) -> None:
+        self.scheduler.finish(self, completed.exception())
 
     def dispatch_async(self) -> None:
         if self.loop is None:
@@ -91,12 +96,12 @@ class CleanupJob:
 
     async def run_async(self) -> None:
         self.started = True
-        error: BaseException | None = None
         try:
-            await self.callback()
+            outcome = await self.callback()
         except BaseException as caught:  # noqa: BLE001
-            error = caught
-        self.scheduler.finish(self, error)
+            self.scheduler.finish(self, caught)
+        else:
+            _complete_job(self, outcome)
 
     def async_done(self, task: asyncio.Task[None]) -> None:
         if self.reservation.pid != os.getpid():
@@ -226,3 +231,16 @@ def _run_next_job(state: CleanupState) -> None:
         job.run_sync()
     else:
         job.dispatch_async()
+
+
+def _complete_job(job: CleanupJob, outcome: object) -> None:
+    if isinstance(outcome, CleanupGroup):
+        if job.reservation.pid != os.getpid():
+            return
+        with job.scheduler.state.condition:
+            job.phase = CleanupPhase.JOINING
+            job.scheduler.state.active -= 1
+            job.scheduler.state.condition.notify_all()
+        outcome.add_done_callback(job.finish_group)
+    else:
+        job.scheduler.finish(job, None)

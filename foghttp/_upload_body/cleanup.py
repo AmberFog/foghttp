@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 from .cleanup_callbacks import (
+    CloseSource,
     close_async_source_from_sync,
     close_sync_source,
     current_task_is_cancelling,
@@ -60,11 +61,11 @@ class UploadSourceCleanup:
         self,
         *,
         after: "UploadSourceCleanup | None" = None,
-        close_source: "Callable[[object], None]" = close_sync_source,
+        close_source: CloseSource = close_sync_source,
     ) -> Future[None] | None:
         if self._reservation.pid != os.getpid():
             return None
-        predecessor = None if after is None else after.start_sync_cleanup()
+        predecessor = None if after is None else after.start_sync_cleanup(close_source=close_source)
         dependency, submit = self.iteration.claim(predecessor)
         if submit:
             return self._reservation.submit_sync(
@@ -75,7 +76,7 @@ class UploadSourceCleanup:
         self._reservation.owner.retry()
         return self.completion
 
-    def close(self, *, close_source: "Callable[[object], None]" = close_sync_source) -> None:
+    def close(self, *, close_source: CloseSource = close_sync_source) -> None:
         completion = self.start_sync_cleanup(close_source=close_source)
         if completion is None:
             return

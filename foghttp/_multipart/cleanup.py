@@ -6,6 +6,7 @@ import threading
 from typing import TypeVar
 
 from .._upload_body import cleanup as upload_cleanup
+from .._upload_body.cleanup_callbacks import close_async_source_from_sync, close_sync_source
 from ..errors import LifecycleError
 from .models import MultipartFile
 
@@ -65,9 +66,10 @@ class MultipartFileCleanup:
 
     async def aclose(self, *, preserve_error: bool = False) -> None:
         active_error = sys.exception() if preserve_error else None
-        task = self.start_async_cleanup()
-        if task is None:
+        owner = self.start_part(on_loop=True, prefer_async=True)
+        if owner is None:
             return
+        task = owner.waiters.future()
         try:
             done = await asyncio.wait((task,), timeout=upload_cleanup.ASYNC_SOURCE_CLOSE_TIMEOUT)
             if task in done[0]:
@@ -77,22 +79,22 @@ class MultipartFileCleanup:
                 raise
 
     def start_sync_cleanup(self) -> ConcurrentFuture[None] | None:
-        with self._lock:
-            self._closing = True
-        if self._source is not None:
-            return self._source.start_sync_cleanup(after=self._iterator)
-        if self._iterator is not None:
-            return self._iterator.start_sync_cleanup()
-        return None
+        owner = self.start_part(on_loop=False, prefer_async=False)
+        return None if owner is None else owner.completion
 
-    def start_async_cleanup(self) -> asyncio.Future[None] | None:
+    def start_part(self, *, on_loop: bool, prefer_async: bool) -> upload_cleanup.UploadSourceCleanup | None:
         with self._lock:
             self._closing = True
-        if self._source is not None:
-            return self._source.start_async_cleanup(after=self._iterator)
-        if self._iterator is not None:
-            return self._iterator.start_async_cleanup()
-        return None
+            owner = self._source or self._iterator
+            predecessor = None if self._source is None else self._iterator
+        if owner is None:
+            return None
+        if on_loop:
+            accepted = owner.start_async_cleanup(after=predecessor) is not None
+        else:
+            close_source = close_async_source_from_sync if prefer_async else close_sync_source
+            accepted = owner.start_sync_cleanup(after=predecessor, close_source=close_source) is not None
+        return owner if accepted else None
 
     def _bind(self, cleanup: upload_cleanup.UploadSourceCleanup) -> None:
         with self._lock:

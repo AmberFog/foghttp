@@ -119,6 +119,8 @@ caller-owned; FogHTTP accounts for distinct iterators it owns.
 Synchronous cleanup uses dedicated daemon workers, separate from upload
 feeders. Async cleanup submitted from an event loop runs on that loop and shares
 the execution limit. A known iterator's cleanup completes before source cleanup starts.
+For multipart uploads, waiting for the parts to close does not occupy a cleanup
+slot. The multipart reservation stays active until all owned parts finish closing.
 An interrupt may close a source while its `iter()` call is still blocked;
 capacity for a possible late iterator remains reserved.
 

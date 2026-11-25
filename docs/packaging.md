@@ -8,8 +8,8 @@ separate wheel for every supported CPython minor version. The ABI may remain
 compatible with newer Python versions, but FogHTTP does not claim that support
 until the full suite and exact wheel pass the release validation matrix.
 
-Python 3.15 coverage is an unreleased source-branch change. Published 0.4.1
-was validated on Python 3.11-3.14; adding CI coverage does not publish a release.
+FogHTTP 0.4.2 adds GIL-enabled CPython 3.15 to the required validation matrix.
+FogHTTP 0.4.1 was validated on CPython 3.11-3.14.
 
 ## Release Matrix
 

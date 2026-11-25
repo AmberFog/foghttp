@@ -1,8 +1,7 @@
-from collections.abc import AsyncGenerator, AsyncIterable, Iterable, Iterator
+from collections.abc import AsyncGenerator, AsyncIterable, Generator, Iterable, Iterator
 import sys
 from typing import cast
 
-from .._upload_body import cleanup as upload_cleanup
 from .._upload_body.chunks import body_chunk
 from ..messages import MULTIPART_FILES_UNSUPPORTED
 from .cleanup import MultipartFileCleanup
@@ -22,7 +21,7 @@ def iter_fields(boundary: str, fields: tuple[MultipartField, ...]) -> Iterator[b
 def iter_file_content(
     file: MultipartFile,
     cleanup: MultipartFileCleanup | None = None,
-) -> Iterator[bytes]:
+) -> Generator[bytes, None, None]:
     if isinstance(file.content, bytes):
         yield file.content
         return
@@ -58,10 +57,9 @@ async def aiter_sync_file_content(
     file: MultipartFile,
     cleanup: MultipartFileCleanup | None = None,
 ) -> AsyncGenerator[bytes, None]:
-    reservation = upload_cleanup.reserve_cleanup(1)
     iterator = iter_file_content(file, cleanup)
-    iterator_cleanup = upload_cleanup.UploadSourceCleanup(iterator, reservation=reservation)
-    runner = SyncIteratorRunner(iterator, cleanup=iterator_cleanup)
+    # With an external part owner, closing this wrapper never closes the user's iterator.
+    runner = SyncIteratorRunner(iterator, close_wrapper=None if cleanup is None else iterator.close)
     try:
         while True:
             chunk = await runner.next()

@@ -3,6 +3,7 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import aclosing
 
 from .._upload_body import cleanup as upload_cleanup
+from .._upload_body.cleanup_group import CleanupGroup, GroupedUploadSource
 from . import (
     iterators as multipart_iterators,
     models as multipart_models,
@@ -13,7 +14,7 @@ from .encoding import closing_boundary, file_header
 from .factory import fresh_payload
 
 
-class MultipartStream:
+class _MultipartCleanupGroup(GroupedUploadSource):
     def __init__(
         self,
         payload: multipart_models.MultipartPayload,
@@ -25,6 +26,20 @@ class MultipartStream:
             cleanups = tuple(MultipartFileCleanup(file) for file in payload.files)
         self._cleanups = cleanups
 
+    def start_parts(self, *, on_loop: bool) -> CleanupGroup:
+        owners = self._start_part_owners(on_loop=on_loop)
+        return CleanupGroup(tuple(owner.completion for owner in owners))
+
+    def _start_part_owners(self, *, on_loop: bool) -> tuple[upload_cleanup.UploadSourceCleanup, ...]:
+        return tuple(
+            owner
+            for cleanup in self._cleanups
+            if (owner := cleanup.start_part(on_loop=on_loop and self.async_parts, prefer_async=self.async_parts))
+            is not None
+        )
+
+
+class MultipartStream(_MultipartCleanupGroup):
     def __iter__(self) -> Iterator[bytes]:
         yield from multipart_iterators.iter_fields(self._payload.boundary, self._payload.fields)
         for file, cleanup in zip(self._payload.files, self._cleanups, strict=True):
@@ -45,30 +60,14 @@ class MultipartStream:
             raise first_error
 
 
-class AsyncMultipartStream:
-    def __init__(
-        self,
-        payload: multipart_models.MultipartPayload,
-        *,
-        cleanups: tuple[MultipartFileCleanup, ...] | None = None,
-    ) -> None:
-        self._payload = payload
-        if cleanups is None:
-            cleanups = tuple(MultipartFileCleanup(file) for file in payload.files)
-        self._cleanups = cleanups
+class AsyncMultipartStream(_MultipartCleanupGroup):
+    async_parts = True
 
     def __aiter__(self) -> AsyncIterator[bytes]:
         return self._iterate()
 
     async def aclose(self) -> None:
-        tasks = tuple(
-            task
-            for task in map(
-                MultipartFileCleanup.start_async_cleanup,
-                self._cleanups,
-            )
-            if task is not None
-        )
+        tasks = tuple(owner.waiters.future() for owner in self._start_part_owners(on_loop=True))
         if not tasks:
             return
         done, _pending = await asyncio.wait(

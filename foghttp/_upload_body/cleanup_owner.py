@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
 
+    from .cleanup_group import CleanupGroup
+
 from ..errors import LifecycleError
 from .cleanup_execution import CleanupJob, CleanupPhase, CleanupScheduler, CleanupState
 
@@ -51,7 +53,7 @@ class CleanupReservation:
 
     def submit_async(
         self,
-        callback: Callable[[], Coroutine[Any, Any, None]],
+        callback: Callable[[], Coroutine[Any, Any, CleanupGroup | None]],
         *,
         loop: asyncio.AbstractEventLoop | None = None,
         context: Context | None = None,
@@ -100,7 +102,9 @@ class CleanupOwner:
                 "active_limit": self.state.max_active,
                 "reserved": self.state.reserved,
                 "active": self.state.active,
-                "pending": phases.count(CleanupPhase.PENDING) + phases.count(CleanupPhase.WAITING),
+                "pending": sum(
+                    phase in {CleanupPhase.PENDING, CleanupPhase.WAITING, CleanupPhase.JOINING} for phase in phases
+                ),
                 "workers": self.state.workers,
                 "stalled": phases.count(CleanupPhase.STALLED),
             }

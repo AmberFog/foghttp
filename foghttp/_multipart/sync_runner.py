@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from concurrent.futures import Future as ConcurrentFuture
 from contextvars import Context, copy_context
 from queue import SimpleQueue
@@ -17,16 +17,22 @@ class SyncIteratorRunner:
         self,
         iterator: Iterator[bytes],
         *,
-        cleanup: upload_cleanup.UploadSourceCleanup | None = None,
+        close_wrapper: Callable[[], None] | None = None,
     ) -> None:
-        self._cleanup = (
-            upload_cleanup.UploadSourceCleanup(iterator, reservation=upload_cleanup.reserve_cleanup(1))
-            if cleanup is None
-            else cleanup
-        )
-        self._closed = False
         self._completion: ConcurrentFuture[None] = ConcurrentFuture()
         self._completion.set_running_or_notify_cancel()
+        reservation = upload_cleanup.reserve_cleanup(1)
+        self._close_iterator: Callable[[], None]
+        if close_wrapper is None:
+            cleanup = upload_cleanup.UploadSourceCleanup(iterator, reservation=reservation)
+            self._close_iterator = cleanup.close
+            reject_start: Callable[[], object] = cleanup.start_sync_cleanup
+        else:
+            self._close_iterator = close_wrapper
+            self._completion.add_done_callback(lambda _done: reservation.release())
+            # No next() request can reach a runner whose constructor failed.
+            reject_start = reservation.release
+        self._closed = False
         self._context: Context = copy_context()
         self._iterator = iterator
         self._lock = threading.Lock()
@@ -37,7 +43,7 @@ class SyncIteratorRunner:
             threading.Thread(target=self._run, daemon=True).start()
         except BaseException:
             self._requests.put(None)
-            self._cleanup.start_sync_cleanup()
+            reject_start()
             raise
 
     async def next(self) -> bytes | object:
@@ -72,7 +78,7 @@ class SyncIteratorRunner:
     def _run(self) -> None:
         try:
             self._consume_requests()
-            self._context.run(self._cleanup.close)
+            self._context.run(self._close_iterator)
         except BaseException as error:  # noqa: BLE001
             self._completion.set_exception(error)
         else:

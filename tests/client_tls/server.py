@@ -20,6 +20,7 @@ SERVER_HOST = "127.0.0.1"
 
 def start_tls_server(certificates: TLSCertificateBundle) -> TLSServer:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(
         certfile=certificates.certificate_path,
         keyfile=certificates.key_path,

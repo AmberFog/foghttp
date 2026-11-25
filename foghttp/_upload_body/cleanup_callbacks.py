@@ -1,19 +1,26 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from functools import partial
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeAlias
 
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Coroutine
+    from collections.abc import Awaitable, Coroutine
 
+from .cleanup_group import CleanupGroup, GroupedUploadSource
 from .file_source import FileUploadSource
 
 
-def close_sync_source(source: object) -> None:
+CloseSource: TypeAlias = Callable[[object], CleanupGroup | None]
+
+
+def close_sync_source(source: object) -> CleanupGroup | None:
     try:
+        if isinstance(source, GroupedUploadSource):
+            return source.start_parts(on_loop=False)
         target = source.file if isinstance(source, FileUploadSource) else source
         close = getattr(target, "close", None)
         if callable(close):
@@ -23,19 +30,23 @@ def close_sync_source(source: object) -> None:
             if callable(aclose):
                 asyncio.run(_await_source_close(aclose))
     except Exception:  # noqa: BLE001
-        return
+        return None
+    return None
 
 
-def close_async_source_from_sync(source: object) -> None:
+def close_async_source_from_sync(source: object) -> CleanupGroup | None:
+    if isinstance(source, GroupedUploadSource):
+        return source.start_parts(on_loop=False)
     callback = source_async_close(source)
     if callback is None:
-        close_sync_source(source)
-    else:
-        asyncio.run(callback())
+        return close_sync_source(source)
+    return asyncio.run(callback())
 
 
-def source_async_close(source: object) -> Callable[[], Coroutine[object, object, None]] | None:
+def source_async_close(source: object) -> Callable[[], Coroutine[object, object, CleanupGroup | None]] | None:
     try:
+        if isinstance(source, GroupedUploadSource):
+            return source.start_async_parts if source.async_parts else None
         target = source.file if isinstance(source, FileUploadSource) else source
         aclose = getattr(target, "aclose", None)
     except Exception:  # noqa: BLE001
