@@ -1,9 +1,15 @@
+from contextlib import ExitStack
 import os
 from typing import TYPE_CHECKING
 
 import pytest
 
 from foghttp._upload_body import cleanup, cleanup_owner
+from foghttp._upload_body.cleanup_start import (
+    collect_worker_interrupts,
+    defer_worker_interrupts,
+    report_worker_interrupt,
+)
 from tests.client_lifecycle.fork_actions import run_in_fork
 
 from .cleanup_actions import finish_sync_cleanups
@@ -60,3 +66,31 @@ def test_fork_child_resets_capacity_and_never_closes_parent_providers(
 
     assert all(source.calls == 1 for source in sources)
     assert cleanup_owner.cleanup_snapshot()["reserved"] == 0
+
+
+def test_fork_inside_cleanup_registration_keeps_interruptions_in_their_own_process() -> None:
+    parent_interrupt = KeyboardInterrupt()
+    part_interrupt = GeneratorExit()
+    with ExitStack() as registration:
+        registration.enter_context(defer_worker_interrupts())
+        report_worker_interrupt(parent_interrupt)
+        with ExitStack() as parts:
+            part_errors = parts.enter_context(collect_worker_interrupts())
+            report_worker_interrupt(part_interrupt)
+
+            def child_cleanup() -> None:
+                parts.close()
+                assert not part_errors
+                child_interrupt = GeneratorExit()
+                with pytest.raises(GeneratorExit) as interrupted:
+                    report_worker_interrupt(child_interrupt)
+                assert interrupted.value is child_interrupt
+                registration.close()
+
+            result = run_in_fork(child_cleanup)
+            assert result.ok is True, result.message
+            assert result.exit_status == 0
+        assert part_errors == [part_interrupt]
+        with pytest.raises(KeyboardInterrupt) as caught:
+            registration.close()
+    assert caught.value is parent_interrupt

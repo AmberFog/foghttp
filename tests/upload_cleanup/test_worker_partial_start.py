@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import pytest
 
 from foghttp._upload_body import cleanup_owner
-from foghttp._upload_body.cleanup_execution import CleanupWorkerStart
+from foghttp._upload_body.cleanup_start import CleanupWorkerStart
 
 from .admission_actions import InheritedLock
 from .constants import COMPLETION_WATCHDOG

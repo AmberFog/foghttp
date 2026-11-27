@@ -1,13 +1,16 @@
 import asyncio
+import threading
 from typing import TYPE_CHECKING
+from unittest.mock import Mock
 
 import pytest
 
 from foghttp._upload_body import cleanup, cleanup_owner
+from foghttp._upload_body.attempt import wait_sync_cleanups
 
 from .cleanup_actions import finish_sync_cleanups, wait_sync_event
 from .constants import CHAIN_OBLIGATIONS, COMPLETION_WATCHDOG
-from .sources import SyncCloseGate
+from .sources import FalseyCleanupError, SyncCloseGate
 
 
 if TYPE_CHECKING:
@@ -124,3 +127,68 @@ def test_predecessor_control_error_still_closes_source_and_releases_chain(
     assert iterator.calls == 1
     assert source.calls == 1
     assert cleanup_owner.cleanup_snapshot()["reserved"] == 0
+
+
+def test_close_preserves_a_falsey_iterator_error_when_the_source_also_fails(
+    isolated_cleanup_owner: cleanup_owner.CleanupOwner,
+) -> None:
+    failure = FalseyCleanupError("iterator cleanup control failure")
+    iterator = SyncCloseGate(blocked=False, error=failure)
+    source = SyncCloseGate(blocked=False, error=GeneratorExit("source cleanup control failure"))
+    owner = cleanup.UploadSourceCleanup(source, reservation=isolated_cleanup_owner.reserve(CHAIN_OBLIGATIONS))
+    owner.iteration.track(iterator)
+
+    owner.start_sync_cleanup()
+    assert owner.completion.exception(timeout=COMPLETION_WATCHDOG) is failure
+    with pytest.raises(FalseyCleanupError) as caught:
+        owner.close()
+    assert caught.value is failure
+    assert iterator.calls == source.calls == 1
+    assert isolated_cleanup_owner.snapshot()["reserved"] == 0
+
+
+def test_interrupted_worker_start_retains_iterator_and_source_in_order(
+    isolated_cleanup_owner: cleanup_owner.CleanupOwner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    iterator = SyncCloseGate()
+    source = SyncCloseGate(blocked=False)
+    owner = cleanup.UploadSourceCleanup(source, reservation=isolated_cleanup_owner.reserve(CHAIN_OBLIGATIONS))
+    owner.iteration.track(iterator)
+    signal = KeyboardInterrupt()
+
+    with monkeypatch.context() as rejected:
+        rejected.setattr(threading.Thread, "start", Mock(side_effect=signal))
+        with pytest.raises(KeyboardInterrupt) as caught:
+            owner.start_sync_cleanup()
+    assert caught.value is signal
+    try:
+        isolated_cleanup_owner.retry()
+        assert iterator.entered.wait(COMPLETION_WATCHDOG)
+        assert source.calls == 0
+        assert owner.completion.done() is False
+    finally:
+        iterator.release.set()
+    owner.completion.result(timeout=COMPLETION_WATCHDOG)
+    assert iterator.calls == source.calls == 1
+    assert isolated_cleanup_owner.snapshot()["reserved"] == 0
+
+
+def test_interrupted_batch_start_keeps_all_sources_owned(
+    isolated_cleanup_owner: cleanup_owner.CleanupOwner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sources = [SyncCloseGate(blocked=False), SyncCloseGate(blocked=False)]
+    owners = [cleanup.UploadSourceCleanup(source, reservation=isolated_cleanup_owner.reserve(1)) for source in sources]
+    signal = KeyboardInterrupt()
+    with monkeypatch.context() as rejected:
+        rejected.setattr(threading.Thread, "start", Mock(side_effect=signal))
+        with pytest.raises(KeyboardInterrupt) as caught:
+            wait_sync_cleanups(owners)
+
+    assert caught.value is signal
+    isolated_cleanup_owner.retry()
+    for owner in owners:
+        owner.completion.result(timeout=COMPLETION_WATCHDOG)
+    assert [source.calls for source in sources] == [1, 1]
+    assert isolated_cleanup_owner.snapshot()["reserved"] == 0

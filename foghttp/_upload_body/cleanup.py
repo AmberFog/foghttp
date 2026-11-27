@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, TypeVar
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+from . import cleanup_start, thread_bridge
 from .cleanup_callbacks import (
     CloseSource,
     close_async_source_from_sync,
@@ -21,7 +22,6 @@ from .cleanup_callbacks import (
 from .cleanup_iteration import CleanupIteration
 from .cleanup_owner import CleanupReservation, reserve_cleanup
 from .cleanup_waiters import CleanupWaiters
-from .thread_bridge import consume_future_exception
 
 
 ASYNC_SOURCE_CLOSE_TIMEOUT = 1.0
@@ -57,6 +57,7 @@ class UploadSourceCleanup:
             self.iteration.track(iterator)
         return iterator
 
+    @cleanup_start.defer_worker_interrupts()
     def start_sync_cleanup(
         self,
         *,
@@ -98,6 +99,7 @@ class UploadSourceCleanup:
         if future in done:
             future.result()
 
+    @cleanup_start.defer_worker_interrupts()
     def start_async_cleanup(
         self,
         *,
@@ -116,7 +118,8 @@ class UploadSourceCleanup:
             predecessor = after.completion
         dependency, submit = self.iteration.claim(predecessor)
         if submit:
-            callback = None if interrupt else self.context.copy().run(source_async_close, self._source)
+            with cleanup_start.independent_worker_interrupts():
+                callback = None if interrupt else self.context.copy().run(source_async_close, self._source)
             if callback is None:
                 self._reservation.submit_sync(
                     partial(close_sync_source, self._source),
@@ -136,7 +139,7 @@ class UploadSourceCleanup:
             if self._sync_error_reported:
                 return None
             self._sync_error_reported = True
-        return consume_future_exception(self.completion)
+        return thread_bridge.consume_future_exception(self.completion)
 
     interrupt = close
     aclose_from_sync = partialmethod(close, close_source=close_async_source_from_sync)

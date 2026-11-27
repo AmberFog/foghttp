@@ -7,7 +7,8 @@ from .constants import CALLBACK_WATCHDOG
 if TYPE_CHECKING:
     import pytest
 
-    from foghttp._upload_body.cleanup_execution import CleanupScheduler, CleanupWorkerStart
+    from foghttp._upload_body.cleanup_execution import CleanupScheduler
+    from foghttp._upload_body.cleanup_start import CleanupWorkerStart
 
 
 class WorkerStartFault:

@@ -4,6 +4,11 @@ import threading
 from .constants import CALLBACK_WATCHDOG
 
 
+class FalseyCleanupError(GeneratorExit):
+    def __bool__(self) -> bool:
+        return False
+
+
 class SyncCloseGate:
     def __init__(self, *, blocked: bool = True, error: BaseException | None = None) -> None:
         self.entered = threading.Event()

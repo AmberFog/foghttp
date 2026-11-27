@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
     from .cleanup_owner import CleanupReservation
 
-from .cleanup_group import CleanupGroup
+from . import cleanup_group, cleanup_start
 
 
 class CleanupPhase(Enum):
@@ -25,11 +25,6 @@ class CleanupPhase(Enum):
     ACTIVE = auto()
     STALLED = auto()
     DONE = auto()
-
-
-@dataclasses.dataclass(slots=True)
-class CleanupWorkerStart:
-    counted: bool = True
 
 
 @dataclasses.dataclass(slots=True)
@@ -88,13 +83,23 @@ class CleanupJob:
         coroutine = self.run_async()
         try:
             self.task = asyncio.create_task(coroutine, context=self.context.copy())
-        except BaseException:  # noqa: BLE001
-            coroutine.close()
-            self.scheduler.stall(self)
+        except Exception:  # noqa: BLE001
             return
-        self.task.add_done_callback(self.async_done)
+        finally:
+            if self.task is None:
+                # A factory can register the task and then raise before returning it.
+                registered = (task for task in asyncio.all_tasks() if task.get_coro() is coroutine)
+                self.task = next(registered, None)
+            if self.task is None:
+                coroutine.close()
+                self.scheduler.stall(self)
+            else:
+                self.task.add_done_callback(self.async_done)
 
     async def run_async(self) -> None:
+        if self.task is None:
+            # Eager factories can start cleanup inside a wrapper before returning its task.
+            self.task = asyncio.current_task()
         self.started = True
         try:
             outcome = await self.callback()
@@ -115,7 +120,7 @@ class CleanupJob:
                 return
         try:
             error = task.exception()
-        except BaseException as caught:  # noqa: BLE001
+        except asyncio.CancelledError as caught:
             error = caught
         self.scheduler.finish(self, error)
 
@@ -151,24 +156,22 @@ class CleanupScheduler:
                 return
             job.phase = CleanupPhase.PENDING
             self.state.pending.append(job)
-            self.start_workers()
+            if _completion is None or cleanup_start.collecting_worker_interrupts():
+                self.start_workers()
+                return
+            # A detached predecessor callback can run on another cleanup worker.
+            with cleanup_start.collect_worker_interrupts() as errors:
+                self.start_workers()
+                job.reservation.start_error = next(iter(errors), None)
 
-    def start_workers(self) -> BaseException | None:
+    def start_workers(self) -> None:
+        self.state.condition.notify_all()
         desired = min(self.state.max_active, len(self.state.pending) + self.state.active)
         while self.state.workers < desired:
-            permit = CleanupWorkerStart()
-            worker = threading.Thread(target=self.work, args=(permit,), daemon=True, name="foghttp-cleanup")
-            self.state.workers += 1
-            try:
-                worker.start()
-            except BaseException as error:  # noqa: BLE001
-                self.state.workers -= 1
-                permit.counted = False
-                return error
-        self.state.condition.notify_all()
-        return None
+            if not cleanup_start.CleanupWorkerStart().start(self):
+                return
 
-    def work(self, permit: CleanupWorkerStart) -> None:
+    def work(self, permit: cleanup_start.CleanupWorkerStart) -> None:
         if self.state.pid != os.getpid():
             return
         with self.state.condition:
@@ -193,12 +196,15 @@ class CleanupScheduler:
             self.state.reserved -= job.reservation.count
             job.reservation.count = 0
             self.state.condition.notify_all()
+        if job.reservation.start_error is not None:
+            error = job.reservation.start_error
         if job.after is not None:
             try:
                 previous_error = job.after.exception()
             except BaseException as caught:  # noqa: BLE001
                 previous_error = caught
-            error = previous_error or error
+            if previous_error is not None:
+                error = previous_error
         if error is None:
             job.reservation.completion.set_result(None)
         else:
@@ -234,7 +240,7 @@ def _run_next_job(state: CleanupState) -> None:
 
 
 def _complete_job(job: CleanupJob, outcome: object) -> None:
-    if isinstance(outcome, CleanupGroup):
+    if isinstance(outcome, cleanup_group.CleanupGroup):
         if job.reservation.pid != os.getpid():
             return
         with job.scheduler.state.condition:

@@ -14,7 +14,6 @@ import weakref
 import pytest
 
 from foghttp import _foghttp
-from foghttp._upload_body import cleanup_execution
 from foghttp._upload_body.async_sending import (
     fail_async_upload_body,
     handle_async_upload_error,
@@ -1119,11 +1118,10 @@ def test_sync_cleanup_retries_after_thread_start_failure(method: str, cold_clean
     source_cleanup = upload_cleanup.UploadSourceCleanup(source)
     cleanup = getattr(source_cleanup, method)
 
-    with patch.object(cleanup_execution, "threading", spec_set=threading) as worker_threads:
-        failed_start = worker_threads.Thread.return_value.start
-        failed_start.side_effect = RuntimeError(RUNNER_START_FAILURE)
+    failure = RuntimeError(RUNNER_START_FAILURE)
+    with patch.object(threading.Thread, "start", autospec=True, side_effect=failure) as start:
         cleanup()
-        failed_start.assert_called()
+        start.assert_called_once()
 
     assert cold_cleanup_owner.snapshot()["pending"] == 1
     assert source.close_calls == 0

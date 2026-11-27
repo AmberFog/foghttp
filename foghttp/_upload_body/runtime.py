@@ -293,9 +293,7 @@ class _AsyncStreamingUploadBody:
         except BaseException as error:  # noqa: BLE001
             drain_error = error
         pending_cleanup_ids = _pending_cleanup_ids(self._feeders)
-        for source_cleanup in self._source_cleanups:
-            if id(source_cleanup) not in pending_cleanup_ids:
-                source_cleanup.start_async_cleanup()
+        upload_attempt.start_ready_async_cleanups(self._source_cleanups, pending_cleanup_ids)
         if drain_error is not None:
             raise drain_error
         await self._close_sources(feeder_error, pending_cleanup_ids)
@@ -322,19 +320,7 @@ class _AsyncStreamingUploadBody:
         feeder_error: BaseException | None,
         pending_cleanup_ids: set[int],
     ) -> None:
-        tasks = tuple(
-            filter(
-                None,
-                map(
-                    upload_cleanup.UploadSourceCleanup.start_async_cleanup,
-                    [
-                        source_cleanup
-                        for source_cleanup in self._source_cleanups
-                        if id(source_cleanup) not in pending_cleanup_ids
-                    ],
-                ),
-            ),
-        )
+        tasks = upload_attempt.start_ready_async_cleanups(self._source_cleanups, pending_cleanup_ids)
         done: set[asyncio.Future[None]] = set()
         if tasks:
             done.update(

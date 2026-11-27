@@ -1,9 +1,11 @@
 import asyncio
 from collections.abc import AsyncIterator, Iterator
+from concurrent.futures import Future
 from contextlib import aclosing
 
 from .._upload_body import cleanup as upload_cleanup
 from .._upload_body.cleanup_group import CleanupGroup, GroupedUploadSource
+from .._upload_body.cleanup_start import collect_worker_interrupts, defer_worker_interrupts
 from . import (
     iterators as multipart_iterators,
     models as multipart_models,
@@ -27,9 +29,17 @@ class _MultipartCleanupGroup(GroupedUploadSource):
         self._cleanups = cleanups
 
     def start_parts(self, *, on_loop: bool) -> CleanupGroup:
-        owners = self._start_part_owners(on_loop=on_loop)
-        return CleanupGroup(tuple(owner.completion for owner in owners))
+        with collect_worker_interrupts() as interrupts:
+            owners = self._start_part_owners(on_loop=on_loop)
+            start_error = next(iter(interrupts), None)
+        parts = [owner.completion for owner in owners]
+        if start_error is not None:
+            startup: Future[None] = Future()
+            startup.set_exception(start_error)
+            parts.insert(0, startup)
+        return CleanupGroup(tuple(parts))
 
+    @defer_worker_interrupts()
     def _start_part_owners(self, *, on_loop: bool) -> tuple[upload_cleanup.UploadSourceCleanup, ...]:
         return tuple(
             owner

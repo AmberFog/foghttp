@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 from ..errors import LifecycleError
 from .cleanup_execution import CleanupJob, CleanupPhase, CleanupScheduler, CleanupState
+from .cleanup_start import defer_worker_interrupts
 
 
 _INVALID_LIMITS = "cleanup limits must be positive"
@@ -82,10 +83,10 @@ class CleanupOwner:
         with self.state.condition:
             if self.state.reserved + count > self.state.max_obligations:
                 raise LifecycleError(_CAPACITY_EXHAUSTED)
+            self.scheduler.start_workers()
             reservation = CleanupReservation(self, count)
             self.state.reservations.add(reservation)
             self.state.reserved += count
-            self.scheduler.start_workers()
             return reservation
 
     def snapshot(self) -> dict[str, int]:
@@ -139,6 +140,7 @@ class CleanupOwner:
         if not reservation.completion.done():
             reservation.completion.set_result(None)
 
+    @defer_worker_interrupts()
     def submit(
         self,
         reservation: CleanupReservation,
@@ -165,7 +167,7 @@ class CleanupOwner:
                 job.phase = CleanupPhase.WAITING
             else:
                 self.state.pending.append(job)
-            reservation.start_error = self.scheduler.start_workers()
+            self.scheduler.start_workers()
         if job.phase == CleanupPhase.WAITING and after is not None:
             after.add_done_callback(partial(self.scheduler.enqueue, job))
         return reservation.completion

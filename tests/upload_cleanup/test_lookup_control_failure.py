@@ -1,5 +1,6 @@
 import asyncio
 import threading
+from unittest.mock import AsyncMock, Mock, PropertyMock
 
 import pytest
 
@@ -81,4 +82,37 @@ async def test_concurrent_loop_cleanup_claims_lookup_once_before_job_submission(
     assert worker.is_alive() is False
     assert first_errors == [error]
     assert source.lookups == 1
+    assert isolated_cleanup_owner.snapshot()["reserved"] == 0
+
+
+async def test_reentrant_close_lookup_receives_its_own_worker_interruption(
+    isolated_cleanup_owner: cleanup_owner.CleanupOwner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    nested_source = SyncCloseGate(blocked=False)
+    nested = cleanup.UploadSourceCleanup(nested_source, reservation=isolated_cleanup_owner.reserve(1))
+    interrupt = GeneratorExit("nested worker interrupted")
+    observed: list[GeneratorExit] = []
+    close = AsyncMock()
+
+    def lookup() -> AsyncMock:
+        with monkeypatch.context() as fault:
+            fault.setattr(threading.Thread, "start", Mock(side_effect=interrupt))
+            try:
+                nested.close()
+            except GeneratorExit as caught:
+                observed.append(caught)
+        return close
+
+    source = Mock()
+    descriptor = PropertyMock(side_effect=lookup)
+    monkeypatch.setattr(type(source), "aclose", descriptor, raising=False)
+    outer = cleanup.UploadSourceCleanup(source, reservation=isolated_cleanup_owner.reserve(1))
+    await asyncio.wait_for(outer.aclose(bounded=False), COMPLETION_WATCHDOG)
+
+    assert observed == [interrupt]
+    descriptor.assert_called_once_with()
+    close.assert_awaited_once_with()
+    assert nested_source.calls == 1
+    assert nested.completion.result(timeout=COMPLETION_WATCHDOG) is None
     assert isolated_cleanup_owner.snapshot()["reserved"] == 0
