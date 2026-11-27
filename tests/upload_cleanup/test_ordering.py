@@ -1,6 +1,6 @@
 import asyncio
+from concurrent.futures import CancelledError, Future
 import threading
-from typing import TYPE_CHECKING
 from unittest.mock import Mock
 
 import pytest
@@ -10,11 +10,7 @@ from foghttp._upload_body.attempt import wait_sync_cleanups
 
 from .cleanup_actions import finish_sync_cleanups, wait_sync_event
 from .constants import CHAIN_OBLIGATIONS, COMPLETION_WATCHDOG
-from .sources import FalseyCleanupError, SyncCloseGate
-
-
-if TYPE_CHECKING:
-    from concurrent.futures import Future
+from .sources import AsyncCloseGate, FalseyCleanupError, SyncCloseGate
 
 
 def test_sync_iterator_predecessor_retains_both_cleanup_obligations(
@@ -144,6 +140,48 @@ def test_close_preserves_a_falsey_iterator_error_when_the_source_also_fails(
         owner.close()
     assert caught.value is failure
     assert iterator.calls == source.calls == 1
+    assert isolated_cleanup_owner.snapshot()["reserved"] == 0
+
+
+async def test_async_cleanup_preserves_the_predecessor_failure_when_its_inspection_can_interrupt_the_loop(
+    isolated_cleanup_owner: cleanup_owner.CleanupOwner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    predecessor = isolated_cleanup_owner.reserve(1)
+    original_failure = ValueError("iterator failed")
+    iterator = SyncCloseGate(blocked=False, error=original_failure)
+    receipt = predecessor.submit_sync(iterator.close)
+    assert receipt.exception(timeout=COMPLETION_WATCHDOG) is original_failure
+    read_exception = receipt.exception
+    loop_thread = threading.get_ident()
+
+    def inspect_predecessor(timeout: float | None = None) -> BaseException | None:
+        if threading.get_ident() == loop_thread:
+            raise GeneratorExit
+        return read_exception(timeout)
+
+    monkeypatch.setattr(receipt, "exception", inspect_predecessor)
+    source = AsyncCloseGate()
+    source.release.set()
+    completion = isolated_cleanup_owner.reserve(1).submit_async(source.aclose, after=receipt)
+    waiter = asyncio.wrap_future(completion)
+    done, _pending = await asyncio.wait((waiter,), timeout=COMPLETION_WATCHDOG)
+    assert waiter in done
+    assert waiter.exception() is original_failure
+    assert iterator.calls == source.calls == 1
+    assert isolated_cleanup_owner.snapshot()["reserved"] == 0
+
+
+def test_cancelled_predecessor_still_closes_the_source_and_releases_its_reservation(
+    isolated_cleanup_owner: cleanup_owner.CleanupOwner,
+) -> None:
+    predecessor: Future[None] = Future()
+    source = SyncCloseGate(blocked=False)
+    completion = isolated_cleanup_owner.reserve(1).submit_sync(source.close, after=predecessor)
+    assert predecessor.cancel()
+    with pytest.raises(CancelledError):
+        completion.result(timeout=COMPLETION_WATCHDOG)
+    assert source.calls == 1
     assert isolated_cleanup_owner.snapshot()["reserved"] == 0
 
 

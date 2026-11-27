@@ -237,7 +237,11 @@ class _AsyncStreamingUploadBody:
             raw_body.close()
             return
         attempt_context = self._context.copy()
-        source, source_cleanup = attempt_context.run(self._fresh_source)
+        try:
+            source, source_cleanup = attempt_context.run(self._fresh_source)
+        except (GeneratorExit, StopIteration) as error:
+            self._factory_error = error
+            raise upload_models.AsyncFactoryProtocolError(error) from error
         feeder_state = UploadFeederState(self._content_length)
         runner = AsyncFeederRunner(
             self._loop,

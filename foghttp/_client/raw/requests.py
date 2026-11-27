@@ -6,6 +6,7 @@ __all__ = (
     "send_raw_stream_request_async",
 )
 
+import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
 import sys
@@ -14,7 +15,7 @@ import foghttp._foghttp as _foghttp  # noqa: PLR0402
 
 from ..._request_body import RequestBody
 from ..._upload_body import prepare_async_upload_body, prepare_sync_upload_body
-from ..._upload_body.models import AsyncUploadBody, SyncUploadBody
+from ..._upload_body.models import AsyncFactoryProtocolError, AsyncUploadBody, SyncUploadBody
 from ...request_extensions import RequestExtensions
 from ...timeouts import Timeouts
 from ..proxy import ProxyTransportPolicy
@@ -108,6 +109,7 @@ async def send_raw_request_async(
     telemetry_request_id: int | None = None,
 ) -> _foghttp.RawResponse:
     body = prepare_async_upload_body(request.body, raw_client=raw_client)
+    factory_error = None
     try:
         return await raw_client.request_async(
             method=request.method.upper(),
@@ -129,8 +131,11 @@ async def send_raw_request_async(
         )
     except _foghttp.FogHttpError as exc:
         raise_public_raw_error(exc)
+    except AsyncFactoryProtocolError as exc:
+        factory_error = exc.error
     finally:
-        await _close_body_async(body)
+        await _close_body_async(body, factory_error=factory_error)
+    raise factory_error
 
 
 async def send_raw_stream_request_async(
@@ -141,6 +146,7 @@ async def send_raw_stream_request_async(
     decode_content: bool = False,
 ) -> _foghttp.RawStreamResponse:
     body = prepare_async_upload_body(request.body, raw_client=raw_client)
+    factory_error = None
     try:
         return await raw_client.request_stream_async(
             method=request.method.upper(),
@@ -163,8 +169,11 @@ async def send_raw_stream_request_async(
         )
     except _foghttp.FogHttpError as exc:
         raise_public_raw_error(exc)
+    except AsyncFactoryProtocolError as exc:
+        factory_error = exc.error
     finally:
-        await _close_body_async(body)
+        await _close_body_async(body, factory_error=factory_error)
+    raise factory_error
 
 
 def _close_body(body: SyncUploadBody) -> None:
@@ -176,10 +185,13 @@ def _close_body(body: SyncUploadBody) -> None:
             raise
 
 
-async def _close_body_async(body: AsyncUploadBody) -> None:
+async def _close_body_async(body: AsyncUploadBody, *, factory_error: BaseException | None) -> None:
     active_error = sys.exception()
     try:
         await body.aclose()
+    except asyncio.CancelledError:
+        if active_error is None or factory_error is not None:
+            raise
     except BaseException:
-        if active_error is None:
+        if active_error is None and factory_error is None:
             raise

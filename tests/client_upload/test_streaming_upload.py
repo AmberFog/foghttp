@@ -7,6 +7,7 @@ import io
 import os
 import time
 from typing import TYPE_CHECKING, Any
+from unittest.mock import Mock
 import warnings
 
 import orjson
@@ -406,6 +407,34 @@ async def test_async_streaming_upload_factory_replays_method_preserving_redirect
     assert content.calls == EXPECTED_REPLAY_FACTORY_CALLS
     assert content.closed is False
     assert all(source.close_calls == 1 for source in content.sources)
+
+
+async def test_async_replay_factory_failure_preserves_source_cleanup_cancellation(
+    http_server: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _TrackedAsyncStream((b"first attempt",))
+    original_close = source.aclose
+    factory_error = GeneratorExit(UPLOAD_SOURCE_FAILURE)
+    factory = Mock(spec_set=lambda: None, side_effect=[source, factory_error])
+
+    async def cancel_cleanup() -> None:
+        await original_close()
+        task = asyncio.current_task()
+        assert task is not None
+        task.cancel(ASYNC_CLOSE_FAILURE)
+        await asyncio.sleep(0)
+
+    monkeypatch.setattr(source, "aclose", cancel_cleanup)
+    async with foghttp.AsyncClient(follow_redirects=True) as client, asyncio.timeout(STREAMING_TOTAL_TIMEOUT):
+        with pytest.raises(GeneratorExit, match=UPLOAD_SOURCE_FAILURE) as caught:
+            await client.post(f"{http_server}/redirect/{TEMPORARY_REDIRECT}", content=factory)
+
+    assert caught.value is factory_error
+    assert isinstance(caught.value.__cause__, asyncio.CancelledError)
+    assert str(caught.value.__cause__) == ASYNC_CLOSE_FAILURE
+    assert factory.call_count == EXPECTED_REPLAY_FACTORY_CALLS
+    assert source.close_calls == 1
 
 
 async def test_async_replay_factory_preserves_request_context(http_server: str) -> None:

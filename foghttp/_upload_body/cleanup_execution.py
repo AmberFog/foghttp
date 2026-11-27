@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
     from .cleanup_owner import CleanupReservation
 
-from . import cleanup_group, cleanup_start
+from . import cleanup_group, cleanup_start, thread_bridge
 
 
 class CleanupPhase(Enum):
@@ -52,6 +52,7 @@ class CleanupJob:
     after: Future[None] | None
     scheduler: CleanupScheduler
     phase: CleanupPhase = CleanupPhase.PENDING
+    prior_error: BaseException | None = None
     task: asyncio.Task[None] | None = None
     started: bool = False
 
@@ -162,7 +163,7 @@ class CleanupScheduler:
             # A detached predecessor callback can run on another cleanup worker.
             with cleanup_start.collect_worker_interrupts() as errors:
                 self.start_workers()
-                job.reservation.start_error = next(iter(errors), None)
+                job.prior_error = next(iter(errors), None)
 
     def start_workers(self) -> None:
         self.state.condition.notify_all()
@@ -196,15 +197,8 @@ class CleanupScheduler:
             self.state.reserved -= job.reservation.count
             job.reservation.count = 0
             self.state.condition.notify_all()
-        if job.reservation.start_error is not None:
-            error = job.reservation.start_error
-        if job.after is not None:
-            try:
-                previous_error = job.after.exception()
-            except BaseException as caught:  # noqa: BLE001
-                previous_error = caught
-            if previous_error is not None:
-                error = previous_error
+        if job.prior_error is not None:
+            error = job.prior_error
         if error is None:
             job.reservation.completion.set_result(None)
         else:
@@ -233,6 +227,12 @@ def _run_next_job(state: CleanupState) -> None:
         job = state.pending.popleft()
         job.phase = CleanupPhase.ACTIVE
         state.active += 1
+    if job.after is not None:
+        # The predecessor is done. Read it on the worker before dispatching to the caller's loop.
+        previous_error = thread_bridge.consume_future_exception(job.after)
+        job.after = None
+        if previous_error is not None:
+            job.prior_error = previous_error
     if job.loop is None:
         job.run_sync()
     else:

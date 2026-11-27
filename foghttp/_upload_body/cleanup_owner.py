@@ -35,7 +35,6 @@ class CleanupReservation:
         self.completion: Future[None] = Future()
         self.completion.set_running_or_notify_cancel()
         self.job: CleanupJob | None = None
-        self.start_error: BaseException | None = None
 
     def split(self, count: int = 1) -> CleanupReservation:
         return self.owner.split_reservation(self, count)
