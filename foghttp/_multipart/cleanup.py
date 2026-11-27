@@ -57,12 +57,11 @@ class MultipartFileCleanup:
         if completion is None:
             return
         try:
-            completion.result(timeout=upload_cleanup.ASYNC_SOURCE_CLOSE_TIMEOUT)
+            error = completion.exception(timeout=upload_cleanup.ASYNC_SOURCE_CLOSE_TIMEOUT)
         except TimeoutError:
             return
-        except BaseException:
-            if active_error is None:
-                raise
+        if error is not None and active_error is None:
+            raise error
 
     async def aclose(self, *, preserve_error: bool = False) -> None:
         active_error = sys.exception() if preserve_error else None
@@ -70,13 +69,9 @@ class MultipartFileCleanup:
         if owner is None:
             return
         task = owner.waiters.future()
-        try:
-            done = await asyncio.wait((task,), timeout=upload_cleanup.ASYNC_SOURCE_CLOSE_TIMEOUT)
-            if task in done[0]:
-                task.result()
-        except BaseException:
-            if active_error is None:
-                raise
+        done, _pending = await asyncio.wait((task,), timeout=upload_cleanup.ASYNC_SOURCE_CLOSE_TIMEOUT)
+        if task in done and active_error is None:
+            task.result()
 
     def start_sync_cleanup(self) -> ConcurrentFuture[None] | None:
         owner = self.start_part(on_loop=False, prefer_async=False)

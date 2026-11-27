@@ -20,6 +20,7 @@ def test_sync_stream_hands_off_history_without_retaining_native_payload(
     with foghttp.Client(
         follow_redirects=True,
         retry=foghttp.RetryPolicy(retries=1, backoff=0, jitter=0),
+        limits=foghttp.Limits(max_connections=1),
         trust_env=False,
     ) as client:
         with client.stream(
@@ -59,6 +60,7 @@ async def test_async_stream_hands_off_history_without_retaining_native_payload(
     async with foghttp.AsyncClient(
         follow_redirects=True,
         retry=foghttp.RetryPolicy(retries=1, backoff=0, jitter=0),
+        limits=foghttp.Limits(max_connections=1),
         trust_env=False,
     ) as client:
         async with client.stream(
@@ -91,7 +93,7 @@ async def test_async_stream_hands_off_history_without_retaining_native_payload(
 @pytest.mark.parametrize("decode_content", [False, True], ids=["raw", "decoded"])
 @pytest.mark.parametrize("failure_index", [0, 1], ids=["first-history", "middle-history"])
 def test_sync_history_conversion_failure_reclaims_resources_with_live_traceback(
-    conversion_history_server: StreamingHistoryServer,
+    failed_history_server: StreamingHistoryServer,
     monkeypatch: pytest.MonkeyPatch,
     failure_index: int,
     *,
@@ -103,20 +105,22 @@ def test_sync_history_conversion_failure_reclaims_resources_with_live_traceback(
             probe = observe_history_conversion(patch, client, failure_index=failure_index)
             with (
                 pytest.raises(RuntimeError, match=HISTORY_CONVERSION_ERROR) as caught,
-                client.stream("GET", conversion_history_server.start_url, decode_content=decode_content),
+                client.stream("GET", failed_history_server.start_url, decode_content=decode_content),
             ):
                 pytest.fail("failed conversion must not yield a public stream")
         assert caught.value.__traceback__ is not None
         assert len(probe.history_items) == failure_index + 1
-        assert probe.reserved_before[0] == sum(map(len, conversion_history_server.history_bodies))
+        assert probe.reserved_before[0] == sum(map(len, failed_history_server.history_bodies))
         wait_for_sync_transport_stats(
             client,
             lambda stats: stream_resources_released(stats) and stats.active_connections == 0,
             message="failed conversion must release resources while the exception and traceback remain alive",
         )
-        assert client.stats().active_connections == 0
-        assert client.stats().response_body_aborted == client.stats().connections_aborted == 1
-        assert client.get(f"{conversion_history_server.url}/healthy").content == RECOVERY_BODY
+        stats = client.stats()
+        assert stats.active_connections == 0
+        assert stats.connections_opened == stats.connections_closed == len(failed_history_server.history_bodies) + 1
+        assert stats.response_body_aborted == stats.connections_aborted == 1
+        assert client.get(f"{failed_history_server.url}/healthy").content == RECOVERY_BODY
         assert caught.value.__traceback__ is not None
         assert probe.raw_stream is not None
         probe.raw_stream.close()
@@ -130,7 +134,7 @@ def test_sync_history_conversion_failure_reclaims_resources_with_live_traceback(
 @pytest.mark.parametrize("decode_content", [False, True], ids=["raw", "decoded"])
 @pytest.mark.parametrize("failure_index", [0, 1], ids=["first-history", "middle-history"])
 async def test_async_history_conversion_failure_reclaims_resources_with_live_traceback(
-    conversion_history_server: StreamingHistoryServer,
+    failed_history_server: StreamingHistoryServer,
     monkeypatch: pytest.MonkeyPatch,
     failure_index: int,
     *,
@@ -141,19 +145,21 @@ async def test_async_history_conversion_failure_reclaims_resources_with_live_tra
         with monkeypatch.context() as patch:
             probe = observe_history_conversion(patch, client, failure_index=failure_index)
             with pytest.raises(RuntimeError, match=HISTORY_CONVERSION_ERROR) as caught:
-                async with client.stream("GET", conversion_history_server.start_url, decode_content=decode_content):
+                async with client.stream("GET", failed_history_server.start_url, decode_content=decode_content):
                     pytest.fail("failed conversion must not yield a public stream")
         assert caught.value.__traceback__ is not None
         assert len(probe.history_items) == failure_index + 1
-        assert probe.reserved_before[0] == sum(map(len, conversion_history_server.history_bodies))
+        assert probe.reserved_before[0] == sum(map(len, failed_history_server.history_bodies))
         await wait_for_async_transport_stats(
             client,
             lambda stats: stream_resources_released(stats) and stats.active_connections == 0,
             message="failed conversion must release resources while the exception and traceback remain alive",
         )
-        assert client.stats().active_connections == 0
-        assert client.stats().response_body_aborted == client.stats().connections_aborted == 1
-        assert (await client.get(f"{conversion_history_server.url}/healthy")).content == RECOVERY_BODY
+        stats = client.stats()
+        assert stats.active_connections == 0
+        assert stats.connections_opened == stats.connections_closed == len(failed_history_server.history_bodies) + 1
+        assert stats.response_body_aborted == stats.connections_aborted == 1
+        assert (await client.get(f"{failed_history_server.url}/healthy")).content == RECOVERY_BODY
         assert caught.value.__traceback__ is not None
         assert probe.raw_stream is not None
         probe.raw_stream.close()

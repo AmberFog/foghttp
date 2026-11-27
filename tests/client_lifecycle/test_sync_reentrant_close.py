@@ -138,21 +138,17 @@ def test_stream_finished_callback_can_close_after_native_delivery(sync_http_serv
 
 
 def test_observer_can_close_a_different_idle_client(sync_http_server: str) -> None:
-    other = foghttp.Client(trust_env=False)
-    assert other.get(sync_http_server + _STATUS_PATH).status_code == HTTPStatus.OK
-
     class OtherClientSink:
         def emit(self, event: foghttp.TelemetryEvent) -> None:
             if event.event_type is foghttp.TelemetryEventType.REQUEST_STARTED:
                 other.close()
 
-    try:
+    with foghttp.Client(trust_env=False) as other:
+        assert other.get(sync_http_server + _STATUS_PATH).status_code == HTTPStatus.OK
         with foghttp.Client(telemetry=foghttp.TelemetryConfig(OtherClientSink()), trust_env=False) as client:
             assert client.get(sync_http_server + _STATUS_PATH).status_code == HTTPStatus.OK
             assert other._close_complete  # noqa: SLF001
             assert client.get(sync_http_server + _STATUS_PATH).status_code == HTTPStatus.OK
-    finally:
-        other.close()
 
 
 @pytest.mark.parametrize("scenario", ["request_started", "concurrent_nested", "stream_native_read"])

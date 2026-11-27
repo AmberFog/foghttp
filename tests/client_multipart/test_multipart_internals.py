@@ -149,6 +149,25 @@ async def test_sync_iterator_runner_bounds_blocking_iterator_close(
     assert iterator.close_calls == 1
 
 
+async def test_cancelling_multipart_close_propagates_while_sync_iterator_finishes() -> None:
+    source = _OrderingSyncMultipartSource()
+    file = _single_file_payload(source, async_source=False, close_source=False).files[0]
+    stream = aiter_sync_file_content(file)
+    assert await anext(stream) == b"payload"
+
+    closing = asyncio.ensure_future(stream.aclose())
+    try:
+        assert await asyncio.to_thread(source.iterator.close_started.wait, 1.0)
+        assert closing.cancel("stop waiting for close")
+        with pytest.raises(asyncio.CancelledError, match="stop waiting for close"):
+            await closing
+        assert not source.iterator.close_finished.is_set()
+    finally:
+        source.iterator.close_release.set()
+    assert await asyncio.to_thread(source.iterator.close_finished.wait, 1.0)
+    assert not source.close_started.is_set()
+
+
 def test_file_content_propagates_distinct_iterator_cleanup_error() -> None:
     cleanup_error = GeneratorExit("iterator cleanup interrupted")
     source = _SeparateSyncMultipartSource(close_error=cleanup_error)

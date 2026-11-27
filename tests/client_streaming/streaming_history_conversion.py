@@ -6,11 +6,11 @@ from dataclasses import dataclass, field
 import pytest
 
 import foghttp
-from foghttp import _foghttp as native
 from foghttp._client import (
     response as response_mapping,
     transport,
 )
+import foghttp._foghttp as native
 
 
 HISTORY_CONVERSION_ERROR = "injected native history conversion failure"

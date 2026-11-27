@@ -67,15 +67,5 @@ async def aiter_sync_file_content(
                 return
             yield chunk
     finally:
-        await _close_sync_runner(runner)
-
-
-async def _close_sync_runner(runner: SyncIteratorRunner) -> None:
-    active_error = sys.exception()
-    if runner.close():
-        return
-    try:
-        await runner.wait_closed_bounded()
-    except BaseException:
-        if active_error is None:
-            raise
+        if not runner.close():
+            await runner.wait_closed_bounded(raise_on_error=sys.exception() is None)

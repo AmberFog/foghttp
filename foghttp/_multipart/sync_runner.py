@@ -65,14 +65,14 @@ class SyncIteratorRunner:
             self._completion.add_done_callback(consume_future_exception)
         return pending
 
-    async def wait_closed_bounded(self) -> None:
+    async def wait_closed_bounded(self, *, raise_on_error: bool = True) -> None:
         completion = asyncio.wrap_future(self._completion)
         completion.add_done_callback(consume_future_exception)
         done, _pending = await asyncio.wait(
             (completion,),
             timeout=upload_cleanup.ASYNC_SOURCE_CLOSE_TIMEOUT,
         )
-        if completion in done:
+        if completion in done and raise_on_error:
             completion.result()
 
     def _run(self) -> None:

@@ -1,6 +1,8 @@
 __all__ = (
     "codec_streaming_server",
+    "conversion_history_bodies",
     "conversion_history_server",
+    "failed_history_server",
     "streaming_history_server",
     "streaming_server",
     "sync_codec_streaming_server",
@@ -59,7 +61,18 @@ def streaming_history_server(request: pytest.FixtureRequest) -> Iterator[Streami
 
 
 @pytest.fixture
-def conversion_history_server() -> Iterator[StreamingHistoryServer]:
-    bodies = (b"first" * HISTORY_BODY_SIZE, b"middle" * HISTORY_BODY_SIZE, b"last" * HISTORY_BODY_SIZE)
-    with start_streaming_history_server(bodies) as server:
+def conversion_history_bodies() -> tuple[bytes, ...]:
+    return (b"first" * HISTORY_BODY_SIZE, b"middle" * HISTORY_BODY_SIZE, b"last" * HISTORY_BODY_SIZE)
+
+
+@pytest.fixture
+def conversion_history_server(conversion_history_bodies: tuple[bytes, ...]) -> Iterator[StreamingHistoryServer]:
+    with start_streaming_history_server(conversion_history_bodies) as server:
+        yield server
+
+
+@pytest.fixture
+def failed_history_server(conversion_history_bodies: tuple[bytes, ...]) -> Iterator[StreamingHistoryServer]:
+    # Only the unread final response can own a live socket when conversion fails.
+    with start_streaming_history_server(conversion_history_bodies, close_redirects=True) as server:
         yield server

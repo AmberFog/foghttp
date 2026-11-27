@@ -33,7 +33,11 @@ class StreamingHistoryServer:
 
 
 @contextmanager
-def start_streaming_history_server(history_bodies: tuple[bytes, ...]) -> Iterator[StreamingHistoryServer]:
+def start_streaming_history_server(
+    history_bodies: tuple[bytes, ...],
+    *,
+    close_redirects: bool = False,
+) -> Iterator[StreamingHistoryServer]:
     class HistoryHandler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -55,6 +59,8 @@ def start_streaming_history_server(history_bodies: tuple[bytes, ...]) -> Iterato
             if hop is not None:
                 self.send_header("location", f"/history/{hop + 1}")
                 self.send_header("x-history-hop", str(hop))
+                if close_redirects:
+                    self.send_header("connection", "close")
             elif self.path != "/healthy":
                 self.send_header("content-encoding", "gzip")
             self.end_headers()

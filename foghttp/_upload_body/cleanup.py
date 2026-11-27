@@ -1,7 +1,7 @@
 __all__ = ("current_task_is_cancelling", "reserve_cleanup")
 
 import asyncio
-from concurrent.futures import Future, TimeoutError
+from concurrent.futures import Future
 from contextvars import Context, copy_context
 from functools import partial, partialmethod
 import os
@@ -81,13 +81,13 @@ class UploadSourceCleanup:
         if completion is None:
             return
         try:
-            completion.result(timeout=ASYNC_SOURCE_CLOSE_TIMEOUT)
+            if completion.exception(timeout=ASYNC_SOURCE_CLOSE_TIMEOUT) is None:
+                return
         except TimeoutError:
             return
-        except BaseException:  # noqa: BLE001
-            error = self.consume_sync_error()
-            if error is not None:
-                raise error from None
+        error = self.consume_sync_error()
+        if error is not None:
+            raise error from None
 
     async def aclose(self, *, after: "UploadSourceCleanup | None" = None, bounded: bool = True) -> None:
         future = self.start_async_cleanup(after=after)

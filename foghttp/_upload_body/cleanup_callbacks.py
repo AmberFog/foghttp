@@ -52,6 +52,7 @@ def source_async_close(source: object) -> Callable[[], Coroutine[object, object,
     except Exception:  # noqa: BLE001
         return _empty_async_close
     except BaseException as error:  # noqa: BLE001
+        # Complete the claimed reservation with the descriptor's control-flow error.
         return partial(_raise_async_close, error)
     if callable(aclose):
         return lambda: _await_source_close(aclose)
