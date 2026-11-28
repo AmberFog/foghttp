@@ -15,8 +15,11 @@ pub(super) struct RawResponseContext<'a> {
     pub(super) read_timeout: f64,
     pub(super) max_response_body_size: Option<usize>,
     pub(super) buffered_body_budget: BufferedBodyBudget,
+    pub(super) buffered_decoders: Arc<tokio::sync::Semaphore>,
     pub(super) origin: &'a str,
     pub(super) redirect_hop: usize,
+    #[cfg(test)]
+    pub(super) decode_checkpoint: Option<&'a super::decoding::test_control::DecodeTestControl>,
 }
 
 pub(super) struct RawStreamResponseContext {

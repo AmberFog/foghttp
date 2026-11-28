@@ -50,7 +50,9 @@ class _SyncUploadFeeder:
 
     def _feed(self) -> None:
         try:
-            self._iterator = iter(cast("Iterable[object]", self._source))
+            self._iterator = self._source_cleanup.create_iterator(
+                lambda: iter(cast("Iterable[object]", self._source)),
+            )
             self._feed_chunks()
         except (asyncio.CancelledError, Exception) as error:  # noqa: BLE001
             self._report_error(error)
@@ -103,7 +105,7 @@ class _SyncUploadFeeder:
 
     def _close_sources(self) -> None:
         try:
-            _close_sync_sources(self._iterator, self._source, self._source_cleanup)
+            self._source_cleanup.close()
         except BaseException as error:  # noqa: BLE001
             if self._primary_error is None and not self._source_error_reported:
                 with suppress(BaseException):
@@ -136,7 +138,7 @@ class _AsyncUploadFeeder:
             self._state.publish(control_error)
             self._raw_body.close()
             await suppress_async_cleanup_error(
-                _close_async_sources(self._iterator, self._source, self._source_cleanup),
+                self._source_cleanup.aclose(),
             )
             raise control_error
         sources_closed = await self._close_sources()
@@ -145,7 +147,9 @@ class _AsyncUploadFeeder:
 
     async def _feed(self) -> BaseException | None:
         try:
-            self._iterator = aiter(cast("AsyncIterable[object]", self._source))
+            self._iterator = self._source_cleanup.create_iterator(
+                lambda: aiter(cast("AsyncIterable[object]", self._source)),
+            )
             should_finish, final_chunk = await self._feed_chunks()
             self._should_finish = should_finish
             self._final_chunk = final_chunk
@@ -170,7 +174,7 @@ class _AsyncUploadFeeder:
 
     async def _close_sources(self) -> bool:
         try:
-            await _close_async_sources(self._iterator, self._source, self._source_cleanup)
+            await self._source_cleanup.aclose()
         except BaseException as error:
             if current_task_is_cancelling():
                 self._raw_body.close()
@@ -256,33 +260,3 @@ def _cancel_sync_upload_body(
 ) -> None:
     feeder_state.cancel()
     source_cleanup.start_async_cleanup(interrupt=True)
-
-
-def _close_sync_sources(
-    iterator: "Iterator[object] | None",
-    source: object,
-    source_cleanup: UploadSourceCleanup,
-) -> None:
-    if iterator is None or iterator is source:
-        source_cleanup.close()
-        return
-    iterator_cleanup = UploadSourceCleanup(iterator)
-    try:
-        iterator_cleanup.close()
-    except BaseException:
-        with suppress(BaseException):
-            source_cleanup.close()
-        raise
-    source_cleanup.close()
-
-
-async def _close_async_sources(
-    iterator: "AsyncIterator[object] | None",
-    source: object,
-    source_cleanup: UploadSourceCleanup,
-) -> None:
-    if iterator is None or iterator is source:
-        await source_cleanup.aclose()
-        return
-    iterator_cleanup = UploadSourceCleanup(iterator)
-    await source_cleanup.aclose(after=iterator_cleanup)

@@ -4,14 +4,15 @@ __all__ = (
 )
 
 from dataclasses import dataclass, field
-from socketserver import BaseRequestHandler, ThreadingTCPServer
+from socketserver import BaseRequestHandler
 import threading
 from typing import Self, cast
+
+from tests.support.sync_server import SyncTCPServer
 
 from .constants import TLS_HOST
 
 
-SERVER_JOIN_TIMEOUT = 1.0
 WAIT_TIMEOUT = 2.0
 
 
@@ -35,9 +36,7 @@ class TLSHandshakeStallServer:
 
     def close(self) -> None:
         self.server.state.release()
-        self.server.shutdown()
-        self.server.server_close()
-        self.thread.join(timeout=SERVER_JOIN_TIMEOUT)
+        self.server.stop(self.thread)
 
     def __enter__(self) -> Self:
         return self
@@ -74,14 +73,12 @@ class TLSHandshakeStallState:
 def start_tls_handshake_stall_server() -> TLSHandshakeStallServer:
     server = TLSHandshakeStallTCPServer((TLS_HOST, 0), TLSHandshakeStallHandler)
     server.state = TLSHandshakeStallState()
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    thread = server.start()
     return TLSHandshakeStallServer(server=server, thread=thread)
 
 
-class TLSHandshakeStallTCPServer(ThreadingTCPServer):
+class TLSHandshakeStallTCPServer(SyncTCPServer):
     allow_reuse_address = True
-    daemon_threads = True
     state: TLSHandshakeStallState
 
 

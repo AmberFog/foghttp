@@ -30,6 +30,7 @@ from foghttp.errors import (
 from foghttp.limits import Limits
 from foghttp.methods import GET
 from foghttp.timeouts import Timeouts
+from tests.client_upload.helpers import RecordingRawUploadBody
 
 
 READ_TIMEOUT_RAW_ARGS = (
@@ -353,8 +354,12 @@ async def test_async_raw_write_timeout_maps_to_public_write_timeout(faker: Faker
     assert exc_info.value.phase == "request_body"
 
 
-def test_sync_raw_write_timeout_is_not_masked_by_cleanup_error(faker: Faker) -> None:
+def test_sync_raw_write_timeout_is_not_masked_by_cleanup_error(
+    faker: Faker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     source = CleanupControlErrorSource()
+    monkeypatch.setattr("foghttp._upload_body.runtime._foghttp.RawUploadBody", RecordingRawUploadBody)
 
     with pytest.raises(WriteTimeout, match="request body write timeout expired"):
         send_raw_request(
@@ -365,8 +370,12 @@ def test_sync_raw_write_timeout_is_not_masked_by_cleanup_error(faker: Faker) -> 
     assert source.close_calls == 1
 
 
-async def test_async_raw_write_timeout_is_not_masked_by_cleanup_error(faker: Faker) -> None:
+async def test_async_raw_write_timeout_is_not_masked_by_cleanup_error(
+    faker: Faker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     source = CleanupControlErrorSource()
+    monkeypatch.setattr("foghttp._upload_body.runtime._foghttp.RawUploadBody", RecordingRawUploadBody)
 
     with pytest.raises(WriteTimeout, match="request body write timeout expired"):
         await send_raw_request_async(

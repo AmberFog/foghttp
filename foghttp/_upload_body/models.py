@@ -32,6 +32,14 @@ class BufferedUploadBody:
         """Close a buffered body that owns no async resources."""
 
 
+class AsyncFactoryProtocolError(Exception):
+    """Carry factory errors that cannot cross a pending asyncio Future unchanged."""
+
+    def __init__(self, error: GeneratorExit | StopIteration) -> None:
+        super().__init__()
+        self.error = error
+
+
 class SyncUploadBody(Protocol):
     @property
     def buffered_body(self) -> bytes | None: ...

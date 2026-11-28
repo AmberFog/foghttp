@@ -1,9 +1,11 @@
 use super::errors::response_body_error;
-use super::request::{PendingResponsePolicyAction, RequestState, TransportRequest};
+use super::request::{
+    PendingResponsePolicyAction, RequestState, ResponseDisposition, TransportRequest,
+};
 use crate::core::headers::HeaderPairs;
 use crate::core::method::{GET, POST};
 use crate::core::metrics::Metrics;
-use crate::core::policy::TransportRoute;
+use crate::core::policy::{RetryPolicy, TransportRoute};
 use crate::core::response::{BufferedBodyBudget, ResponseBodyError};
 use crate::errors::{
     FogHttpError, FogHttpResponseBodyBudgetExceededError, FogHttpResponseBodyTooLargeError,
@@ -78,6 +80,22 @@ fn response_body_errors_keep_native_exception_types_and_arguments() {
             assert_eq!(args, (message.to_owned(),));
         }
     });
+}
+
+#[test]
+fn redirect_status_without_location_can_still_retry() {
+    let status = StatusCode::TEMPORARY_REDIRECT.as_u16();
+    let mut parts = transport_request(None, true);
+    parts.retry_policy = Some(
+        RetryPolicy::new(1, 0.0, 0.0, vec![status], vec![parts.method.clone()], false)
+            .expect("valid status retry policy"),
+    );
+    let mut state = RequestState::try_from(parts).expect("valid request state");
+
+    let disposition = state
+        .on_response_headers(status, &HeaderPairs::new(), 0)
+        .expect("valid response headers");
+    assert!(matches!(disposition, ResponseDisposition::Retry(_)));
 }
 
 #[test]
@@ -227,6 +245,7 @@ fn transport_request(body: Option<Vec<u8>>, body_replayable: bool) -> TransportR
         write_timeout: WRITE_TIMEOUT,
         max_response_body_size: None,
         buffered_body_budget: BufferedBodyBudget::new(None, Arc::new(Metrics::default())),
+        buffered_decoders: Arc::new(tokio::sync::Semaphore::new(1)),
         follow_redirects: true,
         max_redirects: 20,
         retry_policy: None,
@@ -244,8 +263,11 @@ fn response_action(
     location: &str,
 ) -> PendingResponsePolicyAction {
     let headers = vec![("location".to_owned(), location.to_owned())];
-    state
+    let ResponseDisposition::Redirect(action) = state
         .on_response_headers(status.as_u16(), &headers, 0)
         .expect("valid response policy evaluation")
-        .expect("redirect action")
+    else {
+        panic!("expected a redirect action");
+    };
+    action
 }

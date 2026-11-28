@@ -8,6 +8,7 @@ from foghttp.status_codes.success import OK
 from tests.client_timeouts.helpers import assert_timeout_diagnostic
 
 from .constants import SLOW_RESPONSE_PATH
+from .gates import AsyncResponseGate
 from .helpers import wait_for_async_stats
 
 
@@ -16,6 +17,7 @@ CONCURRENT_REQUESTS = 2
 
 async def test_async_global_connection_limit_waits_without_pending_request_queue(
     resource_http_server: str,
+    resource_gate: AsyncResponseGate,
 ) -> None:
     limits = foghttp.Limits(
         max_active_requests=2,
@@ -27,28 +29,25 @@ async def test_async_global_connection_limit_waits_without_pending_request_queue
 
     async with foghttp.AsyncClient(limits=limits, timeouts=timeouts) as client:
         slow = asyncio.create_task(client.get(f"{resource_http_server}{SLOW_RESPONSE_PATH}"))
+        fast = None
         try:
-            await wait_for_async_stats(client, lambda stats: stats.active_connections == 1)
+            async with resource_gate.hold():
+                await wait_for_async_stats(client, lambda stats: stats.active_connections == 1)
 
-            fast = asyncio.create_task(client.get(resource_http_server))
-            try:
+                fast = asyncio.create_task(client.get(resource_http_server))
                 await wait_for_async_stats(
                     client,
                     lambda stats: stats.connection_acquire_waited == 1,
                 )
 
-                assert (await slow).status_code == OK
-                assert (await fast).status_code == OK
-            finally:
-                if not fast.done():
-                    fast.cancel()
-                    with pytest.raises(asyncio.CancelledError):
-                        await fast
+            assert (await slow).status_code == OK
+            assert (await fast).status_code == OK
         finally:
-            if not slow.done():
-                slow.cancel()
-                with pytest.raises(asyncio.CancelledError):
-                    await slow
+            for task in (slow, fast):
+                if task is not None and not task.done():
+                    task.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await task
 
         await wait_for_async_stats(client, lambda stats: stats.active_connections == 0)
         stats = client.stats()
@@ -68,6 +67,7 @@ async def test_async_global_connection_limit_waits_without_pending_request_queue
 
 async def test_async_global_connection_limit_timeout_uses_pool_timeout_diagnostic(
     resource_http_server: str,
+    resource_gate: AsyncResponseGate,
 ) -> None:
     limits = foghttp.Limits(
         max_active_requests=2,
@@ -80,10 +80,11 @@ async def test_async_global_connection_limit_timeout_uses_pool_timeout_diagnosti
     async with foghttp.AsyncClient(limits=limits, timeouts=timeouts) as client:
         slow = asyncio.create_task(client.get(f"{resource_http_server}{SLOW_RESPONSE_PATH}"))
         try:
-            await wait_for_async_stats(client, lambda stats: stats.active_connections == 1)
+            async with resource_gate.hold():
+                await wait_for_async_stats(client, lambda stats: stats.active_connections == 1)
 
-            with pytest.raises(foghttp.PoolTimeout, match=CONNECTION_ACQUIRE_TIMEOUT) as exc_info:
-                await client.get(resource_http_server)
+                with pytest.raises(foghttp.PoolTimeout, match=CONNECTION_ACQUIRE_TIMEOUT) as exc_info:
+                    await client.get(resource_http_server)
 
             assert (await slow).status_code == OK
         finally:
@@ -111,6 +112,7 @@ async def test_async_global_connection_limit_timeout_uses_pool_timeout_diagnosti
 
 async def test_async_per_host_connection_limit_reports_origin_pressure(
     resource_http_server: str,
+    resource_gate: AsyncResponseGate,
 ) -> None:
     limits = foghttp.Limits(
         max_active_requests=2,
@@ -124,10 +126,11 @@ async def test_async_per_host_connection_limit_reports_origin_pressure(
     async with foghttp.AsyncClient(limits=limits, timeouts=timeouts) as client:
         slow = asyncio.create_task(client.get(f"{resource_http_server}{SLOW_RESPONSE_PATH}"))
         try:
-            await wait_for_async_stats(client, lambda stats: stats.active_connections == 1)
+            async with resource_gate.hold():
+                await wait_for_async_stats(client, lambda stats: stats.active_connections == 1)
 
-            with pytest.raises(foghttp.PoolTimeout, match=CONNECTION_ACQUIRE_TIMEOUT):
-                await client.get(resource_http_server)
+                with pytest.raises(foghttp.PoolTimeout, match=CONNECTION_ACQUIRE_TIMEOUT):
+                    await client.get(resource_http_server)
 
             assert (await slow).status_code == OK
         finally:
@@ -148,6 +151,7 @@ async def test_async_per_host_connection_limit_reports_origin_pressure(
 
 async def test_async_cancellation_while_waiting_connection_permit_releases_state(
     resource_http_server: str,
+    resource_gate: AsyncResponseGate,
 ) -> None:
     limits = foghttp.Limits(
         max_active_requests=2,
@@ -159,11 +163,12 @@ async def test_async_cancellation_while_waiting_connection_permit_releases_state
 
     async with foghttp.AsyncClient(limits=limits, timeouts=timeouts) as client:
         slow = asyncio.create_task(client.get(f"{resource_http_server}{SLOW_RESPONSE_PATH}"))
+        waiter = None
         try:
-            await wait_for_async_stats(client, lambda stats: stats.active_connections == 1)
+            async with resource_gate.hold():
+                await wait_for_async_stats(client, lambda stats: stats.active_connections == 1)
 
-            waiter = asyncio.create_task(client.get(resource_http_server))
-            try:
+                waiter = asyncio.create_task(client.get(resource_http_server))
                 await wait_for_async_stats(
                     client,
                     lambda stats: stats.connection_acquire_waited == 1,
@@ -173,18 +178,14 @@ async def test_async_cancellation_while_waiting_connection_permit_releases_state
                 with pytest.raises(asyncio.CancelledError):
                     await waiter
 
-                assert (await slow).status_code == OK
-                response = await client.get(resource_http_server)
-            finally:
-                if not waiter.done():
-                    waiter.cancel()
-                    with pytest.raises(asyncio.CancelledError):
-                        await waiter
+            assert (await slow).status_code == OK
+            response = await client.get(resource_http_server)
         finally:
-            if not slow.done():
-                slow.cancel()
-                with pytest.raises(asyncio.CancelledError):
-                    await slow
+            for task in (slow, waiter):
+                if task is not None and not task.done():
+                    task.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await task
 
         await wait_for_async_stats(client, lambda stats: stats.active_connections == 0)
         stats = client.stats()

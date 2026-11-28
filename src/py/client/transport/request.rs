@@ -109,6 +109,13 @@ impl CapturedConnectionUse {
 
     fn into_guard(mut self) -> Option<ConnectionUseGuard> {
         self.observe();
+        if !self.request_body_completion.is_complete() {
+            if let Some(connected) = self.capture.connection_metadata().as_ref() {
+                // Python closes the upload producer after receiving headers. Its
+                // EOF must not return an unfinished upload connection to the pool.
+                connected.poison();
+            }
+        }
         self.guard.take()
     }
 
@@ -151,6 +158,7 @@ pub struct TransportRequest {
     pub write_timeout: f64,
     pub max_response_body_size: Option<usize>,
     pub buffered_body_budget: BufferedBodyBudget,
+    pub buffered_decoders: Arc<tokio::sync::Semaphore>,
     pub follow_redirects: bool,
     pub max_redirects: usize,
     pub retry_policy: Option<RetryPolicy>,
@@ -318,6 +326,7 @@ pub(super) struct RequestState {
     pub(super) write_timeout_secs: f64,
     pub(super) max_response_body_size: Option<usize>,
     pub(super) buffered_body_budget: BufferedBodyBudget,
+    pub(super) buffered_decoders: Arc<tokio::sync::Semaphore>,
     retry_attempt: usize,
     completed_retries: usize,
     retry_trace: RetryTraceRecorder,
@@ -409,8 +418,11 @@ impl RequestState {
             read_timeout: self.read_timeout,
             max_response_body_size: self.max_response_body_size,
             buffered_body_budget: self.buffered_body_budget.clone(),
+            buffered_decoders: Arc::clone(&self.buffered_decoders),
             origin,
             redirect_hop,
+            #[cfg(test)]
+            decode_checkpoint: None,
         }
     }
 
@@ -455,7 +467,7 @@ impl RequestState {
         status_code: u16,
         headers: &HeaderPairs,
         redirect_hop: usize,
-    ) -> PyResult<Option<PendingResponsePolicyAction>> {
+    ) -> PyResult<ResponseDisposition> {
         if let Some(cookies) = self.cookies.as_ref() {
             cookies.store_response(&self.url, headers);
         }
@@ -466,24 +478,31 @@ impl RequestState {
         if let Some(hooks) = self.policy_hooks.as_ref() {
             hooks.on_response_headers(request, response, redirect_hop, self.extensions.as_ref())?;
         }
-        Ok(action.map(|action| PendingResponsePolicyAction {
-            action,
-            response: self.response_body_snapshot(status_code, headers),
-        }))
+        if let Some(action) = action {
+            return Ok(ResponseDisposition::Redirect(PendingResponsePolicyAction {
+                action,
+                response: self.response_body_snapshot(status_code, headers),
+            }));
+        }
+        Ok(match self.retry_on_response(request, response) {
+            Some(pending) if matches!(pending.decision, RetryDecision::Retry { .. }) => {
+                ResponseDisposition::Retry(pending)
+            }
+            stopped => ResponseDisposition::Return(stopped),
+        })
     }
 
-    pub(super) fn retry_on_response(
+    fn retry_on_response(
         &self,
-        status_code: u16,
-        headers: &HeaderPairs,
+        request: PolicyRequest<'_>,
+        response: ResponseHead<'_>,
     ) -> Option<PendingRetryDecision> {
         if !self.policy.retries_enabled() {
             return None;
         }
-        let response = ResponseHead::new(status_code, headers);
         self.policy
             .on_retryable_response(
-                self.policy_request(),
+                request,
                 response,
                 self.completed_retries,
                 fastrand::f64(),
@@ -491,7 +510,7 @@ impl RequestState {
             )
             .map(|decision| PendingRetryDecision {
                 decision,
-                trigger: RetryTrigger::Status(status_code),
+                trigger: RetryTrigger::Status(response.status_code()),
             })
     }
 
@@ -688,6 +707,7 @@ impl RequestState {
             write_timeout_secs: parts.write_timeout,
             max_response_body_size: parts.max_response_body_size,
             buffered_body_budget: parts.buffered_body_budget,
+            buffered_decoders: parts.buffered_decoders,
             retry_attempt: 1,
             completed_retries: 0,
             retry_trace,
@@ -876,10 +896,6 @@ pub(super) struct PendingRetryDecision {
 }
 
 impl PendingRetryDecision {
-    pub(super) fn should_retry(&self) -> bool {
-        matches!(self.decision, RetryDecision::Retry { .. })
-    }
-
     fn action(&self) -> RetryAction {
         match self.decision {
             RetryDecision::Retry { delay } => RetryAction::Retry(delay),
@@ -958,6 +974,12 @@ pub(super) enum RetryAction {
     Stop,
 }
 
+pub(super) enum ResponseDisposition {
+    Redirect(PendingResponsePolicyAction),
+    Retry(PendingRetryDecision),
+    Return(Option<PendingRetryDecision>),
+}
+
 pub(super) struct PendingResponsePolicyAction {
     action: ResponsePolicyAction,
     response: Option<ResponseSnapshot>,
@@ -1014,3 +1036,6 @@ impl RequestBodyState {
 
 #[cfg(test)]
 mod response_header_timeout_tests;
+
+#[cfg(test)]
+mod early_response_pool_tests;

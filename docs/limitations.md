@@ -80,7 +80,7 @@ try to keep public interfaces stable and avoid unnecessary breaking changes.
 
 | Feature | Current behavior |
 |---|---|
-| CPython wheel ABI | Wheels use `cp311-abi3`; this branch requires the same native wheel to pass on GIL-enabled CPython 3.11 through 3.15 for each natively runnable target. Python 3.15 coverage is unreleased; published 0.4.1 was validated through 3.14. Linux aarch64 remains cross-build/ABI-audit only. |
+| CPython wheel ABI | Wheels use `cp311-abi3`. FogHTTP 0.4.2 requires the same wheel to pass on GIL-enabled CPython 3.11 through 3.15 for each natively runnable target. FogHTTP 0.4.1 was validated through 3.14. Linux aarch64 is cross-built and ABI-audited. |
 | Linux binary dependencies | Python 3.11-3.14 retain glibc >=2.17. Python 3.15 requires glibc >=2.39 because of orjson's wheels; FogHTTP's own manylinux2014 artifact is unchanged. See [packaging](./packaging.md#linux-dependency-floors). |
 | Free-threaded CPython | Not supported by the current `abi3` wheels; PyO3's separate `abi3t` stable ABI starts at Python 3.15 and requires its own adoption and validation decision |
 | Streaming response decompression | Opt-in `decode_content=True` supports strict gzip, zlib-wrapped deflate and standard-window Brotli, with at most four coding layers; raw bytes remain the default. Compressed 206 responses are rejected. |
@@ -143,6 +143,69 @@ Wait before using FogHTTP when:
 - you need per-request connect timeout reconfiguration
 - you need HTTP/2 multiplexed stream limits
 - you need to share one async client across multiple event loops
+
+## Streaming Upload Memory
+
+Streaming content and multipart uploads reserve native byte capacity before
+copying. Defaults are 512 KiB per logical upload and 16 MiB across one client;
+both limits are positive finite integers. Provider chunks are fragmented into
+at most 64 KiB native buffers, or the smaller configured limit. Queued and
+in-flight application-owned allocations remain charged until their final owner
+is released, including old retry-attempt data.
+
+The limits exclude caller input, one Python snapshot for mutable chunks,
+buffered request bodies and internal Hyper/TLS/socket copies. They do not bound
+provider allocations or total process RSS. See [upload byte limits](./timeouts.md#upload-byte-limits).
+
+## Upload Cleanup Capacity
+
+Upload cleanup has process-wide admission and execution limits shared across
+clients. Defaults are 4096 reservation units and eight executing callbacks;
+source and possible distinct-iterator cleanup consume separate units. Admission
+can raise `LifecycleError` before provider ownership or factory creation.
+
+The limits do not forcibly cancel user callbacks. A request's bounded cleanup
+wait can finish while accepted cleanup remains pending or running. Client churn
+and event-loop changes do not release a still-running callback's reservation.
+Unfinished async cleanup on a closed loop remains stalled. See
+[cleanup admission](./upload-types.md#cleanup-admission-and-execution) for
+ownership, ordering and recovery details.
+
+## Buffered Content Decoding
+
+Buffered responses transparently decode `gzip`, `deflate`, and `br`.
+`deflate` first attempts zlib-wrapped data and can fall back to raw deflate
+on a codec failure only when no valid zlib header is present. A recognized
+zlib header commits to that format: a missing/invalid checksum, truncation,
+or unsupported preset dictionary cannot be reinterpreted as raw deflate.
+Ambiguous raw streams starting with a valid zlib header follow the zlib path
+and fail if that interpretation fails. Both formats require the codec to reach
+its actual stream end. Truncation or a missing/invalid zlib checksum raises `RequestError`;
+no successful response containing only the decoded prefix is returned.
+Size, aggregate-buffer-budget, and accounting failures do not trigger fallback.
+
+Successful decoding preserves empty and nonempty payloads, multi-member gzip,
+and Brotli, and removes the consumed `Content-Encoding` and `Content-Length`
+headers. A complete HTTP body and a complete compressed stream are separate
+conditions: a late decoding error releases the request slot and buffered
+reservations without aborting an already completed use of a healthy connection.
+
+Buffered decoding shares the original request `total` deadline across all
+coding layers and raw-deflate fallback, including the final check before the
+native response is returned. Expiry raises the base `TimeoutError` with
+`response_body` diagnostics. Codec steps yield to the runtime so async
+cancellation and client close can stop further decoding; ordinary sync close
+still waits for admitted sends. A single synchronous codec call cannot be
+interrupted, so this does not promise a hard latency bound for that call.
+See the [total timeout contract](./timeouts.md#total-timeout).
+
+Simultaneously live buffered decoders are limited to the runtime's worker count,
+shared across clients using that runtime. Waiting for a decoder slot consumes
+the original total budget. This bounds concurrency, not the bytes allocated by
+one codec; the buffered body-byte limits exclude internal codec workspaces.
+
+See [response streaming](./streaming.md#content-decoding) for the separate
+opt-in streaming contract.
 
 ## Error Surface
 

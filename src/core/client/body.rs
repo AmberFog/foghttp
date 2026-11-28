@@ -7,11 +7,18 @@ use std::convert::Infallible;
 use std::future::Future;
 use std::io;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::task::{Context, Poll};
 use std::time::Instant;
 use tokio::time::Sleep;
+
+mod upload_budget;
+pub(crate) use upload_budget::{
+    UploadBodyAccount, UploadBodyBudget, DEFAULT_MAX_BUFFERED_UPLOAD_BYTES,
+    DEFAULT_MAX_UPLOAD_BUFFER_BYTES,
+};
+use upload_budget::{UploadBufferReservation, MAX_UPLOAD_CHUNK_BYTES};
 
 pub(crate) type BodyError = Box<dyn std::error::Error + Send + Sync>;
 pub(crate) type RequestBody = UnsyncBoxBody<Bytes, BodyError>;
@@ -64,6 +71,8 @@ struct UploadBodyChannel {
     send_ready: Condvar,
     capacity: usize,
     producer_completion: UploadBodyProducerCompletion,
+    closed: AtomicBool,
+    account: Arc<UploadBodyAccount>,
 }
 
 #[derive(Clone)]
@@ -83,12 +92,30 @@ const PRODUCER_ABORTED: u8 = 3;
 
 struct UploadBodyChannelState {
     queue: VecDeque<UploadBodyItem>,
-    closed: bool,
     ready_callback: Option<ReadyCallback>,
     receive_waker: Option<std::task::Waker>,
 }
 
+enum UploadBodyInput<'a> {
+    Owned(UploadBodyItem),
+    Slice(&'a [u8]),
+}
+
+#[cfg(test)]
 pub(crate) fn upload_body_channel(capacity: usize) -> (UploadBodySender, UploadBodyReceiver) {
+    upload_body_channel_with_budget(
+        capacity,
+        Arc::new(UploadBodyAccount::new(
+            DEFAULT_MAX_UPLOAD_BUFFER_BYTES,
+            Arc::new(UploadBodyBudget::new(DEFAULT_MAX_BUFFERED_UPLOAD_BYTES)),
+        )),
+    )
+}
+
+pub(crate) fn upload_body_channel_with_budget(
+    capacity: usize,
+    account: Arc<UploadBodyAccount>,
+) -> (UploadBodySender, UploadBodyReceiver) {
     assert!(
         capacity > 0,
         "upload body channel capacity must be greater than 0"
@@ -96,14 +123,18 @@ pub(crate) fn upload_body_channel(capacity: usize) -> (UploadBodySender, UploadB
     let channel = Arc::new(UploadBodyChannel {
         state: Mutex::new(UploadBodyChannelState {
             queue: VecDeque::with_capacity(capacity),
-            closed: false,
             ready_callback: None,
             receive_waker: None,
         }),
         send_ready: Condvar::new(),
         capacity,
         producer_completion: UploadBodyProducerCompletion::new(),
+        closed: AtomicBool::new(false),
+        account,
     });
+    if !channel.account.budget.register(&channel) {
+        channel.abort();
+    }
     (
         UploadBodySender {
             channel: Arc::clone(&channel),
@@ -418,92 +449,121 @@ impl hyper::body::Body for StreamingUploadBody {
 }
 
 impl UploadBodySender {
+    pub(crate) fn is_same_channel(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.channel, &other.channel)
+    }
+
     pub(crate) fn send_blocking(&self, item: UploadBodyItem) -> bool {
-        self.send_blocking_inner(item, false)
+        self.send_blocking_inner(UploadBodyInput::Owned(item), false)
     }
 
-    pub(crate) fn send_final_blocking(&self, item: UploadBodyItem) -> bool {
-        self.send_blocking_inner(item, true)
+    pub(crate) fn send_slice_blocking(&self, chunk: &[u8], final_chunk: bool) -> bool {
+        if chunk.len() > self.max_chunk_size() {
+            return false;
+        }
+        self.send_blocking_inner(UploadBodyInput::Slice(chunk), final_chunk)
     }
 
-    fn send_blocking_inner(&self, item: UploadBodyItem, finish: bool) -> bool {
-        let failed = item.is_err();
-        let data_frame = item.is_ok();
+    fn send_blocking_inner(&self, input: UploadBodyInput<'_>, finish: bool) -> bool {
+        let byte_count = input.byte_count();
+        if byte_count > self.channel.account.max_buffered_bytes
+            || byte_count > self.channel.account.budget.max_buffered_bytes()
+        {
+            return false;
+        }
         let mut state = self.channel.state();
         loop {
-            if state.closed {
+            if self.is_closed() {
                 return false;
             }
-            if state.queue.len() < self.channel.capacity {
-                state.queue.push_back(item);
-                if data_frame {
-                    self.channel.producer_completion.record_data_frame();
-                }
-                if failed {
-                    self.channel.producer_completion.fail();
-                }
-                if finish {
-                    self.channel.producer_completion.finish();
-                    state.closed = true;
-                }
-                let waker = state.receive_waker.take();
-                drop(state);
-                if finish {
-                    self.channel.send_ready.notify_all();
-                }
-                if let Some(waker) = waker {
-                    waker.wake();
-                }
-                return true;
+            if state.queue.len() >= self.channel.capacity {
+                state = self.channel.wait_send_ready(state);
+                continue;
             }
-            state = self.channel.wait_send_ready(state);
+            let reservation = if byte_count == 0 {
+                None
+            } else if let Some(reservation) = self
+                .channel
+                .account
+                .budget
+                .try_reserve(&self.channel, byte_count)
+            {
+                Some(reservation)
+            } else {
+                drop(state);
+                self.channel
+                    .account
+                    .budget
+                    .wait_for_capacity(&self.channel, byte_count);
+                state = self.channel.state();
+                continue;
+            };
+            let item = input.into_item(reservation);
+            self.channel.enqueue(state, item, finish);
+            return true;
         }
     }
 
     pub(crate) fn send_nowait(&self, item: UploadBodyItem) -> Result<(), UploadBodySendError> {
-        self.send_nowait_inner(item, false)
+        self.send_nowait_inner(UploadBodyInput::Owned(item), false)
     }
 
+    #[cfg(test)]
     pub(crate) fn send_final_nowait(
         &self,
         item: UploadBodyItem,
     ) -> Result<(), UploadBodySendError> {
-        self.send_nowait_inner(item, true)
+        self.send_nowait_inner(UploadBodyInput::Owned(item), true)
+    }
+
+    pub(crate) fn send_slice_nowait(
+        &self,
+        chunk: &[u8],
+        final_chunk: bool,
+    ) -> Result<(), UploadBodySendError> {
+        if chunk.len() > self.max_chunk_size() {
+            return Err(UploadBodySendError::Full);
+        }
+        self.send_nowait_inner(UploadBodyInput::Slice(chunk), final_chunk)
+    }
+
+    pub(crate) fn max_chunk_size(&self) -> usize {
+        MAX_UPLOAD_CHUNK_BYTES
+            .min(self.channel.account.max_buffered_bytes)
+            .min(self.channel.account.budget.max_buffered_bytes())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn buffered_bytes(&self) -> usize {
+        self.channel.account.buffered_bytes()
     }
 
     fn send_nowait_inner(
         &self,
-        item: UploadBodyItem,
+        input: UploadBodyInput<'_>,
         finish: bool,
     ) -> Result<(), UploadBodySendError> {
-        let failed = item.is_err();
-        let data_frame = item.is_ok();
-        let mut state = self.channel.state();
-        if state.closed {
+        let state = self.channel.state();
+        if self.is_closed() {
             return Err(UploadBodySendError::Closed);
         }
         if state.queue.len() >= self.channel.capacity {
             return Err(UploadBodySendError::Full);
         }
-        state.queue.push_back(item);
-        if data_frame {
-            self.channel.producer_completion.record_data_frame();
-        }
-        if failed {
-            self.channel.producer_completion.fail();
-        }
-        if finish {
-            self.channel.producer_completion.finish();
-            state.closed = true;
-        }
-        let waker = state.receive_waker.take();
-        drop(state);
-        if finish {
-            self.channel.send_ready.notify_all();
-        }
-        if let Some(waker) = waker {
-            waker.wake();
-        }
+        let byte_count = input.byte_count();
+        let reservation = if byte_count == 0 {
+            None
+        } else {
+            Some(
+                self.channel
+                    .account
+                    .budget
+                    .try_reserve(&self.channel, byte_count)
+                    .ok_or(UploadBodySendError::Full)?,
+            )
+        };
+        let item = input.into_item(reservation);
+        self.channel.enqueue(state, item, finish);
         Ok(())
     }
 
@@ -516,7 +576,7 @@ impl UploadBodySender {
     }
 
     pub(crate) fn is_closed(&self) -> bool {
-        self.channel.state().closed
+        self.channel.closed.load(Ordering::Acquire) || self.channel.account.budget.is_closed()
     }
 
     pub(crate) fn set_ready_callback(&self, callback: Option<ReadyCallback>) {
@@ -537,11 +597,38 @@ impl UploadBodyReceiver {
             self.channel.notify_sender(callback);
             return Poll::Ready(Some(item));
         }
-        if state.closed {
+        if self.channel.closed.load(Ordering::Acquire) {
             return Poll::Ready(None);
         }
         state.receive_waker = Some(context.waker().clone());
         Poll::Pending
+    }
+}
+
+impl UploadBodyInput<'_> {
+    fn byte_count(&self) -> usize {
+        match self {
+            Self::Owned(Ok(data)) => data.len(),
+            Self::Owned(Err(_)) => 0,
+            Self::Slice(data) => data.len(),
+        }
+    }
+
+    fn into_item(self, reservation: Option<UploadBufferReservation>) -> UploadBodyItem {
+        let item = match self {
+            Self::Owned(item) => item,
+            Self::Slice(data) => {
+                #[cfg(test)]
+                if let Some(reservation) = &reservation {
+                    reservation.record_copy();
+                }
+                Ok(Bytes::copy_from_slice(data))
+            }
+        };
+        item.map(|data| match reservation {
+            Some(reservation) => reservation.into_bytes(data),
+            None => data,
+        })
     }
 }
 
@@ -552,6 +639,33 @@ impl Drop for UploadBodyReceiver {
 }
 
 impl UploadBodyChannel {
+    fn enqueue(
+        &self,
+        mut state: MutexGuard<'_, UploadBodyChannelState>,
+        item: UploadBodyItem,
+        finish: bool,
+    ) {
+        if item.is_ok() {
+            self.producer_completion.record_data_frame();
+        } else {
+            self.producer_completion.fail();
+        }
+        state.queue.push_back(item);
+        if finish {
+            self.producer_completion.finish();
+            self.closed.store(true, Ordering::Release);
+        }
+        let waker = state.receive_waker.take();
+        drop(state);
+        if finish {
+            self.send_ready.notify_all();
+            self.account.budget.notify_closed();
+        }
+        if let Some(waker) = waker {
+            waker.wake();
+        }
+    }
+
     fn state(&self) -> MutexGuard<'_, UploadBodyChannelState> {
         self.state
             .lock()
@@ -574,18 +688,36 @@ impl UploadBodyChannel {
         }
     }
 
+    fn notify_byte_capacity(&self) {
+        let state = self.state();
+        let callback = (!self.closed.load(Ordering::Acquire))
+            .then(|| state.ready_callback.clone())
+            .flatten();
+        drop(state);
+        if let Some(callback) = callback {
+            callback();
+        }
+    }
+
+    fn notify_budget_closed(&self) {
+        let _state = self.state();
+        self.send_ready.notify_all();
+    }
+
     fn abort(&self) {
         let mut state = self.state();
-        if state.closed {
+        if self.closed.load(Ordering::Acquire) && state.queue.is_empty() {
             return;
         }
         self.producer_completion.abort();
-        state.closed = true;
-        state.queue.clear();
+        self.closed.store(true, Ordering::Release);
+        let queued = std::mem::take(&mut state.queue);
         let waker = state.receive_waker.take();
         let callback = state.ready_callback.clone();
         drop(state);
+        drop(queued);
         self.send_ready.notify_all();
+        self.account.budget.notify_closed();
         if let Some(waker) = waker {
             waker.wake();
         }
@@ -596,14 +728,15 @@ impl UploadBodyChannel {
 
     fn finish(&self) -> bool {
         let mut state = self.state();
-        if state.closed {
+        if self.closed.load(Ordering::Acquire) {
             return false;
         }
         self.producer_completion.finish();
-        state.closed = true;
+        self.closed.store(true, Ordering::Release);
         let waker = state.receive_waker.take();
         drop(state);
         self.send_ready.notify_all();
+        self.account.budget.notify_closed();
         if let Some(waker) = waker {
             waker.wake();
         }
@@ -681,3 +814,6 @@ impl UploadBodyProducerCompletion {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod upload_budget_tests;

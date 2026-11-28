@@ -75,6 +75,7 @@ async def test_async_file_content_rejects_sync_source() -> None:
         await anext(aiter_file_content(file))
 
 
+@pytest.mark.usefixtures("cold_cleanup_owner")
 async def test_async_sync_file_content_uses_dedicated_iteration_and_cleanup_workers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -146,6 +147,25 @@ async def test_sync_iterator_runner_bounds_blocking_iterator_close(
 
     assert await asyncio.to_thread(iterator.close_finished.wait, 1.0)
     assert iterator.close_calls == 1
+
+
+async def test_cancelling_multipart_close_propagates_while_sync_iterator_finishes() -> None:
+    source = _OrderingSyncMultipartSource()
+    file = _single_file_payload(source, async_source=False, close_source=False).files[0]
+    stream = aiter_sync_file_content(file)
+    assert await anext(stream) == b"payload"
+
+    closing = asyncio.ensure_future(stream.aclose())
+    try:
+        assert await asyncio.to_thread(source.iterator.close_started.wait, 1.0)
+        assert closing.cancel("stop waiting for close")
+        with pytest.raises(asyncio.CancelledError, match="stop waiting for close"):
+            await closing
+        assert not source.iterator.close_finished.is_set()
+    finally:
+        source.iterator.close_release.set()
+    assert await asyncio.to_thread(source.iterator.close_finished.wait, 1.0)
+    assert not source.close_started.is_set()
 
 
 def test_file_content_propagates_distinct_iterator_cleanup_error() -> None:
@@ -782,6 +802,10 @@ def test_multipart_stream_factory_closes_product_after_classification_failure() 
 
     assert isinstance(result, UploadSourceFactoryFailure)
     assert result.error is source_error
+    assert isinstance(result.source, MultipartStream)
+    source.close.assert_not_called()
+    result.source.close()
+    result.source.close()
     source.close.assert_called_once_with()
 
 

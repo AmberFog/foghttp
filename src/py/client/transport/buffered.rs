@@ -1,6 +1,8 @@
 use super::client::TransportClients;
 use super::errors::{is_retryable_network_error, transport_error};
-use super::request::{acquire_request_slot, send_current_hop, RequestState, TransportRequest};
+use super::request::{
+    acquire_request_slot, send_current_hop, RequestState, ResponseDisposition, TransportRequest,
+};
 use super::response::{raw_response, ResponseLifecycleGuards};
 use super::retry::{retry_after_network_error, retry_after_response};
 use crate::core::headers::response_headers;
@@ -117,14 +119,8 @@ async fn send_request_attempts(
             ResponseLifecycleGuards::new(&response, connection_use, metrics, &origin_metrics);
         let headers = response_headers(response.headers());
         let status_code = response.status().as_u16();
-        let response_action = state.on_response_headers(status_code, &headers, redirect_hop)?;
-        let retry_decision = response_action
-            .is_none()
-            .then(|| state.retry_on_response(status_code, &headers))
-            .flatten();
-
-        if let Some(pending) = retry_decision {
-            if pending.should_retry() {
+        let redirect = match state.on_response_headers(status_code, &headers, redirect_hop)? {
+            ResponseDisposition::Retry(pending) => {
                 retry_after_response(
                     state,
                     &pending,
@@ -136,13 +132,19 @@ async fn send_request_attempts(
                 .await?;
                 continue;
             }
-            state.commit_retry_decision(
-                &pending,
-                started.elapsed(),
-                redirect_hop,
-                RetryAttemptCompletion::Pending,
-            );
-        }
+            ResponseDisposition::Redirect(action) => Some(action),
+            ResponseDisposition::Return(stopped) => {
+                if let Some(stopped) = stopped {
+                    state.commit_retry_decision(
+                        &stopped,
+                        started.elapsed(),
+                        redirect_hop,
+                        RetryAttemptCompletion::Pending,
+                    );
+                }
+                None
+            }
+        };
 
         let mut raw = raw_response(
             response,
@@ -154,7 +156,7 @@ async fn send_request_attempts(
         .await?;
         drop(permit);
 
-        let Some(action) = response_action else {
+        let Some(action) = redirect else {
             raw.history = std::mem::take(history);
             return Ok(raw);
         };

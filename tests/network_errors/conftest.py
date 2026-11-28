@@ -1,16 +1,16 @@
 from collections.abc import Callable, Iterator
-from socketserver import BaseRequestHandler, ThreadingTCPServer
-import threading
+from socketserver import BaseRequestHandler
 from urllib.parse import urlsplit
 
 import pytest
 
+from tests.support.sync_server import SyncTCPServer
+
 from .constants import MALFORMED_RESPONSE_PATH, MID_RESPONSE_CLOSE_PATH
 
 
-class BrokenHTTPServer(ThreadingTCPServer):
+class BrokenHTTPServer(SyncTCPServer):
     allow_reuse_address = True
-    daemon_threads = True
 
 
 class BrokenHTTPHandler(BaseRequestHandler):
@@ -43,15 +43,12 @@ def _request_path(request: bytes) -> str:
 @pytest.fixture
 def broken_http_server() -> Iterator[str]:
     server = BrokenHTTPServer(("127.0.0.1", 0), BrokenHTTPHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    thread = server.start()
     host, port = server.server_address
     try:
         yield f"http://{host}:{port}"
     finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=1)
+        server.stop(thread)
 
 
 @pytest.fixture

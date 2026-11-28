@@ -4,6 +4,7 @@ import foghttp
 from foghttp.status_codes.success import OK
 
 from .constants import SLOW_RESPONSE_PATH
+from .gates import SyncResponseGate
 from .helpers import wait_for_sync_stats
 
 
@@ -12,6 +13,7 @@ EXPECTED_ACQUIRE_ATTEMPTS_UNDER_PRESSURE = 2
 
 def test_dump_transport_state_reports_active_and_pending_pressure(
     sync_resource_http_server: str,
+    sync_resource_gate: SyncResponseGate,
 ) -> None:
     limits = foghttp.Limits(max_active_requests=1, max_pending_requests=1)
     timeouts = foghttp.Timeouts(pool=1.0, total=2.0)
@@ -24,13 +26,14 @@ def test_dump_transport_state_reports_active_and_pending_pressure(
             client.get,
             sync_resource_http_server + SLOW_RESPONSE_PATH,
         )
-        wait_for_sync_stats(client, lambda stats: stats.active_requests == 1)
+        with sync_resource_gate.hold():
+            wait_for_sync_stats(client, lambda stats: stats.active_requests == 1)
 
-        waiter = executor.submit(client.get, sync_resource_http_server)
-        wait_for_sync_stats(client, lambda stats: stats.pending_requests == 1)
+            waiter = executor.submit(client.get, sync_resource_http_server)
+            wait_for_sync_stats(client, lambda stats: stats.pending_requests == 1)
 
-        state = client.dump_transport_state()
-        origin_pressure = state["origins"][sync_resource_http_server]
+            state = client.dump_transport_state()
+            origin_pressure = state["origins"][sync_resource_http_server]
 
         blocker_response = blocker.result(timeout=1)
         waiter_response = waiter.result(timeout=1)

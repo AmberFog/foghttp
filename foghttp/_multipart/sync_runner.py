@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from concurrent.futures import Future as ConcurrentFuture
 from contextvars import Context, copy_context
 from queue import SimpleQueue
@@ -13,17 +13,38 @@ _ITER_DONE = object()
 
 
 class SyncIteratorRunner:
-    def __init__(self, iterator: Iterator[bytes]) -> None:
-        self._closed = False
+    def __init__(
+        self,
+        iterator: Iterator[bytes],
+        *,
+        close_wrapper: Callable[[], None] | None = None,
+    ) -> None:
         self._completion: ConcurrentFuture[None] = ConcurrentFuture()
         self._completion.set_running_or_notify_cancel()
+        reservation = upload_cleanup.reserve_cleanup(1)
+        self._close_iterator: Callable[[], None]
+        if close_wrapper is None:
+            cleanup = upload_cleanup.UploadSourceCleanup(iterator, reservation=reservation)
+            self._close_iterator = cleanup.close
+            reject_start: Callable[[], object] = cleanup.start_sync_cleanup
+        else:
+            self._close_iterator = close_wrapper
+            self._completion.add_done_callback(lambda _done: reservation.release())
+            # No next() request can reach a runner whose constructor failed.
+            reject_start = reservation.release
+        self._closed = False
         self._context: Context = copy_context()
         self._iterator = iterator
         self._lock = threading.Lock()
         self._requests: SimpleQueue[ConcurrentFuture[bytes | object] | None] = SimpleQueue()
         self._stop_requested = False
         self._worker_pending = 0
-        threading.Thread(target=self._run, daemon=True).start()
+        try:
+            threading.Thread(target=self._run, daemon=True).start()
+        except BaseException:
+            self._requests.put(None)
+            reject_start()
+            raise
 
     async def next(self) -> bytes | object:
         request: ConcurrentFuture[bytes | object] = ConcurrentFuture()
@@ -44,20 +65,20 @@ class SyncIteratorRunner:
             self._completion.add_done_callback(consume_future_exception)
         return pending
 
-    async def wait_closed_bounded(self) -> None:
+    async def wait_closed_bounded(self, *, raise_on_error: bool = True) -> None:
         completion = asyncio.wrap_future(self._completion)
         completion.add_done_callback(consume_future_exception)
         done, _pending = await asyncio.wait(
             (completion,),
             timeout=upload_cleanup.ASYNC_SOURCE_CLOSE_TIMEOUT,
         )
-        if completion in done:
+        if completion in done and raise_on_error:
             completion.result()
 
     def _run(self) -> None:
         try:
             self._consume_requests()
-            self._context.run(upload_cleanup.close_sync_source, self._iterator)
+            self._context.run(self._close_iterator)
         except BaseException as error:  # noqa: BLE001
             self._completion.set_exception(error)
         else:

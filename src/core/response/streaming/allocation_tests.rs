@@ -264,25 +264,40 @@ fn gzip_maximum_member_headers_fit_one_mib() {
     assert!(pipeline_peak < 1024 * 1024);
 }
 
+const RAW_INPUT_CHUNK: usize = 8192;
+
+fn raw_decoder_step_budget(input_len: usize, output_len: usize, output_chunk: usize) -> usize {
+    // Count input refills, output drains and a terminal call. Allow four times
+    // that many calls so internal transitions need not show immediate I/O.
+    4 * (input_len.div_ceil(RAW_INPUT_CHUNK) + output_len.div_ceil(output_chunk) + 1)
+}
+
 #[test]
 fn zlib_fixed_inflate_state_fits_one_mib() {
+    const PAYLOAD_LEN: usize = 2 * 1024 * 1024;
     let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), Compression::fast());
-    encoder.write_all(&vec![17; 2 * 1024 * 1024]).unwrap();
+    encoder.write_all(&vec![17; PAYLOAD_LEN]).unwrap();
     let input = encoder.finish().unwrap();
     let mut output = vec![0; 65536];
+    let step_budget = raw_decoder_step_budget(input.len(), PAYLOAD_LEN, output.len());
     let peak = measure(|| {
         let mut decoder = Decompress::new(true);
-        loop {
+        for _ in 0..step_budget {
             let start = usize::try_from(decoder.total_in()).unwrap();
-            let end = (start + 8192).min(input.len());
+            let end = (start + RAW_INPUT_CHUNK).min(input.len());
             let status = decoder
                 .decompress(&input[start..end], &mut output, FlushDecompress::None)
                 .unwrap();
             if status == Status::StreamEnd {
-                break;
+                assert_eq!(decoder.total_out(), PAYLOAD_LEN as u64);
+                return;
             }
         }
-        assert_eq!(decoder.total_out(), 2 * 1024 * 1024);
+        panic!(
+            "zlib did not finish in {step_budget} steps: consumed {}, produced {}",
+            decoder.total_in(),
+            decoder.total_out()
+        );
     });
     eprintln!("zlib fixed state: peak {peak} bytes");
     assert!(peak + 65536 < 1024 * 1024);
@@ -297,6 +312,7 @@ fn brotli_maximum_standard_window_fits_32_mib() {
     }
     let input = encoder.into_inner();
     let mut output = vec![0; 65536];
+    let step_budget = raw_decoder_step_budget(input.len(), 17 * block.len(), output.len());
     let peak = measure(|| {
         let mut state = BrotliState::new_strict(
             HeapAlloc::default(),
@@ -305,8 +321,8 @@ fn brotli_maximum_standard_window_fits_32_mib() {
         );
         let mut consumed = 0;
         let mut total_out = 0;
-        loop {
-            let end = (consumed + 8192).min(input.len());
+        for _ in 0..step_budget {
+            let end = (consumed + RAW_INPUT_CHUNK).min(input.len());
             let chunk = &input[consumed..end];
             let mut available_in = chunk.len();
             let mut input_offset = 0;
@@ -324,15 +340,18 @@ fn brotli_maximum_standard_window_fits_32_mib() {
             );
             consumed += input_offset;
             match result {
-                BrotliResult::ResultSuccess => break,
+                BrotliResult::ResultSuccess => {
+                    assert_eq!(state.window_bits, 24);
+                    assert_eq!(state.ringbuffer_size, 1 << 24);
+                    assert_eq!(total_out, 17 * 1024 * 1024);
+                    return;
+                }
                 BrotliResult::ResultFailure => panic!("valid standard Brotli rejected"),
                 BrotliResult::NeedsMoreInput => assert!(consumed < input.len()),
                 BrotliResult::NeedsMoreOutput => {}
             }
         }
-        assert_eq!(state.window_bits, 24);
-        assert_eq!(state.ringbuffer_size, 1 << 24);
-        assert_eq!(total_out, 17 * 1024 * 1024);
+        panic!("Brotli did not finish in {step_budget} steps: consumed {consumed}, produced {total_out}");
     });
     eprintln!("brotli standard window 24: peak {peak} bytes");
     assert!(peak > 16 * 1024 * 1024);

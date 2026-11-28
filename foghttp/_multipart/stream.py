@@ -1,16 +1,11 @@
 import asyncio
-from collections.abc import AsyncIterator, Callable, Iterator
-from contextlib import aclosing, suppress
-from dataclasses import replace
-from inspect import isawaitable
-from typing import cast
+from collections.abc import AsyncIterator, Iterator
+from concurrent.futures import Future
+from contextlib import aclosing
 
-from .._upload_body import (
-    cleanup as upload_cleanup,
-    file_source as upload_file_source,
-    predicates as upload_predicates,
-)
-from ..messages import MULTIPART_FILES_UNSUPPORTED
+from .._upload_body import cleanup as upload_cleanup
+from .._upload_body.cleanup_group import CleanupGroup, GroupedUploadSource
+from .._upload_body.cleanup_start import collect_worker_interrupts, defer_worker_interrupts
 from . import (
     iterators as multipart_iterators,
     models as multipart_models,
@@ -18,13 +13,47 @@ from . import (
 from .cleanup import MultipartFileCleanup
 from .constants import CRLF
 from .encoding import closing_boundary, file_header
+from .factory import fresh_payload
 
 
-class MultipartStream:
-    def __init__(self, payload: multipart_models.MultipartPayload) -> None:
+class _MultipartCleanupGroup(GroupedUploadSource):
+    async_parts = False
+
+    def __init__(
+        self,
+        payload: multipart_models.MultipartPayload,
+        *,
+        cleanups: tuple[MultipartFileCleanup, ...] | None = None,
+    ) -> None:
         self._payload = payload
-        self._cleanups = tuple(MultipartFileCleanup(file) for file in payload.files)
+        self.needs_request_loop = self.async_parts or any(file.async_source is None for file in payload.files)
+        if cleanups is None:
+            cleanups = tuple(MultipartFileCleanup(file) for file in payload.files)
+        self._cleanups = cleanups
 
+    def start_parts(self, *, on_loop: bool) -> CleanupGroup:
+        with collect_worker_interrupts() as interrupts:
+            owners = self._start_part_owners(on_loop=on_loop)
+            start_error = next(iter(interrupts), None)
+        parts = [owner.completion for owner in owners]
+        if start_error is not None:
+            startup: Future[None] = Future()
+            startup.set_exception(start_error)
+            parts.insert(0, startup)
+        return CleanupGroup(tuple(parts))
+
+    @defer_worker_interrupts()
+    def _start_part_owners(self, *, on_loop: bool) -> tuple[upload_cleanup.UploadSourceCleanup, ...]:
+        owners = []
+        for file, cleanup in zip(self._payload.files, self._cleanups, strict=True):
+            prefer_async = on_loop if file.async_source is None else self.async_parts
+            owner = cleanup.start_part(on_loop=on_loop and prefer_async, prefer_async=prefer_async)
+            if owner is not None:
+                owners.append(owner)
+        return tuple(owners)
+
+
+class MultipartStream(_MultipartCleanupGroup):
     def __iter__(self) -> Iterator[bytes]:
         yield from multipart_iterators.iter_fields(self._payload.boundary, self._payload.fields)
         for file, cleanup in zip(self._payload.files, self._cleanups, strict=True):
@@ -45,23 +74,14 @@ class MultipartStream:
             raise first_error
 
 
-class AsyncMultipartStream:
-    def __init__(self, payload: multipart_models.MultipartPayload) -> None:
-        self._payload = payload
-        self._cleanups = tuple(MultipartFileCleanup(file) for file in payload.files)
+class AsyncMultipartStream(_MultipartCleanupGroup):
+    async_parts = True
 
     def __aiter__(self) -> AsyncIterator[bytes]:
         return self._iterate()
 
     async def aclose(self) -> None:
-        tasks = tuple(
-            task
-            for task in map(
-                MultipartFileCleanup.start_async_cleanup,
-                self._cleanups,
-            )
-            if task is not None
-        )
+        tasks = tuple(owner.waiters.future() for owner in self._start_part_owners(on_loop=True))
         if not tasks:
             return
         done, _pending = await asyncio.wait(
@@ -100,8 +120,12 @@ class MultipartStreamFactory:
     def __call__(
         self,
     ) -> MultipartStream | AsyncMultipartStream | upload_cleanup.UploadSourceFactoryFailure:
-        payload, source_error = _fresh_payload(self._payload)
-        stream = AsyncMultipartStream(payload) if payload.async_source else MultipartStream(payload)
+        payload, cleanups, source_error = fresh_payload(self._payload)
+        stream = (
+            AsyncMultipartStream(payload, cleanups=cleanups)
+            if payload.async_source
+            else MultipartStream(payload, cleanups=cleanups)
+        )
         if source_error is not None:
             return upload_cleanup.UploadSourceFactoryFailure(stream, source_error)
         return stream
@@ -112,8 +136,8 @@ def multipart_buffer(payload: multipart_models.MultipartPayload) -> bytes:
 
 
 def _first_cleanup_error(
-    tasks: tuple[asyncio.Task[None], ...],
-    done: set[asyncio.Task[None]],
+    tasks: tuple[asyncio.Future[None], ...],
+    done: set[asyncio.Future[None]],
 ) -> BaseException | None:
     cleanup_error: BaseException | None = None
     for task in tasks:
@@ -125,39 +149,3 @@ def _first_cleanup_error(
             if cleanup_error is None:
                 cleanup_error = error
     return cleanup_error
-
-
-def _fresh_payload(
-    payload: multipart_models.MultipartPayload,
-) -> tuple[multipart_models.MultipartPayload, BaseException | None]:
-    files: list[multipart_models.MultipartFile] = []
-    try:
-        files.extend(_fresh_file(file) for file in payload.files)
-    except BaseException as exc:  # noqa: BLE001
-        return replace(payload, files=tuple(files)), exc
-    return replace(payload, files=tuple(files)), None
-
-
-def _fresh_file(file: multipart_models.MultipartFile) -> multipart_models.MultipartFile:
-    if not file.source_factory:
-        return file
-    source_factory = cast("Callable[[], object]", file.content)
-    content = source_factory()
-    if isawaitable(content):
-        upload_cleanup.close_sync_source(content)
-        raise TypeError(MULTIPART_FILES_UNSUPPORTED)
-    try:
-        if upload_predicates.is_binary_file(content):
-            content = upload_file_source.FileUploadSource(content)
-        async_source = upload_predicates.is_async_stream(content)
-    except BaseException:
-        with suppress(BaseException):
-            upload_cleanup.close_sync_source(content)
-        raise
-    return replace(
-        file,
-        content=content,
-        async_source=async_source,
-        source_factory=False,
-        close_source=True,
-    )

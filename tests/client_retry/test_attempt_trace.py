@@ -1,6 +1,7 @@
+import asyncio
 from dataclasses import FrozenInstanceError
 import sys
-from urllib.parse import urlencode
+from typing import TYPE_CHECKING
 
 from faker import Faker
 import pytest
@@ -9,17 +10,34 @@ import foghttp
 from foghttp.status_codes.redirect import TEMPORARY_REDIRECT
 from foghttp.status_codes.server_error import SERVICE_UNAVAILABLE
 from foghttp.status_codes.success import OK
+from tests.client_policy_hooks.requests import send_sync_request
+from tests.client_streaming.constants import STREAM_READ_TIMEOUT
+from tests.client_streaming.stream_readers import collect_stream_chunks, extend_stream_bytes
 from tests.client_telemetry.models import RecordingTelemetrySink
+from tests.redirect_helpers import redirect_to_location_url
 
 from .assertions import require_retry_trace, single_retry_event
 from .constants import (
     ALWAYS_CLOSE_PATH,
     ALWAYS_STATUS_PATH,
     EXPECTED_ATTEMPTS,
+    INCOMPLETE_RETRYABLE_RESPONSE_PATH,
     STATUS_THEN_OK_PATH,
 )
 from .server import RetryTestServer
 from .sources import sync_chunks
+
+
+if TYPE_CHECKING:
+    from foghttp.types import ResponseProtocol
+
+
+REDIRECT_RETRY_POLICY = foghttp.RetryPolicy(
+    retries=1,
+    backoff=0,
+    jitter=0,
+    retry_on=foghttp.RetryConditions(statuses=(TEMPORARY_REDIRECT, SERVICE_UNAVAILABLE)),
+)
 
 
 class RetryTracePropertyTrap:
@@ -113,6 +131,31 @@ def test_request_slot_rejection_records_pre_send_execution_attempt(
     assert attempt.decision_elapsed is None
     assert attempt.completed_elapsed == trace.elapsed
     assert retry_server.snapshot().requests == ()
+
+
+@pytest.mark.parametrize("streaming", [False, True], ids=("buffered", "streaming"))
+def test_response_hook_error_precedes_status_retry(retry_server: RetryTestServer, *, streaming: bool) -> None:
+    error = foghttp.RequestError("retryable response rejected")
+
+    def reject_unavailable(response: foghttp.TransportPolicyResponse) -> None:
+        if response.status_code == SERVICE_UNAVAILABLE:
+            raise error
+
+    hooks = foghttp.TransportPolicyHooks(on_response_headers=reject_unavailable)
+    policy = foghttp.RetryPolicy(retries=1, backoff=0, jitter=0)
+    with (
+        foghttp.Client(retry=policy, policy_hooks=hooks) as client,
+        pytest.raises(foghttp.RequestError) as exc_info,
+    ):
+        send_sync_request(client, retry_server.url + STATUS_THEN_OK_PATH, streaming=streaming)
+
+    assert exc_info.value is error
+    attempts = require_retry_trace(error).attempts
+    assert len(attempts) == 1
+    attempt = attempts[0]
+    assert attempt.status_code == SERVICE_UNAVAILABLE
+    assert attempt.decision is None
+    assert len(retry_server.snapshot().requests_for(STATUS_THEN_OK_PATH)) == 1
 
 
 def test_trace_attachment_failure_preserves_terminal_request_error(
@@ -326,6 +369,35 @@ def test_sync_terminal_status_attempt_preserves_later_body_error(
     assert retry_event.elapsed_ns == round(attempt.decision_elapsed * 1_000_000_000)
 
 
+async def test_async_stream_terminal_status_attempt_completes_before_body_failure(
+    retry_server: RetryTestServer,
+) -> None:
+    policy = foghttp.RetryPolicy(retries=0, backoff=0, jitter=0)
+
+    async with (
+        foghttp.AsyncClient(retry=policy) as client,
+        client.stream("GET", retry_server.url + INCOMPLETE_RETRYABLE_RESPONSE_PATH) as response,
+    ):
+        trace = require_retry_trace(response)
+        assert trace.outcome == foghttp.RetryTraceOutcome.RESPONSE
+        assert trace.status_code == response.status_code == SERVICE_UNAVAILABLE
+        assert len(trace.attempts) == 1
+        attempt = trace.attempts[0]
+        assert attempt.status_code == SERVICE_UNAVAILABLE
+        assert attempt.error_type is None
+        assert attempt.decision == foghttp.TelemetryRetryDecision.STOP
+        assert attempt.reason == foghttp.TelemetryRetryReason.RETRIES_EXHAUSTED
+        assert attempt.decision_elapsed == attempt.completed_elapsed
+        body = bytearray()
+        with pytest.raises(foghttp.RequestError) as exc_info:
+            await asyncio.wait_for(extend_stream_bytes(response.aiter_bytes(), body), timeout=STREAM_READ_TIMEOUT)
+        assert exc_info.type is foghttp.RequestError
+        assert body == b"incomplete"
+        assert response.retry_trace is trace
+
+    assert len(retry_server.snapshot().requests_for(INCOMPLETE_RETRYABLE_RESPONSE_PATH)) == 1
+
+
 def test_http_status_error_does_not_inspect_arbitrary_response_properties() -> None:
     response = RetryTracePropertyTrap()
 
@@ -384,25 +456,86 @@ def test_sync_network_exhaustion_trace_is_available_on_public_error(
     assert trace.attempts[0].reason == foghttp.TelemetryRetryReason.NETWORK_ERROR
 
 
-def test_sync_retry_trace_records_redirect_hop(
-    sync_http_server: str,
+@pytest.fixture
+def retryable_redirect_url(sync_http_server: str, retry_server: RetryTestServer) -> str:
+    return redirect_to_location_url(
+        sync_http_server,
+        status_code=TEMPORARY_REDIRECT,
+        location=retry_server.url + STATUS_THEN_OK_PATH,
+    )
+
+
+@pytest.mark.parametrize("streaming", [False, True], ids=("buffered", "streaming"))
+def test_redirect_limit_precedes_matching_status_retry(
+    retryable_redirect_url: str,
     retry_server: RetryTestServer,
+    *,
+    streaming: bool,
 ) -> None:
-    policy = foghttp.RetryPolicy(retries=1, backoff=0, jitter=0)
-    target = retry_server.url + STATUS_THEN_OK_PATH
-    query = urlencode({"status": TEMPORARY_REDIRECT, "location": target})
+    with foghttp.Client(follow_redirects=True, max_redirects=0, retry=REDIRECT_RETRY_POLICY) as client:
+        with pytest.raises(foghttp.RequestError, match="redirect limit exceeded") as exc_info:
+            send_sync_request(client, retryable_redirect_url, streaming=streaming)
+        assert client.stats().pool_acquire_attempts == 1
 
-    with foghttp.Client(follow_redirects=True, retry=policy) as client:
-        response = client.get(f"{sync_http_server}/redirect-to-location?{query}")
+    attempts = require_retry_trace(exc_info.value).attempts
+    assert len(attempts) == 1
+    attempt = attempts[0]
+    assert attempt.status_code == TEMPORARY_REDIRECT
+    assert attempt.redirect_hop == 0
+    assert attempt.decision is None
+    assert retry_server.snapshot().requests == ()
 
+
+def _assert_redirect_retry(response: "ResponseProtocol", retry_server: RetryTestServer) -> None:
     trace = require_retry_trace(response)
     assert response.status_code == OK
-    assert len(response.history) == 1
+    assert response.url == retry_server.url + STATUS_THEN_OK_PATH
+    assert tuple(item.status_code for item in response.history) == (TEMPORARY_REDIRECT,)
+    assert len(retry_server.snapshot().requests_for(STATUS_THEN_OK_PATH)) == EXPECTED_ATTEMPTS
+    assert trace.outcome == foghttp.RetryTraceOutcome.RESPONSE
+    assert trace.status_code == OK
     assert tuple(attempt.redirect_hop for attempt in trace.attempts) == (1, 1)
-    assert tuple(attempt.origin for attempt in trace.attempts) == (
-        retry_server.url,
-        retry_server.url,
+    assert tuple(attempt.origin for attempt in trace.attempts) == (retry_server.url, retry_server.url)
+    assert tuple((attempt.status_code, attempt.decision, attempt.reason) for attempt in trace.attempts) == (
+        (SERVICE_UNAVAILABLE, foghttp.TelemetryRetryDecision.RETRY, foghttp.TelemetryRetryReason.STATUS),
+        (OK, None, None),
     )
+
+
+@pytest.mark.parametrize("streaming", [False, True], ids=("buffered", "streaming"))
+def test_sync_retry_trace_records_redirect_hop(
+    retryable_redirect_url: str,
+    retry_server: RetryTestServer,
+    *,
+    streaming: bool,
+) -> None:
+    with foghttp.Client(follow_redirects=True, retry=REDIRECT_RETRY_POLICY) as client:
+        if streaming:
+            with client.stream("GET", retryable_redirect_url) as response:
+                _assert_redirect_retry(response, retry_server)
+                assert b"".join(response.iter_bytes()) == b"ok"
+        else:
+            buffered = client.get(retryable_redirect_url)
+            _assert_redirect_retry(buffered, retry_server)
+            assert buffered.content == b"ok"
+
+
+@pytest.mark.parametrize("streaming", [False, True], ids=("buffered", "streaming"))
+async def test_async_retry_trace_records_redirect_hop(
+    retryable_redirect_url: str,
+    retry_server: RetryTestServer,
+    *,
+    streaming: bool,
+) -> None:
+    async with foghttp.AsyncClient(follow_redirects=True, retry=REDIRECT_RETRY_POLICY) as client:
+        if streaming:
+            async with client.stream("GET", retryable_redirect_url) as response:
+                _assert_redirect_retry(response, retry_server)
+                assert b"".join(await collect_stream_chunks(response.aiter_bytes())) == b"ok"
+        else:
+            buffered = await client.get(retryable_redirect_url)
+            _assert_redirect_retry(buffered, retry_server)
+            assert buffered.content == b"ok"
 
 
 def test_sync_stream_exposes_retry_trace_after_headers(

@@ -86,17 +86,24 @@ async with client.stream(GET, url) as response:
         process(chunk)
 ```
 
-Text streaming uses an incremental decoder, so multibyte characters can span
-byte chunk boundaries. By default it uses a valid `charset` from
-`Content-Type`; otherwise it falls back to `utf-8`. Streaming text does not
-inspect a body BOM because the body is consumed incrementally. Override the
-decoder when needed:
+Text and line streaming yield `str` using an incremental decoder, so multibyte
+characters can span byte chunk boundaries. By default they use a Python text
+encoding named by the `Content-Type` charset. Missing, malformed, unknown, or
+non-text charsets such as `hex_codec`, `base64_codec`, and `zlib_codec` fall back
+to `utf-8`. Streaming text does not inspect a body BOM because the body is
+consumed incrementally. Charset selection does not affect raw byte iteration.
+Override the decoder when needed:
 
 ```python
 with client.stream(GET, url) as response:
     for text in response.iter_text(encoding="utf-8", errors="replace"):
         process_text(text)
 ```
+
+An explicit unknown or non-text `encoding=` raises `LookupError` on the first
+`next()` or `anext()` of a text or line iterator. Decoder setup stays lazy: the
+iterator fails before consuming any body chunks and closes the response. The
+`errors=` option continues to control decoding errors for valid text encodings.
 
 By default, all iterators consume content-encoded bytes after HTTP transfer
 framing. Pass `decode_content=True` to `stream()` to incrementally decompress
@@ -115,6 +122,16 @@ async with client.stream(GET, url) as response:
     async for line in response.aiter_lines(max_line_chars=256 * 1024):
         process_line(line)
 ```
+
+If decoding, decoder setup, or a line limit fails, text and line iterators close
+the response and their underlying iterators before propagating the original
+exception. A secondary telemetry sink failure during that cleanup does not
+replace it. Ordinary completion and explicit close still follow
+`TelemetryConfig.on_hook_error`.
+
+At byte EOF, completion telemetry runs before the text decoder is finalized.
+A hook error raised at that point can therefore precede a decoding error for
+an incomplete final character.
 
 Clean content EOF marks the response body as completed. Leaving the context before EOF,
 cancelling a body read, a body transport error, or a response-body read timeout

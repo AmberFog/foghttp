@@ -81,7 +81,7 @@ def test_binary_file_contract_accepts_stdlib_file_objects(tmp_path: Path) -> Non
     assert_type(memory_file, BinaryFile)
 
 
-def test_sync_multipart_file_aliases_accept_sync_sources() -> None:
+def check_sync_multipart_file_aliases_accept_sync_sources() -> None:
     file_obj: BinaryFile = BytesIO(b"payload")
     file_content: SyncMultipartFileContent = file_obj
     file_tuple: SyncMultipartFileTuple = (
@@ -90,14 +90,10 @@ def test_sync_multipart_file_aliases_accept_sync_sources() -> None:
         "application/octet-stream",
     )
     file_mapping = {"file": file_tuple, "stream": sync_chunks}
-    files: SyncMultipartFiles = file_mapping
-
-    assert files == file_mapping
-    assert file_mapping["file"] == file_tuple
-    assert file_mapping["stream"] is sync_chunks
+    _files: SyncMultipartFiles = file_mapping
 
 
-def test_async_multipart_file_aliases_accept_async_sources() -> None:
+def check_async_multipart_file_aliases_accept_async_sources() -> None:
     file_content: AsyncMultipartFileContent = async_chunks
     file_tuple: AsyncMultipartFileTuple = (
         "payload.bin",
@@ -105,27 +101,19 @@ def test_async_multipart_file_aliases_accept_async_sources() -> None:
         "application/octet-stream",
     )
     file_pairs = (("file", file_tuple),)
-    files: AsyncMultipartFiles = file_pairs
-
-    assert files == file_pairs
-    assert file_pairs[0][1] == file_tuple
+    _files: AsyncMultipartFiles = file_pairs
 
 
-def test_async_multipart_file_aliases_accept_sync_sources() -> None:
+def check_async_multipart_file_aliases_accept_sync_sources() -> None:
     file_content: AsyncMultipartFileContent = sync_chunks
     file_mapping = {"file": ("payload.bin", file_content)}
-    files: AsyncMultipartFiles = file_mapping
-
-    assert files == file_mapping
+    _files: AsyncMultipartFiles = file_mapping
 
 
-def test_stream_contract_rejects_text_and_raw_buffers() -> None:
-    text_stream: SyncByteStream = "payload"  # type: ignore[assignment]
-    bytes_stream: SyncByteStream = b"payload"  # type: ignore[assignment]
-    bytearray_stream: SyncByteStream = bytearray(b"payload")  # type: ignore[assignment]
-
-    assert text_stream != bytes_stream
-    assert bytearray_stream
+def check_stream_contract_rejects_text_and_raw_buffers() -> None:
+    _text_stream: SyncByteStream = "payload"  # type: ignore[assignment]
+    _bytes_stream: SyncByteStream = b"payload"  # type: ignore[assignment]
+    _bytearray_stream: SyncByteStream = bytearray(b"payload")  # type: ignore[assignment]
 
 
 def test_upload_types_are_public_reexports() -> None:

@@ -4,7 +4,7 @@ __all__ = (
 )
 
 from dataclasses import dataclass
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import threading
 from types import MappingProxyType
 from typing import Self, TypeAlias
@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 
 from foghttp.status_codes.client_error import NOT_FOUND
 from foghttp.status_codes.success import OK, RESET_CONTENT
+from tests.support.sync_server import SyncHTTPServer
 
 from .constants import (
     BODY_CONTENT_TYPE,
@@ -33,13 +34,12 @@ from .payloads import compressed_body, gzip_body, multiple_encoding_fields_body
 
 
 SERVER_HOST = "127.0.0.1"
-SERVER_JOIN_TIMEOUT = 1.0
 ContentEncodingHeader: TypeAlias = str | tuple[str, ...]
 
 
 @dataclass(slots=True)
 class ResponseDecompressionServer:
-    server: ThreadingHTTPServer
+    server: SyncHTTPServer
     thread: threading.Thread
 
     @property
@@ -48,9 +48,7 @@ class ResponseDecompressionServer:
         return f"http://{host}:{port}"
 
     def close(self) -> None:
-        self.server.shutdown()
-        self.server.server_close()
-        self.thread.join(timeout=SERVER_JOIN_TIMEOUT)
+        self.server.stop(self.thread)
 
     def __enter__(self) -> Self:
         return self
@@ -60,10 +58,8 @@ class ResponseDecompressionServer:
 
 
 def start_response_decompression_server() -> ResponseDecompressionServer:
-    server = ThreadingHTTPServer((SERVER_HOST, 0), ResponseDecompressionHandler)
-    server.daemon_threads = True
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    server = SyncHTTPServer((SERVER_HOST, 0), ResponseDecompressionHandler)
+    thread = server.start()
     return ResponseDecompressionServer(server=server, thread=thread)
 
 

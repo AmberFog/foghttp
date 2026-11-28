@@ -9,7 +9,7 @@ import asyncio
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager, suppress
 from dataclasses import dataclass
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import sys
 import threading
 import time
@@ -17,6 +17,8 @@ from typing import Protocol
 from urllib.parse import urlsplit
 
 from foghttp.status_codes.success import OK
+from tests.support.async_server import serve_tcp
+from tests.support.sync_server import SyncHTTPServer
 
 from .constants import (
     BROKEN_READY_TAIL_STREAM_PATH,
@@ -54,7 +56,7 @@ class SyncStreamWriter(Protocol):
     def flush(self) -> None: ...
 
 
-class SyncStreamingHTTPServer(ThreadingHTTPServer):
+class SyncStreamingHTTPServer(SyncHTTPServer):
     def handle_error(self, request: object, client_address: object) -> None:
         error_type, _error_value, _traceback = sys.exc_info()
         if error_type is not None and issubclass(error_type, OSError):
@@ -63,7 +65,11 @@ class SyncStreamingHTTPServer(ThreadingHTTPServer):
 
 
 @asynccontextmanager
-async def start_async_streaming_server() -> AsyncIterator[AsyncStreamingServer]:
+async def start_async_streaming_server(
+    *,
+    content_type: str = "text/plain; charset=utf-8",
+    chunks: tuple[bytes, ...] = TEXT_LINES_STREAM_CHUNKS,
+) -> AsyncIterator[AsyncStreamingServer]:
     first_chunk_sent = asyncio.Event()
     release_tail = asyncio.Event()
 
@@ -78,29 +84,29 @@ async def start_async_streaming_server() -> AsyncIterator[AsyncStreamingServer]:
                 writer=writer,
                 first_chunk_sent=first_chunk_sent,
                 release_tail=release_tail,
+                content_type=content_type,
+                chunks=chunks,
             )
         except (asyncio.IncompleteReadError, OSError):
             return
-        finally:
-            writer.close()
-            with suppress(asyncio.CancelledError, OSError):
-                await writer.wait_closed()
 
-    server = await asyncio.start_server(handle, "127.0.0.1", 0)
-    host, port = server.sockets[0].getsockname()
-    try:
-        yield AsyncStreamingServer(
-            base_url=f"http://{host}:{port}",
-            first_chunk_sent=first_chunk_sent,
-            release_tail=release_tail,
-        )
-    finally:
-        server.close()
-        await server.wait_closed()
+    async with serve_tcp(handle) as port:
+        try:
+            yield AsyncStreamingServer(
+                base_url=f"http://127.0.0.1:{port}",
+                first_chunk_sent=first_chunk_sent,
+                release_tail=release_tail,
+            )
+        finally:
+            release_tail.set()
 
 
 @contextmanager
-def start_sync_streaming_server() -> Iterator[SyncStreamingServer]:
+def start_sync_streaming_server(
+    *,
+    content_type: str = "text/plain; charset=utf-8",
+    chunks: tuple[bytes, ...] = TEXT_LINES_STREAM_CHUNKS,
+) -> Iterator[SyncStreamingServer]:
     first_chunk_sent = threading.Event()
     release_tail = threading.Event()
 
@@ -115,14 +121,15 @@ def start_sync_streaming_server() -> Iterator[SyncStreamingServer]:
                     writer=self.wfile,
                     first_chunk_sent=first_chunk_sent,
                     release_tail=release_tail,
+                    content_type=content_type,
+                    chunks=chunks,
                 )
 
         def log_message(self, _format: str, *_args: object) -> None:
             return
 
     server = SyncStreamingHTTPServer(("127.0.0.1", 0), SyncStreamingHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    thread = server.start()
     host, port = server.server_address
     try:
         yield SyncStreamingServer(
@@ -132,9 +139,7 @@ def start_sync_streaming_server() -> Iterator[SyncStreamingServer]:
         )
     finally:
         release_tail.set()
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=1)
+        server.stop(thread)
 
 
 async def _write_stream_response(
@@ -143,6 +148,8 @@ async def _write_stream_response(
     writer: asyncio.StreamWriter,
     first_chunk_sent: asyncio.Event,
     release_tail: asyncio.Event,
+    content_type: str,
+    chunks: tuple[bytes, ...],
 ) -> None:
     if path == GATED_STREAM_PATH:
         await _write_gated_stream(
@@ -158,7 +165,7 @@ async def _write_stream_response(
         await _write_broken_ready_tail_stream(writer=writer, first_chunk_sent=first_chunk_sent)
         return
     if path == TEXT_LINES_STREAM_PATH:
-        await _write_chunked_stream(writer=writer, chunks=TEXT_LINES_STREAM_CHUNKS)
+        await _write_chunked_stream(writer=writer, chunks=chunks, content_type=content_type)
         return
     if path == LATIN1_TEXT_STREAM_PATH:
         await _write_chunked_stream(
@@ -182,6 +189,8 @@ def _write_sync_stream_response(
     writer: SyncStreamWriter,
     first_chunk_sent: threading.Event,
     release_tail: threading.Event,
+    content_type: str,
+    chunks: tuple[bytes, ...],
 ) -> None:
     if path == GATED_STREAM_PATH:
         _write_sync_gated_stream(
@@ -197,7 +206,7 @@ def _write_sync_stream_response(
         _write_sync_broken_ready_tail_stream(writer=writer, first_chunk_sent=first_chunk_sent)
         return
     if path == TEXT_LINES_STREAM_PATH:
-        _write_sync_chunked_stream(writer=writer, chunks=TEXT_LINES_STREAM_CHUNKS)
+        _write_sync_chunked_stream(writer=writer, chunks=chunks, content_type=content_type)
         return
     if path == LATIN1_TEXT_STREAM_PATH:
         _write_sync_chunked_stream(

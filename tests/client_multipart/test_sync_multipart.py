@@ -1,3 +1,4 @@
+import threading
 import time
 from typing import Any, cast
 
@@ -24,6 +25,8 @@ from tests.client_multipart.sources import (
 )
 from tests.redirect_helpers import SECURITY_HEADERS_PATH
 from tests.support.transport_stats import wait_for_sync_transport_stats
+from tests.upload_cleanup.constants import COMPLETION_WATCHDOG
+from tests.upload_cleanup.sources import SyncCloseGate
 
 
 EXPECTED_REPLAY_FACTORY_CALLS = 2
@@ -69,8 +72,8 @@ def test_sync_client_streams_file_multipart_without_closing_external_file(sync_h
         )
 
     payload = response.json()
-    assert payload["headers"]["content-length"]
-    assert payload["headers"]["transfer-encoding"] == []
+    assert payload["headers"]["content-length"] == []
+    assert payload["headers"]["transfer-encoding"] == ["chunked"]
     assert file_obj.closed is False
     assert_multipart_parts(
         multipart_parts_from_payload(payload),
@@ -317,6 +320,57 @@ def test_sync_multipart_factory_returning_unsupported_source_fails_cleanly(sync_
             lambda stats: stats.active_requests == 0 and stats.pending_requests == 0,
             message="multipart factory failure did not release request slot",
         )
+
+
+@pytest.mark.parametrize("interrupt", [True, False], ids=["interrupted", "timed-out"])
+def test_sync_multipart_classification_failure_waits_once_for_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+    sync_http_server: str,
+    *,
+    interrupt: bool,
+) -> None:
+    armed = False
+    waits = 0
+    caller = threading.current_thread()
+    original_wait = threading.Condition.wait
+    interruption = KeyboardInterrupt()
+    classification_error = ValueError("multipart source classification failed")
+
+    class Source(SyncCloseGate):
+        @property
+        def read(self) -> bytes:
+            nonlocal armed
+            armed = True
+            raise classification_error
+
+    source = Source()
+
+    def finish_wait(condition: threading.Condition, timeout: float | None = None) -> bool:
+        nonlocal armed, waits
+        # Worker startup also waits on this thread, without a timeout.
+        if not armed or timeout is None or timeout <= 0 or threading.current_thread() is not caller:
+            return original_wait(condition, timeout)
+        armed = False
+        assert source.entered.wait(COMPLETION_WATCHDOG)
+        armed = True
+        waits += 1
+        if interrupt and waits == 1:
+            raise interruption
+        return False  # The bounded cleanup wait expired with the callback still blocked.
+
+    expected = interruption if interrupt else classification_error
+    try:
+        with foghttp.Client() as client, monkeypatch.context() as patch:
+            patch.setattr(threading.Condition, "wait", finish_wait)
+            with pytest.raises(type(expected)) as caught:
+                client.post(sync_http_server, files=cast("Any", {"file": ("invalid.bin", lambda: source)}))
+        assert caught.value is expected
+        assert waits == 1
+        assert not source.finished.is_set()
+    finally:
+        source.release.set()
+        assert source.finished.wait(COMPLETION_WATCHDOG)
+    assert source.calls == 1
 
 
 def test_sync_multipart_closes_sources_when_later_factory_fails(sync_http_server: str) -> None:

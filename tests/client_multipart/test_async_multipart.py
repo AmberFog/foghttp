@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import AsyncIterator
 import time
 from typing import Any, cast
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -22,6 +23,7 @@ from tests.client_multipart.sources import (
     BlockingSyncChunks,
     CallableAsyncChunks,
     ClosingBytesFile,
+    SyncChunks,
     TrackedFactory,
 )
 from tests.redirect_helpers import SECURITY_HEADERS_PATH
@@ -229,18 +231,22 @@ async def test_async_multipart_cancellation_closes_sync_source(http_server: str)
 
         await asyncio.wait_for(source_created.wait(), timeout=2.0)
         source = sources[0]
-        assert await asyncio.to_thread(source.started.wait, 2.0)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await asyncio.wait_for(task, timeout=CANCELLATION_TIMEOUT)
+        try:
+            assert await asyncio.to_thread(source.started.wait, 2.0)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(task, timeout=CANCELLATION_TIMEOUT)
 
-        assert source.close_calls == 1
-        assert await asyncio.to_thread(source.finished.wait, 2.0)
-        await wait_for_async_transport_stats(
-            client,
-            lambda stats: stats.active_requests == 0 and stats.pending_requests == 0,
-            message="multipart upload cancellation did not release request slot",
-        )
+            assert await asyncio.to_thread(source.close_finished.wait, CANCELLATION_TIMEOUT)
+            assert source.close_calls == 1
+            assert await asyncio.to_thread(source.finished.wait, 2.0)
+            await wait_for_async_transport_stats(
+                client,
+                lambda stats: stats.active_requests == 0 and stats.pending_requests == 0,
+                message="multipart upload cancellation did not release request slot",
+            )
+        finally:
+            source.release.set()
 
 
 async def test_async_multipart_cancellation_keeps_direct_async_source_open(http_server: str) -> None:
@@ -348,24 +354,143 @@ async def test_async_multipart_coroutine_factory_fails_cleanly(http_server: str)
         )
 
 
-async def test_async_multipart_closes_sources_when_later_factory_fails(http_server: str) -> None:
+@pytest.mark.parametrize(
+    ("has_sync_close", "with_sync_part"),
+    [(False, False), (True, False), (True, True)],
+    ids=["aclose-only", "close-and-aclose", "after-sync-part"],
+)
+async def test_async_multipart_classification_failure_closes_factory_source_on_caller_loop(
+    http_server: str,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    has_sync_close: bool,
+    with_sync_part: bool,
+) -> None:
+    caller_loop = asyncio.get_running_loop()
+    release: asyncio.Future[None] = caller_loop.create_future()
+    close_loops: list[asyncio.AbstractEventLoop] = []
+    failure = ValueError("multipart classification failed")
+
+    class Source(AsyncChunks):
+        @property
+        def read(self) -> object:
+            raise failure
+
+        async def aclose(self) -> None:
+            close_loops.append(asyncio.get_running_loop())
+            caller_loop.call_soon_threadsafe(release.set_result, None)
+            await release
+            await super().aclose()
+
+    source = Source(())
+    sync_close = Mock()
+    if has_sync_close:
+        monkeypatch.setattr(source, "close", sync_close, raising=False)
+    factory = TrackedFactory(lambda: source)
+    files = {}
+    prefix = SyncChunks(())
+    prefix_aclose = AsyncMock()
+    if with_sync_part:
+        monkeypatch.setattr(prefix, "aclose", prefix_aclose, raising=False)
+        files["first"] = ("first.bin", TrackedFactory(lambda: prefix))
+    files["file"] = ("broken.bin", factory)
+    async with foghttp.AsyncClient(timeouts=FAST_MULTIPART_TIMEOUTS) as client:
+        with pytest.raises(ValueError, match=str(failure)) as caught:
+            await client.post(f"{http_server}{SECURITY_HEADERS_PATH}", files=files)
+        assert source.closed
+
+    assert caught.value is failure
+    assert factory.calls == 1
+    assert close_loops == [caller_loop]
+    assert source.close_calls == 1
+    sync_close.assert_not_called()
+    if with_sync_part:
+        assert prefix.close_calls == 1
+        prefix_aclose.assert_not_called()
+
+
+@pytest.mark.parametrize("failure_type", [RuntimeError, GeneratorExit, StopIteration])
+@pytest.mark.parametrize("streaming", [False, True], ids=["buffered-response", "streaming-response"])
+async def test_async_multipart_closes_sources_when_later_factory_fails(
+    http_server: str,
+    failure_type: type[BaseException],
+    *,
+    streaming: bool,
+) -> None:
     source = AsyncChunks((b"opened",))
     first_factory = TrackedFactory(lambda: source)
+    failure = failure_type(MULTIPART_FACTORY_FAILURE)
+    original_context = LookupError("factory context")
 
     def failing_part() -> object:
-        raise RuntimeError(MULTIPART_FACTORY_FAILURE)
+        try:
+            raise original_context
+        except LookupError as error:
+            raise failure from error
 
     second_factory = TrackedFactory(failing_part)
-    async with foghttp.AsyncClient(timeouts=FAST_MULTIPART_TIMEOUTS) as client:
-        with pytest.raises(RuntimeError, match=MULTIPART_FACTORY_FAILURE):
-            await client.post(
-                f"{http_server}{SECURITY_HEADERS_PATH}",
-                files=[
-                    ("first", ("first.bin", first_factory)),
-                    ("second", ("second.bin", second_factory)),
-                ],
-            )
+    last_factory = TrackedFactory(lambda: AsyncChunks(()))
+    files = [
+        ("first", ("first.bin", first_factory)),
+        ("second", ("second.bin", second_factory)),
+        ("last", ("last.bin", last_factory)),
+    ]
+    url = f"{http_server}{SECURITY_HEADERS_PATH}"
+    expected = RuntimeError if isinstance(failure, StopIteration) else failure_type
+    message = "StopIteration" if isinstance(failure, StopIteration) else MULTIPART_FACTORY_FAILURE
 
-    assert first_factory.close_calls == 0
-    assert second_factory.close_calls == 0
-    assert source.close_calls == 1
+    async def send(client: foghttp.AsyncClient) -> None:
+        if streaming:
+            async with client.stream(POST, url, files=files):
+                pytest.fail("multipart factory failure yielded a response")
+        else:
+            await client.post(url, files=files)
+
+    async with foghttp.AsyncClient(timeouts=FAST_MULTIPART_TIMEOUTS) as client:
+        async with asyncio.timeout(CANCELLATION_TIMEOUT):
+            with pytest.raises(expected, match=message) as caught:
+                await send(client)
+        if isinstance(failure, StopIteration):
+            assert caught.value.__cause__ is failure
+        else:
+            assert caught.value is failure
+        assert failure.__context__ is original_context
+        assert failure.__cause__ is original_context
+        assert source.close_calls == 1
+    assert first_factory.calls == second_factory.calls == 1
+    assert last_factory.calls == 0
+    assert first_factory.close_calls == second_factory.close_calls == last_factory.close_calls == 0
+
+
+async def test_async_multipart_can_cancel_cleanup_after_factory_generator_exit(
+    http_server: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = AsyncChunks((b"opened",))
+    closing = asyncio.Event()
+    release = asyncio.Event()
+    closed = asyncio.Event()
+    original_close = source.aclose
+
+    async def gated_close() -> None:
+        closing.set()
+        await release.wait()
+        await original_close()
+        closed.set()
+
+    def failing_part() -> object:
+        raise GeneratorExit(MULTIPART_FACTORY_FAILURE)
+
+    monkeypatch.setattr(source, "aclose", gated_close)
+    files = [("first", ("first.bin", lambda: source)), ("second", ("second.bin", failing_part))]
+    async with foghttp.AsyncClient(timeouts=FAST_MULTIPART_TIMEOUTS) as client, asyncio.timeout(CANCELLATION_TIMEOUT):
+        request = asyncio.create_task(client.post(f"{http_server}{SECURITY_HEADERS_PATH}", files=files))
+        try:
+            await closing.wait()
+            request.cancel("cancel during cleanup")
+            with pytest.raises(asyncio.CancelledError, match="cancel during cleanup"):
+                await request
+        finally:
+            release.set()
+        await closed.wait()
+        assert source.close_calls == 1

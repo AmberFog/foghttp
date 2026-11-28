@@ -1,13 +1,13 @@
 __all__ = ("start_tls_server",)
 
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import ssl
-import threading
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from foghttp.status_codes.client_error import NOT_FOUND
 from foghttp.status_codes.success import OK
+from tests.support.sync_server import SyncHTTPServer
 
 from .certificates import TLSCertificateBundle
 from .constants import TLS_OK_BODY, TLS_PATH
@@ -19,20 +19,28 @@ SERVER_HOST = "127.0.0.1"
 
 
 def start_tls_server(certificates: TLSCertificateBundle) -> TLSServer:
-    server = ThreadingHTTPServer((SERVER_HOST, 0), TLSHTTPHandler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(
         certfile=certificates.certificate_path,
         keyfile=certificates.key_path,
     )
-    server.socket = context.wrap_socket(server.socket, server_side=True)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    server = SyncHTTPServer((SERVER_HOST, 0), TLSHTTPHandler)
+    server.socket = context.wrap_socket(server.socket, server_side=True, do_handshake_on_connect=False)
+    thread = server.start()
     return TLSServer(server=server, thread=thread)
 
 
 class TLSHTTPHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+
+    def handle(self) -> None:
+        # Keep an incomplete handshake interruptible after the listener stops.
+        try:
+            self.request.do_handshake()
+        except OSError:
+            return
+        super().handle()
 
     def do_GET(self) -> None:
         if self._write_redirect_to_location():
