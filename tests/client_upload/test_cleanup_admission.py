@@ -6,10 +6,11 @@ import pytest
 
 import foghttp
 from foghttp._request_body import RequestBody
-from foghttp._upload_body import cleanup_owner, runtime
+from foghttp._upload_body import attempt, cleanup, cleanup_owner, runtime
 from foghttp.errors import LifecycleError
 from tests.client_multipart.sources import AsyncChunks, SyncChunks
 from tests.client_upload.helpers import RecordingRawUploadBody
+from tests.upload_cleanup.constants import CLOSE_WAIT, COMPLETION_WATCHDOG
 
 
 def test_direct_content_saturation_keeps_provider_caller_owned(
@@ -80,6 +81,70 @@ def test_replay_factory_saturation_refuses_before_product_creation(
         body.close()
 
     assert owner.snapshot()["reserved"] == 0
+
+
+def test_failed_sync_factory_retries_cleanup_after_temporary_worker_start_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    cold_cleanup_owner: cleanup_owner.CleanupOwner,
+) -> None:
+    source = SyncChunks(())
+    failure = ValueError("factory rejected its product")
+    factory = Mock(return_value=cleanup.UploadSourceFactoryFailure(source, failure))
+    original_start = threading.Thread.start
+    start_attempts = 0
+
+    def fail_once(worker: threading.Thread) -> None:
+        nonlocal start_attempts
+        start_attempts += 1
+        if start_attempts == 1:
+            message = "cleanup worker temporarily unavailable"
+            raise RuntimeError(message)
+        original_start(worker)
+
+    monkeypatch.setattr("foghttp._upload_body.runtime._foghttp.RawUploadBody", RecordingRawUploadBody)
+    monkeypatch.setattr(cleanup, "ASYNC_SOURCE_CLOSE_TIMEOUT", CLOSE_WAIT)
+    body = runtime.prepare_sync_upload_body(RequestBody.replayable_streaming_body(factory))
+    raw_body = body.raw_body
+    assert isinstance(raw_body, RecordingRawUploadBody)
+    monkeypatch.setattr(threading.Thread, "start", fail_once)
+    try:
+        with pytest.raises(ValueError, match=str(failure)) as caught:
+            raw_body.start_callback(raw_body)
+    finally:
+        body.close()
+
+    assert caught.value is failure
+    state = cold_cleanup_owner.state
+    with state.condition:
+        assert state.condition.wait_for(lambda: state.reserved == 0, timeout=COMPLETION_WATCHDOG)
+    assert start_attempts > 1
+    assert source.close_calls == 1
+
+
+def test_failed_sync_factory_preserves_first_interruption_if_cleanup_retry_is_interrupted(
+    monkeypatch: pytest.MonkeyPatch,
+    cold_cleanup_owner: cleanup_owner.CleanupOwner,
+) -> None:
+    source = SyncChunks(())
+    source_cleanup = cleanup.UploadSourceCleanup(source)
+    failure = ValueError("factory rejected its product")
+    first = KeyboardInterrupt("first launch interrupted")
+    interruptions = (first, GeneratorExit("retry interrupted"))
+    start = Mock(side_effect=interruptions)
+    try:
+        with monkeypatch.context() as fault:
+            fault.setattr(threading.Thread, "start", start)
+            with pytest.raises(KeyboardInterrupt, match=str(first)) as caught:
+                attempt.raise_sync_factory_error(failure, source_cleanup)
+        assert caught.value is first
+        assert start.call_count == len(interruptions)
+        assert not source_cleanup.completion.done()
+        assert source.close_calls == 0
+    finally:
+        cold_cleanup_owner.retry()
+        source_cleanup.completion.result(timeout=COMPLETION_WATCHDOG)
+    assert source.close_calls == 1
+    assert cold_cleanup_owner.snapshot()["reserved"] == 0
 
 
 def test_public_factory_saturation_preserves_lifecycle_error(

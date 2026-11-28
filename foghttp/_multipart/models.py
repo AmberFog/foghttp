@@ -15,7 +15,7 @@ class MultipartFile:
     content_type: str
     content_length: int | None
     replayable: bool
-    async_source: bool
+    async_source: bool | None
     source_factory: bool = False
     close_source: bool = False
 

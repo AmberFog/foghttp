@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, TypeVar
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-from . import cleanup_start, thread_bridge
+from . import cleanup_group, cleanup_start, thread_bridge
 from .cleanup_callbacks import (
     CloseSource,
     close_async_source_from_sync,
@@ -63,19 +63,31 @@ class UploadSourceCleanup:
         *,
         after: "UploadSourceCleanup | None" = None,
         close_source: CloseSource = close_sync_source,
+        group_loop: asyncio.AbstractEventLoop | None = None,
     ) -> Future[None] | None:
         if self._reservation.pid != os.getpid():
             return None
         predecessor = None if after is None else after.start_sync_cleanup(close_source=close_source)
         dependency, submit = self.iteration.claim(predecessor)
-        if submit:
-            return self._reservation.submit_sync(
-                partial(close_source, self._source),
+        if not submit:
+            self._reservation.owner.retry()
+            return self.completion
+        if (
+            group_loop is not None
+            and isinstance(self._source, cleanup_group.GroupedUploadSource)
+            and self._source.needs_request_loop
+        ):
+            return self._reservation.submit_async(
+                self._source.start_async_parts,
+                loop=group_loop,
                 context=self.context,
                 after=dependency,
             )
-        self._reservation.owner.retry()
-        return self.completion
+        return self._reservation.submit_sync(
+            partial(close_source, self._source),
+            context=self.context,
+            after=dependency,
+        )
 
     def close(self, *, close_source: CloseSource = close_sync_source) -> None:
         completion = self.start_sync_cleanup(close_source=close_source)

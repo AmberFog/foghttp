@@ -33,7 +33,7 @@ class CleanupGroup(Future[None]):
 
 
 class GroupedUploadSource(ABC):
-    async_parts = False
+    needs_request_loop = False
 
     @abstractmethod
     def start_parts(self, *, on_loop: bool) -> CleanupGroup:

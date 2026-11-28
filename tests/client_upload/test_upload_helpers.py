@@ -14,6 +14,7 @@ import weakref
 import pytest
 
 from foghttp import _foghttp
+from foghttp._multipart.normalize import normalize_multipart_body
 from foghttp._upload_body.async_sending import (
     fail_async_upload_body,
     handle_async_upload_error,
@@ -1625,26 +1626,42 @@ async def test_async_factory_failure_preserves_cleanup_context(
     assert observations == ["factory"]
 
 
+@pytest.mark.parametrize("multipart", [False, True], ids=["plain-source", "multipart-classification-failure"])
 async def test_async_close_cleans_factory_source_registered_after_close(
     monkeypatch: pytest.MonkeyPatch,
+    *,
+    multipart: bool,
 ) -> None:
     factory_started = threading.Event()
     factory_release = threading.Event()
-    source = _BlockingAsyncClose()
-    factory_error = RuntimeError(UPLOAD_SOURCE_FAILURE)
 
-    def source_factory() -> upload_cleanup.UploadSourceFactoryFailure:
+    def open_source() -> _BlockingAsyncClose:
         factory_started.set()
         factory_release.wait()
-        return upload_cleanup.UploadSourceFactoryFailure(source, factory_error)
+        return source
+
+    if multipart:
+        factory_error = ValueError("multipart classification failed")
+
+        class BrokenSource(_BlockingAsyncClose):
+            @property
+            def read(self) -> object:
+                raise factory_error
+
+        source = BrokenSource()
+        request_body = normalize_multipart_body(data=None, files={"file": ("broken.bin", open_source)}, headers={})
+    else:
+        factory_error = RuntimeError(UPLOAD_SOURCE_FAILURE)
+        source = _BlockingAsyncClose()
+        request_body = upload_runtime.RequestBody.replayable_streaming_body(
+            lambda: upload_cleanup.UploadSourceFactoryFailure(open_source(), factory_error),
+        )
 
     monkeypatch.setattr(
         "foghttp._upload_body.runtime._foghttp.RawUploadBody",
         RecordingRawUploadBody,
     )
-    body = upload_runtime.prepare_async_upload_body(
-        upload_runtime.RequestBody.replayable_streaming_body(source_factory),
-    )
+    body = upload_runtime.prepare_async_upload_body(request_body)
     raw_body = body.raw_body
     assert raw_body is not None
     errors: list[BaseException] = []
@@ -1652,7 +1669,7 @@ async def test_async_close_cleans_factory_source_registered_after_close(
     def start_body() -> None:
         try:
             raw_body.start_callback(raw_body)
-        except RuntimeError as error:
+        except (RuntimeError, ValueError) as error:
             errors.append(error)
 
     starter = threading.Thread(target=start_body, daemon=True)
@@ -1668,8 +1685,11 @@ async def test_async_close_cleans_factory_source_registered_after_close(
     assert starter.is_alive() is False
     assert cleanup_started is True
     assert cleanup_finished is True
-    assert errors == [factory_error]
+    assert len(errors) == 1
+    assert errors[0] is factory_error
     assert source.close_calls == 1
+    if multipart:
+        assert source.close_loop is asyncio.get_running_loop()
 
 
 async def test_async_sync_worker_start_failure_closes_body_and_source(
@@ -2655,9 +2675,11 @@ class _BlockingAsyncClose:
         self.release = threading.Event()
         self.finished = threading.Event()
         self.close_calls = 0
+        self.close_loop: asyncio.AbstractEventLoop | None = None
 
     async def aclose(self) -> None:
         self.close_calls += 1
+        self.close_loop = asyncio.get_running_loop()
         self.started.set()
         await asyncio.to_thread(self.release.wait)
         self.finished.set()

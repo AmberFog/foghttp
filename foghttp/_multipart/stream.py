@@ -17,6 +17,8 @@ from .factory import fresh_payload
 
 
 class _MultipartCleanupGroup(GroupedUploadSource):
+    async_parts = False
+
     def __init__(
         self,
         payload: multipart_models.MultipartPayload,
@@ -24,6 +26,7 @@ class _MultipartCleanupGroup(GroupedUploadSource):
         cleanups: tuple[MultipartFileCleanup, ...] | None = None,
     ) -> None:
         self._payload = payload
+        self.needs_request_loop = self.async_parts or any(file.async_source is None for file in payload.files)
         if cleanups is None:
             cleanups = tuple(MultipartFileCleanup(file) for file in payload.files)
         self._cleanups = cleanups
@@ -41,12 +44,13 @@ class _MultipartCleanupGroup(GroupedUploadSource):
 
     @defer_worker_interrupts()
     def _start_part_owners(self, *, on_loop: bool) -> tuple[upload_cleanup.UploadSourceCleanup, ...]:
-        return tuple(
-            owner
-            for cleanup in self._cleanups
-            if (owner := cleanup.start_part(on_loop=on_loop and self.async_parts, prefer_async=self.async_parts))
-            is not None
-        )
+        owners = []
+        for file, cleanup in zip(self._payload.files, self._cleanups, strict=True):
+            prefer_async = on_loop if file.async_source is None else self.async_parts
+            owner = cleanup.start_part(on_loop=on_loop and prefer_async, prefer_async=prefer_async)
+            if owner is not None:
+                owners.append(owner)
+        return tuple(owners)
 
 
 class MultipartStream(_MultipartCleanupGroup):

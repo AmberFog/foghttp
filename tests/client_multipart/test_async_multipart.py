@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import AsyncIterator
 import time
 from typing import Any, cast
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -22,6 +23,7 @@ from tests.client_multipart.sources import (
     BlockingSyncChunks,
     CallableAsyncChunks,
     ClosingBytesFile,
+    SyncChunks,
     TrackedFactory,
 )
 from tests.redirect_helpers import SECURITY_HEADERS_PATH
@@ -350,6 +352,61 @@ async def test_async_multipart_coroutine_factory_fails_cleanly(http_server: str)
             lambda stats: stats.active_requests == 0 and stats.pending_requests == 0,
             message="multipart factory failure did not release request slot",
         )
+
+
+@pytest.mark.parametrize(
+    ("has_sync_close", "with_sync_part"),
+    [(False, False), (True, False), (True, True)],
+    ids=["aclose-only", "close-and-aclose", "after-sync-part"],
+)
+async def test_async_multipart_classification_failure_closes_factory_source_on_caller_loop(
+    http_server: str,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    has_sync_close: bool,
+    with_sync_part: bool,
+) -> None:
+    caller_loop = asyncio.get_running_loop()
+    release: asyncio.Future[None] = caller_loop.create_future()
+    close_loops: list[asyncio.AbstractEventLoop] = []
+    failure = ValueError("multipart classification failed")
+
+    class Source(AsyncChunks):
+        @property
+        def read(self) -> object:
+            raise failure
+
+        async def aclose(self) -> None:
+            close_loops.append(asyncio.get_running_loop())
+            caller_loop.call_soon_threadsafe(release.set_result, None)
+            await release
+            await super().aclose()
+
+    source = Source(())
+    sync_close = Mock()
+    if has_sync_close:
+        monkeypatch.setattr(source, "close", sync_close, raising=False)
+    factory = TrackedFactory(lambda: source)
+    files = {}
+    prefix = SyncChunks(())
+    prefix_aclose = AsyncMock()
+    if with_sync_part:
+        monkeypatch.setattr(prefix, "aclose", prefix_aclose, raising=False)
+        files["first"] = ("first.bin", TrackedFactory(lambda: prefix))
+    files["file"] = ("broken.bin", factory)
+    async with foghttp.AsyncClient(timeouts=FAST_MULTIPART_TIMEOUTS) as client:
+        with pytest.raises(ValueError, match=str(failure)) as caught:
+            await client.post(f"{http_server}{SECURITY_HEADERS_PATH}", files=files)
+        assert source.closed
+
+    assert caught.value is failure
+    assert factory.calls == 1
+    assert close_loops == [caller_loop]
+    assert source.close_calls == 1
+    sync_close.assert_not_called()
+    if with_sync_part:
+        assert prefix.close_calls == 1
+        prefix_aclose.assert_not_called()
 
 
 @pytest.mark.parametrize("failure_type", [RuntimeError, GeneratorExit, StopIteration])

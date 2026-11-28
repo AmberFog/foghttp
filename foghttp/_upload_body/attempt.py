@@ -1,8 +1,9 @@
 import asyncio
 from concurrent.futures import wait
+from typing import NoReturn
 
 from . import cleanup as upload_cleanup
-from .cleanup_start import defer_worker_interrupts
+from .cleanup_start import collect_worker_interrupts, defer_worker_interrupts
 
 
 def prepare_factory_source(
@@ -50,3 +51,18 @@ def wait_sync_cleanups(
             if error is not None:
                 return error
     return None
+
+
+def raise_sync_factory_error(source_error: BaseException, cleanup: upload_cleanup.UploadSourceCleanup) -> NoReturn:
+    try:
+        cleanup_error = wait_sync_cleanups((cleanup,))
+    except BaseException:
+        # Reattempt a failed launch without replacing the caller's original interruption.
+        with collect_worker_interrupts():
+            cleanup.start_sync_cleanup()
+        raise
+    if not cleanup.completion.done():
+        cleanup.start_sync_cleanup()
+    if cleanup_error is not None:
+        raise source_error from cleanup_error
+    raise source_error

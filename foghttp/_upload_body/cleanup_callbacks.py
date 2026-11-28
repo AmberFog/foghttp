@@ -46,7 +46,7 @@ def close_async_source_from_sync(source: object) -> CleanupGroup | None:
 def source_async_close(source: object) -> Callable[[], Coroutine[object, object, CleanupGroup | None]] | None:
     try:
         if isinstance(source, GroupedUploadSource):
-            return source.start_async_parts if source.async_parts else None
+            return source.start_async_parts if source.needs_request_loop else None
         target = source.file if isinstance(source, FileUploadSource) else source
         aclose = getattr(target, "aclose", None)
     except Exception:  # noqa: BLE001

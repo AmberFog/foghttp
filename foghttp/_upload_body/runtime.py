@@ -166,14 +166,10 @@ class _SyncStreamingUploadBody:
     def _fresh_source(self) -> tuple[object, upload_cleanup.UploadSourceCleanup]:
         if self._replayable:
             source, source_cleanup, source_error = upload_attempt.prepare_factory_source(self._source)
-            registered = self._register_source_cleanup(source_cleanup)
-            if not registered:
-                source_cleanup.start_sync_cleanup()
             if source_error is not None:
-                cleanup_error = upload_attempt.wait_sync_cleanups((source_cleanup,))
-                if cleanup_error is not None:
-                    raise source_error from cleanup_error
-                raise source_error
+                upload_attempt.raise_sync_factory_error(source_error, source_cleanup)
+            if not self._register_source_cleanup(source_cleanup):
+                source_cleanup.start_sync_cleanup()
             return source, source_cleanup
         return self._source, self._source_cleanups[0]
 
@@ -312,7 +308,8 @@ class _AsyncStreamingUploadBody:
                     self._source_cleanups.append(source_cleanup)
                     registered = True
             if not registered:
-                source_cleanup.start_sync_cleanup()
+                # The request may have closed while its multipart factory was still preparing parts.
+                source_cleanup.start_sync_cleanup(group_loop=None if source_error is None else self._loop)
             if source_error is not None:
                 self._factory_error = source_error
                 raise source_error

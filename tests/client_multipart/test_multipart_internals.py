@@ -802,6 +802,10 @@ def test_multipart_stream_factory_closes_product_after_classification_failure() 
 
     assert isinstance(result, UploadSourceFactoryFailure)
     assert result.error is source_error
+    assert isinstance(result.source, MultipartStream)
+    source.close.assert_not_called()
+    result.source.close()
+    result.source.close()
     source.close.assert_called_once_with()
 
 

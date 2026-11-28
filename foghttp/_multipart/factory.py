@@ -1,4 +1,3 @@
-from contextlib import suppress
 from dataclasses import replace
 from inspect import isawaitable
 from typing import TYPE_CHECKING, cast
@@ -57,9 +56,8 @@ def _fresh_file(
     try:
         content, async_source = _classify_file_content(content)
     except BaseException as error:  # noqa: BLE001
-        with suppress(BaseException):
-            cleanup.close()
-        return file, cleanup, error
+        # The request owns the product even when its stream type could not be determined.
+        return replace(file, async_source=None), cleanup, error
     return replace(file, content=content, async_source=async_source), cleanup, None
 
 
