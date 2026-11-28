@@ -109,7 +109,7 @@ async def send_raw_request_async(
     telemetry_request_id: int | None = None,
 ) -> _foghttp.RawResponse:
     body = prepare_async_upload_body(request.body, raw_client=raw_client)
-    factory_error = None
+    factory_failed = False
     try:
         return await raw_client.request_async(
             method=request.method.upper(),
@@ -133,8 +133,9 @@ async def send_raw_request_async(
         raise_public_raw_error(exc)
     except AsyncFactoryProtocolError as exc:
         factory_error = exc.error
+        factory_failed = True
     finally:
-        await _close_body_async(body, factory_error=factory_error)
+        await _close_body_async(body, factory_failed=factory_failed)
     raise factory_error
 
 
@@ -146,7 +147,7 @@ async def send_raw_stream_request_async(
     decode_content: bool = False,
 ) -> _foghttp.RawStreamResponse:
     body = prepare_async_upload_body(request.body, raw_client=raw_client)
-    factory_error = None
+    factory_failed = False
     try:
         return await raw_client.request_stream_async(
             method=request.method.upper(),
@@ -171,8 +172,9 @@ async def send_raw_stream_request_async(
         raise_public_raw_error(exc)
     except AsyncFactoryProtocolError as exc:
         factory_error = exc.error
+        factory_failed = True
     finally:
-        await _close_body_async(body, factory_error=factory_error)
+        await _close_body_async(body, factory_failed=factory_failed)
     raise factory_error
 
 
@@ -185,13 +187,13 @@ def _close_body(body: SyncUploadBody) -> None:
             raise
 
 
-async def _close_body_async(body: AsyncUploadBody, *, factory_error: BaseException | None) -> None:
+async def _close_body_async(body: AsyncUploadBody, *, factory_failed: bool) -> None:
     active_error = sys.exception()
     try:
         await body.aclose()
     except asyncio.CancelledError:
-        if active_error is None or factory_error is not None:
+        if active_error is None or factory_failed:
             raise
     except BaseException:
-        if active_error is None and factory_error is None:
+        if active_error is None and not factory_failed:
             raise
